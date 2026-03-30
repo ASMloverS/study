@@ -1368,9 +1368,8 @@ dispatch_loop:
       }
 
       // Execute deferred closures in LIFO order before returning.
-      if (!frame->deferred.empty()) {
-        ObjClosure* deferred = frame->deferred.back();
-        frame->deferred.pop_back();
+      if (frame->deferred_count > 0) {
+        ObjClosure* deferred = frame->deferred_buf[--frame->deferred_count];
         frame->pending_return = result;
         frame->returning = true;
         frame->ip--;  // rewind IP to OP_RETURN for re-entry
@@ -1888,7 +1887,20 @@ dispatch_loop:
 
     VM_CASE(OP_DEFER) {
       u8_t A = decode_A(instr);
-      frame->deferred.push_back(as_closure(frame->slots[A]));
+      if (frame->deferred_buf == nullptr) {
+        frame->deferred_buf = new ObjClosure*[4];
+        frame->deferred_capacity = 4;
+        frame->deferred_count = 0;
+      } else if (frame->deferred_count == frame->deferred_capacity) {
+        u8_t new_cap = static_cast<u8_t>(frame->deferred_capacity * 2);
+        ObjClosure** new_buf = new ObjClosure*[new_cap];
+        for (u8_t _i = 0; _i < frame->deferred_count; ++_i)
+          new_buf[_i] = frame->deferred_buf[_i];
+        delete[] frame->deferred_buf;
+        frame->deferred_buf = new_buf;
+        frame->deferred_capacity = new_cap;
+      }
+      frame->deferred_buf[frame->deferred_count++] = as_closure(frame->slots[A]);
       VM_DISPATCH();
     }
 
@@ -2010,7 +2022,10 @@ dispatch_loop:
             f.closure = sf.closure;
             f.ip = sf.ip;
             f.slots = new_base + sf.slots_offset;
-            f.deferred.clear();
+            delete[] f.deferred_buf;
+            f.deferred_buf = nullptr;
+            f.deferred_count = 0;
+            f.deferred_capacity = 0;
             f.pending_return = sf.pending_return;
             f.returning = sf.returning;
           }
@@ -2194,7 +2209,10 @@ handle_runtime_error:
 
     while (frame_count_ - 1 > handler.frame_index) {
       auto& unwound = frames_[frame_count_ - 1];
-      unwound.deferred.clear();
+      delete[] unwound.deferred_buf;
+      unwound.deferred_buf = nullptr;
+      unwound.deferred_count = 0;
+      unwound.deferred_capacity = 0;
       unwound.returning = false;
       close_upvalues(unwound.slots);
       frame_count_--;

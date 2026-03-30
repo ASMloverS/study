@@ -40,9 +40,8 @@ void VM::mark_roots() noexcept {
   // Mark call frames and their deferred closures
   for (int i = 0; i < frame_count_; i++) {
     mark_object(frames_[i].closure);
-    for (auto* deferred : frames_[i].deferred) {
-      mark_object(deferred);
-    }
+    for (u8_t di = 0; di < frames_[i].deferred_count; ++di)
+      mark_object(frames_[i].deferred_buf[di]);
     if (frames_[i].returning) {
       mark_value(frames_[i].pending_return);
     }

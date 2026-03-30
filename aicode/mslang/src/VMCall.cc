@@ -97,7 +97,10 @@ bool VM::call(ObjClosure* closure, int arg_count) noexcept {
   frame.closure = closure;
   frame.ip = fn->chunk().code_data();
   frame.slots = stack_top_ - arg_count - 1;
-  frame.deferred.clear();
+  delete[] frame.deferred_buf;
+  frame.deferred_buf = nullptr;
+  frame.deferred_count = 0;
+  frame.deferred_capacity = 0;
   frame.returning = false;
   return true;
 }
@@ -200,7 +203,10 @@ bool VM::resume_coroutine(ObjCoroutine* coro, Value sent_val, u8_t result_reg) n
       f.closure = sf.closure;
       f.ip = sf.ip;
       f.slots = new_base + sf.slots_offset;
-      f.deferred.clear();
+      delete[] f.deferred_buf;
+      f.deferred_buf = nullptr;
+      f.deferred_count = 0;
+      f.deferred_capacity = 0;
       f.pending_return = sf.pending_return;
       f.returning = sf.returning;
     }

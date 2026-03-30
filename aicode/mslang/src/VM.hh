@@ -44,12 +44,14 @@ enum class InterpretResult {
 };
 
 struct CallFrame {
-  ObjClosure* closure{nullptr};
+  ObjClosure*  closure{nullptr};
   Instruction* ip{nullptr};
-  Value* slots{nullptr};
-  std::vector<ObjClosure*> deferred{};
-  Value pending_return{};
-  bool returning{false};
+  Value*       slots{nullptr};
+  ObjClosure** deferred_buf{nullptr};   // heap-allocated on demand
+  Value        pending_return{};
+  u8_t         deferred_count{0};
+  u8_t         deferred_capacity{0};
+  bool         returning{false};
 };
 
 struct ExceptionHandler {
