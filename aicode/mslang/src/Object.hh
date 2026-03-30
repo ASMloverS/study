@@ -280,6 +280,7 @@ class ObjFunction final : public Object {
   ObjString* name_{nullptr};
   str_t script_path_;
   std::vector<InlineCache> ic_;
+  std::vector<u8_t> arith_deopt_;  // deopt counts indexed by bytecode offset; lazy-allocated
 
 public:
   ObjFunction() noexcept;
@@ -314,6 +315,16 @@ public:
   sz_t add_ic() noexcept { ic_.emplace_back(); return ic_.size() - 1; }
   InlineCache& ic_at(sz_t index) noexcept { return ic_[index]; }
   sz_t ic_count() const noexcept { return ic_.size(); }
+
+  // Arithmetic deopt counter: increment and return new count for bytecode offset.
+  // Capped at 3 to prevent overflow; once >= 3 the instruction stays generic.
+  inline u8_t increment_arith_deopt(u32_t offset) noexcept {
+    if (offset >= static_cast<u32_t>(arith_deopt_.size()))
+      arith_deopt_.resize(offset + 1, 0);
+    u8_t& cnt = arith_deopt_[offset];
+    if (cnt < 3) ++cnt;
+    return cnt;
+  }
 };
 
 // --- ObjNative ---

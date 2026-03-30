@@ -2054,8 +2054,10 @@ dispatch_loop:
         frame->slots[A] = Value(static_cast<i64_t>(lhs.as_integer() + rhs.as_integer()));
         VM_DISPATCH();
       }
-      // Deopt: revert to generic
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_ADD, A, B, C);
+      // Deopt: revert to generic (lock permanently after 3 deopts)
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_ADD, A, B, C); }
       if (lhs.is_number() && rhs.is_number()) {
         frame->slots[A] = Value(lhs.as_number() + rhs.as_number());
       } else { runtime_error("Operands must be two numbers or two strings."); goto handle_runtime_error; }
@@ -2068,8 +2070,10 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_number() + rhs.as_number());
         VM_DISPATCH();
       }
-      // Deopt
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_ADD, A, B, C);
+      // Deopt (lock permanently after 3 deopts)
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_ADD, A, B, C); }
       if (lhs.is_integer() && rhs.is_integer()) {
         frame->slots[A] = Value(static_cast<i64_t>(lhs.as_integer() + rhs.as_integer()));
       } else { runtime_error("Operands must be two numbers or two strings."); goto handle_runtime_error; }
@@ -2083,8 +2087,10 @@ dispatch_loop:
         frame->slots[A] = Value(static_cast<Object*>(take_string(std::move(result))));
         VM_DISPATCH();
       }
-      // Deopt: revert and execute generic add logic
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_ADD, A, B, C);
+      // Deopt: revert and execute generic add logic (lock permanently after 3 deopts)
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_ADD, A, B, C); }
       if (is_obj_type(lhs, ObjectType::OBJ_STRING) && is_obj_type(rhs, ObjectType::OBJ_STRING)) {
         str_t result = str_t(as_string(lhs)->value()) + str_t(as_string(rhs)->value());
         frame->slots[A] = Value(static_cast<Object*>(take_string(std::move(result))));
@@ -2107,8 +2113,10 @@ dispatch_loop:
         frame->slots[A] = Value(static_cast<i64_t>(lhs.as_integer() - rhs.as_integer()));
         VM_DISPATCH();
       }
-      // Deopt: fall to generic
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_SUB, A, B, C);
+      // Deopt: fall to generic (lock permanently after 3 deopts)
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_SUB, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() - rhs.as_number());
       VM_DISPATCH();
@@ -2120,7 +2128,9 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_number() - rhs.as_number());
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_SUB, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_SUB, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() - rhs.as_number());
       VM_DISPATCH();
@@ -2132,7 +2142,9 @@ dispatch_loop:
         frame->slots[A] = Value(static_cast<i64_t>(lhs.as_integer() * rhs.as_integer()));
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_MUL, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_MUL, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() * rhs.as_number());
       VM_DISPATCH();
@@ -2144,7 +2156,9 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_number() * rhs.as_number());
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_MUL, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_MUL, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() * rhs.as_number());
       VM_DISPATCH();
@@ -2156,7 +2170,9 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_number() / rhs.as_number());
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_DIV, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_DIV, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() / rhs.as_number());
       VM_DISPATCH();
@@ -2168,7 +2184,9 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_integer() < rhs.as_integer());
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_LT, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_LT, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() < rhs.as_number());
       VM_DISPATCH();
@@ -2180,7 +2198,9 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_number() < rhs.as_number());
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_LT, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_LT, A, B, C); }
       if (!lhs.is_number() || !rhs.is_number()) { runtime_error("Operands must be numbers."); goto handle_runtime_error; }
       frame->slots[A] = Value(lhs.as_number() < rhs.as_number());
       VM_DISPATCH();
@@ -2192,7 +2212,9 @@ dispatch_loop:
         frame->slots[A] = Value(lhs.as_integer() == rhs.as_integer());
         VM_DISPATCH();
       }
-      const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_EQ, A, B, C);
+      { u32_t _off = static_cast<u32_t>(frame->ip - 1 - frame->closure->function()->chunk().code_data());
+        if (frame->closure->function()->increment_arith_deopt(_off) < 3)
+          const_cast<Instruction*>(frame->ip)[-1] = encode_ABC(OpCode::OP_EQ, A, B, C); }
       frame->slots[A] = Value(lhs.is_equal(rhs));
       VM_DISPATCH();
     }
