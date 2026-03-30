@@ -65,6 +65,9 @@ public:
   // Truncate bytecode to given size (for constant folding)
   void truncate(sz_t new_count) noexcept;
 
+  // Remove all OP_NOP instructions and fix up relative jump offsets
+  void compact_nops() noexcept;
+
   // Access underlying data (for VM instruction pointer)
   const Instruction* code_data() const noexcept;
   Instruction* code_data() noexcept;

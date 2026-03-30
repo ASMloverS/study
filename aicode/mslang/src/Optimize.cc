@@ -182,6 +182,7 @@ void peephole_optimize(ObjFunction* fn) noexcept {
   if (fn == nullptr) return;
 
   optimize_function(fn);
+  fn->chunk().compact_nops();
 
   // Recurse into nested closures stored as constants
   for (auto& val : fn->chunk().constants()) {
