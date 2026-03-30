@@ -46,6 +46,14 @@ mslangc_add_frontend_unit_test(lexer.unit lexer_test.c lexer)
 mslangc_add_frontend_unit_test(parser_expr.unit parser_expr_test.c parser_expr)
 mslangc_add_frontend_unit_test(parser_decl_stmt.unit parser_decl_stmt_test.c parser_decl_stmt)
 
+add_executable(lowering_basic.unit lowering_basic_test.c)
+target_link_libraries(lowering_basic.unit PRIVATE
+  mslang_frontend
+  mslang_runtime_core)
+mslangc_apply_test_warnings(lowering_basic.unit)
+add_test(NAME lowering_basic.unit COMMAND lowering_basic.unit)
+set_tests_properties(lowering_basic.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_UNIT};lowering_basic")
 add_executable(lexer.fixture lexer_fixture_test.c)
 target_link_libraries(lexer.fixture PRIVATE mslang_frontend)
 mslangc_apply_test_warnings(lexer.fixture)

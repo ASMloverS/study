@@ -28,9 +28,12 @@ add_library(mslang_runtime_core
 add_library(mslang_frontend
   src/frontend/ast.c
   src/frontend/lexer.c
+  src/frontend/lowering_basic.c
   src/frontend/parser_expr.c
   src/frontend/parser_decl_stmt.c
-  src/frontend/parser_recovery.c)
+  src/frontend/parser_recovery.c
+  src/frontend/resolution_table.c
+  src/frontend/resolver.c)
 
 target_compile_features(mslangc PRIVATE c_std_11)
 target_compile_features(mslang_support PUBLIC c_std_11)
@@ -47,7 +50,8 @@ target_include_directories(mslang_frontend PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 target_link_libraries(mslang_runtime_core PUBLIC mslang_support)
-target_link_libraries(mslang_frontend PUBLIC mslang_support)
+target_link_libraries(mslang_frontend PUBLIC mslang_support mslang_runtime_core)
+target_link_libraries(mslangc PRIVATE mslang_frontend mslang_runtime_core)
 
 if(MSVC)
   target_compile_options(mslangc PRIVATE /W4 /WX)
@@ -76,9 +80,13 @@ add_dependencies(check
   runtime_core.value
   runtime_core.string
   runtime_core.table
+  runtime_core.chunk
+  runtime_core.disasm
+  runtime_core.vm_core
   lexer.unit
   lexer.fixture
   parser_decl_stmt.unit
   parser_decl_stmt.fixture
   parser_expr.unit
-  parser_expr.fixture)
+  parser_expr.fixture
+  lowering_basic.unit)

@@ -1,5 +1,10 @@
 # Task 08 - Lowering for Basic Programs and End-to-End Runner
 
+## Status
+
+Complete. Verified on 2026-03-31 with the acceptance commands in this document.
+
+
 ## Goal
 
 Connect the frontend to the VM so source code can compile and run end to end for the first non-trivial language subset.
