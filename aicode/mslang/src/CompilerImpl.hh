@@ -30,6 +30,7 @@
 #include <charconv>
 #include <cmath>
 #include <unordered_map>
+#include <vector>
 #include "Compiler.hh"
 #include "VM.hh"
 #include "Memory.hh"
@@ -146,9 +147,9 @@ class Compiler {
   ObjFunction* function_{nullptr};
   FunctionType type_;
 
-  Local locals_[kUINT8_COUNT];
+  std::vector<Local>   locals_;    // reserve(16) in ctor
   int local_count_{0};
-  Upvalue upvalues_[kUINT8_COUNT];
+  std::vector<Upvalue> upvalues_;  // reserve(8) in ctor
   int scope_depth_{0};
   LoopContext* current_loop_{nullptr};
 

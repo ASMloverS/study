@@ -51,7 +51,11 @@ Compiler::Compiler(ParseState& ps, FunctionType type) noexcept
         ps_->previous.lexeme.data(), ps_->previous.lexeme.length()));
   }
 
+  locals_.reserve(16);
+  upvalues_.reserve(8);
+
   // Slot 0 is reserved: "this" for methods, "" for functions
+  locals_.push_back({});
   Local& local = locals_[local_count_++];
   local.depth = 0;
   local.is_captured = false;
@@ -554,6 +558,7 @@ void Compiler::add_local(Token name) noexcept {
     return;
   }
 
+  locals_.push_back({});
   Local& local = locals_[local_count_++];
   local.name = name;
   local.depth = -1;
@@ -594,6 +599,8 @@ int Compiler::add_upvalue(u8_t index, bool is_local) noexcept {
     return 0;
   }
 
+  if (static_cast<int>(upvalues_.size()) <= upvalue_count)
+    upvalues_.push_back({});
   upvalues_[upvalue_count].is_local = is_local;
   upvalues_[upvalue_count].index = index;
   return function_->increment_upvalue_count();
