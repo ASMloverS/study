@@ -17,9 +17,12 @@ add_library(mslang_support
   src/support/diag.c)
 
 add_library(mslang_runtime_core
+  src/runtime/chunk.c
+  src/runtime/disasm.c
   src/runtime/object.c
   src/runtime/string.c
   src/runtime/table.c
+  src/runtime/vm.c
   src/runtime/value.c)
 
 add_library(mslang_frontend

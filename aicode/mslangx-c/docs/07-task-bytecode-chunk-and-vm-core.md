@@ -1,5 +1,9 @@
 # Task 07 - Bytecode Chunk and VM Core
 
+## Status
+
+Complete. Verified on 2026-03-31 with the acceptance commands in this document.
+
 ## Goal
 
 Implement the minimal bytecode container and stack VM needed to execute the first lowered programs.
