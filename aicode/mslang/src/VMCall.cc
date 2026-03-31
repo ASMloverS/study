@@ -93,7 +93,7 @@ bool VM::call(ObjClosure* closure, int arg_count) noexcept {
     return false;
   }
 
-  CallFrame& frame = frames_[frame_count_++];
+  CallFrame& frame = active_frames_[frame_count_++];
   frame.closure = closure;
   frame.ip = fn->chunk().code_data();
   frame.slots = stack_top_ - arg_count - 1;
@@ -164,7 +164,7 @@ bool VM::call_value(Value callee, int arg_count) noexcept {
 bool VM::resume_coroutine(ObjCoroutine* coro, Value sent_val, u8_t result_reg) noexcept {
   if (coro->state() == CoroutineState::DEAD) {
     // Place nil in result slot — coroutine exhausted
-    frames_[frame_count_ - 1].slots[result_reg] = Value();
+    active_frames_[frame_count_ - 1].slots[result_reg] = Value();
     return true;
   }
   if (coro->state() == CoroutineState::RUNNING) {
@@ -172,45 +172,44 @@ bool VM::resume_coroutine(ObjCoroutine* coro, Value sent_val, u8_t result_reg) n
     return false;
   }
 
+  // Save caller context in CoroutineEntry
   CoroutineEntry ce;
-  ce.coro = coro;
+  ce.coro              = coro;
   ce.parent_frame_count = frame_count_;
-  ce.parent_stack_top = stack_top_;
-  ce.result_reg = result_reg;
+  ce.parent_stack_top  = stack_top_;
+  ce.parent_stack_base = active_stack_base_;
+  ce.parent_stack_end  = active_stack_end_;
+  ce.parent_frames     = active_frames_;
+  ce.result_reg        = result_reg;
   coro_stack_.push_back(ce);
   coro->set_state(CoroutineState::RUNNING);
   coro->sent_value() = sent_val;
 
-  if (coro->saved_frames().empty()) {
-    // First resume: call the generator closure with saved initial args
-    push(Value(static_cast<Object*>(coro))); // slot 0 = receiver
+  // Switch to coroutine's independent stack/frame buffers — O(1)
+  active_frames_     = coro->coro_frames();
+  active_stack_base_ = coro->coro_stack();
+  active_stack_end_  = coro->coro_stack() + kCoroStackSize;
+
+  if (coro->coro_stack_top() == nullptr) {
+    // First resume: call the generator closure from the bottom of the coro stack
+    stack_top_ = coro->coro_stack();
+    push(Value(static_cast<Object*>(coro))); // slot 0 = receiver ("self")
     int init_argc = static_cast<int>(coro->init_args().size());
     for (auto& v : coro->init_args()) push(v);
     if (!call(coro->closure(), init_argc)) {
+      // Restore caller context on failure
+      active_frames_     = ce.parent_frames;
+      active_stack_base_ = ce.parent_stack_base;
+      active_stack_end_  = ce.parent_stack_end;
+      frame_count_       = ce.parent_frame_count;
+      stack_top_         = ce.parent_stack_top;
       coro_stack_.pop_back();
       return false;
     }
   } else {
-    // Restore suspended state using properly-saved SavedCallFrame entries
-    int saved_count = static_cast<int>(coro->saved_frames().size());
-    Value* new_base = stack_top_;
-    for (sz_t i = 0; i < coro->saved_stack().size(); ++i)
-      new_base[i] = coro->saved_stack()[i];
-    stack_top_ = new_base + coro->saved_stack_top_offset();
-    for (int fi = 0; fi < saved_count; ++fi) {
-      const SavedCallFrame& sf = coro->saved_frames()[static_cast<sz_t>(fi)];
-      CallFrame& f = frames_[frame_count_ + fi];
-      f.closure = sf.closure;
-      f.ip = sf.ip;
-      f.slots = new_base + sf.slots_offset;
-      delete[] f.deferred_buf;
-      f.deferred_buf = nullptr;
-      f.deferred_count = 0;
-      f.deferred_capacity = 0;
-      f.pending_return = sf.pending_return;
-      f.returning = sf.returning;
-    }
-    frame_count_ += saved_count;
+    // Resume from suspended state — O(1) pointer restore (no data copy)
+    stack_top_   = coro->coro_stack_top();
+    frame_count_ = coro->coro_frame_count();
   }
   return true;
 }

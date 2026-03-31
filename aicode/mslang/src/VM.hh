@@ -43,17 +43,6 @@ enum class InterpretResult {
   INTERPRET_RUNTIME_ERROR,
 };
 
-struct CallFrame {
-  ObjClosure*  closure{nullptr};
-  Instruction* ip{nullptr};
-  Value*       slots{nullptr};
-  ObjClosure** deferred_buf{nullptr};   // heap-allocated on demand
-  Value        pending_return{};
-  u8_t         deferred_count{0};
-  u8_t         deferred_capacity{0};
-  bool         returning{false};
-};
-
 struct ExceptionHandler {
   int frame_index{0};
   Value* stack_depth{nullptr};
@@ -64,9 +53,12 @@ struct ExceptionHandler {
 class VM : public Singleton<VM> {
   std::array<CallFrame, kFRAMES_MAX> frames_{};
   int frame_count_{0};
+  CallFrame* active_frames_{frames_.data()};   // OPT-P3-04: ptr to active frame buffer
 
   std::array<Value, kSTACK_MAX * kFRAMES_MAX> stack_{};
   Value* stack_top_{nullptr};
+  Value* active_stack_base_{stack_.data()};    // OPT-P3-04: base of active stack buffer
+  Value* active_stack_end_{stack_.data() + kSTACK_MAX * kFRAMES_MAX};  // overflow sentinel
 
   Table globals_;
   Table strings_;
@@ -124,9 +116,12 @@ class VM : public Singleton<VM> {
   // When a coroutine yields, it suspends and we return to the parent frame.
   struct CoroutineEntry {
     ObjCoroutine* coro;
-    int parent_frame_count;   // frame_count_ before entering the coroutine
-    Value* parent_stack_top;  // stack_top_ before the OP_RESUME
-    u8_t result_reg;          // R(A) in the OP_RESUME that started this
+    int        parent_frame_count;   // frame_count_ before entering the coroutine
+    Value*     parent_stack_top;     // stack_top_ before the OP_RESUME
+    Value*     parent_stack_base;    // active_stack_base_ before the OP_RESUME
+    Value*     parent_stack_end;     // active_stack_end_ before the OP_RESUME
+    CallFrame* parent_frames;        // active_frames_ before the OP_RESUME
+    u8_t       result_reg;           // R(A) in the OP_RESUME that started this
   };
   std::vector<CoroutineEntry> coro_stack_;
 

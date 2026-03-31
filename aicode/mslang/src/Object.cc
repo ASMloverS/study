@@ -733,12 +733,19 @@ void ObjCoroutine::trace_references() noexcept {
   mark_object(closure_);
   mark_value(yielded_value_);
   mark_value(sent_value_);
-  for (auto& val : saved_stack_) mark_value(val);
   for (auto& val : init_args_) mark_value(val);
-  // Mark all GC roots stored in properly-copied SavedCallFrame entries
-  for (auto& f : saved_frames_) {
-    mark_object(f.closure);
-    mark_value(const_cast<Value&>(f.pending_return));
+  // For SUSPENDED coroutines: mark the independent stack and frame closures.
+  // RUNNING coroutines are handled by VM::mark_roots via the coro_stack_ parent entries.
+  if (state_ == CoroutineState::SUSPENDED && coro_stack_top_ != nullptr) {
+    for (Value* slot = coro_stack_; slot < coro_stack_top_; ++slot)
+      mark_value(*slot);
+    for (int fi = 0; fi < coro_frame_count_; ++fi) {
+      mark_object(coro_frames_[fi].closure);
+      for (u8_t di = 0; di < coro_frames_[fi].deferred_count; ++di)
+        mark_object(coro_frames_[fi].deferred_buf[di]);
+      if (coro_frames_[fi].returning)
+        mark_value(coro_frames_[fi].pending_return);
+    }
   }
 }
 

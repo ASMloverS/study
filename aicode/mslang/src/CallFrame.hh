@@ -27,23 +27,25 @@
 #pragma once
 
 #include "Types.hh"
+#include "Opcode.hh"
+#include "Value.hh"
 
 namespace ms {
 
-inline constexpr sz_t kSTACK_MAX      = 256;
-inline constexpr sz_t kFRAMES_MAX     = 64;
-inline constexpr sz_t kUINT8_COUNT    = 256;
-inline constexpr sz_t kGC_HEAP_GROW   = 2;
-inline constexpr sz_t kGC_INITIAL_SIZE = 1024 * 1024;
-inline constexpr sz_t kALIGNMENT      = 8;
+class ObjClosure;  // forward declaration — full definition in Object.hh
 
-// Coroutine independent-stack constants
-inline constexpr sz_t kCoroStackSize  = kSTACK_MAX * kFRAMES_MAX;  // Value slots per coroutine
-inline constexpr sz_t kCoroFrameMax   = kFRAMES_MAX;               // call frames per coroutine
-
-// Generational GC constants
-inline constexpr int  kGC_PROMOTE_AGE      = 3;     // survive N minor GCs → promote
-inline constexpr sz_t kGC_NURSERY_SIZE     = 256 * 1024;  // minor GC trigger threshold
-inline constexpr sz_t kGC_INCREMENTAL_WORK = 64;    // gray objects processed per work slice
+// A single activation record in the Maple call stack.
+// Extracted into its own header so ObjCoroutine (Object.hh) can hold an
+// independent array of frames without creating a circular include with VM.hh.
+struct CallFrame {
+  ObjClosure*  closure{nullptr};
+  Instruction* ip{nullptr};
+  Value*       slots{nullptr};
+  ObjClosure** deferred_buf{nullptr};   // heap-allocated on demand
+  Value        pending_return{};
+  u8_t         deferred_count{0};
+  u8_t         deferred_capacity{0};
+  bool         returning{false};
+};
 
 } // namespace ms

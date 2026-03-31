@@ -32,18 +32,29 @@
 namespace ms {
 
 void VM::mark_roots() noexcept {
-  // Mark the stack
-  for (Value* slot = stack_.data(); slot < stack_top_; slot++) {
+  // Mark the currently active stack (may be main stack or a coroutine's stack)
+  for (Value* slot = active_stack_base_; slot < stack_top_; ++slot)
     mark_value(*slot);
+
+  // Mark active call frames and their deferred closures
+  for (int i = 0; i < frame_count_; i++) {
+    mark_object(active_frames_[i].closure);
+    for (u8_t di = 0; di < active_frames_[i].deferred_count; ++di)
+      mark_object(active_frames_[i].deferred_buf[di]);
+    if (active_frames_[i].returning)
+      mark_value(active_frames_[i].pending_return);
   }
 
-  // Mark call frames and their deferred closures
-  for (int i = 0; i < frame_count_; i++) {
-    mark_object(frames_[i].closure);
-    for (u8_t di = 0; di < frames_[i].deferred_count; ++di)
-      mark_object(frames_[i].deferred_buf[di]);
-    if (frames_[i].returning) {
-      mark_value(frames_[i].pending_return);
+  // Mark parent stacks/frames of all running coroutines in the coro_stack_
+  for (auto& ce : coro_stack_) {
+    for (Value* slot = ce.parent_stack_base; slot < ce.parent_stack_top; ++slot)
+      mark_value(*slot);
+    for (int i = 0; i < ce.parent_frame_count; ++i) {
+      mark_object(ce.parent_frames[i].closure);
+      for (u8_t di = 0; di < ce.parent_frames[i].deferred_count; ++di)
+        mark_object(ce.parent_frames[i].deferred_buf[di]);
+      if (ce.parent_frames[i].returning)
+        mark_value(ce.parent_frames[i].pending_return);
     }
   }
 
@@ -290,7 +301,7 @@ void VM::run_pending_finalizers() noexcept {
       if (inst->klass()->methods().get(op_finalize_string_, &method)) {
         // Ensure stack_top_ is past the current frame's full register window
         // so the finalizer frame doesn't overlap and corrupt locals.
-        CallFrame& cur = frames_[frame_count_ - 1];
+        CallFrame& cur = active_frames_[frame_count_ - 1];
         Value* frame_end = cur.slots + cur.closure->function()->max_stack_size();
         if (stack_top_ < frame_end)
           stack_top_ = frame_end;

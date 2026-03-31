@@ -33,6 +33,7 @@
 #include <unordered_map>
 #include <vector>
 #include "Common.hh"
+#include "CallFrame.hh"
 #include "Chunk.hh"
 #include "Table.hh"
 
@@ -649,29 +650,20 @@ public:
 };
 
 // --- ObjCoroutine ---
-// A coroutine wraps a generator closure. The VM manages save/restore of frame state.
+// A coroutine wraps a generator closure with its own independent stack segment.
+// yield/resume is O(1): the VM swaps a few pointers rather than copying data.
 
 enum class CoroutineState : u8_t { CREATED, RUNNING, SUSPENDED, DEAD };
-
-// Properly-copyable snapshot of a CallFrame for coroutine save/restore.
-// Avoids std::memcpy on non-trivially-copyable std::vector/Value members.
-struct SavedCallFrame {
-  ObjClosure*  closure{nullptr};
-  Instruction* ip{nullptr};
-  u32_t        slots_offset{0};  // index into stack_.data(); restore as new_base + offset
-  Value        pending_return{};
-  bool         returning{false};
-  // deferred not saved — Maple semantics guarantee defer executes before yield
-};
 
 class ObjCoroutine final : public Object {
   ObjClosure* closure_;
   CoroutineState state_{CoroutineState::CREATED};
 
-  // Saved VM state (managed by VM)
-  std::vector<SavedCallFrame> saved_frames_;  // properly-copied CallFrame snapshots
-  std::vector<Value> saved_stack_;
-  int saved_stack_top_offset_{0};  // number of saved stack values
+  // Independent stack/frame buffers — owned by this coroutine
+  Value     coro_stack_[kCoroStackSize]{};
+  CallFrame coro_frames_[kCoroFrameMax]{};
+  Value*    coro_stack_top_{nullptr};   // saved stack_top_ on yield (nullptr = never resumed)
+  int       coro_frame_count_{0};       // saved frame_count_ on yield
 
   Value yielded_value_{};
   Value sent_value_{};
@@ -680,6 +672,14 @@ class ObjCoroutine final : public Object {
 public:
   explicit ObjCoroutine(ObjClosure* closure) noexcept
       : Object(ObjectType::OBJ_COROUTINE), closure_(closure) {}
+
+  ~ObjCoroutine() noexcept {
+    // Free any heap-allocated deferred buffers left in coroutine frames
+    for (sz_t i = 0; i < kCoroFrameMax; ++i) {
+      delete[] coro_frames_[i].deferred_buf;
+      coro_frames_[i].deferred_buf = nullptr;
+    }
+  }
 
   str_t stringify() const noexcept {
     return std::format("<coroutine {}>", closure_ ? closure_->function()->stringify() : "?");
@@ -696,10 +696,13 @@ public:
 
   std::vector<Value>& init_args() noexcept { return init_args_; }
 
-  // Accessors for VM save/restore
-  std::vector<SavedCallFrame>& saved_frames() noexcept { return saved_frames_; }
-  std::vector<Value>& saved_stack() noexcept { return saved_stack_; }
-  int& saved_stack_top_offset() noexcept { return saved_stack_top_offset_; }
+  // Independent stack/frame accessors (used by VM on resume/yield)
+  Value*     coro_stack()       noexcept { return coro_stack_; }
+  CallFrame* coro_frames()      noexcept { return coro_frames_; }
+  Value*     coro_stack_top()   const noexcept { return coro_stack_top_; }
+  int        coro_frame_count() const noexcept { return coro_frame_count_; }
+  void set_coro_stack_top(Value* top)   noexcept { coro_stack_top_ = top; }
+  void set_coro_frame_count(int count)  noexcept { coro_frame_count_ = count; }
 };
 
 // --- Convenience helpers for Value ---

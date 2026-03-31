@@ -88,13 +88,16 @@ VM::~VM() noexcept {
 }
 
 void VM::reset_stack() noexcept {
+  active_frames_ = frames_.data();
+  active_stack_base_ = stack_.data();
+  active_stack_end_  = stack_.data() + stack_.size();
   stack_top_ = stack_.data();
   frame_count_ = 0;
   open_upvalues_ = nullptr;
 }
 
 void VM::push(Value value) noexcept {
-  if (stack_top_ >= stack_.data() + stack_.size()) {
+  if (stack_top_ >= active_stack_end_) {
     runtime_error("Stack overflow.");
     std::exit(70);
   }
@@ -144,7 +147,7 @@ void VM::runtime_error(strv_t message) noexcept {
   std::cerr << std::format("RuntimeError: {}", message) << std::endl;
 
   for (int i = frame_count_ - 1; i >= 0; i--) {
-    CallFrame& frame = frames_[i];
+    CallFrame& frame = active_frames_[i];
     ObjFunction* function = frame.closure->function();
     sz_t instruction = static_cast<sz_t>(frame.ip - function->chunk().code_data() - 1);
     int line = function->chunk().line_at(instruction);
@@ -413,7 +416,7 @@ InterpretResult VM::interpret_bytecode(ObjFunction* function, strv_t source, str
 }
 
 InterpretResult VM::run() noexcept {
-  CallFrame* frame = &frames_[frame_count_ - 1];
+  CallFrame* frame = &active_frames_[frame_count_ - 1];
 
   // Read one 32-bit instruction and advance IP
 #define READ_INSTR() (*frame->ip++)
@@ -498,7 +501,7 @@ dispatch_loop:
 #ifdef MAPLE_GNUC
   if (finalize_pending_) [[unlikely]] {
     run_pending_finalizers();
-    frame = &frames_[frame_count_ - 1];
+    frame = &active_frames_[frame_count_ - 1];
     RELOAD_K();
   }
   instr = READ_INSTR();
@@ -508,7 +511,7 @@ dispatch_loop:
   for (;;) {
     if (finalize_pending_) [[unlikely]] {
       run_pending_finalizers();
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
     }
     instr = READ_INSTR();
@@ -673,7 +676,7 @@ dispatch_loop:
               if (!call(as_closure(e->cached), 0)) {
                 goto handle_runtime_error;
               }
-              frame = &frames_[frame_count_ - 1];
+              frame = &active_frames_[frame_count_ - 1];
               RELOAD_K();
               VM_DISPATCH();
             }
@@ -702,7 +705,7 @@ dispatch_loop:
           if (!call(as_closure(getter), 0)) {
             goto handle_runtime_error;
           }
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -757,7 +760,7 @@ dispatch_loop:
               if (!call(as_closure(e->cached), 1)) {
                 goto handle_runtime_error;
               }
-              frame = &frames_[frame_count_ - 1];
+              frame = &active_frames_[frame_count_ - 1];
               RELOAD_K();
               VM_DISPATCH();
             }
@@ -780,7 +783,7 @@ dispatch_loop:
           if (!call(as_closure(setter_val), 1)) {
             goto handle_runtime_error;
           }
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -855,7 +858,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_add_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
         } else {
           runtime_error("Operands must be two numbers or two strings.");
@@ -880,7 +883,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_sub_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -911,7 +914,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_mul_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -942,7 +945,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_div_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -967,7 +970,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_mod_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -999,7 +1002,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_eq_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -1025,7 +1028,7 @@ dispatch_loop:
         frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
         if (invoke_operator(op_lt_string_)) {
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -1100,7 +1103,7 @@ dispatch_loop:
           if (!call(as_closure(method), 0)) {
             goto handle_runtime_error;
           }
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           VM_DISPATCH();
         }
@@ -1242,7 +1245,7 @@ dispatch_loop:
       if (!call_value(frame->slots[A], arg_count)) {
         goto handle_runtime_error;
       }
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
       VM_DISPATCH();
     }
@@ -1282,7 +1285,7 @@ dispatch_loop:
                 if (!call(as_closure(e->cached), arg_count)) {
                   goto handle_runtime_error;
                 }
-                frame = &frames_[frame_count_ - 1];
+                frame = &active_frames_[frame_count_ - 1];
                 RELOAD_K();
                 VM_DISPATCH();
               }
@@ -1301,7 +1304,7 @@ dispatch_loop:
             if (!ic.append_entry(new_e)) ic.megamorphic = true;
           }
         }
-        frame = &frames_[frame_count_ - 1];
+        frame = &active_frames_[frame_count_ - 1];
         RELOAD_K();
         VM_DISPATCH();
       }
@@ -1324,7 +1327,7 @@ dispatch_loop:
         if (!resume_coroutine(coro, sent_val, A)) {
           goto handle_runtime_error;
         }
-        frame = &frames_[frame_count_ - 1];
+        frame = &active_frames_[frame_count_ - 1];
         RELOAD_K();
         VM_DISPATCH();
       }
@@ -1332,7 +1335,7 @@ dispatch_loop:
       if (!invoke(method_name, arg_count)) {
         goto handle_runtime_error;
       }
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
       VM_DISPATCH();
     }
@@ -1351,7 +1354,7 @@ dispatch_loop:
       if (!invoke_from_class(superclass, method_name, arg_count)) {
         goto handle_runtime_error;
       }
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
       VM_DISPATCH();
     }
@@ -1378,7 +1381,7 @@ dispatch_loop:
         stack_top_ = frame->slots + A + 1;
         push(Value(static_cast<Object*>(deferred)));
         call(deferred, 0);
-        frame = &frames_[frame_count_ - 1];
+        frame = &active_frames_[frame_count_ - 1];
         RELOAD_K();
         VM_DISPATCH();
       }
@@ -1396,11 +1399,15 @@ dispatch_loop:
       if (!coro_stack_.empty() && frame_count_ == coro_stack_.back().parent_frame_count) {
         CoroutineEntry& ce = coro_stack_.back();
         ce.coro->set_state(CoroutineState::DEAD);
-        frame_count_ = ce.parent_frame_count;
-        stack_top_ = ce.parent_stack_top;
+        // Restore parent buffer pointers — O(1) swap back
+        active_frames_      = ce.parent_frames;
+        active_stack_base_  = ce.parent_stack_base;
+        active_stack_end_   = ce.parent_stack_end;
+        frame_count_        = ce.parent_frame_count;
+        stack_top_          = ce.parent_stack_top;
         u8_t res_reg = ce.result_reg;
         coro_stack_.pop_back();
-        frame = &frames_[frame_count_ - 1];
+        frame = &active_frames_[frame_count_ - 1];
         RELOAD_K();
         frame->slots[res_reg] = Value(); // coroutine done → nil
         VM_DISPATCH();
@@ -1408,7 +1415,7 @@ dispatch_loop:
 
       *return_base = result;
       stack_top_ = return_base + 1;
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
 
       // Check if we just returned from a module frame
@@ -1716,7 +1723,7 @@ dispatch_loop:
         goto handle_runtime_error;
       }
       import_module(as_string(path_val));
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
       VM_DISPATCH();
     }
@@ -1739,7 +1746,7 @@ dispatch_loop:
       str_t resolved = is_builtin ? raw_name : ModuleLoader::resolve_path(path->value(), current_script_path_);
       bool was_cached = is_builtin || modules_.find(resolved) != modules_.end();
       import_module(path);
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
 
       if (was_cached || modules_.find(resolved) != modules_.end()) {
@@ -1777,7 +1784,7 @@ dispatch_loop:
       str_t resolved = is_builtin ? raw_name : ModuleLoader::resolve_path(path->value(), current_script_path_);
       bool was_cached = is_builtin || modules_.find(resolved) != modules_.end();
       import_module(path);
-      frame = &frames_[frame_count_ - 1];
+      frame = &active_frames_[frame_count_ - 1];
       RELOAD_K();
 
       if (was_cached || modules_.find(resolved) != modules_.end()) {
@@ -1849,7 +1856,7 @@ dispatch_loop:
           if (!resume_coroutine(coro, Value(), static_cast<u8_t>(A + 2))) {
             goto handle_runtime_error;
           }
-          frame = &frames_[frame_count_ - 1];
+          frame = &active_frames_[frame_count_ - 1];
           RELOAD_K();
           // Execution continues inside the coroutine until OP_YIELD restores us.
         }
@@ -1929,37 +1936,20 @@ dispatch_loop:
         coro->set_state(CoroutineState::SUSPENDED);
         coro->yielded_value() = yielded;
 
-        // Save coroutine frames using properly-copyable SavedCallFrame structs
-        int coro_frame_count = frame_count_ - ce.parent_frame_count;
-        Value* coro_stack_base = ce.parent_stack_top;
+        // Save coroutine stack state — O(1) pointer save (no data copy)
+        coro->set_coro_stack_top(stack_top_);
+        coro->set_coro_frame_count(frame_count_);
 
-        // Save stack values
-        int stack_count = static_cast<int>(stack_top_ - coro_stack_base);
-        coro->saved_stack().resize(static_cast<sz_t>(stack_count));
-        for (int i = 0; i < stack_count; ++i)
-          coro->saved_stack()[static_cast<sz_t>(i)] = coro_stack_base[i];
-        coro->saved_stack_top_offset() = stack_count;
-
-        // Save each frame as a SavedCallFrame (safe C++ copy, no memcpy UB)
-        coro->saved_frames().clear();
-        coro->saved_frames().resize(static_cast<sz_t>(coro_frame_count));
-        for (int fi = 0; fi < coro_frame_count; ++fi) {
-          const CallFrame& f = frames_[ce.parent_frame_count + fi];
-          SavedCallFrame& sf = coro->saved_frames()[static_cast<sz_t>(fi)];
-          sf.closure = f.closure;
-          sf.ip = f.ip;
-          sf.slots_offset = static_cast<u32_t>(f.slots - coro_stack_base);
-          sf.pending_return = f.pending_return;
-          sf.returning = f.returning;
-        }
-
-        // Restore caller state
-        frame_count_ = ce.parent_frame_count;
-        stack_top_ = ce.parent_stack_top;
+        // Restore caller buffer pointers and state
+        active_frames_      = ce.parent_frames;
+        active_stack_base_  = ce.parent_stack_base;
+        active_stack_end_   = ce.parent_stack_end;
+        frame_count_        = ce.parent_frame_count;
+        stack_top_          = ce.parent_stack_top;
         u8_t res_reg = ce.result_reg;
         coro_stack_.pop_back();
 
-        frame = &frames_[frame_count_ - 1];
+        frame = &active_frames_[frame_count_ - 1];
         RELOAD_K();
         frame->slots[res_reg] = yielded;
       }
@@ -1977,63 +1967,13 @@ dispatch_loop:
         runtime_error("OP_RESUME: expected a coroutine.");
         goto handle_runtime_error;
       }
-
       {
         ObjCoroutine* coro = as_coroutine(coro_val);
-        coro->sent_value() = sent_val;
-
-        if (coro->state() == CoroutineState::DEAD) {
-          frame->slots[A] = Value(); // nil when exhausted
-          VM_DISPATCH();
-        }
-
-        if (coro->state() == CoroutineState::RUNNING) {
-          runtime_error("Cannot resume a running coroutine.");
+        if (!resume_coroutine(coro, sent_val, A)) {
           goto handle_runtime_error;
         }
-
-        CoroutineEntry ce;
-        ce.coro = coro;
-        ce.parent_frame_count = frame_count_;
-        ce.parent_stack_top = stack_top_;
-        ce.result_reg = A;
-        coro_stack_.push_back(ce);
-        coro->set_state(CoroutineState::RUNNING);
-
-        if (coro->saved_frames().empty()) {
-          // First resume: call the closure
-          push(coro_val); // "self" slot (coroutine object)
-          if (!call(coro->closure(), 0)) {
-            coro_stack_.pop_back();
-            goto handle_runtime_error;
-          }
-          frame = &frames_[frame_count_ - 1];
-          RELOAD_K();
-        } else {
-          // Resume from suspended state using SavedCallFrame entries
-          int saved_count = static_cast<int>(coro->saved_frames().size());
-          Value* new_base = stack_top_;
-          for (sz_t i = 0; i < coro->saved_stack().size(); ++i)
-            new_base[i] = coro->saved_stack()[i];
-          stack_top_ = new_base + coro->saved_stack_top_offset();
-          for (int fi = 0; fi < saved_count; ++fi) {
-            const SavedCallFrame& sf = coro->saved_frames()[static_cast<sz_t>(fi)];
-            CallFrame& f = frames_[frame_count_ + fi];
-            f.closure = sf.closure;
-            f.ip = sf.ip;
-            f.slots = new_base + sf.slots_offset;
-            delete[] f.deferred_buf;
-            f.deferred_buf = nullptr;
-            f.deferred_count = 0;
-            f.deferred_capacity = 0;
-            f.pending_return = sf.pending_return;
-            f.returning = sf.returning;
-          }
-          frame_count_ += saved_count;
-          frame = &frames_[frame_count_ - 1];
-          RELOAD_K();
-          coro->sent_value() = sent_val;
-        }
+        frame = &active_frames_[frame_count_ - 1];
+        RELOAD_K();
       }
       VM_DISPATCH();
     }
@@ -2101,7 +2041,7 @@ dispatch_loop:
       } else if (lhs.is_instance()) {
         frame->slots[A] = lhs; frame->slots[A + 1] = rhs;
         stack_top_ = frame->slots + A + 2;
-        if (invoke_operator(op_add_string_)) { frame = &frames_[frame_count_ - 1]; RELOAD_K(); }
+        if (invoke_operator(op_add_string_)) { frame = &active_frames_[frame_count_ - 1]; RELOAD_K(); }
         else { runtime_error("Operands must be two numbers or two strings."); goto handle_runtime_error; }
       } else { runtime_error("Operands must be two numbers or two strings."); goto handle_runtime_error; }
       VM_DISPATCH();
@@ -2230,7 +2170,7 @@ handle_runtime_error:
     exception_handlers_.pop_back();
 
     while (frame_count_ - 1 > handler.frame_index) {
-      auto& unwound = frames_[frame_count_ - 1];
+      auto& unwound = active_frames_[frame_count_ - 1];
       delete[] unwound.deferred_buf;
       unwound.deferred_buf = nullptr;
       unwound.deferred_count = 0;
@@ -2240,7 +2180,7 @@ handle_runtime_error:
       frame_count_--;
     }
 
-    frame = &frames_[frame_count_ - 1];
+    frame = &active_frames_[frame_count_ - 1];
     RELOAD_K();
     stack_top_ = handler.stack_depth;
     frame->ip = handler.catch_ip;
@@ -2252,7 +2192,7 @@ handle_runtime_error:
 #ifdef MAPLE_GNUC
 run_finalizers:
   run_pending_finalizers();
-  frame = &frames_[frame_count_ - 1];
+  frame = &active_frames_[frame_count_ - 1];
   RELOAD_K();
   goto dispatch_loop;
 #endif

@@ -30,7 +30,7 @@ All tasks are independently implementable, buildable, and testable, ordered by p
 | OPT-P3-01 | CallFrame deferred lazy allocation | P3 | Small | — | `[x]` |
 | OPT-P3-02 | Quickening deopt counter | P3 | Small | — | `[x]` |
 | OPT-P3-03 | Compiler local variable arrays dynamic | P3 | Small | — | `[x]` |
-| OPT-P3-04 | Coroutine independent stack segment | P3 | Large | OPT-P2-05 | `[ ]` |
+| OPT-P3-04 | Coroutine independent stack segment | P3 | Large | OPT-P2-05 | `[x]` |
 
 ---
 
@@ -1371,7 +1371,7 @@ python tests/run_tests.py
 
 ---
 
-### `[ ]` OPT-P3-04: Coroutine independent stack segment (O(1) yield/resume)
+### `[x]` OPT-P3-04: Coroutine independent stack segment (O(1) yield/resume)
 
 **Goal**
 
