@@ -502,14 +502,14 @@ Expected: compiles and test passes (default MS_LOG_LEVEL is 2)
 
 ## Acceptance Criteria
 
-- [ ] Logger compiles and links with platform layer
-- [ ] `ms_logger_info("test")` outputs `[INFO] test` to stdout
-- [ ] Setting level to `MS_LOG_WARN` suppresses TRACE/DEBUG/INFO messages
-- [ ] Colored output works on Windows and POSIX terminals
-- [ ] Timestamps can be toggled on/off
-- [ ] Output can be redirected to a FILE* stream
-- [ ] Compile-time `MS_LOG_LEVEL_*` filtering works
-- [ ] All convenience macros expand correctly
+- [x] Logger compiles and links with platform layer
+- [x] `ms_logger_info("test")` outputs `[INFO] test` to stdout
+- [x] Setting level to `MS_LOG_WARN` suppresses TRACE/DEBUG/INFO messages
+- [x] Colored output works on Windows and POSIX terminals
+- [x] Timestamps can be toggled on/off
+- [x] Output can be redirected to a FILE* stream
+- [x] Compile-time `MS_LOG_LEVEL_*` filtering works
+- [x] All convenience macros expand correctly
 
 ## Notes
 
