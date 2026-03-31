@@ -599,14 +599,14 @@ Expected: compiles and tests pass (no crashes)
 
 ## Acceptance Criteria
 
-- [ ] `ms_platform_file_exists()` returns true for existing file, false otherwise
-- [ ] `ms_platform_read_file()` reads file contents correctly
-- [ ] `ms_platform_write_file()` writes content to file
-- [ ] `ms_platform_join_path("a", "b")` produces "a\b" (Windows) or "a/b" (POSIX)
-- [ ] `ms_platform_get_time_seconds()` returns monotonically increasing values
-- [ ] `ms_platform_get_cwd()` returns a valid path
-- [ ] Console color functions compile and don't crash
-- [ ] All platform-detection macros are correct for the build platform
+- [x] `ms_platform_file_exists()` returns true for existing file, false otherwise
+- [x] `ms_platform_read_file()` reads file contents correctly
+- [x] `ms_platform_write_file()` writes content to file
+- [x] `ms_platform_join_path("a", "b")` produces "a\b" (Windows) or "a/b" (POSIX)
+- [x] `ms_platform_get_time_seconds()` returns monotonically increasing values
+- [x] `ms_platform_get_cwd()` returns a valid path
+- [x] Console color functions compile and don't crash
+- [x] All platform-detection macros are correct for the build platform
 
 ## Notes
 
