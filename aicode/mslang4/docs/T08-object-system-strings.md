@@ -405,14 +405,14 @@ static void test_object_free_and_consistency(void) {
 
 ## Acceptance Criteria
 
-- [ ] `ms_string_copy("hello", 5)` creates a valid MsString with correct hash
-- [ ] `ms_string_take(buffer, len)` takes ownership without copying
-- [ ] `ms_string_hash("", 0)` returns the FNV-1a offset basis
-- [ ] `ms_string_concat(a, b)` produces a string with contents "ab"
-- [ ] `ms_object_free()` frees string without crash or leak
-- [ ] `ms_object_print(ms_obj_val(str))` prints the string chars
-- [ ] `MS_IS_STRING` macro works correctly
-- [ ] Hash is deterministic: same input always produces same hash
+- [x] `ms_string_copy("hello", 5)` creates a valid MsString with correct hash
+- [x] `ms_string_take(buffer, len)` takes ownership without copying
+- [x] `ms_string_hash("", 0)` returns the FNV-1a offset basis
+- [x] `ms_string_concat(a, b)` produces a string with contents "ab"
+- [x] `ms_object_free()` frees string without crash or leak
+- [x] `ms_object_print(ms_obj_val(str))` prints the string chars
+- [x] `MS_IS_STRING` macro works correctly
+- [x] Hash is deterministic: same input always produces same hash
 
 ## Notes
 

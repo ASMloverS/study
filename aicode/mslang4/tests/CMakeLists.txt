@@ -21,3 +21,7 @@ add_test(NAME test_token COMMAND test_token)
 add_executable(test_value unit/test_value.c ${CMAKE_SOURCE_DIR}/src/value.c ${CMAKE_SOURCE_DIR}/src/memory.c)
 target_include_directories(test_value PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_value COMMAND test_value)
+
+add_executable(test_object_string unit/test_object_string.c ${CMAKE_SOURCE_DIR}/src/object.c ${CMAKE_SOURCE_DIR}/src/value.c ${CMAKE_SOURCE_DIR}/src/memory.c)
+target_include_directories(test_object_string PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_object_string COMMAND test_object_string)
