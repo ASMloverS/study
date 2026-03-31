@@ -431,6 +431,12 @@ static MsLookupResult ms_resolver_resolve_upvalue(MsResolver *resolver,
     return MS_LOOKUP_ERROR;
   }
   if (result == MS_LOOKUP_FOUND) {
+    if (!ms_resolution_table_mark_function_local_captured(
+            resolver->table,
+            function->enclosing->node_id,
+            binding.slot)) {
+      return MS_LOOKUP_ERROR;
+    }
     if (local != NULL && local->binding_node_id != 0 &&
         !ms_resolution_table_mark_captured(resolver->table, local->binding_node_id)) {
       return MS_LOOKUP_ERROR;

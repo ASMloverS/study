@@ -9,6 +9,8 @@ typedef enum MsOpcode {
   MS_OP_POP,
   MS_OP_GET_LOCAL,
   MS_OP_SET_LOCAL,
+  MS_OP_GET_UPVALUE,
+  MS_OP_SET_UPVALUE,
   MS_OP_GET_GLOBAL,
   MS_OP_DEFINE_GLOBAL,
   MS_OP_SET_GLOBAL,
@@ -25,6 +27,9 @@ typedef enum MsOpcode {
   MS_OP_JUMP,
   MS_OP_JUMP_IF_FALSE,
   MS_OP_LOOP,
+  MS_OP_CALL,
+  MS_OP_CLOSURE,
+  MS_OP_CLOSE_UPVALUE,
   MS_OP_RETURN
 } MsOpcode;
 

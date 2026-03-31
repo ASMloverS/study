@@ -397,18 +397,18 @@ static void test_value_array_growth(void) {
 
 ## Acceptance Criteria
 
-- [ ] `sizeof(MsValue) == 16` on 64-bit platforms
-- [ ] `ms_nil_val().type == MS_VAL_NIL`
-- [ ] `ms_bool_val(true).boolean == true`
-- [ ] `ms_number_val(3.14).number` is approximately 3.14
-- [ ] `ms_values_equal(ms_number_val(42), ms_number_val(42))` is true
-- [ ] `ms_values_equal(ms_number_val(1), ms_number_val(2))` is false
-- [ ] `ms_is_falsey(ms_nil_val())` is true
-- [ ] `ms_is_falsey(ms_bool_val(false))` is true
-- [ ] `ms_is_falsey(ms_number_val(0))` is false
-- [ ] `ms_print_value(ms_number_val(42))` prints "42"
-- [ ] MsValueArray init/write/free cycle works without leaks
-- [ ] MsValueArray grows correctly (write 100+ values)
+- [x] `sizeof(MsValue) == 16` on 64-bit platforms
+- [x] `ms_nil_val().type == MS_VAL_NIL`
+- [x] `ms_bool_val(true).boolean == true`
+- [x] `ms_number_val(3.14).number` is approximately 3.14
+- [x] `ms_values_equal(ms_number_val(42), ms_number_val(42))` is true
+- [x] `ms_values_equal(ms_number_val(1), ms_number_val(2))` is false
+- [x] `ms_is_falsey(ms_nil_val())` is true
+- [x] `ms_is_falsey(ms_bool_val(false))` is true
+- [x] `ms_is_falsey(ms_number_val(0))` is false
+- [x] `ms_print_value(ms_number_val(42))` prints "42"
+- [x] MsValueArray init/write/free cycle works without leaks
+- [x] MsValueArray grows correctly (write 100+ values)
 
 ## Notes
 

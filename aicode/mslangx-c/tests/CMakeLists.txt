@@ -22,6 +22,19 @@ function(mslangc_add_e2e_basic_test test_name script_name)
     LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};e2e_basic")
 endfunction()
 
+function(mslangc_add_e2e_named_test test_name script_path output_path test_label)
+  add_test(NAME "${test_name}"
+    COMMAND "${CMAKE_COMMAND}"
+      -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+      -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/${script_path}"
+      -DEXPECT_EXIT=0
+      -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/${output_path}"
+      -DEXPECT_STDERR=""
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+  set_tests_properties("${test_name}" PROPERTIES
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${test_label}")
+endfunction()
+
 mslangc_add_cli_test(runner_basic.inline
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DINLINE_SOURCE="print 7"
@@ -67,6 +80,36 @@ add_subdirectory(unit)
 mslangc_add_e2e_basic_test(e2e_basic.smoke smoke.ms)
 mslangc_add_e2e_basic_test(e2e_basic.short_circuit short_circuit.ms)
 mslangc_add_e2e_basic_test(e2e_basic.loops loops.ms)
+mslangc_add_e2e_named_test(functions.recursion
+  "e2e/functions/recursion.ms"
+  "e2e/functions/recursion.ms.out"
+  "functions")
+mslangc_add_e2e_named_test(functions.function_expr
+  "e2e/functions/function_expr.ms"
+  "e2e/functions/function_expr.ms.out"
+  "functions")
+mslangc_add_e2e_named_test(closures.capture
+  "e2e/closures/capture.ms"
+  "e2e/closures/capture.ms.out"
+  "closures")
+mslangc_add_e2e_named_test(closures.nested
+  "e2e/closures/nested.ms"
+  "e2e/closures/nested.ms.out"
+  "closures")
+mslangc_add_cli_test(functions.non_callable
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;MS4006"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+mslangc_add_cli_test(functions.wrong_arity
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/wrong_arity.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;MS4007"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 mslangc_add_cli_test(resolver_static.top_level_return
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/top_level_return.ms"

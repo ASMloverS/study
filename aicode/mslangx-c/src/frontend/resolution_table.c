@@ -2,9 +2,9 @@
 
 #include <stdlib.h>
 
-static int ms_resolution_table_ensure_binding_capacity(MsResolutionTable *table,
+static int ms_resolution_table_ensure_binding_capacity(MsResolutionTable* table,
                                                        size_t min_capacity) {
-  MsResolvedBinding *bindings;
+  MsResolvedBinding* bindings;
   size_t new_capacity;
 
   if (table == NULL) {
@@ -23,8 +23,8 @@ static int ms_resolution_table_ensure_binding_capacity(MsResolutionTable *table,
     new_capacity *= 2;
   }
 
-  bindings = (MsResolvedBinding *) realloc(table->bindings,
-                                           new_capacity * sizeof(*bindings));
+  bindings = (MsResolvedBinding*) realloc(table->bindings,
+                                          new_capacity * sizeof(*bindings));
   if (bindings == NULL) {
     return 0;
   }
@@ -34,9 +34,9 @@ static int ms_resolution_table_ensure_binding_capacity(MsResolutionTable *table,
   return 1;
 }
 
-static int ms_resolution_table_ensure_function_capacity(MsResolutionTable *table,
+static int ms_resolution_table_ensure_function_capacity(MsResolutionTable* table,
                                                         size_t min_capacity) {
-  MsFunctionResolution *functions;
+  MsFunctionResolution* functions;
   size_t new_capacity;
 
   if (table == NULL) {
@@ -55,8 +55,8 @@ static int ms_resolution_table_ensure_function_capacity(MsResolutionTable *table
     new_capacity *= 2;
   }
 
-  functions = (MsFunctionResolution *) realloc(table->functions,
-                                               new_capacity * sizeof(*functions));
+  functions = (MsFunctionResolution*) realloc(table->functions,
+                                              new_capacity * sizeof(*functions));
   if (functions == NULL) {
     return 0;
   }
@@ -66,25 +66,8 @@ static int ms_resolution_table_ensure_function_capacity(MsResolutionTable *table
   return 1;
 }
 
-static MsFunctionResolution *ms_resolution_table_find_function(MsResolutionTable *table,
-                                                               size_t node_id) {
-  size_t i;
-
-  if (table == NULL) {
-    return NULL;
-  }
-
-  for (i = 0; i < table->function_count; ++i) {
-    if (table->functions[i].node_id == node_id) {
-      return &table->functions[i];
-    }
-  }
-
-  return NULL;
-}
-
-static const MsFunctionResolution *ms_resolution_table_find_const_function(
-    const MsResolutionTable *table,
+static MsFunctionResolution* ms_resolution_table_find_function(
+    MsResolutionTable* table,
     size_t node_id) {
   size_t i;
 
@@ -101,9 +84,28 @@ static const MsFunctionResolution *ms_resolution_table_find_const_function(
   return NULL;
 }
 
-static int ms_resolution_table_ensure_upvalue_capacity(MsFunctionResolution *function,
-                                                       size_t min_capacity) {
-  MsFunctionUpvalue *upvalues;
+static const MsFunctionResolution* ms_resolution_table_find_const_function(
+    const MsResolutionTable* table,
+    size_t node_id) {
+  size_t i;
+
+  if (table == NULL) {
+    return NULL;
+  }
+
+  for (i = 0; i < table->function_count; ++i) {
+    if (table->functions[i].node_id == node_id) {
+      return &table->functions[i];
+    }
+  }
+
+  return NULL;
+}
+
+static int ms_resolution_table_ensure_upvalue_capacity(
+    MsFunctionResolution* function,
+    size_t min_capacity) {
+  MsFunctionUpvalue* upvalues;
   size_t new_capacity;
 
   if (function == NULL) {
@@ -122,8 +124,8 @@ static int ms_resolution_table_ensure_upvalue_capacity(MsFunctionResolution *fun
     new_capacity *= 2;
   }
 
-  upvalues = (MsFunctionUpvalue *) realloc(function->upvalues,
-                                           new_capacity * sizeof(*upvalues));
+  upvalues = (MsFunctionUpvalue*) realloc(function->upvalues,
+                                          new_capacity * sizeof(*upvalues));
   if (upvalues == NULL) {
     return 0;
   }
@@ -133,7 +135,41 @@ static int ms_resolution_table_ensure_upvalue_capacity(MsFunctionResolution *fun
   return 1;
 }
 
-void ms_resolution_table_init(MsResolutionTable *table) {
+static int ms_resolution_table_ensure_captured_local_capacity(
+    MsFunctionResolution* function,
+    size_t min_capacity) {
+  uint8_t* captured_locals;
+  size_t new_capacity;
+
+  if (function == NULL) {
+    return 0;
+  }
+  if (min_capacity <= function->captured_local_capacity) {
+    return 1;
+  }
+
+  new_capacity = function->captured_local_capacity == 0 ? 4 :
+      function->captured_local_capacity;
+  while (new_capacity < min_capacity) {
+    if (new_capacity > (SIZE_MAX / 2)) {
+      new_capacity = min_capacity;
+      break;
+    }
+    new_capacity *= 2;
+  }
+
+  captured_locals = (uint8_t*) realloc(function->captured_locals,
+                                       new_capacity * sizeof(*captured_locals));
+  if (captured_locals == NULL) {
+    return 0;
+  }
+
+  function->captured_locals = captured_locals;
+  function->captured_local_capacity = new_capacity;
+  return 1;
+}
+
+void ms_resolution_table_init(MsResolutionTable* table) {
   if (table == NULL) {
     return;
   }
@@ -146,7 +182,7 @@ void ms_resolution_table_init(MsResolutionTable *table) {
   table->function_capacity = 0;
 }
 
-void ms_resolution_table_clear(MsResolutionTable *table) {
+void ms_resolution_table_clear(MsResolutionTable* table) {
   size_t i;
 
   if (table == NULL) {
@@ -155,16 +191,20 @@ void ms_resolution_table_clear(MsResolutionTable *table) {
 
   for (i = 0; i < table->function_count; ++i) {
     free(table->functions[i].upvalues);
+    free(table->functions[i].captured_locals);
     table->functions[i].upvalues = NULL;
     table->functions[i].upvalue_count = 0;
     table->functions[i].upvalue_capacity = 0;
+    table->functions[i].captured_locals = NULL;
+    table->functions[i].captured_local_count = 0;
+    table->functions[i].captured_local_capacity = 0;
   }
 
   table->count = 0;
   table->function_count = 0;
 }
 
-void ms_resolution_table_destroy(MsResolutionTable *table) {
+void ms_resolution_table_destroy(MsResolutionTable* table) {
   if (table == NULL) {
     return;
   }
@@ -178,7 +218,7 @@ void ms_resolution_table_destroy(MsResolutionTable *table) {
   table->capacity = 0;
 }
 
-int ms_resolution_table_set(MsResolutionTable *table,
+int ms_resolution_table_set(MsResolutionTable* table,
                             size_t node_id,
                             size_t function_node_id,
                             MsBindingKind kind,
@@ -219,7 +259,7 @@ int ms_resolution_table_set(MsResolutionTable *table,
   return 1;
 }
 
-int ms_resolution_table_mark_captured(MsResolutionTable *table, size_t node_id) {
+int ms_resolution_table_mark_captured(MsResolutionTable* table, size_t node_id) {
   size_t i;
 
   if (table == NULL) {
@@ -236,9 +276,9 @@ int ms_resolution_table_mark_captured(MsResolutionTable *table, size_t node_id) 
   return 1;
 }
 
-int ms_resolution_table_get(const MsResolutionTable *table,
+int ms_resolution_table_get(const MsResolutionTable* table,
                             size_t node_id,
-                            MsResolvedBinding *out_binding) {
+                            MsResolvedBinding* out_binding) {
   size_t i;
 
   if (table == NULL || out_binding == NULL) {
@@ -255,11 +295,11 @@ int ms_resolution_table_get(const MsResolutionTable *table,
   return 0;
 }
 
-int ms_resolution_table_set_function(MsResolutionTable *table,
+int ms_resolution_table_set_function(MsResolutionTable* table,
                                      size_t node_id,
                                      size_t enclosing_node_id,
                                      unsigned flags) {
-  MsFunctionResolution *function;
+  MsFunctionResolution* function;
 
   if (table == NULL) {
     return 0;
@@ -268,9 +308,13 @@ int ms_resolution_table_set_function(MsResolutionTable *table,
   function = ms_resolution_table_find_function(table, node_id);
   if (function != NULL) {
     free(function->upvalues);
+    free(function->captured_locals);
     function->upvalues = NULL;
     function->upvalue_count = 0;
     function->upvalue_capacity = 0;
+    function->captured_locals = NULL;
+    function->captured_local_count = 0;
+    function->captured_local_capacity = 0;
     function->enclosing_node_id = enclosing_node_id;
     function->local_count = 0;
     function->flags = flags;
@@ -289,15 +333,18 @@ int ms_resolution_table_set_function(MsResolutionTable *table,
   function->upvalues = NULL;
   function->upvalue_count = 0;
   function->upvalue_capacity = 0;
+  function->captured_locals = NULL;
+  function->captured_local_count = 0;
+  function->captured_local_capacity = 0;
   function->flags = flags;
   table->function_count += 1;
   return 1;
 }
 
-int ms_resolution_table_set_function_local_count(MsResolutionTable *table,
+int ms_resolution_table_set_function_local_count(MsResolutionTable* table,
                                                  size_t node_id,
                                                  size_t local_count) {
-  MsFunctionResolution *function = ms_resolution_table_find_function(table, node_id);
+  MsFunctionResolution* function = ms_resolution_table_find_function(table, node_id);
 
   if (function == NULL) {
     return 0;
@@ -308,13 +355,44 @@ int ms_resolution_table_set_function_local_count(MsResolutionTable *table,
   return 1;
 }
 
-int ms_resolution_table_add_upvalue(MsResolutionTable *table,
+int ms_resolution_table_mark_function_local_captured(MsResolutionTable* table,
+                                                     size_t node_id,
+                                                     uint8_t slot) {
+  MsFunctionResolution* function;
+  size_t i;
+
+  if (table == NULL) {
+    return 0;
+  }
+
+  function = ms_resolution_table_find_function(table, node_id);
+  if (function == NULL) {
+    return 0;
+  }
+
+  for (i = 0; i < function->captured_local_count; ++i) {
+    if (function->captured_locals[i] == slot) {
+      return 1;
+    }
+  }
+
+  if (!ms_resolution_table_ensure_captured_local_capacity(
+          function, function->captured_local_count + 1)) {
+    return 0;
+  }
+
+  function->captured_locals[function->captured_local_count] = slot;
+  function->captured_local_count += 1;
+  return 1;
+}
+
+int ms_resolution_table_add_upvalue(MsResolutionTable* table,
                                     size_t function_node_id,
                                     uint8_t is_local,
                                     uint8_t slot,
                                     int lexical_depth,
-                                    uint8_t *out_index) {
-  MsFunctionResolution *function;
+                                    uint8_t* out_index) {
+  MsFunctionResolution* function;
   size_t i;
 
   if (table == NULL || out_index == NULL) {
@@ -350,10 +428,10 @@ int ms_resolution_table_add_upvalue(MsResolutionTable *table,
   return 1;
 }
 
-int ms_resolution_table_get_function(const MsResolutionTable *table,
+int ms_resolution_table_get_function(const MsResolutionTable* table,
                                      size_t node_id,
-                                     MsFunctionResolution *out_function) {
-  const MsFunctionResolution *function;
+                                     MsFunctionResolution* out_function) {
+  const MsFunctionResolution* function;
 
   if (table == NULL || out_function == NULL) {
     return 0;
@@ -365,5 +443,33 @@ int ms_resolution_table_get_function(const MsResolutionTable *table,
   }
 
   *out_function = *function;
+  return 1;
+}
+
+int ms_resolution_table_function_local_is_captured(
+    const MsResolutionTable* table,
+    size_t node_id,
+    uint8_t slot,
+    int* out_is_captured) {
+  const MsFunctionResolution* function;
+  size_t i;
+
+  if (table == NULL || out_is_captured == NULL) {
+    return 0;
+  }
+
+  function = ms_resolution_table_find_const_function(table, node_id);
+  if (function == NULL) {
+    return 0;
+  }
+
+  *out_is_captured = 0;
+  for (i = 0; i < function->captured_local_count; ++i) {
+    if (function->captured_locals[i] == slot) {
+      *out_is_captured = 1;
+      return 1;
+    }
+  }
+
   return 1;
 }

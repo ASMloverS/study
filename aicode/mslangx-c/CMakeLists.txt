@@ -19,6 +19,7 @@ add_library(mslang_support
 add_library(mslang_runtime_core
   src/runtime/chunk.c
   src/runtime/disasm.c
+  src/runtime/function.c
   src/runtime/object.c
   src/runtime/string.c
   src/runtime/table.c
@@ -89,4 +90,5 @@ add_dependencies(check
   parser_decl_stmt.fixture
   parser_expr.unit
   parser_expr.fixture
-  lowering_basic.unit)
+  lowering_basic.unit
+  functions_closures.unit)

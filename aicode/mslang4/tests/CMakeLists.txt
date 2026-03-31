@@ -17,3 +17,7 @@ add_test(NAME test_logger COMMAND test_logger)
 add_executable(test_token unit/test_token.c)
 target_include_directories(test_token PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_token COMMAND test_token)
+
+add_executable(test_value unit/test_value.c ${CMAKE_SOURCE_DIR}/src/value.c ${CMAKE_SOURCE_DIR}/src/memory.c)
+target_include_directories(test_value PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_value COMMAND test_value)

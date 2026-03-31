@@ -46,6 +46,14 @@ mslangc_add_frontend_unit_test(lexer.unit lexer_test.c lexer)
 mslangc_add_frontend_unit_test(parser_expr.unit parser_expr_test.c parser_expr)
 mslangc_add_frontend_unit_test(parser_decl_stmt.unit parser_decl_stmt_test.c parser_decl_stmt)
 mslangc_add_frontend_unit_test(resolver.unit resolver_test.c resolver)
+add_executable(functions_closures.unit functions_closures_test.c)
+target_link_libraries(functions_closures.unit PRIVATE
+  mslang_frontend
+  mslang_runtime_core)
+mslangc_apply_test_warnings(functions_closures.unit)
+add_test(NAME functions_closures.unit COMMAND functions_closures.unit)
+set_tests_properties(functions_closures.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_UNIT};functions;closures")
 
 add_executable(lowering_basic.unit lowering_basic_test.c)
 target_link_libraries(lowering_basic.unit PRIVATE

@@ -1,5 +1,9 @@
 # Task 10 - Functions, Closures, Calls, and Native Functions
 
+## Status
+
+Complete. Verified on 2026-04-01 with the acceptance commands in this document.
+
 ## Goal
 
 Complete function semantics across resolver, lowering, and VM so the language gains real abstraction, recursion, and closure capture.
@@ -41,34 +45,34 @@ Complete function semantics across resolver, lowering, and VM so the language ga
 ## Diagnostics Contract
 
 1. Top-level `return` remains `phase=resolve` with `MS3xxx`.
-2. Calling a non-callable value or using the wrong arity is `phase=runtime` with `MS4xxx`.
-3. Closure capture behavior must be observable in stable tests rather than inferred from implementation details.
+2. Calling a non-callable value is `phase=runtime code=MS4006`; wrong arity is `phase=runtime code=MS4007`.
+3. Native callback failure reports `phase=runtime code=MS4008`.
+4. Closure capture behavior must be observable in stable tests rather than inferred from implementation details.
 
 ## TDD Plan
 
 1. Start with recursion and return-value tests.
 2. Add closure tests that capture locals after the outer function returns.
 3. Add nested-closure and shadowing tests.
-4. Add mutation tests that prove closures observe the captured cell rather than a
-   copied value.
+4. Add mutation tests that prove closures observe the captured cell rather than a copied value.
 5. Add native-call tests for argc, argv, and return values.
 6. Require `.ms` scripts for recursion, closure capture, nested closures, and function expressions.
 
 ## Acceptance
 
 1. Recursive functions execute correctly.
-2. Closures preserve captured values across scope exit and reflect later writes
-   to the captured cell.
+2. Closures preserve captured values across scope exit and reflect later writes to the captured cell.
 3. Native functions use one documented ABI and are covered by tests.
-4. The task is not complete until build passes, tests pass, `.ms` scripts run
-   end to end, and all edited files are UTF-8 with LF and no trailing whitespace.
+4. Runtime call failures for non-callable values and wrong arity are covered by end-to-end tests.
+5. The task is not complete until build passes, tests pass, `.ms` scripts run end to end, and all edited files are UTF-8 with LF and no trailing whitespace.
 
 ## Acceptance Commands
 
 ```powershell
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --config Debug
-ctest --test-dir build -C Debug --output-on-failure -R "functions|closures|native"
+ctest --test-dir build -C Debug --output-on-failure
+ctest --test-dir build -C Debug --output-on-failure -R "functions|closures|functions_closures"
 build\Debug\mslangc.exe tests\e2e\functions\recursion.ms
 build\Debug\mslangc.exe tests\e2e\closures\capture.ms
 ```

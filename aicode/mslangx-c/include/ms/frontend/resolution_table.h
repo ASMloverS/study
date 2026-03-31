@@ -39,25 +39,28 @@ typedef struct MsFunctionResolution {
   size_t node_id;
   size_t enclosing_node_id;
   size_t local_count;
-  MsFunctionUpvalue *upvalues;
+  MsFunctionUpvalue* upvalues;
   size_t upvalue_count;
   size_t upvalue_capacity;
+  uint8_t* captured_locals;
+  size_t captured_local_count;
+  size_t captured_local_capacity;
   unsigned flags;
 } MsFunctionResolution;
 
 typedef struct MsResolutionTable {
-  MsResolvedBinding *bindings;
+  MsResolvedBinding* bindings;
   size_t count;
   size_t capacity;
-  MsFunctionResolution *functions;
+  MsFunctionResolution* functions;
   size_t function_count;
   size_t function_capacity;
 } MsResolutionTable;
 
-void ms_resolution_table_init(MsResolutionTable *table);
-void ms_resolution_table_clear(MsResolutionTable *table);
-void ms_resolution_table_destroy(MsResolutionTable *table);
-int ms_resolution_table_set(MsResolutionTable *table,
+void ms_resolution_table_init(MsResolutionTable* table);
+void ms_resolution_table_clear(MsResolutionTable* table);
+void ms_resolution_table_destroy(MsResolutionTable* table);
+int ms_resolution_table_set(MsResolutionTable* table,
                             size_t node_id,
                             size_t function_node_id,
                             MsBindingKind kind,
@@ -65,25 +68,33 @@ int ms_resolution_table_set(MsResolutionTable *table,
                             int scope_depth,
                             int lexical_depth,
                             int is_captured);
-int ms_resolution_table_mark_captured(MsResolutionTable *table, size_t node_id);
-int ms_resolution_table_get(const MsResolutionTable *table,
+int ms_resolution_table_mark_captured(MsResolutionTable* table, size_t node_id);
+int ms_resolution_table_get(const MsResolutionTable* table,
                             size_t node_id,
-                            MsResolvedBinding *out_binding);
-int ms_resolution_table_set_function(MsResolutionTable *table,
+                            MsResolvedBinding* out_binding);
+int ms_resolution_table_set_function(MsResolutionTable* table,
                                      size_t node_id,
                                      size_t enclosing_node_id,
                                      unsigned flags);
-int ms_resolution_table_set_function_local_count(MsResolutionTable *table,
+int ms_resolution_table_set_function_local_count(MsResolutionTable* table,
                                                  size_t node_id,
                                                  size_t local_count);
-int ms_resolution_table_add_upvalue(MsResolutionTable *table,
+int ms_resolution_table_mark_function_local_captured(MsResolutionTable* table,
+                                                     size_t node_id,
+                                                     uint8_t slot);
+int ms_resolution_table_add_upvalue(MsResolutionTable* table,
                                     size_t function_node_id,
                                     uint8_t is_local,
                                     uint8_t slot,
                                     int lexical_depth,
-                                    uint8_t *out_index);
-int ms_resolution_table_get_function(const MsResolutionTable *table,
+                                    uint8_t* out_index);
+int ms_resolution_table_get_function(const MsResolutionTable* table,
                                      size_t node_id,
-                                     MsFunctionResolution *out_function);
+                                     MsFunctionResolution* out_function);
+int ms_resolution_table_function_local_is_captured(
+    const MsResolutionTable* table,
+    size_t node_id,
+    uint8_t slot,
+    int* out_is_captured);
 
 #endif

@@ -13,34 +13,47 @@ typedef enum MsValueType {
 } MsValueType;
 
 typedef struct MsString MsString;
+typedef struct MsFunction MsFunction;
+typedef struct MsClosure MsClosure;
+typedef struct MsUpvalue MsUpvalue;
+typedef struct MsNativeFunction MsNativeFunction;
 
 typedef struct MsValue {
   MsValueType type;
   union {
     int boolean;
     double number;
-    MsObject *object;
+    MsObject* object;
   } as;
 } MsValue;
 
 MsValue ms_value_nil(void);
 MsValue ms_value_bool(int boolean);
 MsValue ms_value_number(double number);
-MsValue ms_value_object(MsObject *object);
+MsValue ms_value_object(MsObject* object);
 
 int ms_value_is_nil(MsValue value);
 int ms_value_is_bool(MsValue value);
 int ms_value_is_number(MsValue value);
 int ms_value_is_object(MsValue value);
 int ms_value_is_string(MsValue value);
+int ms_value_is_function(MsValue value);
+int ms_value_is_closure(MsValue value);
+int ms_value_is_upvalue(MsValue value);
+int ms_value_is_native_function(MsValue value);
 
-int ms_value_get_bool(MsValue value, int *out_boolean);
-int ms_value_get_number(MsValue value, double *out_number);
-int ms_value_get_object(MsValue value, MsObject **out_object);
-int ms_value_get_string(MsValue value, MsString **out_string);
+int ms_value_get_bool(MsValue value, int* out_boolean);
+int ms_value_get_number(MsValue value, double* out_number);
+int ms_value_get_object(MsValue value, MsObject** out_object);
+int ms_value_get_string(MsValue value, MsString** out_string);
+int ms_value_get_function(MsValue value, MsFunction** out_function);
+int ms_value_get_closure(MsValue value, MsClosure** out_closure);
+int ms_value_get_upvalue(MsValue value, MsUpvalue** out_upvalue);
+int ms_value_get_native_function(MsValue value,
+                                 MsNativeFunction** out_function);
 
 int ms_value_is_falsey(MsValue value);
 int ms_value_equals(MsValue left, MsValue right);
-int ms_value_format(MsValue value, char *buffer, size_t buffer_size);
+int ms_value_format(MsValue value, char* buffer, size_t buffer_size);
 
 #endif

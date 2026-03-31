@@ -3,7 +3,29 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ms/runtime/function.h"
 #include "ms/string.h"
+
+static int ms_value_has_object_type(MsValue value, MsObjectType type) {
+  return value.type == MS_VAL_OBJECT && value.as.object != NULL &&
+         value.as.object->type == type;
+}
+
+static const char* ms_function_display_name(const MsFunction* function) {
+  if (function == NULL || function->name == NULL || function->name->length == 0) {
+    return "<anonymous>";
+  }
+
+  return function->name->bytes;
+}
+
+static const char* ms_native_display_name(const MsNativeFunction* function) {
+  if (function == NULL || function->name == NULL || function->name->length == 0) {
+    return "<native>";
+  }
+
+  return function->name->bytes;
+}
 
 MsValue ms_value_nil(void) {
   MsValue value;
@@ -29,7 +51,7 @@ MsValue ms_value_number(double number) {
   return value;
 }
 
-MsValue ms_value_object(MsObject *object) {
+MsValue ms_value_object(MsObject* object) {
   MsValue value;
 
   value.type = MS_VAL_OBJECT;
@@ -54,11 +76,26 @@ int ms_value_is_object(MsValue value) {
 }
 
 int ms_value_is_string(MsValue value) {
-  return value.type == MS_VAL_OBJECT && value.as.object != NULL &&
-         value.as.object->type == MS_OBJ_STRING;
+  return ms_value_has_object_type(value, MS_OBJ_STRING);
 }
 
-int ms_value_get_bool(MsValue value, int *out_boolean) {
+int ms_value_is_function(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_FUNCTION);
+}
+
+int ms_value_is_closure(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_CLOSURE);
+}
+
+int ms_value_is_upvalue(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_UPVALUE);
+}
+
+int ms_value_is_native_function(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_NATIVE_FN);
+}
+
+int ms_value_get_bool(MsValue value, int* out_boolean) {
   if (!ms_value_is_bool(value) || out_boolean == NULL) {
     return 0;
   }
@@ -67,7 +104,7 @@ int ms_value_get_bool(MsValue value, int *out_boolean) {
   return 1;
 }
 
-int ms_value_get_number(MsValue value, double *out_number) {
+int ms_value_get_number(MsValue value, double* out_number) {
   if (!ms_value_is_number(value) || out_number == NULL) {
     return 0;
   }
@@ -76,7 +113,7 @@ int ms_value_get_number(MsValue value, double *out_number) {
   return 1;
 }
 
-int ms_value_get_object(MsValue value, MsObject **out_object) {
+int ms_value_get_object(MsValue value, MsObject** out_object) {
   if (!ms_value_is_object(value) || out_object == NULL) {
     return 0;
   }
@@ -85,17 +122,54 @@ int ms_value_get_object(MsValue value, MsObject **out_object) {
   return 1;
 }
 
-int ms_value_get_string(MsValue value, MsString **out_string) {
+int ms_value_get_string(MsValue value, MsString** out_string) {
   if (!ms_value_is_string(value) || out_string == NULL) {
     return 0;
   }
 
-  *out_string = (MsString *) value.as.object;
+  *out_string = (MsString*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_function(MsValue value, MsFunction** out_function) {
+  if (!ms_value_is_function(value) || out_function == NULL) {
+    return 0;
+  }
+
+  *out_function = (MsFunction*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_closure(MsValue value, MsClosure** out_closure) {
+  if (!ms_value_is_closure(value) || out_closure == NULL) {
+    return 0;
+  }
+
+  *out_closure = (MsClosure*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_upvalue(MsValue value, MsUpvalue** out_upvalue) {
+  if (!ms_value_is_upvalue(value) || out_upvalue == NULL) {
+    return 0;
+  }
+
+  *out_upvalue = (MsUpvalue*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_native_function(MsValue value,
+                                 MsNativeFunction** out_function) {
+  if (!ms_value_is_native_function(value) || out_function == NULL) {
+    return 0;
+  }
+
+  *out_function = (MsNativeFunction*) value.as.object;
   return 1;
 }
 
 int ms_value_is_falsey(MsValue value) {
-  MsString *string;
+  MsString* string;
 
   if (value.type == MS_VAL_NIL) {
     return 1;
@@ -117,8 +191,8 @@ int ms_value_is_falsey(MsValue value) {
 }
 
 int ms_value_equals(MsValue left, MsValue right) {
-  MsString *left_string;
-  MsString *right_string;
+  MsString* left_string;
+  MsString* right_string;
 
   if (left.type != right.type) {
     return 0;
@@ -147,9 +221,12 @@ int ms_value_equals(MsValue left, MsValue right) {
   return 0;
 }
 
-int ms_value_format(MsValue value, char *buffer, size_t buffer_size) {
+int ms_value_format(MsValue value, char* buffer, size_t buffer_size) {
   int written = -1;
-  MsString *string;
+  MsString* string;
+  MsFunction* function = NULL;
+  MsClosure* closure = NULL;
+  MsNativeFunction* native_function = NULL;
 
   if (buffer == NULL || buffer_size == 0) {
     return 0;
@@ -169,6 +246,15 @@ int ms_value_format(MsValue value, char *buffer, size_t buffer_size) {
     case MS_VAL_OBJECT:
       if (ms_value_get_string(value, &string)) {
         written = snprintf(buffer, buffer_size, "%s", string->bytes);
+      } else if (ms_value_get_function(value, &function)) {
+        written = snprintf(buffer, buffer_size, "<fn %s>",
+                           ms_function_display_name(function));
+      } else if (ms_value_get_closure(value, &closure)) {
+        written = snprintf(buffer, buffer_size, "<fn %s>",
+                           ms_function_display_name(closure->function));
+      } else if (ms_value_get_native_function(value, &native_function)) {
+        written = snprintf(buffer, buffer_size, "<native %s>",
+                           ms_native_display_name(native_function));
       } else if (value.as.object != NULL) {
         written = snprintf(buffer, buffer_size, "<%s>",
                            ms_object_type_name(value.as.object->type));
