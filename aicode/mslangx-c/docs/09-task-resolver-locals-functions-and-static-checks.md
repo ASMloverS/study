@@ -1,5 +1,9 @@
 # Task 09 - Resolver for Locals, Functions, and Static Checks
 
+## Status
+
+Complete. Verified on 2026-04-01 with the acceptance commands in this document.
+
 ## Goal
 
 Implement the resolver as a standalone analysis pass responsible for name binding, capture analysis, and static semantic checks.

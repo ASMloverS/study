@@ -67,3 +67,50 @@ add_subdirectory(unit)
 mslangc_add_e2e_basic_test(e2e_basic.smoke smoke.ms)
 mslangc_add_e2e_basic_test(e2e_basic.short_circuit short_circuit.ms)
 mslangc_add_e2e_basic_test(e2e_basic.loops loops.ms)
+mslangc_add_cli_test(resolver_static.top_level_return
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/top_level_return.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3001"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.duplicate_module_binding
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_module_binding.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.duplicate_local_binding
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_local_binding.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.self_read_initializer
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/self_read_initializer.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3004"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.illegal_break
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_break.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3003"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.illegal_continue
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_continue.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3003"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")

@@ -45,6 +45,7 @@ mslangc_add_runtime_unit_test(runtime_core.vm_core vm_core_test.c)
 mslangc_add_frontend_unit_test(lexer.unit lexer_test.c lexer)
 mslangc_add_frontend_unit_test(parser_expr.unit parser_expr_test.c parser_expr)
 mslangc_add_frontend_unit_test(parser_decl_stmt.unit parser_decl_stmt_test.c parser_decl_stmt)
+mslangc_add_frontend_unit_test(resolver.unit resolver_test.c resolver)
 
 add_executable(lowering_basic.unit lowering_basic_test.c)
 target_link_libraries(lowering_basic.unit PRIVATE
