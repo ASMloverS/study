@@ -230,11 +230,11 @@ Expected: all tests pass. `sizeof(MsToken)` is typically 24 bytes on 64-bit (1 e
 
 ## Acceptance Criteria
 
-- [ ] `token.h` compiles when included from a `.c` file
-- [ ] `MsTokenType` enum contains all 49 token types from the design
-- [ ] `MsToken` struct has fields: `type`, `start`, `length`, `line`, `column`
-- [ ] `sizeof(MsToken)` is reasonable (typically 24-32 bytes on 64-bit)
-- [ ] Enum values start at 0 and are sequential (C default)
+- [x] `token.h` compiles when included from a `.c` file
+- [x] `MsTokenType` enum contains all 49 token types from the design
+- [x] `MsToken` struct has fields: `type`, `start`, `length`, `line`, `column`
+- [x] `sizeof(MsToken)` is reasonable (typically 24-32 bytes on 64-bit)
+- [x] Enum values start at 0 and are sequential (C default)
 
 ## Notes
 
