@@ -1,5 +1,9 @@
 # Task 11 - Classes, Methods, self, super, Inheritance
 
+## Status
+
+Complete. Verified on 2026-04-02 with the acceptance commands in this document.
+
 ## Goal
 
 Implement the lightweight object system so classes, instances, methods, and
@@ -66,7 +70,28 @@ single inheritance run end to end.
 Every subtask must start with failing tests, then the minimal implementation,
 then the focused verification command listed for that subtask.
 
+## Subtask Progress
+
+Use the following status markers consistently in this document:
+
+- `TODO`: not started
+- `DOING`: in progress
+- `BLOCKED`: waiting on another subtask or prerequisite fix
+- `DONE`: completed and verified
+
+| Subtask | Status | Depends on | Summary |
+| --- | --- | --- | --- |
+| 11.1 | `DONE` | Task 09 | Resolver legality for `self`, `super`, `init`, and self-inheritance |
+| 11.2 | `DONE` | 11.1 | Runtime class, instance, and bound-method objects |
+| 11.3 | `DONE` | 11.2 | Lower class declarations and install method tables |
+| 11.4 | `DONE` | 11.3 | Instance fields and field-before-method lookup |
+| 11.5 | `DONE` | 11.4 | Bound methods, implicit `self`, and `init` |
+| 11.6 | `DONE` | 11.5 | Single inheritance and `super.method()` dispatch |
+| 11.7 | `DONE` | 11.6 | Negative runtime diagnostics and full regression |
+
 ### Subtask 11.1 - Resolver legality for class context
+
+**Status:** `DONE`
 
 **Depends on:** Task 09 resolver infrastructure.
 
@@ -105,6 +130,8 @@ ctest --test-dir build -C Debug --output-on-failure -R "resolver\.unit|resolver_
 
 ### Subtask 11.2 - Runtime class, instance, and bound-method objects
 
+**Status:** `DONE`
+
 **Depends on:** Subtask 11.1.
 
 **Deliverables**
@@ -140,6 +167,8 @@ ctest --test-dir build -C Debug --output-on-failure -R "classes_methods\.unit|ru
 
 ### Subtask 11.3 - Lower class declarations and install method tables
 
+**Status:** `DONE`
+
 **Depends on:** Subtask 11.2.
 
 **Deliverables**
@@ -173,6 +202,8 @@ ctest --test-dir build -C Debug --output-on-failure -R "lowering_basic\.unit|cla
 
 ### Subtask 11.4 - Instance fields and field-before-method lookup
 
+**Status:** `DONE`
+
 **Depends on:** Subtask 11.3.
 
 **Deliverables**
@@ -205,6 +236,8 @@ ctest --test-dir build -C Debug --output-on-failure -R "classes_methods\.unit|cl
    only.
 
 ### Subtask 11.5 - Bound methods, implicit `self`, and `init`
+
+**Status:** `DONE`
 
 **Depends on:** Subtask 11.4.
 
@@ -242,6 +275,8 @@ ctest --test-dir build -C Debug --output-on-failure -R "classes_methods\.unit|cl
 
 ### Subtask 11.6 - Single inheritance and `super.method()` dispatch
 
+**Status:** `DONE`
+
 **Depends on:** Subtask 11.5.
 
 **Deliverables**
@@ -276,6 +311,8 @@ ctest --test-dir build -C Debug --output-on-failure -R "resolver\.unit|lowering_
    receiver instance.
 
 ### Subtask 11.7 - Negative runtime diagnostics and full regression
+
+**Status:** `DONE`
 
 **Depends on:** Subtask 11.6.
 

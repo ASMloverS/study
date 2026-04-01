@@ -96,6 +96,35 @@ mslangc_add_e2e_named_test(closures.nested
   "e2e/closures/nested.ms"
   "e2e/closures/nested.ms.out"
   "closures")
+
+mslangc_add_e2e_named_test(class.basic_class
+  "e2e/class/basic_class.ms"
+  "e2e/class/basic_class.ms.out"
+  "class")
+mslangc_add_e2e_named_test(class.fields_and_methods
+  "e2e/class/fields_and_methods.ms"
+  "e2e/class/fields_and_methods.ms.out"
+  "class")
+mslangc_add_e2e_named_test(class.field_shadows_method
+  "e2e/class/field_shadows_method.ms"
+  "e2e/class/field_shadows_method.ms.out"
+  "class")
+mslangc_add_e2e_named_test(class.bound_method
+  "e2e/class/bound_method.ms"
+  "e2e/class/bound_method.ms.out"
+  "class")
+mslangc_add_e2e_named_test(class.init_returns_instance
+  "e2e/class/init_returns_instance.ms"
+  "e2e/class/init_returns_instance.ms.out"
+  "class")
+mslangc_add_e2e_named_test(class.inheritance_override
+  "e2e/class/inheritance_override.ms"
+  "e2e/class/inheritance_override.ms.out"
+  "class")
+mslangc_add_e2e_named_test(class.super_dispatch
+  "e2e/class/super_dispatch.ms"
+  "e2e/class/super_dispatch.ms.out"
+  "class")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"
@@ -141,6 +170,37 @@ mslangc_add_cli_test(resolver_static.self_read_initializer
   -DEXPECT_STDOUT=""
   -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3004"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+mslangc_add_cli_test(resolver_static.illegal_self
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_self_outside_class.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="code=MS3007"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.illegal_super
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_super_outside_subclass.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="code=MS3008"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.illegal_init_return
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_init_return_value.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="code=MS3009"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+mslangc_add_cli_test(resolver_static.self_inherit
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/class_inherits_from_itself.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="code=MS3010"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.illegal_break
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
@@ -156,4 +216,18 @@ mslangc_add_cli_test(resolver_static.illegal_continue
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
   -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3003"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+mslangc_add_cli_test(class.missing_property
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/class/missing_property.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="code=MS4010"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+mslangc_add_cli_test(class.invalid_property_receiver
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/class/invalid_property_receiver.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="code=MS4009"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")

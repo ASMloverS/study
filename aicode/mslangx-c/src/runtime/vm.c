@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ms/frontend/resolution_table.h"
 #include "ms/runtime/opcode.h"
 #include "ms/string.h"
 
@@ -480,8 +481,163 @@ static MsVmResult ms_vm_call_closure(MsVM* vm,
   frame->closure = closure;
   frame->ip = 0;
   frame->stack_base = callee_index;
+  frame->receiver = ms_value_nil();
+  frame->has_receiver = 0;
   vm->frame_count += 1;
   return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_call_bound_method(MsVM* vm,
+                                          MsClosure* method,
+                                          MsValue receiver,
+                                          int argc,
+                                          size_t instruction_offset) {
+  size_t callee_index;
+  MsCallFrame* frame;
+
+  if (vm == NULL || method == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (argc != method->function->arity) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4007",
+                               "wrong number of arguments");
+  }
+  if ((method->function->flags & MS_FUNCTION_FLAG_HAS_SUPER) != 0) {
+    MsClass* owner_class = method->owner_class;
+
+    if (owner_class == NULL || owner_class->superclass == NULL ||
+        !ms_vm_ensure_stack(vm, vm->stack_count + 1)) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+  }
+  if (!ms_vm_ensure_frames(vm, vm->frame_count + 1)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  callee_index = vm->stack_count - (size_t) argc - 1;
+  if ((method->function->flags & MS_FUNCTION_FLAG_HAS_SUPER) != 0) {
+    size_t i;
+    MsValue superclass = ms_value_object((MsObject*) method->owner_class->superclass);
+
+    for (i = vm->stack_count; i > callee_index + 1; --i) {
+      vm->stack[i] = vm->stack[i - 1];
+    }
+    vm->stack[callee_index] = receiver;
+    vm->stack[callee_index + 1] = superclass;
+    vm->stack_count += 1;
+  } else {
+    vm->stack[callee_index] = receiver;
+  }
+
+  frame = &vm->frames[vm->frame_count];
+  frame->chunk = &method->function->chunk;
+  frame->closure = method;
+  frame->ip = 0;
+  frame->stack_base = callee_index;
+  frame->receiver = receiver;
+  frame->has_receiver = 1;
+  vm->frame_count += 1;
+  return MS_VM_RESULT_OK;
+}
+
+static int ms_vm_lookup_method(MsClass* klass,
+                               MsString* name,
+                               MsValue* out_value,
+                               int* out_found) {
+  MsValue value = ms_value_nil();
+  int found = 0;
+
+  if (out_value == NULL || out_found == NULL) {
+    return 0;
+  }
+
+  while (klass != NULL) {
+    if (!ms_table_get(&klass->methods, name, &value, &found)) {
+      return 0;
+    }
+    if (found) {
+      *out_value = value;
+      *out_found = 1;
+      return 1;
+    }
+    klass = klass->superclass;
+  }
+
+  *out_value = ms_value_nil();
+  *out_found = 0;
+  return 1;
+}
+
+static MsVmResult ms_vm_call_class(MsVM* vm,
+                                   MsClass* klass,
+                                   int argc,
+                                   size_t instruction_offset) {
+  size_t callee_index;
+  MsInstance* instance;
+  MsString* init_name = NULL;
+  MsValue init_value = ms_value_nil();
+  MsClosure* init_method = NULL;
+  int found = 0;
+
+  if (vm == NULL || klass == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+
+  callee_index = vm->stack_count - (size_t) argc - 1;
+  instance = ms_instance_new(klass);
+  if (instance == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  vm->stack[callee_index] = ms_value_object((MsObject*) instance);
+
+  init_name = ms_string_from_cstr("init");
+  if (init_name == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (!ms_vm_lookup_method(klass, init_name, &init_value, &found)) {
+    ms_string_free(init_name);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  ms_string_free(init_name);
+
+  if (!found) {
+    if (argc != 0) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4007",
+                                 "wrong number of arguments");
+    }
+    return MS_VM_RESULT_OK;
+  }
+  if (!ms_value_get_closure(init_value, &init_method)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return ms_vm_call_bound_method(vm,
+                                 init_method,
+                                 ms_value_object((MsObject*) instance),
+                                 argc,
+                                 instruction_offset);
 }
 
 static MsVmResult ms_vm_call_native(MsVM* vm,
@@ -525,19 +681,302 @@ static MsVmResult ms_vm_call_value(MsVM* vm,
                                    int argc,
                                    size_t instruction_offset) {
   MsClosure* closure = NULL;
+  MsBoundMethod* bound_method = NULL;
   MsNativeFunction* native_function = NULL;
+  MsClass* klass = NULL;
 
   if (ms_value_get_closure(callee, &closure)) {
     return ms_vm_call_closure(vm, closure, argc, instruction_offset);
   }
+  if (ms_value_get_bound_method(callee, &bound_method)) {
+    return ms_vm_call_bound_method(vm,
+                                   bound_method->method,
+                                   bound_method->receiver,
+                                   argc,
+                                   instruction_offset);
+  }
   if (ms_value_get_native_function(callee, &native_function)) {
     return ms_vm_call_native(vm, native_function, argc, instruction_offset);
+  }
+  if (ms_value_get_class(callee, &klass)) {
+    return ms_vm_call_class(vm, klass, argc, instruction_offset);
   }
 
   return ms_vm_runtime_error(vm,
                              instruction_offset,
                              "MS4006",
                              "value is not callable");
+}
+
+static MsVmResult ms_vm_push_class(MsVM* vm,
+                                   MsString* name,
+                                   size_t instruction_offset) {
+  MsClass* klass;
+
+  if (vm == NULL || name == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+
+  klass = ms_class_new(name->bytes, name->length, NULL);
+  if (klass == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (!ms_vm_push(vm, ms_value_object((MsObject*) klass))) {
+    ms_class_free(klass);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_define_method(MsVM* vm,
+                                      MsString* name,
+                                      size_t instruction_offset) {
+  MsValue method_value = ms_value_nil();
+  MsValue class_value = ms_value_nil();
+  MsClass* klass = NULL;
+  MsClosure* method = NULL;
+  int inserted_new = 0;
+
+  if (vm == NULL || name == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_peek(vm, 0, &method_value) || !ms_vm_peek(vm, 1, &class_value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+  if (!ms_value_get_class(class_value, &klass) ||
+      !ms_value_get_closure(method_value, &method) ||
+      !ms_table_set(&klass->methods, name, method_value, &inserted_new)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  method->owner_class = klass;
+  if (!ms_vm_pop(vm, NULL)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+static MsVmResult ms_vm_inherit(MsVM* vm, size_t instruction_offset) {
+  MsValue superclass_value = ms_value_nil();
+  MsValue subclass_value = ms_value_nil();
+  MsClass* superclass = NULL;
+  MsClass* subclass = NULL;
+
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_peek(vm, 0, &superclass_value) || !ms_vm_peek(vm, 1, &subclass_value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+  if (!ms_value_get_class(superclass_value, &superclass) ||
+      !ms_value_get_class(subclass_value, &subclass)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4009",
+                               "superclass must be a class");
+  }
+
+  subclass->superclass = superclass;
+  if (!ms_vm_pop(vm, NULL)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_get_super(MsVM* vm,
+                                  MsString* name,
+                                  size_t instruction_offset) {
+  MsCallFrame* frame;
+  MsValue superclass_value = ms_value_nil();
+  MsValue method_value = ms_value_nil();
+  MsClass* superclass = NULL;
+  MsClosure* method = NULL;
+  MsBoundMethod* bound_method = NULL;
+  int found = 0;
+
+  if (vm == NULL || name == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  frame = ms_vm_current_frame(vm);
+  if (frame == NULL || !frame->has_receiver) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (!ms_vm_peek(vm, 0, &superclass_value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+  if (!ms_value_get_class(superclass_value, &superclass)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (!ms_vm_lookup_method(superclass, name, &method_value, &found) || !found ||
+      !ms_value_get_closure(method_value, &method)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               found ? "MS4001" : "MS4010",
+                               found ? "invalid opcode stream" : "undefined property");
+  }
+
+  bound_method = ms_bound_method_new(frame->receiver, method);
+  if (bound_method == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  vm->stack_count -= 1;
+  if (!ms_vm_push(vm, ms_value_object((MsObject*) bound_method))) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_get_property(MsVM* vm,
+                                     MsString* name,
+                                     size_t instruction_offset) {
+  MsValue receiver = ms_value_nil();
+  MsValue value = ms_value_nil();
+  MsInstance* instance = NULL;
+  MsClosure* method = NULL;
+  MsBoundMethod* bound_method = NULL;
+  int found = 0;
+
+  if (vm == NULL || name == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_peek(vm, 0, &receiver)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+  if (!ms_value_get_instance(receiver, &instance)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4009",
+                               "only instances have properties");
+  }
+  if (!ms_table_get(&instance->fields, name, &value, &found)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (!found) {
+    if (!ms_vm_lookup_method(instance->klass, name, &value, &found)) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+    if (found) {
+      if (!ms_value_get_closure(value, &method)) {
+        return ms_vm_runtime_error(vm,
+                                   instruction_offset,
+                                   "MS4001",
+                                   "invalid opcode stream");
+      }
+      bound_method = ms_bound_method_new(receiver, method);
+      if (bound_method == NULL) {
+        return ms_vm_runtime_error(vm,
+                                   instruction_offset,
+                                   "MS4001",
+                                   "invalid opcode stream");
+      }
+      value = ms_value_object((MsObject*) bound_method);
+    }
+  }
+  if (!found) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4010",
+                               "undefined property");
+  }
+
+  vm->stack_count -= 1;
+  if (!ms_vm_push(vm, value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_set_property(MsVM* vm,
+                                     MsString* name,
+                                     size_t instruction_offset) {
+  MsValue receiver = ms_value_nil();
+  MsValue value = ms_value_nil();
+  MsInstance* instance = NULL;
+  int inserted_new = 0;
+
+  if (vm == NULL || name == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_peek(vm, 0, &value) || !ms_vm_peek(vm, 1, &receiver)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+  if (!ms_value_get_instance(receiver, &instance)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4009",
+                               "only instances have properties");
+  }
+  if (!ms_table_set(&instance->fields, name, value, &inserted_new)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  vm->stack_count -= 2;
+  if (!ms_vm_push(vm, value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
 }
 
 void ms_module_init(MsModule* module, const char* name) {
@@ -660,6 +1099,8 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
   vm->frames[0].closure = NULL;
   vm->frames[0].ip = 0;
   vm->frames[0].stack_base = 0;
+  vm->frames[0].receiver = ms_value_nil();
+  vm->frames[0].has_receiver = 0;
   vm->frame_count = 1;
 
   while (vm->frame_count > 0) {
@@ -1016,7 +1457,58 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
             MS_VM_RESULT_OK) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
-        break;      case MS_OP_CLOSURE:
+        break;
+      case MS_OP_CLASS:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_push_class(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_INHERIT:
+        if (ms_vm_inherit(vm, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_METHOD:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_define_method(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_GET_PROPERTY:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_get_property(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_SET_PROPERTY:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_set_property(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_GET_SUPER:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_get_super(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_CLOSURE:
         if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
             !ms_vm_get_function_constant(vm, frame, instruction_offset, operand,
                                          &function)) {

@@ -587,6 +587,62 @@ static int ms_resolver_resolve_variable(MsResolver *resolver,
                                    is_write);
 }
 
+static int ms_resolver_resolve_special_variable(MsResolver *resolver,
+                                                const MsAstNode *node,
+                                                MsToken name,
+                                                const char *code,
+                                                const char *message) {
+  MsResolvedBinding binding;
+  MsLookupResult result;
+
+  if (resolver == NULL || node == NULL || resolver->current_function == NULL) {
+    return 0;
+  }
+
+  result = ms_resolver_lookup_local_in_context(resolver,
+                                               resolver->current_function,
+                                               node,
+                                               name,
+                                               0,
+                                               &binding,
+                                               NULL);
+  if (result == MS_LOOKUP_ERROR) {
+    return 0;
+  }
+  if (result == MS_LOOKUP_FOUND) {
+    return ms_resolution_table_set(resolver->table,
+                                   node->node_id,
+                                   binding.function_node_id,
+                                   binding.kind,
+                                   binding.slot,
+                                   binding.scope_depth,
+                                   binding.lexical_depth,
+                                   binding.is_captured);
+  }
+
+  result = ms_resolver_resolve_upvalue(resolver,
+                                       resolver->current_function,
+                                       node,
+                                       name,
+                                       0,
+                                       &binding);
+  if (result == MS_LOOKUP_ERROR) {
+    return 0;
+  }
+  if (result == MS_LOOKUP_FOUND) {
+    return ms_resolution_table_set(resolver->table,
+                                   node->node_id,
+                                   binding.function_node_id,
+                                   binding.kind,
+                                   binding.slot,
+                                   binding.scope_depth,
+                                   binding.lexical_depth,
+                                   binding.is_captured);
+  }
+
+  return ms_resolver_append_diagnostic(resolver, node, code, message);
+}
+
 static int ms_resolver_resolve_expression(MsResolver *resolver,
                                           const MsAstNode *node);
 static int ms_resolver_resolve_statement(MsResolver *resolver,
@@ -702,6 +758,43 @@ static int ms_resolver_initialize_declaration(MsResolver *resolver,
     goto cleanup;
   }
 
+  if ((flags & MS_FUNCTION_FLAG_HAS_SELF) != 0) {
+    static const char kSelfName[] = "self";
+    MsToken self_name;
+    uint8_t slot = 0;
+
+    memset(&self_name, 0, sizeof(self_name));
+    self_name.start = kSelfName;
+    self_name.length = sizeof(kSelfName) - 1;
+    if (!ms_resolver_declare_local(resolver,
+                                   &function,
+                                   NULL,
+                                   self_name,
+                                   0,
+                                   &slot) ||
+        !ms_resolver_initialize_local(&function, slot)) {
+      goto cleanup;
+    }
+  }
+  if ((flags & MS_FUNCTION_FLAG_HAS_SUPER) != 0) {
+    static const char kSuperName[] = "super";
+    MsToken super_name;
+    uint8_t slot = 0;
+
+    memset(&super_name, 0, sizeof(super_name));
+    super_name.start = kSuperName;
+    super_name.length = sizeof(kSuperName) - 1;
+    if (!ms_resolver_declare_local(resolver,
+                                   &function,
+                                   NULL,
+                                   super_name,
+                                   0,
+                                   &slot) ||
+        !ms_resolver_initialize_local(&function, slot)) {
+      goto cleanup;
+    }
+  }
+
   for (i = 0; i < parameters->count; ++i) {
     uint8_t slot = 0;
 
@@ -755,14 +848,20 @@ static int ms_resolver_resolve_expression(MsResolver *resolver,
              ms_resolver_resolve_expression(resolver, node->as.logical.right);
     case MS_AST_ASSIGN:
       if (node->as.assign.target == NULL ||
-          node->as.assign.target->kind != MS_AST_VARIABLE) {
+          (node->as.assign.target->kind != MS_AST_VARIABLE &&
+           node->as.assign.target->kind != MS_AST_PROPERTY)) {
         return ms_resolver_resolve_unsupported(resolver, node->as.assign.target);
       }
-      return ms_resolver_resolve_expression(resolver, node->as.assign.value) &&
-             ms_resolver_resolve_variable(resolver,
-                                          node->as.assign.target,
-                                          node->as.assign.target->as.variable.name,
-                                          1);
+      if (node->as.assign.target->kind == MS_AST_VARIABLE) {
+        return ms_resolver_resolve_expression(resolver, node->as.assign.value) &&
+               ms_resolver_resolve_variable(resolver,
+                                            node->as.assign.target,
+                                            node->as.assign.target->as.variable.name,
+                                            1);
+      }
+      return ms_resolver_resolve_expression(resolver,
+                                            node->as.assign.target->as.property.object) &&
+             ms_resolver_resolve_expression(resolver, node->as.assign.value);
     case MS_AST_CALL:
       if (!ms_resolver_resolve_expression(resolver, node->as.call.callee)) {
         return 0;
@@ -805,12 +904,25 @@ static int ms_resolver_resolve_expression(MsResolver *resolver,
                                                node->as.function.body,
                                                MS_FUNCTION_FLAG_NONE);
     case MS_AST_SELF:
+      return ms_resolver_resolve_special_variable(
+          resolver,
+          node,
+          node->as.self_expr.keyword,
+          "MS3007",
+          "self outside a method body or nested function");
     case MS_AST_SUPER:
-      return ms_resolver_resolve_unsupported(resolver, node);
+      return ms_resolver_resolve_special_variable(
+          resolver,
+          node,
+          node->as.super_expr.keyword,
+          "MS3008",
+          "super outside a subclass method body or nested function");
     default:
       return ms_resolver_resolve_unsupported(resolver, node);
   }
-}static int ms_resolver_resolve_statement(MsResolver *resolver,
+}
+
+static int ms_resolver_resolve_statement(MsResolver *resolver,
                                          const MsAstNode *node) {
   size_t i;
 
@@ -948,11 +1060,65 @@ static int ms_resolver_resolve_expression(MsResolver *resolver,
                                              "top-level return is not allowed");
       }
       if (node->as.return_stmt.value != NULL) {
+        if ((resolver->current_function->flags & MS_FUNCTION_FLAG_INITIALIZER) != 0) {
+          return ms_resolver_append_diagnostic(resolver,
+                                               node,
+                                               "MS3009",
+                                               "return value is not allowed in init");
+        }
         return ms_resolver_resolve_expression(resolver,
                                               node->as.return_stmt.value);
       }
       return 1;
-    case MS_AST_CLASS_DECL:
+    case MS_AST_CLASS_DECL: {
+      MsBindingKind kind;
+      uint8_t slot = 0;
+      int has_superclass = node->as.class_decl.superclass.start != NULL &&
+          node->as.class_decl.superclass.length > 0;
+
+      if (!ms_resolver_bind_declaration(resolver,
+                                        node,
+                                        node->as.class_decl.name,
+                                        &slot,
+                                        &kind) ||
+          !ms_resolver_initialize_declaration(resolver,
+                                              node->as.class_decl.name,
+                                              kind,
+                                              slot)) {
+        return 0;
+      }
+      if (has_superclass &&
+          ms_token_equals(node->as.class_decl.name,
+                          node->as.class_decl.superclass)) {
+        return ms_resolver_append_diagnostic(resolver,
+                                             node,
+                                             "MS3010",
+                                             "class cannot inherit from itself");
+      }
+      for (i = 0; i < node->as.class_decl.methods.count; ++i) {
+        MsAstNode *method = node->as.class_decl.methods.items[i];
+        unsigned flags = MS_FUNCTION_FLAG_METHOD | MS_FUNCTION_FLAG_HAS_SELF;
+
+        if (method == NULL || method->kind != MS_AST_FUNCTION_DECL) {
+          return ms_resolver_resolve_unsupported(resolver, method);
+        }
+        if (has_superclass) {
+          flags |= MS_FUNCTION_FLAG_HAS_SUPER;
+        }
+        if (method->as.function_decl.name.length == 4 &&
+            memcmp(method->as.function_decl.name.start, "init", 4) == 0) {
+          flags |= MS_FUNCTION_FLAG_INITIALIZER;
+        }
+        if (!ms_resolver_resolve_function_body(resolver,
+                                               method->node_id,
+                                               &method->as.function_decl.parameters,
+                                               method->as.function_decl.body,
+                                               flags)) {
+          return 0;
+        }
+      }
+      return 1;
+    }
     case MS_AST_IMPORT_STMT:
     case MS_AST_FROM_IMPORT_STMT:
       return ms_resolver_resolve_unsupported(resolver, node);

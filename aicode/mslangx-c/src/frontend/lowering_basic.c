@@ -285,6 +285,17 @@ static int ms_lowering_emit_name_operand(MsLoweringState* state,
   return 1;
 }
 
+static int ms_lowering_emit_named_opcode(MsLoweringState* state,
+                                         MsOpcode opcode,
+                                         MsToken token,
+                                         int line) {
+  uint8_t name_index = 0;
+
+  return ms_lowering_emit_name_operand(state, token, line, &name_index) &&
+         ms_lowering_emit_opcode(state, opcode, line) &&
+         ms_lowering_emit_byte(state, name_index, line);
+}
+
 static int ms_lowering_get_binding(MsLoweringState* state,
                                    const MsAstNode* node,
                                    MsResolvedBinding* out_binding) {
@@ -545,6 +556,97 @@ static int ms_lowering_emit_bound_set(MsLoweringState* state,
   return 0;
 }
 
+static int ms_lowering_emit_class_decl(MsLoweringState* state,
+                                       const MsAstNode* node) {
+  MsResolvedBinding binding;
+  int has_superclass;
+  size_t i;
+
+  if (state == NULL || node == NULL) {
+    return 0;
+  }
+  has_superclass = node->as.class_decl.superclass.start != NULL &&
+      node->as.class_decl.superclass.length > 0;
+  if (!ms_lowering_get_binding(state, node, &binding)) {
+    return 0;
+  }
+  if (binding.kind == MS_BINDING_LOCAL && has_superclass) {
+    return ms_lowering_append_diagnostic(state,
+                                         node,
+                                         "MS3005",
+                                         "unsupported feature in basic lowering");
+  }
+
+  if (binding.kind == MS_BINDING_LOCAL) {
+    if (!ms_lowering_emit_opcode(state, MS_OP_NIL, node->line) ||
+        !ms_lowering_push_local(state,
+                                binding.slot,
+                                binding.scope_depth,
+                                binding.is_captured) ||
+        !ms_lowering_emit_named_opcode(state,
+                                       MS_OP_CLASS,
+                                       node->as.class_decl.name,
+                                       node->line) ||
+        !ms_lowering_emit_opcode(state, MS_OP_SET_LOCAL, node->line) ||
+        !ms_lowering_emit_byte(state, binding.slot, node->line)) {
+      return 0;
+    }
+  } else {
+    if (!ms_lowering_emit_named_opcode(state,
+                                       MS_OP_CLASS,
+                                       node->as.class_decl.name,
+                                       node->line) ||
+        !ms_lowering_emit_named_opcode(state,
+                                       MS_OP_DEFINE_GLOBAL,
+                                       node->as.class_decl.name,
+                                       node->line) ||
+        !ms_lowering_emit_named_opcode(state,
+                                       MS_OP_GET_GLOBAL,
+                                       node->as.class_decl.name,
+                                       node->line)) {
+      return 0;
+    }
+    if (has_superclass &&
+        (!ms_lowering_emit_named_opcode(state,
+                                        MS_OP_GET_GLOBAL,
+                                        node->as.class_decl.superclass,
+                                        node->line) ||
+         !ms_lowering_emit_opcode(state, MS_OP_INHERIT, node->line))) {
+      return 0;
+    }
+  }
+
+  for (i = 0; i < node->as.class_decl.methods.count; ++i) {
+    const MsAstNode* method = node->as.class_decl.methods.items[i];
+    MsFunction* function = NULL;
+
+    if (method == NULL || method->kind != MS_AST_FUNCTION_DECL) {
+      return ms_lowering_append_diagnostic(state,
+                                           node,
+                                           "MS3005",
+                                           "unsupported feature in basic lowering");
+    }
+    if (!ms_lowering_compile_function(state,
+                                      method->node_id,
+                                      method->as.function_decl.name,
+                                      &method->as.function_decl.parameters,
+                                      method->as.function_decl.body,
+                                      &function) ||
+        !ms_lowering_emit_closure(state,
+                                  method,
+                                  function,
+                                  method->node_id) ||
+        !ms_lowering_emit_named_opcode(state,
+                                       MS_OP_METHOD,
+                                       method->as.function_decl.name,
+                                       method->line)) {
+      return 0;
+    }
+  }
+
+  return ms_lowering_emit_opcode(state, MS_OP_POP, node->line);
+}
+
 static int ms_lowering_emit_literal(MsLoweringState* state,
                                     const MsAstNode* node) {
   char* text = NULL;
@@ -637,6 +739,7 @@ static int ms_lowering_compile_function(MsLoweringState* state,
   }
 
   function->upvalue_count = (uint8_t) function_context.resolution.upvalue_count;
+  function->flags = function_context.resolution.flags;
   function_context.node_id = node_id;
   function_context.chunk = &function->chunk;
   function_context.scope_depth = 1;
@@ -644,20 +747,56 @@ static int ms_lowering_compile_function(MsLoweringState* state,
   function_context.enclosing = enclosing;
   state->current_function = &function_context;
 
-  for (i = 0; i < parameters->count; ++i) {
-    if (!ms_lowering_push_local(state,
-                                (uint8_t) i,
-                                1,
-                                ms_lowering_function_local_is_captured(
-                                    &function_context,
-                                    (uint8_t) i))) {
-      goto cleanup;
+  {
+    uint8_t next_slot = 0;
+
+    if ((function_context.resolution.flags & MS_FUNCTION_FLAG_HAS_SELF) != 0) {
+      if (!ms_lowering_push_local(state,
+                                  next_slot,
+                                  1,
+                                  ms_lowering_function_local_is_captured(
+                                      &function_context,
+                                      next_slot))) {
+        goto cleanup;
+      }
+      next_slot += 1;
+    }
+    if ((function_context.resolution.flags & MS_FUNCTION_FLAG_HAS_SUPER) != 0) {
+      if (!ms_lowering_push_local(state,
+                                  next_slot,
+                                  1,
+                                  ms_lowering_function_local_is_captured(
+                                      &function_context,
+                                      next_slot))) {
+        goto cleanup;
+      }
+      next_slot += 1;
+    }
+    for (i = 0; i < parameters->count; ++i) {
+      uint8_t slot = (uint8_t) (next_slot + i);
+
+      if (!ms_lowering_push_local(state,
+                                  slot,
+                                  1,
+                                  ms_lowering_function_local_is_captured(
+                                      &function_context,
+                                      slot))) {
+        goto cleanup;
+      }
     }
   }
 
-  if (!ms_lowering_emit_statement(state, body) ||
-      !ms_lowering_emit_opcode(state, MS_OP_NIL, body->line) ||
-      !ms_lowering_emit_opcode(state, MS_OP_RETURN, body->line)) {
+  if (!ms_lowering_emit_statement(state, body)) {
+    goto cleanup;
+  }
+  if ((function_context.resolution.flags & MS_FUNCTION_FLAG_INITIALIZER) != 0) {
+    if (!ms_lowering_emit_opcode(state, MS_OP_GET_LOCAL, body->line) ||
+        !ms_lowering_emit_byte(state, 0, body->line) ||
+        !ms_lowering_emit_opcode(state, MS_OP_RETURN, body->line)) {
+      goto cleanup;
+    }
+  } else if (!ms_lowering_emit_opcode(state, MS_OP_NIL, body->line) ||
+             !ms_lowering_emit_opcode(state, MS_OP_RETURN, body->line)) {
     goto cleanup;
   }
 
@@ -727,6 +866,18 @@ static int ms_lowering_emit_expression(MsLoweringState* state,
       return ms_lowering_emit_bound_get(state,
                                         node,
                                         node->as.variable.name);
+    case MS_AST_SELF:
+      return ms_lowering_emit_bound_get(state,
+                                        node,
+                                        node->as.self_expr.keyword);
+    case MS_AST_SUPER:
+      return ms_lowering_emit_bound_get(state,
+                                        node,
+                                        node->as.super_expr.keyword) &&
+             ms_lowering_emit_named_opcode(state,
+                                           MS_OP_GET_SUPER,
+                                           node->as.super_expr.method,
+                                           node->line);
     case MS_AST_UNARY:
       if (!ms_lowering_emit_expression(state, node->as.unary.operand)) {
         return 0;
@@ -800,18 +951,32 @@ static int ms_lowering_emit_expression(MsLoweringState* state,
       }
       return ms_lowering_patch_jump(state, end_jump);
     case MS_AST_ASSIGN:
-      if (node->as.assign.target == NULL ||
-          node->as.assign.target->kind != MS_AST_VARIABLE) {
+      if (node->as.assign.target == NULL) {
         return ms_lowering_append_diagnostic(state,
                                              node,
                                              "MS3005",
                                              "unsupported assignment target in basic lowering");
       }
-      return ms_lowering_emit_expression(state, node->as.assign.value) &&
-             ms_lowering_emit_bound_set(
-                 state,
-                 node->as.assign.target,
-                 node->as.assign.target->as.variable.name);
+      if (node->as.assign.target->kind == MS_AST_VARIABLE) {
+        return ms_lowering_emit_expression(state, node->as.assign.value) &&
+               ms_lowering_emit_bound_set(
+                   state,
+                   node->as.assign.target,
+                   node->as.assign.target->as.variable.name);
+      }
+      if (node->as.assign.target->kind == MS_AST_PROPERTY) {
+        return ms_lowering_emit_expression(state,
+                                           node->as.assign.target->as.property.object) &&
+               ms_lowering_emit_expression(state, node->as.assign.value) &&
+               ms_lowering_emit_named_opcode(state,
+                                             MS_OP_SET_PROPERTY,
+                                             node->as.assign.target->as.property.name,
+                                             node->line);
+      }
+      return ms_lowering_append_diagnostic(state,
+                                           node,
+                                           "MS3005",
+                                           "unsupported assignment target in basic lowering");
     case MS_AST_CALL:
       if (!ms_lowering_emit_expression(state, node->as.call.callee)) {
         return 0;
@@ -828,6 +993,12 @@ static int ms_lowering_emit_expression(MsLoweringState* state,
              ms_lowering_emit_byte(state,
                                    (uint8_t) node->as.call.arguments.count,
                                    node->line);
+    case MS_AST_PROPERTY:
+      return ms_lowering_emit_expression(state, node->as.property.object) &&
+             ms_lowering_emit_named_opcode(state,
+                                           MS_OP_GET_PROPERTY,
+                                           node->as.property.name,
+                                           node->line);
     case MS_AST_FUNCTION:
       memset(&anonymous_name, 0, sizeof(anonymous_name));
       if (!ms_lowering_compile_function(state,
@@ -1105,6 +1276,8 @@ static int ms_lowering_emit_statement(MsLoweringState* state,
         return 0;
       }
       return ms_lowering_emit_byte(state, name_index, node->line);
+    case MS_AST_CLASS_DECL:
+      return ms_lowering_emit_class_decl(state, node);
     case MS_AST_EXPR_STMT:
       return ms_lowering_emit_expression(state, node->as.expr_stmt.expression) &&
              ms_lowering_emit_opcode(state, MS_OP_POP, node->line);
@@ -1114,6 +1287,12 @@ static int ms_lowering_emit_statement(MsLoweringState* state,
     case MS_AST_RETURN_STMT:
       if (node->as.return_stmt.value != NULL) {
         return ms_lowering_emit_expression(state, node->as.return_stmt.value) &&
+               ms_lowering_emit_opcode(state, MS_OP_RETURN, node->line);
+      }
+      if ((state->current_function->resolution.flags &
+           MS_FUNCTION_FLAG_INITIALIZER) != 0) {
+        return ms_lowering_emit_opcode(state, MS_OP_GET_LOCAL, node->line) &&
+               ms_lowering_emit_byte(state, 0, node->line) &&
                ms_lowering_emit_opcode(state, MS_OP_RETURN, node->line);
       }
       return ms_lowering_emit_opcode(state, MS_OP_NIL, node->line) &&

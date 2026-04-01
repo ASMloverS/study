@@ -91,6 +91,18 @@ int ms_value_is_upvalue(MsValue value) {
   return ms_value_has_object_type(value, MS_OBJ_UPVALUE);
 }
 
+int ms_value_is_class(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_CLASS);
+}
+
+int ms_value_is_instance(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_INSTANCE);
+}
+
+int ms_value_is_bound_method(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_BOUND_METHOD);
+}
+
 int ms_value_is_native_function(MsValue value) {
   return ms_value_has_object_type(value, MS_OBJ_NATIVE_FN);
 }
@@ -155,6 +167,33 @@ int ms_value_get_upvalue(MsValue value, MsUpvalue** out_upvalue) {
   }
 
   *out_upvalue = (MsUpvalue*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_class(MsValue value, MsClass** out_class) {
+  if (!ms_value_is_class(value) || out_class == NULL) {
+    return 0;
+  }
+
+  *out_class = (MsClass*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_instance(MsValue value, MsInstance** out_instance) {
+  if (!ms_value_is_instance(value) || out_instance == NULL) {
+    return 0;
+  }
+
+  *out_instance = (MsInstance*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_bound_method(MsValue value, MsBoundMethod** out_bound_method) {
+  if (!ms_value_is_bound_method(value) || out_bound_method == NULL) {
+    return 0;
+  }
+
+  *out_bound_method = (MsBoundMethod*) value.as.object;
   return 1;
 }
 

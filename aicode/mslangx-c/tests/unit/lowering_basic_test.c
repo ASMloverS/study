@@ -4,7 +4,9 @@
 #include "ms/diag.h"
 #include "ms/frontend/lowering.h"
 #include "ms/runtime/chunk.h"
+#include "ms/runtime/function.h"
 #include "ms/runtime/vm.h"
+#include "ms/string.h"
 
 #include "test_assert.h"
 
@@ -35,6 +37,29 @@ static int buffer_contains(const MsBuffer *buffer, const char *needle) {
   }
 
   return 0;
+}
+
+static size_t buffer_find(const MsBuffer *buffer, const char *needle) {
+  size_t needle_length = strlen(needle);
+  size_t i;
+
+  if (buffer == NULL || needle == NULL) {
+    return 0;
+  }
+  if (needle_length == 0) {
+    return 0;
+  }
+  if (buffer->length < needle_length) {
+    return buffer->length;
+  }
+
+  for (i = 0; i + needle_length <= buffer->length; ++i) {
+    if (memcmp(buffer->data + i, needle, needle_length) == 0) {
+      return i;
+    }
+  }
+
+  return buffer->length;
 }
 
 static int test_lowers_globals_and_block_locals(void) {
@@ -159,9 +184,175 @@ static int test_reports_resolve_errors_before_lowering(void) {
   return 0;
 }
 
+static int test_lowers_class_declarations_and_installs_methods(void) {
+  static const char kSource[] =
+      "class Brunch {\n"
+      "  alpha() {\n"
+      "    return Brunch\n"
+      "  }\n"
+      "  beta() {\n"
+      "    return 2\n"
+      "  }\n"
+      "}\n"
+      "print Brunch\n";
+  static const char kExpectedOutput[] = "<class>\n";
+  MsChunk chunk;
+  MsBuffer disassembly;
+  MsBuffer output;
+  MsDiagnosticList diagnostics;
+  MsVM vm;
+  MsModule module;
+  MsValue class_value = ms_value_nil();
+  MsClass *klass = NULL;
+  MsTable *methods = NULL;
+  MsValue method_value = ms_value_nil();
+  MsString *brunch_name = NULL;
+  MsString *alpha_name = NULL;
+  MsString *beta_name = NULL;
+  size_t alpha_offset;
+  size_t beta_offset;
+  int found = 0;
+
+  ms_chunk_init(&chunk);
+  ms_buffer_init(&disassembly);
+  ms_buffer_init(&output);
+  ms_diag_list_init(&diagnostics);
+  ms_vm_init(&vm);
+  ms_module_init(&module, "<unit>");
+
+  TEST_ASSERT(ms_compile_source("<unit>", kSource, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+  TEST_ASSERT(ms_chunk_disassemble_to_buffer(&chunk, "lowering_basic", &disassembly));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_CLASS"));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_METHOD"));
+  TEST_ASSERT(buffer_contains(&disassembly, "<fn alpha>"));
+  TEST_ASSERT(buffer_contains(&disassembly, "<fn beta>"));
+
+  alpha_offset = buffer_find(&disassembly, "<fn alpha>");
+  beta_offset = buffer_find(&disassembly, "<fn beta>");
+  TEST_ASSERT(alpha_offset < disassembly.length);
+  TEST_ASSERT(beta_offset < disassembly.length);
+  TEST_ASSERT(alpha_offset < beta_offset);
+
+  ms_vm_set_current_module(&vm, &module);
+  ms_vm_set_write_callback(&vm, append_output, &output);
+  TEST_ASSERT(ms_vm_run_chunk(&vm, &chunk) == MS_VM_RESULT_OK);
+  TEST_ASSERT(output.length == strlen(kExpectedOutput));
+  TEST_ASSERT(memcmp(output.data, kExpectedOutput, output.length) == 0);
+
+  brunch_name = ms_string_from_cstr("Brunch");
+  alpha_name = ms_string_from_cstr("alpha");
+  beta_name = ms_string_from_cstr("beta");
+  TEST_ASSERT(brunch_name != NULL);
+  TEST_ASSERT(alpha_name != NULL);
+  TEST_ASSERT(beta_name != NULL);
+  TEST_ASSERT(ms_table_get(&module.globals, brunch_name, &class_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_class(class_value, &klass));
+  methods = ms_class_methods(klass);
+  TEST_ASSERT(methods != NULL);
+  TEST_ASSERT(ms_table_count(methods) == 2);
+  TEST_ASSERT(ms_table_get(methods, alpha_name, &method_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_is_closure(method_value));
+  TEST_ASSERT(ms_table_get(methods, beta_name, &method_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_is_closure(method_value));
+
+  ms_string_free(brunch_name);
+  ms_string_free(alpha_name);
+  ms_string_free(beta_name);
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  ms_diag_list_destroy(&diagnostics);
+  ms_buffer_destroy(&output);
+  ms_buffer_destroy(&disassembly);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
+static int test_lowers_inheritance_and_super_lookup(void) {
+  static const char kSource[] =
+      "class Base {\n"
+      "  speak() {\n"
+      "    print \"base\"\n"
+      "  }\n"
+      "}\n"
+      "class Derived < Base {\n"
+      "  call_super() {\n"
+      "    super.speak()\n"
+      "  }\n"
+      "}\n"
+      "print Derived\n";
+  static const char kExpectedOutput[] = "<class>\n";
+  MsChunk chunk;
+  MsBuffer disassembly;
+  MsBuffer method_disassembly;
+  MsBuffer output;
+  MsDiagnosticList diagnostics;
+  MsVM vm;
+  MsModule module;
+  MsString* derived_name = NULL;
+  MsString* method_name = NULL;
+  MsValue class_value = ms_value_nil();
+  MsValue method_value = ms_value_nil();
+  MsClass* klass = NULL;
+  MsClosure* method = NULL;
+  int found = 0;
+
+  ms_chunk_init(&chunk);
+  ms_buffer_init(&disassembly);
+  ms_buffer_init(&method_disassembly);
+  ms_buffer_init(&output);
+  ms_diag_list_init(&diagnostics);
+  ms_vm_init(&vm);
+  ms_module_init(&module, "<unit>");
+
+  TEST_ASSERT(ms_compile_source("<unit>", kSource, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+  TEST_ASSERT(ms_chunk_disassemble_to_buffer(&chunk, "lowering_basic", &disassembly));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_INHERIT"));
+
+  ms_vm_set_current_module(&vm, &module);
+  ms_vm_set_write_callback(&vm, append_output, &output);
+  TEST_ASSERT(ms_vm_run_chunk(&vm, &chunk) == MS_VM_RESULT_OK);
+  TEST_ASSERT(output.length == strlen(kExpectedOutput));
+  TEST_ASSERT(memcmp(output.data, kExpectedOutput, output.length) == 0);
+
+  derived_name = ms_string_from_cstr("Derived");
+  method_name = ms_string_from_cstr("call_super");
+  TEST_ASSERT(derived_name != NULL);
+  TEST_ASSERT(method_name != NULL);
+  TEST_ASSERT(ms_table_get(&module.globals, derived_name, &class_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_class(class_value, &klass));
+  TEST_ASSERT(ms_table_get(ms_class_methods(klass), method_name, &method_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_closure(method_value, &method));
+  TEST_ASSERT(ms_chunk_disassemble_to_buffer(&method->function->chunk,
+                                             "call_super",
+                                             &method_disassembly));
+  TEST_ASSERT(buffer_contains(&method_disassembly, "OP_GET_SUPER"));
+
+  ms_string_free(derived_name);
+  ms_string_free(method_name);
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  ms_diag_list_destroy(&diagnostics);
+  ms_buffer_destroy(&output);
+  ms_buffer_destroy(&method_disassembly);
+  ms_buffer_destroy(&disassembly);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
 int main(void) {
   TEST_ASSERT(test_lowers_globals_and_block_locals() == 0);
   TEST_ASSERT(test_short_circuit_and_loop_control_flow() == 0);
   TEST_ASSERT(test_reports_resolve_errors_before_lowering() == 0);
+  TEST_ASSERT(test_lowers_class_declarations_and_installs_methods() == 0);
+  TEST_ASSERT(test_lowers_inheritance_and_super_lookup() == 0);
   return 0;
 }

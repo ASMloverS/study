@@ -25,6 +25,8 @@ typedef struct MsCallFrame {
   MsClosure* closure;
   size_t ip;
   size_t stack_base;
+  MsValue receiver;
+  int has_receiver;
 } MsCallFrame;
 
 typedef struct MsVM {

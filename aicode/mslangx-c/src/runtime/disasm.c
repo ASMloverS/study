@@ -62,6 +62,18 @@ static const char* ms_disasm_opcode_name(uint8_t opcode) {
       return "OP_CALL";
     case MS_OP_CLOSURE:
       return "OP_CLOSURE";
+    case MS_OP_CLASS:
+      return "OP_CLASS";
+    case MS_OP_INHERIT:
+      return "OP_INHERIT";
+    case MS_OP_METHOD:
+      return "OP_METHOD";
+    case MS_OP_GET_PROPERTY:
+      return "OP_GET_PROPERTY";
+    case MS_OP_SET_PROPERTY:
+      return "OP_SET_PROPERTY";
+    case MS_OP_GET_SUPER:
+      return "OP_GET_SUPER";
     case MS_OP_CLOSE_UPVALUE:
       return "OP_CLOSE_UPVALUE";
     case MS_OP_RETURN:
@@ -180,6 +192,11 @@ static size_t ms_disassemble_instruction(const MsChunk* chunk,
     case MS_OP_GET_GLOBAL:
     case MS_OP_DEFINE_GLOBAL:
     case MS_OP_SET_GLOBAL:
+    case MS_OP_CLASS:
+    case MS_OP_METHOD:
+    case MS_OP_GET_PROPERTY:
+    case MS_OP_SET_PROPERTY:
+    case MS_OP_GET_SUPER:
       if (!ms_chunk_read_byte(chunk, offset + 1, &operand) ||
           !ms_chunk_get_constant(chunk, operand, &constant) ||
           !ms_disasm_append_constant(buffer, name, operand, constant)) {
@@ -235,6 +252,7 @@ static size_t ms_disassemble_instruction(const MsChunk* chunk,
     case MS_OP_NOT:
     case MS_OP_NEGATE:
     case MS_OP_PRINT:
+    case MS_OP_INHERIT:
     case MS_OP_CLOSE_UPVALUE:
     case MS_OP_RETURN:
       if (!ms_disasm_appendf(buffer, "%s\n", name)) {

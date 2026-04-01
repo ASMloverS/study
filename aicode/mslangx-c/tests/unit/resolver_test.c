@@ -221,10 +221,250 @@ static int test_resolves_nested_function_upvalues(void) {
   return 0;
 }
 
+static int test_resolves_method_self_binding_and_nested_capture(void) {
+  static const char kSource[] =
+      "class Example {\n"
+      "  run() {\n"
+      "    print self\n"
+      "    fn inner() {\n"
+      "      print self\n"
+      "    }\n"
+      "  }\n"
+      "}\n";
+  MsArena arena;
+  MsDiagnosticList diagnostics;
+  MsResolutionTable table;
+  MsAstNode *root;
+  MsAstNode *class_decl;
+  MsAstNode *method_decl;
+  MsAstNode *method_body;
+  MsAstNode *direct_print_stmt;
+  MsAstNode *direct_self_expr;
+  MsAstNode *inner_decl;
+  MsAstNode *inner_print_stmt;
+  MsAstNode *nested_self_expr;
+  MsResolvedBinding binding;
+  MsFunctionResolution method_info;
+  MsFunctionResolution inner_info;
+  int is_captured = 0;
+
+  root = parse_program(kSource, &arena, &diagnostics);
+  TEST_ASSERT(root != NULL);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  class_decl = root->as.program.declarations.items[0];
+  TEST_ASSERT(class_decl->kind == MS_AST_CLASS_DECL);
+  TEST_ASSERT(class_decl->as.class_decl.methods.count == 1);
+  method_decl = class_decl->as.class_decl.methods.items[0];
+  TEST_ASSERT(method_decl->kind == MS_AST_FUNCTION_DECL);
+  method_body = method_decl->as.function_decl.body;
+  TEST_ASSERT(method_body != NULL);
+  TEST_ASSERT(method_body->kind == MS_AST_BLOCK);
+  TEST_ASSERT(method_body->as.block.statements.count == 2);
+  direct_print_stmt = method_body->as.block.statements.items[0];
+  TEST_ASSERT(direct_print_stmt->kind == MS_AST_PRINT_STMT);
+  direct_self_expr = direct_print_stmt->as.print_stmt.expression;
+  TEST_ASSERT(direct_self_expr != NULL);
+  TEST_ASSERT(direct_self_expr->kind == MS_AST_SELF);
+  inner_decl = method_body->as.block.statements.items[1];
+  TEST_ASSERT(inner_decl->kind == MS_AST_FUNCTION_DECL);
+  inner_print_stmt = inner_decl->as.function_decl.body->as.block.statements.items[0];
+  TEST_ASSERT(inner_print_stmt->kind == MS_AST_PRINT_STMT);
+  nested_self_expr = inner_print_stmt->as.print_stmt.expression;
+  TEST_ASSERT(nested_self_expr != NULL);
+  TEST_ASSERT(nested_self_expr->kind == MS_AST_SELF);
+
+  ms_resolution_table_init(&table);
+  TEST_ASSERT(ms_resolve_program("<unit>", root, &table, &diagnostics));
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, class_decl->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_GLOBAL);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, direct_self_expr->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_LOCAL);
+  TEST_ASSERT(binding.slot == 0);
+  TEST_ASSERT(binding.scope_depth == 1);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, nested_self_expr->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_UPVALUE);
+  TEST_ASSERT(binding.slot == 0);
+  TEST_ASSERT(binding.lexical_depth == 1);
+  TEST_ASSERT(binding.function_node_id == inner_decl->node_id);
+
+  TEST_ASSERT(ms_resolution_table_get_function(&table,
+                                               method_decl->node_id,
+                                               &method_info));
+  TEST_ASSERT((method_info.flags & MS_FUNCTION_FLAG_METHOD) != 0);
+  TEST_ASSERT((method_info.flags & MS_FUNCTION_FLAG_HAS_SELF) != 0);
+  TEST_ASSERT((method_info.flags & MS_FUNCTION_FLAG_HAS_SUPER) == 0);
+  TEST_ASSERT(ms_resolution_table_function_local_is_captured(&table,
+                                                             method_decl->node_id,
+                                                             0,
+                                                             &is_captured));
+  TEST_ASSERT(is_captured);
+
+  TEST_ASSERT(ms_resolution_table_get_function(&table,
+                                               inner_decl->node_id,
+                                               &inner_info));
+  TEST_ASSERT(inner_info.upvalue_count == 1);
+  TEST_ASSERT(inner_info.upvalues[0].is_local == 1);
+  TEST_ASSERT(inner_info.upvalues[0].slot == 0);
+  TEST_ASSERT(inner_info.upvalues[0].lexical_depth == 1);
+
+  ms_resolution_table_destroy(&table);
+  ms_diag_list_destroy(&diagnostics);
+  ms_arena_destroy(&arena);
+  return 0;
+}
+
+static int test_resolves_subclass_super_binding_and_nested_capture(void) {
+  static const char kSource[] =
+      "class Base {\n"
+      "  run() {\n"
+      "    return 1\n"
+      "  }\n"
+      "}\n"
+      "class Derived < Base {\n"
+      "  run() {\n"
+      "    print super.run\n"
+      "    fn inner() {\n"
+      "      print super.run\n"
+      "    }\n"
+      "  }\n"
+      "}\n";
+  MsArena arena;
+  MsDiagnosticList diagnostics;
+  MsResolutionTable table;
+  MsAstNode *root;
+  MsAstNode *derived_class;
+  MsAstNode *method_decl;
+  MsAstNode *method_body;
+  MsAstNode *direct_print_stmt;
+  MsAstNode *direct_super_expr;
+  MsAstNode *inner_decl;
+  MsAstNode *inner_print_stmt;
+  MsAstNode *nested_super_expr;
+  MsResolvedBinding binding;
+  MsFunctionResolution method_info;
+  MsFunctionResolution inner_info;
+  int is_captured = 0;
+
+  root = parse_program(kSource, &arena, &diagnostics);
+  TEST_ASSERT(root != NULL);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  derived_class = root->as.program.declarations.items[1];
+  TEST_ASSERT(derived_class->kind == MS_AST_CLASS_DECL);
+  TEST_ASSERT(derived_class->as.class_decl.methods.count == 1);
+  method_decl = derived_class->as.class_decl.methods.items[0];
+  TEST_ASSERT(method_decl->kind == MS_AST_FUNCTION_DECL);
+  method_body = method_decl->as.function_decl.body;
+  TEST_ASSERT(method_body != NULL);
+  TEST_ASSERT(method_body->kind == MS_AST_BLOCK);
+  TEST_ASSERT(method_body->as.block.statements.count == 2);
+  direct_print_stmt = method_body->as.block.statements.items[0];
+  TEST_ASSERT(direct_print_stmt->kind == MS_AST_PRINT_STMT);
+  direct_super_expr = direct_print_stmt->as.print_stmt.expression;
+  TEST_ASSERT(direct_super_expr != NULL);
+  TEST_ASSERT(direct_super_expr->kind == MS_AST_SUPER);
+  inner_decl = method_body->as.block.statements.items[1];
+  TEST_ASSERT(inner_decl->kind == MS_AST_FUNCTION_DECL);
+  inner_print_stmt = inner_decl->as.function_decl.body->as.block.statements.items[0];
+  TEST_ASSERT(inner_print_stmt->kind == MS_AST_PRINT_STMT);
+  nested_super_expr = inner_print_stmt->as.print_stmt.expression;
+  TEST_ASSERT(nested_super_expr != NULL);
+  TEST_ASSERT(nested_super_expr->kind == MS_AST_SUPER);
+
+  ms_resolution_table_init(&table);
+  TEST_ASSERT(ms_resolve_program("<unit>", root, &table, &diagnostics));
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, direct_super_expr->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_LOCAL);
+  TEST_ASSERT(binding.slot == 1);
+  TEST_ASSERT(binding.scope_depth == 1);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, nested_super_expr->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_UPVALUE);
+  TEST_ASSERT(binding.slot == 0);
+  TEST_ASSERT(binding.lexical_depth == 1);
+  TEST_ASSERT(binding.function_node_id == inner_decl->node_id);
+
+  TEST_ASSERT(ms_resolution_table_get_function(&table,
+                                               method_decl->node_id,
+                                               &method_info));
+  TEST_ASSERT((method_info.flags & MS_FUNCTION_FLAG_METHOD) != 0);
+  TEST_ASSERT((method_info.flags & MS_FUNCTION_FLAG_HAS_SELF) != 0);
+  TEST_ASSERT((method_info.flags & MS_FUNCTION_FLAG_HAS_SUPER) != 0);
+  TEST_ASSERT(ms_resolution_table_function_local_is_captured(&table,
+                                                             method_decl->node_id,
+                                                             1,
+                                                             &is_captured));
+  TEST_ASSERT(is_captured);
+
+  TEST_ASSERT(ms_resolution_table_get_function(&table,
+                                               inner_decl->node_id,
+                                               &inner_info));
+  TEST_ASSERT(inner_info.upvalue_count == 1);
+  TEST_ASSERT(inner_info.upvalues[0].is_local == 1);
+  TEST_ASSERT(inner_info.upvalues[0].slot == 1);
+  TEST_ASSERT(inner_info.upvalues[0].lexical_depth == 1);
+
+  ms_resolution_table_destroy(&table);
+  ms_diag_list_destroy(&diagnostics);
+  ms_arena_destroy(&arena);
+  return 0;
+}
+
+static int test_allows_bare_return_inside_initializer(void) {
+  static const char kSource[] =
+      "class Box {\n"
+      "  init() {\n"
+      "    return\n"
+      "  }\n"
+      "}\n";
+  MsArena arena;
+  MsDiagnosticList diagnostics;
+  MsResolutionTable table;
+  MsAstNode *root;
+  MsAstNode *class_decl;
+  MsAstNode *init_decl;
+  MsFunctionResolution init_info;
+
+  root = parse_program(kSource, &arena, &diagnostics);
+  TEST_ASSERT(root != NULL);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  class_decl = root->as.program.declarations.items[0];
+  TEST_ASSERT(class_decl->kind == MS_AST_CLASS_DECL);
+  init_decl = class_decl->as.class_decl.methods.items[0];
+  TEST_ASSERT(init_decl->kind == MS_AST_FUNCTION_DECL);
+
+  ms_resolution_table_init(&table);
+  TEST_ASSERT(ms_resolve_program("<unit>", root, &table, &diagnostics));
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  TEST_ASSERT(ms_resolution_table_get_function(&table,
+                                               init_decl->node_id,
+                                               &init_info));
+  TEST_ASSERT((init_info.flags & MS_FUNCTION_FLAG_METHOD) != 0);
+  TEST_ASSERT((init_info.flags & MS_FUNCTION_FLAG_INITIALIZER) != 0);
+  TEST_ASSERT((init_info.flags & MS_FUNCTION_FLAG_HAS_SELF) != 0);
+  TEST_ASSERT((init_info.flags & MS_FUNCTION_FLAG_HAS_SUPER) == 0);
+
+  ms_resolution_table_destroy(&table);
+  ms_diag_list_destroy(&diagnostics);
+  ms_arena_destroy(&arena);
+  return 0;
+}
 int main(void) {
   TEST_ASSERT(test_rejects_top_level_return() == 0);
   TEST_ASSERT(test_resolves_function_declaration_and_parameter_reads() == 0);
   TEST_ASSERT(test_resolves_function_expression_parameter_reads() == 0);
   TEST_ASSERT(test_resolves_nested_function_upvalues() == 0);
+  TEST_ASSERT(test_resolves_method_self_binding_and_nested_capture() == 0);
+  TEST_ASSERT(test_resolves_subclass_super_binding_and_nested_capture() == 0);
+  TEST_ASSERT(test_allows_bare_return_inside_initializer() == 0);
   return 0;
 }

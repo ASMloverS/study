@@ -16,6 +16,9 @@ typedef struct MsString MsString;
 typedef struct MsFunction MsFunction;
 typedef struct MsClosure MsClosure;
 typedef struct MsUpvalue MsUpvalue;
+typedef struct MsClass MsClass;
+typedef struct MsInstance MsInstance;
+typedef struct MsBoundMethod MsBoundMethod;
 typedef struct MsNativeFunction MsNativeFunction;
 
 typedef struct MsValue {
@@ -40,6 +43,9 @@ int ms_value_is_string(MsValue value);
 int ms_value_is_function(MsValue value);
 int ms_value_is_closure(MsValue value);
 int ms_value_is_upvalue(MsValue value);
+int ms_value_is_class(MsValue value);
+int ms_value_is_instance(MsValue value);
+int ms_value_is_bound_method(MsValue value);
 int ms_value_is_native_function(MsValue value);
 
 int ms_value_get_bool(MsValue value, int* out_boolean);
@@ -49,6 +55,9 @@ int ms_value_get_string(MsValue value, MsString** out_string);
 int ms_value_get_function(MsValue value, MsFunction** out_function);
 int ms_value_get_closure(MsValue value, MsClosure** out_closure);
 int ms_value_get_upvalue(MsValue value, MsUpvalue** out_upvalue);
+int ms_value_get_class(MsValue value, MsClass** out_class);
+int ms_value_get_instance(MsValue value, MsInstance** out_instance);
+int ms_value_get_bound_method(MsValue value, MsBoundMethod** out_bound_method);
 int ms_value_get_native_function(MsValue value,
                                  MsNativeFunction** out_function);
 

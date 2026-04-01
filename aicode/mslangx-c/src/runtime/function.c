@@ -13,6 +13,7 @@ MsFunction* ms_function_new(const char* name, size_t length, int arity) {
   ms_object_init(&function->object, MS_OBJ_FUNCTION);
   function->arity = arity;
   function->upvalue_count = 0;
+  function->flags = 0;
   function->name = NULL;
   ms_chunk_init(&function->chunk);
 
@@ -42,6 +43,7 @@ MsClosure* ms_closure_new(MsFunction* function) {
 
   ms_object_init(&closure->object, MS_OBJ_CLOSURE);
   closure->function = function;
+  closure->owner_class = NULL;
   closure->upvalue_count = function->upvalue_count;
   if (closure->upvalue_count > 0) {
     closure->upvalues = (MsUpvalue**) calloc(closure->upvalue_count,
@@ -68,6 +70,65 @@ MsUpvalue* ms_upvalue_new(MsValue* location) {
   upvalue->closed = ms_value_nil();
   upvalue->next = NULL;
   return upvalue;
+}
+
+MsClass* ms_class_new(const char* name, size_t length, MsClass* superclass) {
+  MsClass* klass = NULL;
+
+  klass = (MsClass*) calloc(1, sizeof(*klass));
+  if (klass == NULL) {
+    return NULL;
+  }
+
+  ms_object_init(&klass->object, MS_OBJ_CLASS);
+  klass->superclass = superclass;
+  ms_table_init(&klass->methods);
+  if (name != NULL && length > 0) {
+    klass->name = ms_string_new(name, length);
+    if (klass->name == NULL) {
+      ms_table_destroy(&klass->methods);
+      free(klass);
+      return NULL;
+    }
+  }
+
+  return klass;
+}
+
+MsInstance* ms_instance_new(MsClass* klass) {
+  MsInstance* instance = NULL;
+
+  if (klass == NULL) {
+    return NULL;
+  }
+
+  instance = (MsInstance*) calloc(1, sizeof(*instance));
+  if (instance == NULL) {
+    return NULL;
+  }
+
+  ms_object_init(&instance->object, MS_OBJ_INSTANCE);
+  instance->klass = klass;
+  ms_table_init(&instance->fields);
+  return instance;
+}
+
+MsBoundMethod* ms_bound_method_new(MsValue receiver, MsClosure* method) {
+  MsBoundMethod* bound_method = NULL;
+
+  if (method == NULL) {
+    return NULL;
+  }
+
+  bound_method = (MsBoundMethod*) calloc(1, sizeof(*bound_method));
+  if (bound_method == NULL) {
+    return NULL;
+  }
+
+  ms_object_init(&bound_method->object, MS_OBJ_BOUND_METHOD);
+  bound_method->receiver = receiver;
+  bound_method->method = method;
+  return bound_method;
 }
 
 MsNativeFunction* ms_native_function_new(const char* name,
@@ -122,6 +183,29 @@ void ms_upvalue_free(MsUpvalue* upvalue) {
   free(upvalue);
 }
 
+void ms_class_free(MsClass* klass) {
+  if (klass == NULL) {
+    return;
+  }
+
+  ms_table_destroy(&klass->methods);
+  ms_string_free(klass->name);
+  free(klass);
+}
+
+void ms_instance_free(MsInstance* instance) {
+  if (instance == NULL) {
+    return;
+  }
+
+  ms_table_destroy(&instance->fields);
+  free(instance);
+}
+
+void ms_bound_method_free(MsBoundMethod* bound_method) {
+  free(bound_method);
+}
+
 void ms_native_function_free(MsNativeFunction* function) {
   if (function == NULL) {
     return;
@@ -129,6 +213,34 @@ void ms_native_function_free(MsNativeFunction* function) {
 
   ms_string_free(function->name);
   free(function);
+}
+
+MsString* ms_class_name(const MsClass* klass) {
+  return klass != NULL ? klass->name : NULL;
+}
+
+MsClass* ms_class_superclass(const MsClass* klass) {
+  return klass != NULL ? klass->superclass : NULL;
+}
+
+MsTable* ms_class_methods(MsClass* klass) {
+  return klass != NULL ? &klass->methods : NULL;
+}
+
+MsClass* ms_instance_class(const MsInstance* instance) {
+  return instance != NULL ? instance->klass : NULL;
+}
+
+MsTable* ms_instance_fields(MsInstance* instance) {
+  return instance != NULL ? &instance->fields : NULL;
+}
+
+MsValue ms_bound_method_receiver(const MsBoundMethod* bound_method) {
+  return bound_method != NULL ? bound_method->receiver : ms_value_nil();
+}
+
+MsClosure* ms_bound_method_method(const MsBoundMethod* bound_method) {
+  return bound_method != NULL ? bound_method->method : NULL;
 }
 
 MsCallResult ms_call_result_ok(MsValue value) {

@@ -39,6 +39,14 @@ mslangc_add_support_unit_test(support.buffer buffer_test.c)
 mslangc_add_runtime_unit_test(runtime_core.value value_test.c)
 mslangc_add_runtime_unit_test(runtime_core.string string_test.c)
 mslangc_add_runtime_unit_test(runtime_core.table table_test.c)
+add_executable(classes_methods.unit classes_methods_test.c)
+target_link_libraries(classes_methods.unit PRIVATE
+  mslang_frontend
+  mslang_runtime_core)
+mslangc_apply_test_warnings(classes_methods.unit)
+add_test(NAME classes_methods.unit COMMAND classes_methods.unit)
+set_tests_properties(classes_methods.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_UNIT};runtime_core")
 mslangc_add_runtime_unit_test(runtime_core.chunk chunk_test.c)
 mslangc_add_runtime_unit_test(runtime_core.disasm disasm_test.c)
 mslangc_add_runtime_unit_test(runtime_core.vm_core vm_core_test.c)
