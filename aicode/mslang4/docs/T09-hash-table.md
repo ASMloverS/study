@@ -581,17 +581,17 @@ void ms_table_mark(MsTable* table) {
 
 ## Acceptance Criteria
 
-- [ ] Init/free cycle completes without leak
-- [ ] Set then get returns the correct value
-- [ ] Set with existing key updates value (returns false)
-- [ ] Remove then get returns false
-- [ ] Tombstones don't break lookups (set A, set B, remove A, get B)
-- [ ] Table grows correctly (insert 100+ entries, all retrievable)
-- [ ] `find_string` finds by chars+length+hash
-- [ ] `add_all` copies all entries from one table to another
-- [ ] `remove_white` removes entries with unmarked keys
-- [ ] `mark` marks all keys and values
-- [ ] No memory leaks
+- [x] Init/free cycle completes without leak
+- [x] Set then get returns the correct value
+- [x] Set with existing key updates value (returns false)
+- [x] Remove then get returns false
+- [x] Tombstones don't break lookups (set A, set B, remove A, get B)
+- [x] Table grows correctly (insert 100+ entries, all retrievable)
+- [x] `find_string` finds by chars+length+hash
+- [x] `add_all` copies all entries from one table to another
+- [x] `remove_white` removes entries with unmarked keys
+- [x] `mark` marks all keys and values
+- [x] No memory leaks
 
 ## Notes
 
