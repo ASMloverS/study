@@ -29,3 +29,7 @@ add_test(NAME test_object_string COMMAND test_object_string)
 add_executable(test_table unit/test_table.c ${CMAKE_SOURCE_DIR}/src/table.c ${CMAKE_SOURCE_DIR}/src/object.c ${CMAKE_SOURCE_DIR}/src/value.c ${CMAKE_SOURCE_DIR}/src/memory.c)
 target_include_directories(test_table PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_table COMMAND test_table)
+
+add_executable(test_scanner unit/test_scanner.c ${CMAKE_SOURCE_DIR}/src/scanner.c)
+target_include_directories(test_scanner PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_scanner COMMAND test_scanner)

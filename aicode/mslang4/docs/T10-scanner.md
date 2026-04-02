@@ -3,6 +3,7 @@
 **Phase**: 3 - Scanner
 **Dependencies**: T06 (Token Types)
 **Estimated Complexity**: High
+**Status**: ✅ Done
 
 ## Goal
 
@@ -774,17 +775,17 @@ static MsToken ms_error_token(MsScanner* scanner, const char* message) {
 
 ## Acceptance Criteria
 
-- [ ] `ms_scanner_init` + `ms_scanner_scan_token` until EOF for `"123"` produces: NUMBER(123), EOF
-- [ ] `"var x = 42"` produces: VAR, IDENTIFIER("x"), EQUAL, NUMBER(42), EOF
-- [ ] `"1 + 2 * 3"` produces: NUMBER(1), PLUS, NUMBER(2), STAR, NUMBER(3), EOF
-- [ ] `"\"hello\""` produces: STRING("hello"), EOF
-- [ ] All keywords are recognized (and, class, else, false, fn, for, if, nil, or, print, return, super, this, true, var, while, break, continue, import, from, as)
-- [ ] `==`, `!=`, `<=`, `>=` produce two-char tokens
-- [ ] `// comment\n42` skips comment, produces NUMBER(42)
-- [ ] `/* block */ 42` skips block comment
-- [ ] Unrecognized character produces MS_TOKEN_ERROR
-- [ ] Multi-line tracking: line numbers increment on newlines
-- [ ] Column numbers track position on each line
+- [x] `ms_scanner_init` + `ms_scanner_scan_token` until EOF for `"123"` produces: NUMBER(123), EOF
+- [x] `"var x = 42"` produces: VAR, IDENTIFIER("x"), EQUAL, NUMBER(42), EOF
+- [x] `"1 + 2 * 3"` produces: NUMBER(1), PLUS, NUMBER(2), STAR, NUMBER(3), EOF
+- [x] `"\"hello\""` produces: STRING("hello"), EOF
+- [x] All keywords are recognized (and, class, else, false, fn, for, if, nil, or, print, return, super, this, true, var, while, break, continue, import, from, as)
+- [x] `==`, `!=`, `<=`, `>=` produce two-char tokens
+- [x] `// comment\n42` skips comment, produces NUMBER(42)
+- [x] `/* block */ 42` skips block comment
+- [x] Unrecognized character produces MS_TOKEN_ERROR
+- [x] Multi-line tracking: line numbers increment on newlines
+- [x] Column numbers track position on each line
 
 ## Notes
 
