@@ -1174,13 +1174,33 @@ static MsVmResult ms_vm_resolve_sequence_index(MsVM* vm,
   return MS_VM_RESULT_OK;
 }
 
+static MsVmResult ms_vm_resolve_map_key(MsVM* vm,
+                                        MsValue index_value,
+                                        size_t instruction_offset,
+                                        MsString** out_key) {
+  if (out_key == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_value_get_string(index_value, out_key)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4011",
+                               "map keys must be strings");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
 static MsVmResult ms_vm_index_get(MsVM* vm, size_t instruction_offset) {
   MsValue receiver = ms_value_nil();
   MsValue index_value = ms_value_nil();
   MsValue result = ms_value_nil();
   MsList* list = NULL;
   MsTuple* tuple = NULL;
+  MsMap* map = NULL;
+  MsString* key = NULL;
   size_t index = 0;
+  int found = 0;
 
   if (vm == NULL) {
     return MS_VM_RESULT_RUNTIME_ERROR;
@@ -1210,6 +1230,25 @@ static MsVmResult ms_vm_index_get(MsVM* vm, size_t instruction_offset) {
       return MS_VM_RESULT_RUNTIME_ERROR;
     }
     result = tuple->elements.items[index];
+  } else if (ms_value_get_map(receiver, &map)) {
+    if (ms_vm_resolve_map_key(vm,
+                              index_value,
+                              instruction_offset,
+                              &key) != MS_VM_RESULT_OK) {
+      return MS_VM_RESULT_RUNTIME_ERROR;
+    }
+    if (!ms_table_get(map->entries, key, &result, &found)) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+    if (!found) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4016",
+                                 "map key not found");
+    }
   } else {
     return ms_vm_runtime_error(vm,
                                instruction_offset,
@@ -1234,7 +1273,10 @@ static MsVmResult ms_vm_index_set(MsVM* vm, size_t instruction_offset) {
   MsValue value = ms_value_nil();
   MsList* list = NULL;
   MsTuple* tuple = NULL;
+  MsMap* map = NULL;
+  MsString* key = NULL;
   size_t index = 0;
+  int inserted_new = 0;
 
   if (vm == NULL) {
     return MS_VM_RESULT_RUNTIME_ERROR;
@@ -1263,6 +1305,19 @@ static MsVmResult ms_vm_index_set(MsVM* vm, size_t instruction_offset) {
                                instruction_offset,
                                "MS4015",
                                "tuple elements are immutable");
+  } else if (ms_value_get_map(receiver, &map)) {
+    if (ms_vm_resolve_map_key(vm,
+                              index_value,
+                              instruction_offset,
+                              &key) != MS_VM_RESULT_OK) {
+      return MS_VM_RESULT_RUNTIME_ERROR;
+    }
+    if (!ms_table_set(map->entries, key, value, &inserted_new)) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
   } else {
     return ms_vm_runtime_error(vm,
                                instruction_offset,

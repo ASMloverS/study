@@ -91,6 +91,11 @@ int main(void) {
                            ms_value_number(42.0),
                            &inserted_new));
   TEST_ASSERT(inserted_new);
+  TEST_ASSERT(ms_table_set(map->entries,
+                           key,
+                           ms_value_number(99.0),
+                           &inserted_new));
+  TEST_ASSERT(!inserted_new);
 
   TEST_ASSERT(list->elements.count == 2);
   TEST_ASSERT(list->elements.capacity >= list->elements.count);
@@ -106,7 +111,7 @@ int main(void) {
 
   TEST_ASSERT(ms_table_get(map->entries, key, &stored_value, &found));
   TEST_ASSERT(found);
-  TEST_ASSERT(ms_value_equals(stored_value, ms_value_number(42.0)));
+  TEST_ASSERT(ms_value_equals(stored_value, ms_value_number(99.0)));
 
   list_value = ms_value_object((MsObject *) list);
   tuple_value = ms_value_object((MsObject *) tuple);
