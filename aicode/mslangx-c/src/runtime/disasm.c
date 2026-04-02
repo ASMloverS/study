@@ -74,6 +74,12 @@ static const char* ms_disasm_opcode_name(uint8_t opcode) {
       return "OP_SET_PROPERTY";
     case MS_OP_GET_SUPER:
       return "OP_GET_SUPER";
+    case MS_OP_BUILD_LIST:
+      return "OP_BUILD_LIST";
+    case MS_OP_BUILD_TUPLE:
+      return "OP_BUILD_TUPLE";
+    case MS_OP_BUILD_MAP:
+      return "OP_BUILD_MAP";
     case MS_OP_CLOSE_UPVALUE:
       return "OP_CLOSE_UPVALUE";
     case MS_OP_RETURN:
@@ -208,6 +214,9 @@ static size_t ms_disassemble_instruction(const MsChunk* chunk,
     case MS_OP_GET_UPVALUE:
     case MS_OP_SET_UPVALUE:
     case MS_OP_CALL:
+    case MS_OP_BUILD_LIST:
+    case MS_OP_BUILD_TUPLE:
+    case MS_OP_BUILD_MAP:
       if (!ms_chunk_read_byte(chunk, offset + 1, &operand) ||
           !ms_disasm_appendf(buffer, "%-17s%u\n", name, operand)) {
         return chunk->code.length;

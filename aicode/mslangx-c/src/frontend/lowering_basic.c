@@ -701,6 +701,67 @@ static int ms_lowering_emit_literal(MsLoweringState* state,
   }
 }
 
+static int ms_lowering_emit_list_literal(MsLoweringState* state,
+                                         const MsAstNode* node) {
+  size_t i;
+
+  if (state == NULL || node == NULL || node->as.list.elements.count > UINT8_MAX) {
+    return 0;
+  }
+
+  for (i = 0; i < node->as.list.elements.count; ++i) {
+    if (!ms_lowering_emit_expression(state, node->as.list.elements.items[i])) {
+      return 0;
+    }
+  }
+
+  return ms_lowering_emit_opcode(state, MS_OP_BUILD_LIST, node->line) &&
+         ms_lowering_emit_byte(state,
+                               (uint8_t) node->as.list.elements.count,
+                               node->line);
+}
+
+static int ms_lowering_emit_tuple_literal(MsLoweringState* state,
+                                          const MsAstNode* node) {
+  size_t i;
+
+  if (state == NULL || node == NULL || node->as.tuple.elements.count > UINT8_MAX) {
+    return 0;
+  }
+
+  for (i = 0; i < node->as.tuple.elements.count; ++i) {
+    if (!ms_lowering_emit_expression(state, node->as.tuple.elements.items[i])) {
+      return 0;
+    }
+  }
+
+  return ms_lowering_emit_opcode(state, MS_OP_BUILD_TUPLE, node->line) &&
+         ms_lowering_emit_byte(state,
+                               (uint8_t) node->as.tuple.elements.count,
+                               node->line);
+}
+
+static int ms_lowering_emit_map_literal(MsLoweringState* state,
+                                        const MsAstNode* node) {
+  size_t i;
+
+  if (state == NULL || node == NULL || node->as.map.entries.count > UINT8_MAX) {
+    return 0;
+  }
+
+  for (i = 0; i < node->as.map.entries.count; ++i) {
+    if (!ms_lowering_emit_expression(state, node->as.map.entries.items[i].key) ||
+        !ms_lowering_emit_expression(state, node->as.map.entries.items[i].value)) {
+      return 0;
+    }
+  }
+
+  return ms_lowering_emit_opcode(state, MS_OP_BUILD_MAP, node->line) &&
+         ms_lowering_emit_byte(state,
+                               (uint8_t) node->as.map.entries.count,
+                               node->line);
+}
+
 static int ms_lowering_compile_function(MsLoweringState* state,
                                         size_t node_id,
                                         MsToken name,
@@ -999,6 +1060,12 @@ static int ms_lowering_emit_expression(MsLoweringState* state,
                                            MS_OP_GET_PROPERTY,
                                            node->as.property.name,
                                            node->line);
+    case MS_AST_LIST:
+      return ms_lowering_emit_list_literal(state, node);
+    case MS_AST_TUPLE:
+      return ms_lowering_emit_tuple_literal(state, node);
+    case MS_AST_MAP:
+      return ms_lowering_emit_map_literal(state, node);
     case MS_AST_FUNCTION:
       memset(&anonymous_name, 0, sizeof(anonymous_name));
       if (!ms_lowering_compile_function(state,

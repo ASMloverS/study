@@ -119,6 +119,15 @@ mslangc_add_cli_test(containers.length
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.length PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+mslangc_add_cli_test(containers.literals
+  -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/literals.ms"
+  -DEXPECT_EXIT=0
+  -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/literals.ms.out"
+  -DEXPECT_STDERR=""
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(containers.literals PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
 
 mslangc_add_e2e_named_test(class.basic_class
   "e2e/class/basic_class.ms"

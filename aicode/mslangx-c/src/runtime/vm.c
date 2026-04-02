@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "ms/frontend/resolution_table.h"
+#include "ms/object.h"
 #include "ms/runtime/opcode.h"
 #include "ms/string.h"
 
@@ -979,6 +980,164 @@ static MsVmResult ms_vm_set_property(MsVM* vm,
   return MS_VM_RESULT_OK;
 }
 
+static MsVmResult ms_vm_build_list(MsVM* vm,
+                                   uint8_t element_count,
+                                   size_t instruction_offset) {
+  MsList* list = NULL;
+  size_t start;
+  size_t i;
+
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (vm->stack_count < (size_t) element_count) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  list = ms_list_new();
+  if (list == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  start = vm->stack_count - (size_t) element_count;
+  for (i = start; i < vm->stack_count; ++i) {
+    if (!ms_value_array_append(&list->elements, vm->stack[i])) {
+      ms_list_free(list);
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+  }
+
+  vm->stack_count = start;
+  if (!ms_vm_push(vm, ms_value_object((MsObject*) list))) {
+    ms_list_free(list);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_build_tuple(MsVM* vm,
+                                    uint8_t element_count,
+                                    size_t instruction_offset) {
+  MsTuple* tuple = NULL;
+  size_t start;
+  size_t i;
+
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (vm->stack_count < (size_t) element_count) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  tuple = ms_tuple_new();
+  if (tuple == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  start = vm->stack_count - (size_t) element_count;
+  for (i = start; i < vm->stack_count; ++i) {
+    if (!ms_value_array_append(&tuple->elements, vm->stack[i])) {
+      ms_tuple_free(tuple);
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+  }
+
+  vm->stack_count = start;
+  if (!ms_vm_push(vm, ms_value_object((MsObject*) tuple))) {
+    ms_tuple_free(tuple);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_build_map(MsVM* vm,
+                                  uint8_t entry_count,
+                                  size_t instruction_offset) {
+  MsMap* map = NULL;
+  size_t required_count;
+  size_t start;
+  size_t i;
+
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+
+  required_count = (size_t) entry_count * 2;
+  if (vm->stack_count < required_count) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  map = ms_map_new();
+  if (map == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  start = vm->stack_count - required_count;
+  for (i = start; i < vm->stack_count; i += 2) {
+    MsString* key = NULL;
+    MsValue entry_value = vm->stack[i + 1];
+    int inserted_new = 0;
+
+    if (!ms_value_get_string(vm->stack[i], &key)) {
+      ms_map_free(map);
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4011",
+                                 "map keys must be strings");
+    }
+    if (!ms_table_set(map->entries, key, entry_value, &inserted_new)) {
+      ms_map_free(map);
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+  }
+
+  vm->stack_count = start;
+  if (!ms_vm_push(vm, ms_value_object((MsObject*) map))) {
+    ms_map_free(map);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
 void ms_module_init(MsModule* module, const char* name) {
   if (module == NULL) {
     return;
@@ -1505,6 +1664,30 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
         if (ms_vm_get_super(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_BUILD_LIST:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_build_list(vm, operand, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_BUILD_TUPLE:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_build_tuple(vm, operand, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_BUILD_MAP:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_build_map(vm, operand, instruction_offset) != MS_VM_RESULT_OK) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
         break;

@@ -348,11 +348,64 @@ static int test_lowers_inheritance_and_super_lookup(void) {
   return 0;
 }
 
+static int test_lowers_container_literals_and_runs_build_opcodes(void) {
+  static const char kSource[] =
+      "print [1, 2]\n"
+      "print (3, 4)\n"
+      "print {\"alpha\": 5, \"beta\": 6}\n";
+  static const char kExpectedOutput[] = "<list>\n<tuple>\n<map>\n";
+  MsChunk chunk;
+  MsBuffer disassembly;
+  MsBuffer output;
+  MsDiagnosticList diagnostics;
+  MsVM vm;
+  MsModule module;
+  size_t list_offset;
+  size_t tuple_offset;
+  size_t map_offset;
+
+  ms_chunk_init(&chunk);
+  ms_buffer_init(&disassembly);
+  ms_buffer_init(&output);
+  ms_diag_list_init(&diagnostics);
+  ms_vm_init(&vm);
+  ms_module_init(&module, "<unit>");
+
+  TEST_ASSERT(ms_compile_source("<unit>", kSource, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+  TEST_ASSERT(ms_chunk_disassemble_to_buffer(&chunk, "lowering_basic", &disassembly));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_BUILD_LIST"));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_BUILD_TUPLE"));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_BUILD_MAP"));
+
+  list_offset = buffer_find(&disassembly, "OP_BUILD_LIST");
+  tuple_offset = buffer_find(&disassembly, "OP_BUILD_TUPLE");
+  map_offset = buffer_find(&disassembly, "OP_BUILD_MAP");
+  TEST_ASSERT(list_offset < tuple_offset);
+  TEST_ASSERT(tuple_offset < map_offset);
+
+  ms_vm_set_current_module(&vm, &module);
+  ms_vm_set_write_callback(&vm, append_output, &output);
+  TEST_ASSERT(ms_vm_run_chunk(&vm, &chunk) == MS_VM_RESULT_OK);
+  TEST_ASSERT(output.length == strlen(kExpectedOutput));
+  TEST_ASSERT(memcmp(output.data, kExpectedOutput, output.length) == 0);
+
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  ms_diag_list_destroy(&diagnostics);
+  ms_buffer_destroy(&output);
+  ms_buffer_destroy(&disassembly);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
 int main(void) {
   TEST_ASSERT(test_lowers_globals_and_block_locals() == 0);
   TEST_ASSERT(test_short_circuit_and_loop_control_flow() == 0);
   TEST_ASSERT(test_reports_resolve_errors_before_lowering() == 0);
   TEST_ASSERT(test_lowers_class_declarations_and_installs_methods() == 0);
   TEST_ASSERT(test_lowers_inheritance_and_super_lookup() == 0);
+  TEST_ASSERT(test_lowers_container_literals_and_runs_build_opcodes() == 0);
   return 0;
 }
