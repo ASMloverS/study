@@ -1034,6 +1034,14 @@ static int ms_lowering_emit_expression(MsLoweringState* state,
                                              node->as.assign.target->as.property.name,
                                              node->line);
       }
+      if (node->as.assign.target->kind == MS_AST_INDEX) {
+        return ms_lowering_emit_expression(state,
+                                           node->as.assign.target->as.index.object) &&
+               ms_lowering_emit_expression(state,
+                                           node->as.assign.target->as.index.index) &&
+               ms_lowering_emit_expression(state, node->as.assign.value) &&
+               ms_lowering_emit_opcode(state, MS_OP_INDEX_SET, node->line);
+      }
       return ms_lowering_append_diagnostic(state,
                                            node,
                                            "MS3005",
@@ -1060,6 +1068,10 @@ static int ms_lowering_emit_expression(MsLoweringState* state,
                                            MS_OP_GET_PROPERTY,
                                            node->as.property.name,
                                            node->line);
+    case MS_AST_INDEX:
+      return ms_lowering_emit_expression(state, node->as.index.object) &&
+             ms_lowering_emit_expression(state, node->as.index.index) &&
+             ms_lowering_emit_opcode(state, MS_OP_INDEX_GET, node->line);
     case MS_AST_LIST:
       return ms_lowering_emit_list_literal(state, node);
     case MS_AST_TUPLE:

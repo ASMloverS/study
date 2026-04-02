@@ -1138,6 +1138,149 @@ static MsVmResult ms_vm_build_map(MsVM* vm,
   return MS_VM_RESULT_OK;
 }
 
+static MsVmResult ms_vm_resolve_sequence_index(MsVM* vm,
+                                               MsValue index_value,
+                                               size_t length,
+                                               size_t instruction_offset,
+                                               size_t* out_index) {
+  double number = 0.0;
+  size_t index;
+
+  if (out_index == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_value_get_number(index_value, &number) || number < 0.0) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4013",
+                               "index must be a non-negative integer");
+  }
+
+  index = (size_t) number;
+  if ((double) index != number) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4013",
+                               "index must be a non-negative integer");
+  }
+  if (index >= length) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4014",
+                               "index out of range");
+  }
+
+  *out_index = index;
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_index_get(MsVM* vm, size_t instruction_offset) {
+  MsValue receiver = ms_value_nil();
+  MsValue index_value = ms_value_nil();
+  MsValue result = ms_value_nil();
+  MsList* list = NULL;
+  MsTuple* tuple = NULL;
+  size_t index = 0;
+
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_peek(vm, 0, &index_value) || !ms_vm_peek(vm, 1, &receiver)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  if (ms_value_get_list(receiver, &list)) {
+    if (ms_vm_resolve_sequence_index(vm,
+                                     index_value,
+                                     list->elements.count,
+                                     instruction_offset,
+                                     &index) != MS_VM_RESULT_OK) {
+      return MS_VM_RESULT_RUNTIME_ERROR;
+    }
+    result = list->elements.items[index];
+  } else if (ms_value_get_tuple(receiver, &tuple)) {
+    if (ms_vm_resolve_sequence_index(vm,
+                                     index_value,
+                                     tuple->elements.count,
+                                     instruction_offset,
+                                     &index) != MS_VM_RESULT_OK) {
+      return MS_VM_RESULT_RUNTIME_ERROR;
+    }
+    result = tuple->elements.items[index];
+  } else {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4012",
+                               "value is not indexable");
+  }
+
+  vm->stack_count -= 2;
+  if (!ms_vm_push(vm, result)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_index_set(MsVM* vm, size_t instruction_offset) {
+  MsValue receiver = ms_value_nil();
+  MsValue index_value = ms_value_nil();
+  MsValue value = ms_value_nil();
+  MsList* list = NULL;
+  MsTuple* tuple = NULL;
+  size_t index = 0;
+
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_peek(vm, 0, &value) ||
+      !ms_vm_peek(vm, 1, &index_value) ||
+      !ms_vm_peek(vm, 2, &receiver)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+
+  if (ms_value_get_list(receiver, &list)) {
+    if (ms_vm_resolve_sequence_index(vm,
+                                     index_value,
+                                     list->elements.count,
+                                     instruction_offset,
+                                     &index) != MS_VM_RESULT_OK) {
+      return MS_VM_RESULT_RUNTIME_ERROR;
+    }
+    list->elements.items[index] = value;
+  } else if (ms_value_get_tuple(receiver, &tuple)) {
+    (void) tuple;
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4015",
+                               "tuple elements are immutable");
+  } else {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4012",
+                               "value is not indexable");
+  }
+
+  vm->stack_count -= 3;
+  if (!ms_vm_push(vm, value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
 void ms_module_init(MsModule* module, const char* name) {
   if (module == NULL) {
     return;
@@ -1688,6 +1831,16 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
         if (ms_vm_build_map(vm, operand, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_INDEX_GET:
+        if (ms_vm_index_get(vm, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_INDEX_SET:
+        if (ms_vm_index_set(vm, instruction_offset) != MS_VM_RESULT_OK) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
         break;

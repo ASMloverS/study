@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Subtasks 12.1 through 12.3 completed and verified on 2026-04-03.
+In progress. Subtasks 12.1 through 12.4 completed and verified on 2026-04-03.
 
 ## Goal
 
@@ -76,7 +76,7 @@ Use the following status markers consistently in this document:
 | 12.1 | `DONE` | Task 03 | Runtime container objects, storage helpers, and printing hooks |
 | 12.2 | `DONE` | 12.1 | Truthiness and `ms_value_length()` helpers |
 | 12.3 | `DONE` | 12.1 | Lower container literals and execute `BUILD_*` opcodes |
-| 12.4 | `TODO` | 12.3 | `list` and `tuple` index read and write semantics |
+| 12.4 | `DONE` | 12.3 | `list` and `tuple` index read and write semantics |
 | 12.5 | `TODO` | 12.4 | `map` indexing with string keys |
 | 12.6 | `TODO` | 12.5 | Negative runtime diagnostics and full regression |
 
@@ -190,7 +190,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "lowering_basic\.unit|con
 
 ### Subtask 12.4 - `list` and `tuple` index read and write semantics
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 12.3.
 

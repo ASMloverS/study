@@ -38,6 +38,8 @@ typedef enum MsOpcode {
   MS_OP_BUILD_LIST,
   MS_OP_BUILD_TUPLE,
   MS_OP_BUILD_MAP,
+  MS_OP_INDEX_GET,
+  MS_OP_INDEX_SET,
   MS_OP_CLOSE_UPVALUE,
   MS_OP_RETURN
 } MsOpcode;

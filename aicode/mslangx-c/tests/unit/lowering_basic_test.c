@@ -400,6 +400,56 @@ static int test_lowers_container_literals_and_runs_build_opcodes(void) {
   return 0;
 }
 
+static int test_lowers_container_indexing_and_list_assignment(void) {
+  static const char kSource[] =
+      "var list = [1, 2, 3]\n"
+      "print list[1]\n"
+      "list[1] = 9\n"
+      "print list[1]\n"
+      "print (4, 5)[0]\n";
+  static const char kExpectedOutput[] = "2\n9\n4\n";
+  MsChunk chunk;
+  MsBuffer disassembly;
+  MsBuffer output;
+  MsDiagnosticList diagnostics;
+  MsVM vm;
+  MsModule module;
+  size_t get_offset;
+  size_t set_offset;
+
+  ms_chunk_init(&chunk);
+  ms_buffer_init(&disassembly);
+  ms_buffer_init(&output);
+  ms_diag_list_init(&diagnostics);
+  ms_vm_init(&vm);
+  ms_module_init(&module, "<unit>");
+
+  TEST_ASSERT(ms_compile_source("<unit>", kSource, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+  TEST_ASSERT(ms_chunk_disassemble_to_buffer(&chunk, "lowering_basic", &disassembly));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_INDEX_GET"));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_INDEX_SET"));
+
+  get_offset = buffer_find(&disassembly, "OP_INDEX_GET");
+  set_offset = buffer_find(&disassembly, "OP_INDEX_SET");
+  TEST_ASSERT(get_offset < set_offset);
+
+  ms_vm_set_current_module(&vm, &module);
+  ms_vm_set_write_callback(&vm, append_output, &output);
+  TEST_ASSERT(ms_vm_run_chunk(&vm, &chunk) == MS_VM_RESULT_OK);
+  TEST_ASSERT(output.length == strlen(kExpectedOutput));
+  TEST_ASSERT(memcmp(output.data, kExpectedOutput, output.length) == 0);
+
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  ms_diag_list_destroy(&diagnostics);
+  ms_buffer_destroy(&output);
+  ms_buffer_destroy(&disassembly);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
 int main(void) {
   TEST_ASSERT(test_lowers_globals_and_block_locals() == 0);
   TEST_ASSERT(test_short_circuit_and_loop_control_flow() == 0);
@@ -407,5 +457,6 @@ int main(void) {
   TEST_ASSERT(test_lowers_class_declarations_and_installs_methods() == 0);
   TEST_ASSERT(test_lowers_inheritance_and_super_lookup() == 0);
   TEST_ASSERT(test_lowers_container_literals_and_runs_build_opcodes() == 0);
+  TEST_ASSERT(test_lowers_container_indexing_and_list_assignment() == 0);
   return 0;
 }

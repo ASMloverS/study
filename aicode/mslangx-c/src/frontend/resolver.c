@@ -849,7 +849,8 @@ static int ms_resolver_resolve_expression(MsResolver *resolver,
     case MS_AST_ASSIGN:
       if (node->as.assign.target == NULL ||
           (node->as.assign.target->kind != MS_AST_VARIABLE &&
-           node->as.assign.target->kind != MS_AST_PROPERTY)) {
+           node->as.assign.target->kind != MS_AST_PROPERTY &&
+           node->as.assign.target->kind != MS_AST_INDEX)) {
         return ms_resolver_resolve_unsupported(resolver, node->as.assign.target);
       }
       if (node->as.assign.target->kind == MS_AST_VARIABLE) {
@@ -858,6 +859,13 @@ static int ms_resolver_resolve_expression(MsResolver *resolver,
                                             node->as.assign.target,
                                             node->as.assign.target->as.variable.name,
                                             1);
+      }
+      if (node->as.assign.target->kind == MS_AST_INDEX) {
+        return ms_resolver_resolve_expression(resolver,
+                                              node->as.assign.target->as.index.object) &&
+               ms_resolver_resolve_expression(resolver,
+                                              node->as.assign.target->as.index.index) &&
+               ms_resolver_resolve_expression(resolver, node->as.assign.value);
       }
       return ms_resolver_resolve_expression(resolver,
                                             node->as.assign.target->as.property.object) &&

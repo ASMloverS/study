@@ -80,6 +80,10 @@ static const char* ms_disasm_opcode_name(uint8_t opcode) {
       return "OP_BUILD_TUPLE";
     case MS_OP_BUILD_MAP:
       return "OP_BUILD_MAP";
+    case MS_OP_INDEX_GET:
+      return "OP_INDEX_GET";
+    case MS_OP_INDEX_SET:
+      return "OP_INDEX_SET";
     case MS_OP_CLOSE_UPVALUE:
       return "OP_CLOSE_UPVALUE";
     case MS_OP_RETURN:
@@ -262,6 +266,8 @@ static size_t ms_disassemble_instruction(const MsChunk* chunk,
     case MS_OP_NEGATE:
     case MS_OP_PRINT:
     case MS_OP_INHERIT:
+    case MS_OP_INDEX_GET:
+    case MS_OP_INDEX_SET:
     case MS_OP_CLOSE_UPVALUE:
     case MS_OP_RETURN:
       if (!ms_disasm_appendf(buffer, "%s\n", name)) {

@@ -128,6 +128,24 @@ mslangc_add_cli_test(containers.literals
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.literals PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+mslangc_add_cli_test(containers.list_indexing
+  -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/list_indexing.ms"
+  -DEXPECT_EXIT=0
+  -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/list_indexing.ms.out"
+  -DEXPECT_STDERR=""
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(containers.list_indexing PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+mslangc_add_cli_test(containers.tuple_index_read
+  -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/tuple_index_read.ms"
+  -DEXPECT_EXIT=0
+  -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/tuple_index_read.ms.out"
+  -DEXPECT_STDERR=""
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(containers.tuple_index_read PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
 
 mslangc_add_e2e_named_test(class.basic_class
   "e2e/class/basic_class.ms"
