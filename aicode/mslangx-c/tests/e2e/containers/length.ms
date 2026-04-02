@@ -1,0 +1,8 @@
+print len("")
+print len("abc")
+print len(empty_list())
+print len(filled_list())
+print len(empty_tuple())
+print len(filled_tuple())
+print len(empty_map())
+print len(filled_map())

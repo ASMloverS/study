@@ -15,11 +15,30 @@ static int expect_formatted_value(MsValue value, const char *expected) {
   return 0;
 }
 
+static int expect_length(MsValue value, int expected_length) {
+  int actual_length = -1;
+
+  TEST_ASSERT(ms_value_length(value, &actual_length));
+  TEST_ASSERT(actual_length == expected_length);
+  return 0;
+}
+
+static int expect_length_failure(MsValue value) {
+  int actual_length = -1;
+
+  TEST_ASSERT(!ms_value_length(value, &actual_length));
+  return 0;
+}
+
 int main(void) {
   MsList *list;
   MsTuple *tuple;
   MsMap *map;
+  MsList *empty_list;
+  MsTuple *empty_tuple;
+  MsMap *empty_map;
   MsString *key;
+  MsString *empty_string;
   MsList *out_list = NULL;
   MsTuple *out_tuple = NULL;
   MsMap *out_map = NULL;
@@ -33,12 +52,20 @@ int main(void) {
   list = ms_list_new();
   tuple = ms_tuple_new();
   map = ms_map_new();
+  empty_list = ms_list_new();
+  empty_tuple = ms_tuple_new();
+  empty_map = ms_map_new();
   key = ms_string_from_cstr("answer");
+  empty_string = ms_string_from_cstr("");
 
   TEST_ASSERT(list != NULL);
   TEST_ASSERT(tuple != NULL);
   TEST_ASSERT(map != NULL);
+  TEST_ASSERT(empty_list != NULL);
+  TEST_ASSERT(empty_tuple != NULL);
+  TEST_ASSERT(empty_map != NULL);
   TEST_ASSERT(key != NULL);
+  TEST_ASSERT(empty_string != NULL);
 
   TEST_ASSERT(list->object.type == MS_OBJ_LIST);
   TEST_ASSERT(tuple->object.type == MS_OBJ_TUPLE);
@@ -99,9 +126,29 @@ int main(void) {
   TEST_ASSERT(expect_formatted_value(tuple_value, "<tuple>") == 0);
   TEST_ASSERT(expect_formatted_value(map_value, "<map>") == 0);
 
+  TEST_ASSERT(ms_value_is_falsey(ms_value_object((MsObject *) empty_string)));
+  TEST_ASSERT(ms_value_is_falsey(ms_value_object((MsObject *) empty_list)));
+  TEST_ASSERT(ms_value_is_falsey(ms_value_object((MsObject *) empty_tuple)));
+  TEST_ASSERT(ms_value_is_falsey(ms_value_object((MsObject *) empty_map)));
+  TEST_ASSERT(!ms_value_is_falsey(list_value));
+  TEST_ASSERT(!ms_value_is_falsey(tuple_value));
+  TEST_ASSERT(!ms_value_is_falsey(map_value));
+
+  TEST_ASSERT(expect_length(ms_value_object((MsObject *) key), 6) == 0);
+  TEST_ASSERT(expect_length(list_value, 2) == 0);
+  TEST_ASSERT(expect_length(tuple_value, 2) == 0);
+  TEST_ASSERT(expect_length(map_value, 1) == 0);
+  TEST_ASSERT(expect_length_failure(ms_value_nil()) == 0);
+  TEST_ASSERT(expect_length_failure(ms_value_bool(1)) == 0);
+  TEST_ASSERT(expect_length_failure(ms_value_number(3.0)) == 0);
+
   ms_map_free(map);
   ms_tuple_free(tuple);
   ms_list_free(list);
+  ms_map_free(empty_map);
+  ms_tuple_free(empty_tuple);
+  ms_list_free(empty_list);
+  ms_string_free(empty_string);
   ms_string_free(key);
   return 0;
 }

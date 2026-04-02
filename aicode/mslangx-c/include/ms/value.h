@@ -69,6 +69,7 @@ int ms_value_get_list(MsValue value, MsList** out_list);
 int ms_value_get_tuple(MsValue value, MsTuple** out_tuple);
 int ms_value_get_map(MsValue value, MsMap** out_map);
 
+int ms_value_length(MsValue value, int* out_length);
 int ms_value_is_falsey(MsValue value);
 int ms_value_equals(MsValue left, MsValue right);
 int ms_value_format(MsValue value, char* buffer, size_t buffer_size);

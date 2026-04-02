@@ -1,10 +1,13 @@
 #include "ms/value.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "ms/object.h"
 #include "ms/runtime/function.h"
 #include "ms/string.h"
+#include "ms/table.h"
 
 static int ms_value_has_object_type(MsValue value, MsObjectType type) {
   return value.type == MS_VAL_OBJECT && value.as.object != NULL &&
@@ -25,6 +28,15 @@ static const char* ms_native_display_name(const MsNativeFunction* function) {
   }
 
   return function->name->bytes;
+}
+
+static int ms_value_size_to_int(size_t length, int* out_length) {
+  if (out_length == NULL || length > (size_t) INT_MAX) {
+    return 0;
+  }
+
+  *out_length = (int) length;
+  return 1;
 }
 
 MsValue ms_value_nil(void) {
@@ -246,8 +258,30 @@ int ms_value_get_map(MsValue value, MsMap** out_map) {
   return 1;
 }
 
+int ms_value_length(MsValue value, int* out_length) {
+  MsString* string = NULL;
+  MsList* list = NULL;
+  MsTuple* tuple = NULL;
+  MsMap* map = NULL;
+
+  if (ms_value_get_string(value, &string)) {
+    return ms_value_size_to_int(string->length, out_length);
+  }
+  if (ms_value_get_list(value, &list)) {
+    return ms_value_size_to_int(list->elements.count, out_length);
+  }
+  if (ms_value_get_tuple(value, &tuple)) {
+    return ms_value_size_to_int(tuple->elements.count, out_length);
+  }
+  if (ms_value_get_map(value, &map)) {
+    return ms_value_size_to_int(ms_table_count(map->entries), out_length);
+  }
+
+  return 0;
+}
+
 int ms_value_is_falsey(MsValue value) {
-  MsString* string;
+  int length = 0;
 
   if (value.type == MS_VAL_NIL) {
     return 1;
@@ -261,8 +295,8 @@ int ms_value_is_falsey(MsValue value) {
     return value.as.number == 0.0;
   }
 
-  if (ms_value_get_string(value, &string)) {
-    return string->length == 0;
+  if (ms_value_length(value, &length)) {
+    return length == 0;
   }
 
   return 0;

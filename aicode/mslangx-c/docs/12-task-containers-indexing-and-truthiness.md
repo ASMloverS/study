@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Subtask 12.1 completed and verified on 2026-04-03.
+In progress. Subtasks 12.1 and 12.2 completed and verified on 2026-04-03.
 
 ## Goal
 
@@ -74,7 +74,7 @@ Use the following status markers consistently in this document:
 | Subtask | Status | Depends on | Summary |
 | --- | --- | --- | --- |
 | 12.1 | `DONE` | Task 03 | Runtime container objects, storage helpers, and printing hooks |
-| 12.2 | `TODO` | 12.1 | Truthiness and `ms_value_length()` helpers |
+| 12.2 | `DONE` | 12.1 | Truthiness and `ms_value_length()` helpers |
 | 12.3 | `TODO` | 12.1 | Lower container literals and execute `BUILD_*` opcodes |
 | 12.4 | `TODO` | 12.3 | `list` and `tuple` index read and write semantics |
 | 12.5 | `TODO` | 12.4 | `map` indexing with string keys |
@@ -118,7 +118,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "containers_truthiness\.u
 
 ### Subtask 12.2 - Truthiness and `ms_value_length()` helpers
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 12.1.
 
