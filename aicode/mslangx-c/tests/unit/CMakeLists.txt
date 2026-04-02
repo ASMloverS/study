@@ -39,6 +39,7 @@ mslangc_add_support_unit_test(support.buffer buffer_test.c)
 mslangc_add_runtime_unit_test(runtime_core.value value_test.c)
 mslangc_add_runtime_unit_test(runtime_core.string string_test.c)
 mslangc_add_runtime_unit_test(runtime_core.table table_test.c)
+mslangc_add_runtime_unit_test(containers_truthiness.unit containers_truthiness_test.c)
 add_executable(classes_methods.unit classes_methods_test.c)
 target_link_libraries(classes_methods.unit PRIVATE
   mslang_frontend

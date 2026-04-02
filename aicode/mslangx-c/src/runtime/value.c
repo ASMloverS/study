@@ -107,6 +107,18 @@ int ms_value_is_native_function(MsValue value) {
   return ms_value_has_object_type(value, MS_OBJ_NATIVE_FN);
 }
 
+int ms_value_is_list(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_LIST);
+}
+
+int ms_value_is_tuple(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_TUPLE);
+}
+
+int ms_value_is_map(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_MAP);
+}
+
 int ms_value_get_bool(MsValue value, int* out_boolean) {
   if (!ms_value_is_bool(value) || out_boolean == NULL) {
     return 0;
@@ -204,6 +216,33 @@ int ms_value_get_native_function(MsValue value,
   }
 
   *out_function = (MsNativeFunction*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_list(MsValue value, MsList** out_list) {
+  if (!ms_value_is_list(value) || out_list == NULL) {
+    return 0;
+  }
+
+  *out_list = (MsList*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_tuple(MsValue value, MsTuple** out_tuple) {
+  if (!ms_value_is_tuple(value) || out_tuple == NULL) {
+    return 0;
+  }
+
+  *out_tuple = (MsTuple*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_map(MsValue value, MsMap** out_map) {
+  if (!ms_value_is_map(value) || out_map == NULL) {
+    return 0;
+  }
+
+  *out_map = (MsMap*) value.as.object;
   return 1;
 }
 

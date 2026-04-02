@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned. Subtasks decomposed on 2026-04-02. Implementation not started.
+In progress. Subtask 12.1 completed and verified on 2026-04-03.
 
 ## Goal
 
@@ -73,7 +73,7 @@ Use the following status markers consistently in this document:
 
 | Subtask | Status | Depends on | Summary |
 | --- | --- | --- | --- |
-| 12.1 | `TODO` | Task 03 | Runtime container objects, storage helpers, and printing hooks |
+| 12.1 | `DONE` | Task 03 | Runtime container objects, storage helpers, and printing hooks |
 | 12.2 | `TODO` | 12.1 | Truthiness and `ms_value_length()` helpers |
 | 12.3 | `TODO` | 12.1 | Lower container literals and execute `BUILD_*` opcodes |
 | 12.4 | `TODO` | 12.3 | `list` and `tuple` index read and write semantics |
@@ -82,7 +82,7 @@ Use the following status markers consistently in this document:
 
 ### Subtask 12.1 - Runtime container objects, storage helpers, and printing hooks
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Task 03 runtime value and object foundation.
 
