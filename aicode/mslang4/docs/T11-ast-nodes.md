@@ -573,13 +573,13 @@ Loop and call `ms_stmt_free` on each, then free the array.
 
 ## Acceptance Criteria
 
-- [ ] `ms_expr_create(MS_EXPR_LITERAL)` returns non-NULL with correct type
-- [ ] `ms_stmt_create(MS_STMT_VAR)` returns non-NULL with correct type
-- [ ] `ms_expr_free()` on a literal expression doesn't crash
-- [ ] `ms_stmt_free()` on a block with 3 child statements frees all recursively
-- [ ] `ms_stmt_list_free()` handles empty list (count=0, stmts=NULL)
-- [ ] Complex AST tree (nested binary expressions) frees completely without leak
-- [ ] All expression types and statement types can be created
+- [x] `ms_expr_create(MS_EXPR_LITERAL)` returns non-NULL with correct type
+- [x] `ms_stmt_create(MS_STMT_VAR)` returns non-NULL with correct type
+- [x] `ms_expr_free()` on a literal expression doesn't crash
+- [x] `ms_stmt_free()` on a block with 3 child statements frees all recursively
+- [x] `ms_stmt_list_free()` handles empty list (count=0, stmts=NULL)
+- [x] Complex AST tree (nested binary expressions) frees completely without leak
+- [x] All expression types and statement types can be created
 
 ## Notes
 

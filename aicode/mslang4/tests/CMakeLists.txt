@@ -33,3 +33,7 @@ add_test(NAME test_table COMMAND test_table)
 add_executable(test_scanner unit/test_scanner.c ${CMAKE_SOURCE_DIR}/src/scanner.c)
 target_include_directories(test_scanner PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_scanner COMMAND test_scanner)
+
+add_executable(test_ast unit/test_ast.c ${CMAKE_SOURCE_DIR}/src/ast.c ${CMAKE_SOURCE_DIR}/src/memory.c)
+target_include_directories(test_ast PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_ast COMMAND test_ast)
