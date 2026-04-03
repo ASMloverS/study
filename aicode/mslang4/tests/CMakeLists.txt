@@ -41,3 +41,7 @@ add_test(NAME test_ast COMMAND test_ast)
 add_executable(test_chunk unit/test_chunk.c ${CMAKE_SOURCE_DIR}/src/chunk.c ${CMAKE_SOURCE_DIR}/src/value.c ${CMAKE_SOURCE_DIR}/src/memory.c)
 target_include_directories(test_chunk PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_chunk COMMAND test_chunk)
+
+add_executable(test_parser unit/test_parser.c ${CMAKE_SOURCE_DIR}/src/parser.c ${CMAKE_SOURCE_DIR}/src/scanner.c ${CMAKE_SOURCE_DIR}/src/ast.c ${CMAKE_SOURCE_DIR}/src/memory.c)
+target_include_directories(test_parser PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_parser COMMAND test_parser)

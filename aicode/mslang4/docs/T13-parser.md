@@ -253,16 +253,16 @@ bool ms_parser_had_error(const MsParser* parser);
 
 ## Acceptance Criteria
 
-- [ ] Parse `"var x = 42"` → VarDecl AST node
-- [ ] Parse `"1 + 2 * 3"` → Binary(PLUS, Literal(1), Binary(STAR, Literal(2), Literal(3)))
-- [ ] Parse `"if (true) print 1 else print 2"` → If AST with then/else branches
-- [ ] Parse `"fn add(a, b) { return a + b }"` → Function AST
-- [ ] Parse `"class Foo { fn bar() { ... } }"` → Class AST
-- [ ] Parse `"import math"` → Import AST
-- [ ] Parse `"from math import sqrt"` → Import AST with items
-- [ ] Error recovery: invalid syntax doesn't crash, reports error
-- [ ] `ms_parser_had_error()` returns true after parsing invalid input
-- [ ] Complex programs parse correctly
+- [x] Parse `"var x = 42"` → VarDecl AST node
+- [x] Parse `"1 + 2 * 3"` → Binary(PLUS, Literal(1), Binary(STAR, Literal(2), Literal(3)))
+- [x] Parse `"if (true) print 1 else print 2"` → If AST with then/else branches
+- [x] Parse `"fn add(a, b) { return a + b }"` → Function AST
+- [x] Parse `"class Foo { fn bar() { ... } }"` → Class AST
+- [x] Parse `"import math"` → Import AST
+- [x] Parse `"from math import sqrt"` → Import AST with items
+- [x] Error recovery: invalid syntax doesn't crash, reports error
+- [x] `ms_parser_had_error()` returns true after parsing invalid input
+- [x] Complex programs parse correctly
 
 ## Notes
 

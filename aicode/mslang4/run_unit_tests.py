@@ -30,6 +30,7 @@ ALL_TESTS = [
     "test_table",
     "test_scanner",
     "test_ast",
+    "test_parser",
     "test_chunk",
 ]
 
