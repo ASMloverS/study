@@ -37,3 +37,7 @@ add_test(NAME test_scanner COMMAND test_scanner)
 add_executable(test_ast unit/test_ast.c ${CMAKE_SOURCE_DIR}/src/ast.c ${CMAKE_SOURCE_DIR}/src/memory.c)
 target_include_directories(test_ast PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_ast COMMAND test_ast)
+
+add_executable(test_chunk unit/test_chunk.c ${CMAKE_SOURCE_DIR}/src/chunk.c ${CMAKE_SOURCE_DIR}/src/value.c ${CMAKE_SOURCE_DIR}/src/memory.c)
+target_include_directories(test_chunk PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME test_chunk COMMAND test_chunk)

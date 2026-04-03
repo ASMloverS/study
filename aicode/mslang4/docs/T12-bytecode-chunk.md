@@ -559,15 +559,15 @@ Instruction format:
 
 ## Acceptance Criteria
 
-- [ ] Init/free cycle completes without leak
-- [ ] Write 256 bytes into chunk, all readable at correct indices
-- [ ] `ms_chunk_add_constant` returns sequential indices (0, 1, 2...)
-- [ ] Constants can be retrieved by index from `chunk.constants.values[index]`
-- [ ] Line numbers are stored alongside bytes
-- [ ] Chunk grows dynamically (write 1000+ bytes)
-- [ ] Disassembler prints readable output for basic opcodes
-- [ ] Disassembler handles MS_OP_CONSTANT with constant value display
-- [ ] Disassembler returns correct next offset
+- [x] Init/free cycle completes without leak
+- [x] Write 256 bytes into chunk, all readable at correct indices
+- [x] `ms_chunk_add_constant` returns sequential indices (0, 1, 2...)
+- [x] Constants can be retrieved by index from `chunk.constants.values[index]`
+- [x] Line numbers are stored alongside bytes
+- [x] Chunk grows dynamically (write 1000+ bytes)
+- [x] Disassembler prints readable output for basic opcodes
+- [x] Disassembler handles MS_OP_CONSTANT with constant value display
+- [x] Disassembler returns correct next offset
 
 ## Notes
 
