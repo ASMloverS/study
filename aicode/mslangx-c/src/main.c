@@ -122,6 +122,46 @@ static char *mslangc_read_file(const char *path) {
   return buffer;
 }
 
+static char *mslangc_dirname(const char *path) {
+  const char *last_separator = NULL;
+  const char *cursor;
+  size_t length;
+  char *directory;
+
+  if (path == NULL) {
+    return NULL;
+  }
+
+  for (cursor = path; *cursor != '\0'; ++cursor) {
+    if (*cursor == '/' || *cursor == '\\') {
+      last_separator = cursor;
+    }
+  }
+
+  if (last_separator == NULL) {
+    directory = (char *) malloc(2);
+    if (directory != NULL) {
+      directory[0] = '.';
+      directory[1] = '\0';
+    }
+    return directory;
+  }
+
+  length = (size_t) (last_separator - path);
+  if (length == 0) {
+    length = 1;
+  }
+
+  directory = (char *) malloc(length + 1);
+  if (directory == NULL) {
+    return NULL;
+  }
+
+  memcpy(directory, path, length);
+  directory[length] = '\0';
+  return directory;
+}
+
 static int mslangc_run_source(const char *file,
                               const char *source,
                               FILE *error_stream) {
@@ -130,6 +170,7 @@ static int mslangc_run_source(const char *file,
   MsCompileResult compile_result;
   MsVM vm;
   MsModule module;
+  char *module_search_root = NULL;
   int exit_code = 0;
 
   ms_chunk_init(&chunk);
@@ -145,6 +186,12 @@ static int mslangc_run_source(const char *file,
   ms_diag_list_destroy(&diagnostics);
 
   ms_vm_init(&vm);
+  if (file != NULL && strcmp(file, "<inline>") != 0) {
+    module_search_root = mslangc_dirname(file);
+    if (module_search_root != NULL) {
+      ms_vm_add_search_root(&vm, module_search_root);
+    }
+  }
   ms_module_init(&module, file);
   ms_vm_set_current_module(&vm, &module);
   if (ms_vm_run_chunk(&vm, &chunk) != MS_VM_RESULT_OK) {
@@ -152,6 +199,7 @@ static int mslangc_run_source(const char *file,
     exit_code = kExitRuntime;
   }
 
+  free(module_search_root);
   ms_module_destroy(&module);
   ms_vm_destroy(&vm);
   ms_chunk_destroy(&chunk);

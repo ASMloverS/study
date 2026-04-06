@@ -8,10 +8,25 @@
 #include "ms/runtime/function.h"
 #include "ms/table.h"
 
+typedef enum MsModuleState {
+  MS_MODULE_STATE_UNSEEN,
+  MS_MODULE_STATE_INITIALIZING,
+  MS_MODULE_STATE_INITIALIZED,
+  MS_MODULE_STATE_FAILED
+} MsModuleState;
+
 typedef struct MsModule {
-  const char* name;
+  char* name;
+  char* canonical_path;
+  MsModuleState state;
   MsTable globals;
 } MsModule;
+
+typedef struct MsModuleCache {
+  size_t count;
+  size_t capacity;
+  MsModule** modules;
+} MsModuleCache;
 
 typedef int (*MsVmWriteFn)(void* user_data, const char* text, size_t length);
 
@@ -38,6 +53,10 @@ typedef struct MsVM {
   size_t frame_capacity;
   MsUpvalue* open_upvalues;
   MsModule* current_module;
+  char** module_search_roots;
+  size_t module_search_root_count;
+  size_t module_search_root_capacity;
+  MsModuleCache module_cache;
   MsDiagnosticList diagnostics;
   MsVmWriteFn write_fn;
   void* write_user_data;
@@ -45,10 +64,19 @@ typedef struct MsVM {
 
 void ms_module_init(MsModule* module, const char* name);
 void ms_module_destroy(MsModule* module);
+int ms_module_transition_state(MsModule* module, MsModuleState new_state);
 
 void ms_vm_init(MsVM* vm);
 void ms_vm_destroy(MsVM* vm);
 void ms_vm_set_current_module(MsVM* vm, MsModule* module);
+int ms_module_build_file_path(const char* module_name, char** out_relative_path);
+int ms_vm_add_search_root(MsVM* vm, const char* root_path);
+int ms_vm_resolve_module_path(const MsVM* vm,
+                              const char* module_name,
+                              char** out_canonical_path);
+MsModule* ms_vm_get_or_create_module(MsVM* vm,
+                                     const char* path,
+                                     int* out_inserted_new);
 void ms_vm_set_write_callback(MsVM* vm,
                               MsVmWriteFn write_fn,
                               void* write_user_data);

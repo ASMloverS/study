@@ -9,6 +9,161 @@
 #include "ms/runtime/opcode.h"
 #include "ms/string.h"
 
+static char* ms_vm_strdup(const char* text) {
+  char* copy;
+  size_t length;
+
+  if (text == NULL) {
+    return NULL;
+  }
+
+  length = strlen(text);
+  copy = (char*) malloc(length + 1);
+  if (copy == NULL) {
+    return NULL;
+  }
+
+  memcpy(copy, text, length + 1);
+  return copy;
+}
+
+static int ms_vm_is_path_separator(char ch) {
+  return ch == '/' || ch == '\\';
+}
+
+static char ms_vm_path_separator(void) {
+#if defined(_WIN32)
+  return '\\';
+#else
+  return '/';
+#endif
+}
+
+static char* ms_vm_normalize_path(const char* path) {
+  if (path == NULL) {
+    return NULL;
+  }
+
+#if defined(_WIN32)
+  return _fullpath(NULL, path, 0);
+#else
+  return realpath(path, NULL);
+#endif
+}
+
+static char* ms_vm_join_path(const char* root, const char* relative_path) {
+  char* joined;
+  size_t root_length;
+  size_t relative_length;
+  size_t total_length;
+  int needs_separator;
+
+  if (root == NULL || relative_path == NULL) {
+    return NULL;
+  }
+
+  root_length = strlen(root);
+  relative_length = strlen(relative_path);
+  needs_separator =
+      root_length > 0 && !ms_vm_is_path_separator(root[root_length - 1]);
+  total_length = root_length + (needs_separator ? 1u : 0u) + relative_length;
+
+  joined = (char*) malloc(total_length + 1);
+  if (joined == NULL) {
+    return NULL;
+  }
+
+  memcpy(joined, root, root_length);
+  if (needs_separator) {
+    joined[root_length] = ms_vm_path_separator();
+  }
+  memcpy(joined + root_length + (needs_separator ? 1u : 0u),
+         relative_path,
+         relative_length);
+  joined[total_length] = '\0';
+  return joined;
+}
+
+static int ms_vm_ensure_search_roots(MsVM* vm, size_t min_capacity) {
+  char** search_roots;
+  size_t new_capacity;
+
+  if (vm == NULL) {
+    return 0;
+  }
+  if (min_capacity <= vm->module_search_root_capacity) {
+    return 1;
+  }
+
+  new_capacity =
+      vm->module_search_root_capacity == 0 ? 4 : vm->module_search_root_capacity;
+  while (new_capacity < min_capacity) {
+    if (new_capacity > (SIZE_MAX / 2)) {
+      new_capacity = min_capacity;
+      break;
+    }
+    new_capacity *= 2;
+  }
+
+  search_roots =
+      (char**) realloc(vm->module_search_roots, new_capacity * sizeof(*search_roots));
+  if (search_roots == NULL) {
+    return 0;
+  }
+
+  vm->module_search_roots = search_roots;
+  vm->module_search_root_capacity = new_capacity;
+  return 1;
+}
+
+static int ms_vm_ensure_module_cache(MsVM* vm, size_t min_capacity) {
+  MsModule** modules;
+  size_t new_capacity;
+
+  if (vm == NULL) {
+    return 0;
+  }
+  if (min_capacity <= vm->module_cache.capacity) {
+    return 1;
+  }
+
+  new_capacity = vm->module_cache.capacity == 0 ? 4 : vm->module_cache.capacity;
+  while (new_capacity < min_capacity) {
+    if (new_capacity > (SIZE_MAX / 2)) {
+      new_capacity = min_capacity;
+      break;
+    }
+    new_capacity *= 2;
+  }
+
+  modules = (MsModule**) realloc(vm->module_cache.modules,
+                                 new_capacity * sizeof(*modules));
+  if (modules == NULL) {
+    return 0;
+  }
+
+  vm->module_cache.modules = modules;
+  vm->module_cache.capacity = new_capacity;
+  return 1;
+}
+
+static int ms_module_can_transition(MsModuleState current, MsModuleState next) {
+  switch (current) {
+    case MS_MODULE_STATE_UNSEEN:
+      return next == MS_MODULE_STATE_INITIALIZING ||
+             next == MS_MODULE_STATE_FAILED;
+    case MS_MODULE_STATE_INITIALIZING:
+      return next == MS_MODULE_STATE_INITIALIZED ||
+             next == MS_MODULE_STATE_FAILED;
+    case MS_MODULE_STATE_INITIALIZED:
+      return next == MS_MODULE_STATE_FAILED;
+    case MS_MODULE_STATE_FAILED:
+      return 0;
+  }
+
+  return 0;
+}
+
 static MsCallFrame* ms_vm_current_frame(MsVM* vm) {
   if (vm == NULL || vm->frame_count == 0) {
     return NULL;
@@ -1337,11 +1492,23 @@ static MsVmResult ms_vm_index_set(MsVM* vm, size_t instruction_offset) {
 }
 
 void ms_module_init(MsModule* module, const char* name) {
+  char* canonical_path = NULL;
+
   if (module == NULL) {
     return;
   }
 
-  module->name = name;
+  if (name != NULL) {
+    canonical_path = ms_vm_normalize_path(name);
+  }
+
+  module->name = ms_vm_strdup(name);
+  if (name != NULL && module->name == NULL) {
+    free(canonical_path);
+    canonical_path = NULL;
+  }
+  module->canonical_path = canonical_path;
+  module->state = MS_MODULE_STATE_UNSEEN;
   ms_table_init(&module->globals);
 }
 
@@ -1351,7 +1518,23 @@ void ms_module_destroy(MsModule* module) {
   }
 
   ms_table_destroy(&module->globals);
+  free(module->canonical_path);
+  free(module->name);
+  module->canonical_path = NULL;
   module->name = NULL;
+  module->state = MS_MODULE_STATE_UNSEEN;
+}
+
+int ms_module_transition_state(MsModule* module, MsModuleState new_state) {
+  if (module == NULL) {
+    return 0;
+  }
+  if (!ms_module_can_transition(module->state, new_state)) {
+    return 0;
+  }
+
+  module->state = new_state;
+  return 1;
 }
 
 void ms_vm_init(MsVM* vm) {
@@ -1367,18 +1550,42 @@ void ms_vm_init(MsVM* vm) {
   vm->frame_capacity = 0;
   vm->open_upvalues = NULL;
   vm->current_module = NULL;
+  vm->module_search_roots = NULL;
+  vm->module_search_root_count = 0;
+  vm->module_search_root_capacity = 0;
+  vm->module_cache.count = 0;
+  vm->module_cache.capacity = 0;
+  vm->module_cache.modules = NULL;
   ms_diag_list_init(&vm->diagnostics);
   vm->write_fn = NULL;
   vm->write_user_data = NULL;
 }
 
 void ms_vm_destroy(MsVM* vm) {
+  size_t i;
+
   if (vm == NULL) {
     return;
   }
 
+  for (i = 0; i < vm->module_cache.count; ++i) {
+    ms_module_destroy(vm->module_cache.modules[i]);
+    free(vm->module_cache.modules[i]);
+  }
+  for (i = 0; i < vm->module_search_root_count; ++i) {
+    free(vm->module_search_roots[i]);
+  }
+
+  free(vm->module_cache.modules);
+  free(vm->module_search_roots);
   free(vm->frames);
   free(vm->stack);
+  vm->module_cache.modules = NULL;
+  vm->module_cache.count = 0;
+  vm->module_cache.capacity = 0;
+  vm->module_search_roots = NULL;
+  vm->module_search_root_count = 0;
+  vm->module_search_root_capacity = 0;
   vm->frames = NULL;
   vm->frame_count = 0;
   vm->frame_capacity = 0;
@@ -1398,6 +1605,131 @@ void ms_vm_set_current_module(MsVM* vm, MsModule* module) {
   }
 
   vm->current_module = module;
+}
+
+int ms_module_build_file_path(const char* module_name, char** out_relative_path) {
+  char* relative_path;
+  size_t i;
+  size_t length;
+
+  if (module_name == NULL || out_relative_path == NULL || module_name[0] == '\0') {
+    return 0;
+  }
+
+  length = strlen(module_name);
+  relative_path = (char*) malloc(length + 4 + 1);
+  if (relative_path == NULL) {
+    return 0;
+  }
+
+  for (i = 0; i < length; ++i) {
+    relative_path[i] =
+        module_name[i] == '.' ? ms_vm_path_separator() : module_name[i];
+  }
+  memcpy(relative_path + length, ".ms", 4);
+  *out_relative_path = relative_path;
+  return 1;
+}
+
+int ms_vm_add_search_root(MsVM* vm, const char* root_path) {
+  char* normalized_path;
+
+  if (vm == NULL || root_path == NULL) {
+    return 0;
+  }
+
+  normalized_path = ms_vm_normalize_path(root_path);
+  if (normalized_path == NULL ||
+      !ms_vm_ensure_search_roots(vm, vm->module_search_root_count + 1)) {
+    free(normalized_path);
+    return 0;
+  }
+
+  vm->module_search_roots[vm->module_search_root_count] = normalized_path;
+  vm->module_search_root_count += 1;
+  return 1;
+}
+
+int ms_vm_resolve_module_path(const MsVM* vm,
+                              const char* module_name,
+                              char** out_canonical_path) {
+  char* relative_path = NULL;
+  size_t i;
+
+  if (vm == NULL || out_canonical_path == NULL ||
+      !ms_module_build_file_path(module_name, &relative_path)) {
+    return 0;
+  }
+
+  for (i = 0; i < vm->module_search_root_count; ++i) {
+    char* candidate_path = ms_vm_join_path(vm->module_search_roots[i], relative_path);
+    char* normalized_path = ms_vm_normalize_path(candidate_path);
+
+    free(candidate_path);
+    if (normalized_path != NULL) {
+      *out_canonical_path = normalized_path;
+      free(relative_path);
+      return 1;
+    }
+  }
+
+  free(relative_path);
+  return 0;
+}
+
+MsModule* ms_vm_get_or_create_module(MsVM* vm,
+                                     const char* path,
+                                     int* out_inserted_new) {
+  char* canonical_path;
+  size_t i;
+  MsModule* module;
+
+  if (out_inserted_new != NULL) {
+    *out_inserted_new = 0;
+  }
+  if (vm == NULL || path == NULL) {
+    return NULL;
+  }
+
+  canonical_path = ms_vm_normalize_path(path);
+  if (canonical_path == NULL) {
+    return NULL;
+  }
+
+  for (i = 0; i < vm->module_cache.count; ++i) {
+    module = vm->module_cache.modules[i];
+    if (module != NULL && module->canonical_path != NULL &&
+        strcmp(module->canonical_path, canonical_path) == 0) {
+      free(canonical_path);
+      return module;
+    }
+  }
+
+  if (!ms_vm_ensure_module_cache(vm, vm->module_cache.count + 1)) {
+    free(canonical_path);
+    return NULL;
+  }
+
+  module = (MsModule*) calloc(1, sizeof(*module));
+  if (module == NULL) {
+    free(canonical_path);
+    return NULL;
+  }
+
+  ms_module_init(module, canonical_path);
+  free(canonical_path);
+  if (module->name == NULL && path != NULL) {
+    ms_module_destroy(module);
+    free(module);
+    return NULL;
+  }
+
+  vm->module_cache.modules[vm->module_cache.count] = module;
+  vm->module_cache.count += 1;
+  if (out_inserted_new != NULL) {
+    *out_inserted_new = 1;
+  }
+  return module;
 }
 
 void ms_vm_set_write_callback(MsVM* vm,

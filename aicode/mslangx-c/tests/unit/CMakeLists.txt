@@ -51,6 +51,7 @@ set_tests_properties(classes_methods.unit PROPERTIES
 mslangc_add_runtime_unit_test(runtime_core.chunk chunk_test.c)
 mslangc_add_runtime_unit_test(runtime_core.disasm disasm_test.c)
 mslangc_add_runtime_unit_test(runtime_core.vm_core vm_core_test.c)
+mslangc_add_runtime_unit_test(modules.unit modules_test.c)
 mslangc_add_frontend_unit_test(lexer.unit lexer_test.c lexer)
 mslangc_add_frontend_unit_test(parser_expr.unit parser_expr_test.c parser_expr)
 mslangc_add_frontend_unit_test(parser_decl_stmt.unit parser_decl_stmt_test.c parser_decl_stmt)
