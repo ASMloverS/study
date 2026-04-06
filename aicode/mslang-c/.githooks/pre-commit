@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""
+pre-commit hook — format staged .c/.h files and re-stage them.
+
+Activation (one-time):
+    git config core.hooksPath .githooks
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+
+# Locate repo root (the directory that contains .githooks)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FORMATTER = REPO_ROOT / "tools" / "formatter.py"
+
+
+def get_staged_sources() -> list[Path]:
+    result = subprocess.run(
+        [
+            "git", "diff", "--cached", "--name-only",
+            "--diff-filter=ACM", "--", "*.c", "*.h",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+    return [REPO_ROOT / p for p in lines]
+
+
+def main() -> None:
+    paths = get_staged_sources()
+    if not paths:
+        sys.exit(0)
+
+    # Format files
+    proc = subprocess.run(
+        [sys.executable, str(FORMATTER), "--verbose"] + [str(p) for p in paths],
+        cwd=REPO_ROOT,
+    )
+    if proc.returncode != 0:
+        print("pre-commit: formatter failed, aborting commit.", file=sys.stderr)
+        sys.exit(1)
+
+    # Re-stage formatted files
+    subprocess.run(
+        ["git", "add"] + [str(p) for p in paths],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+
+
+if __name__ == "__main__":
+    main()
