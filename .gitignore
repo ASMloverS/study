@@ -41,3 +41,5 @@ node_modules/
 dist/
 minicli.yaml
 python/hfserver/uploads
+package-lock.json
+package.json
