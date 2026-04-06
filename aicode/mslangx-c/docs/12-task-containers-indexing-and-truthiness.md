@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Subtasks 12.1 through 12.5 completed and verified on 2026-04-03.
+Completed. Subtasks 12.1 through 12.6 completed and verified on 2026-04-03.
 
 ## Goal
 
@@ -78,7 +78,7 @@ Use the following status markers consistently in this document:
 | 12.3 | `DONE` | 12.1 | Lower container literals and execute `BUILD_*` opcodes |
 | 12.4 | `DONE` | 12.3 | `list` and `tuple` index read and write semantics |
 | 12.5 | `DONE` | 12.4 | `map` indexing with string keys |
-| 12.6 | `TODO` | 12.5 | Negative runtime diagnostics and full regression |
+| 12.6 | `DONE` | 12.5 | Negative runtime diagnostics and full regression |
 
 ### Subtask 12.1 - Runtime container objects, storage helpers, and printing hooks
 
@@ -256,7 +256,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "containers_truthiness\.u
 
 ### Subtask 12.6 - Negative runtime diagnostics and full regression
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 12.5.
 
@@ -280,7 +280,9 @@ ctest --test-dir build -C Debug --output-on-failure -R "containers_truthiness\.u
 7. Add `tests/e2e/containers/non_string_map_key.ms`.
 8. Register the negative container CLI tests in `tests/CMakeLists.txt` with
    `EXPECT_EXIT=70`.
-9. Keep at least one passing script that exercises the chain
+9. Add `tests/e2e/containers/regression_chain.ms` and
+   `tests/e2e/containers/regression_chain.ms.out`.
+10. Keep at least one passing script that exercises the chain
    `literal -> truthiness -> list write -> tuple read -> map read`.
 
 **Verification**

@@ -1100,6 +1100,7 @@ static int ms_lowering_emit_if(MsLoweringState* state,
                                const MsAstNode* node) {
   size_t then_jump = 0;
   size_t else_jump = 0;
+  size_t end_jump = 0;
 
   if (!ms_lowering_emit_expression(state, node->as.if_stmt.condition) ||
       !ms_lowering_emit_jump(state,
@@ -1124,8 +1125,13 @@ static int ms_lowering_emit_if(MsLoweringState* state,
     return ms_lowering_patch_jump(state, else_jump);
   }
 
-  return ms_lowering_patch_jump(state, then_jump) &&
-         ms_lowering_emit_opcode(state, MS_OP_POP, node->line);
+  return ms_lowering_emit_jump(state,
+                               MS_OP_JUMP,
+                               node->line,
+                               &end_jump) &&
+         ms_lowering_patch_jump(state, then_jump) &&
+         ms_lowering_emit_opcode(state, MS_OP_POP, node->line) &&
+         ms_lowering_patch_jump(state, end_jump);
 }
 
 static int ms_lowering_emit_while(MsLoweringState* state,
