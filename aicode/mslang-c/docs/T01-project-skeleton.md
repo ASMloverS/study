@@ -69,10 +69,10 @@ typedef size_t   ms_sz;
 
 ## Implementation Notes
 
-- CMakeLists.txt: `cmake_minimum_required(VERSION 3.20)`, `set(CMAKE_C_STANDARD 11)`, MSVC uses `/W4 /WX`, others use `-Wall -Wextra -Wpedantic -Werror`
-- `tests/test_assert.h` provides `TEST_ASSERT(cond)`, `TEST_ASSERT_EQ(a,b)`, `TEST_ASSERT_STR_EQ(a,b)` macros that print file:line on failure and `exit(1)`
-- `cmake/MslangTesting.cmake` provides `ms_add_test(name source_file)` function that creates a test target and registers it with CTest
-- `src/main.c` parses `--version` flag, otherwise prints usage
+- `CMakeLists.txt`: `cmake_minimum_required(VERSION 3.20)`, `set(CMAKE_C_STANDARD 11)`; MSVC: `/W4 /WX`; others: `-Wall -Wextra -Wpedantic -Werror`
+- `tests/test_assert.h`: `TEST_ASSERT(cond)`, `TEST_ASSERT_EQ(a,b)`, `TEST_ASSERT_STR_EQ(a,b)` — print file:line on failure and `exit(1)`
+- `cmake/MslangTesting.cmake`: `ms_add_test(name source_file)` creates a test target and registers it with CTest
+- `src/main.c`: parses `--version`, otherwise prints usage
 
 ## C Unit Tests
 
@@ -95,4 +95,4 @@ int main(void) {
 
 ## .ms Integration Tests
 
-无 — VM 尚未实现。
+None — VM not yet implemented.

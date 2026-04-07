@@ -10,10 +10,10 @@
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/value.h` | MsValue 定义, 构造/检查/提取宏 |
-| Create | `src/value.c` | 值操作实现 |
-| Modify | `CMakeLists.txt` | 添加 ms_support 静态库 |
-| Create | `tests/unit/test_value.c` | 值系统单元测试 |
+| Create | `include/ms/value.h` | `MsValue` definition, construction/check/extraction macros |
+| Create | `src/value.c` | Value operation implementations |
+| Modify | `CMakeLists.txt` | Add `ms_support` static library |
+| Create | `tests/unit/test_value.c` | Value system unit tests |
 
 ## Key Data Structures / API
 
@@ -95,10 +95,10 @@ char* ms_value_to_cstring(MsValue v);   // heap alloc, caller frees
 
 ## Implementation Notes
 
-- **相等性**: nil==nil, bool 按值比较, numeric 跨类型 (int 5 == double 5.0), object 指针比较 (string 已驻留所以指针相等即可)
-- **真值性**: nil → false, bool → 原值, 0 → false, 0.0 → false, 其余 → true (空容器为 false 在 T21 补充)
-- **ms_value_print**: int 打印不带小数点, double 根据是否整数决定格式 (`%g`), string 打印 data 内容
-- **ms_value_to_cstring**: 返回堆分配 char*, 调用者负责 free
+- **Equality**: nil==nil; bool by value; numeric cross-type (int 5 == double 5.0); object by pointer (strings are interned, so pointer equality suffices)
+- **Truthiness**: nil → false; bool → its value; 0 → false; 0.0 → false; all else → true (empty containers → false, added in T21)
+- **`ms_value_print`**: int prints without decimal point; double uses `%g` (omits decimal if whole number); string prints its data content
+- **`ms_value_to_cstring`**: returns heap-allocated `char*`; caller must free
 
 ## C Unit Tests
 

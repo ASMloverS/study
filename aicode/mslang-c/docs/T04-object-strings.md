@@ -4,17 +4,17 @@
 
 **Goal:** Implement `MsObject` base header and `MsObjString` with flexible array member (FAM), FNV-1a hashing, and string interning.
 **Dependencies:** T02, T03
-**Produces:** 可创建/驻留字符串; 字符串相等为 O(1) 指针比较
+**Produces:** String creation and interning; string equality is O(1) pointer comparison
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/object.h` | MsObject 头部, MsObjString, 类型宏 |
-| Create | `include/ms/memory.h` | 内存分配接口 |
-| Create | `src/object.c` | 对象创建/销毁/打印 |
-| Create | `src/memory.c` | ms_reallocate 基础实现 |
-| Create | `tests/unit/test_object_string.c` | 字符串对象测试 |
+| Create | `include/ms/object.h` | `MsObject` header, `MsObjString`, type macros |
+| Create | `include/ms/memory.h` | Memory allocation interface |
+| Create | `src/object.c` | Object create/destroy/print |
+| Create | `src/memory.c` | `ms_reallocate` base implementation |
+| Create | `tests/unit/test_object_string.c` | String object tests |
 
 ## Key Data Structures / API
 
@@ -86,13 +86,13 @@ void* ms_reallocate(struct MsVM* vm, void* ptr, size_t old_size, size_t new_size
 
 ## Implementation Notes
 
-- **ms_alloc_object**: malloc(size), 初始化 MsObject 头部 (type, is_marked=false, generation=0, age=0), 挂到 `vm->objects` 链表头
+- **`ms_alloc_object`**: `malloc(size)`, initializes `MsObject` header (`type`, `is_marked=false`, `generation=0`, `age=0`), prepends to `vm->objects` list
 - **FNV-1a**: `hash = 2166136261u; for each byte: hash ^= byte; hash *= 16777619u;`
-- **字符串驻留**: `ms_obj_string_copy` 先计算 hash, 在 `vm->strings` 表中查 `ms_table_find_string`. 找到则直接返回已有字符串; 未找到则 alloc `sizeof(MsObjString) + length + 1`, 拷贝数据并 null-terminate, 插入驻留表
-- **ms_obj_string_take**: 类似但 takes ownership of `chars` (free after copy into FAM)
-- **ms_obj_string_concat**: 分配新 FAM 字符串, 拷贝 a+b 内容, 走驻留流程
-- **ms_object_free**: switch(obj->type), MS_OBJ_STRING → free obj 本身 (FAM 随结构体一起释放, 无额外释放)
-- **ms_value_equals**: 对于 OBJECT 类型, 直接指针比较 (字符串已驻留, 同内容 = 同指针)
+- **String interning**: `ms_obj_string_copy` computes hash, looks up via `ms_table_find_string` in `vm->strings`. Returns existing string if found; otherwise allocates `sizeof(MsObjString) + length + 1`, copies data, null-terminates, and inserts into the intern table
+- **`ms_obj_string_take`**: same as `ms_obj_string_copy` but takes ownership of `chars` (frees it after copying into FAM)
+- **`ms_obj_string_concat`**: allocates a new FAM string, copies `a`+`b` content, then runs the intern flow
+- **`ms_object_free`**: `switch(obj->type)`; `MS_OBJ_STRING` → free the object itself (FAM is released with the struct, no extra free needed)
+- **`ms_value_equals`**: for `OBJECT` type, uses direct pointer comparison (strings are interned, so same content = same pointer)
 
 ## C Unit Tests
 
@@ -100,7 +100,7 @@ void* ms_reallocate(struct MsVM* vm, void* ptr, size_t old_size, size_t new_size
 // tests/unit/test_object_string.c
 #include "test_assert.h"
 #include "ms/object.h"
-#include "ms/vm.h"  // 需要 MsVM 做驻留 (可先用 mini vm struct)
+#include "ms/vm.h"  // requires MsVM for interning (a mini vm struct suffices for now)
 
 static void test_string_interning(MsVM* vm) {
     MsObjString* a = ms_obj_string_copy(vm, "hello", 5);

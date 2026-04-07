@@ -10,9 +10,9 @@
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/table.h` | MsTable 定义和 API |
-| Create | `src/table.c` | 哈希表实现 |
-| Create | `tests/unit/test_table.c` | 单元测试 |
+| Create | `include/ms/table.h` | `MsTable` definition and API |
+| Create | `src/table.c` | Hash table implementation |
+| Create | `tests/unit/test_table.c` | Unit tests |
 
 ## Key Data Structures / API
 
@@ -50,16 +50,16 @@ void         ms_table_remove_white(MsTable* t);  // GC: remove unmarked string e
 
 ## Implementation Notes
 
-- **哈希**: 使用 ObjString 内置的 `hash` 字段 (FNV-1a, 在 T04 实现)
-- **探测**: 线性探测, `index = hash & (capacity - 1)`
-- **负载因子**: count (含 tombstone) > capacity * 3/4 时扩容
-- **容量**: 始终为 2 的幂, 初始容量 0 (首次插入时分配 8)
-- **Tombstone**: 删除时 key 设为 `MS_TABLE_TOMBSTONE`, value 设为 `MS_BOOL_VAL(true)` (哨兵). 插入时可复用 tombstone 槽位
-- **find_string**: 按字符内容和长度查找 (不是指针比较), 用于字符串驻留. 比较前先检查 hash 是否匹配
-- **remove_white**: GC 清扫阶段调用, 移除未标记的字符串 (用于清理驻留表)
+- **Hashing**: uses `ObjString`'s built-in `hash` field (FNV-1a, implemented in T04)
+- **Probing**: linear probing, `index = hash & (capacity - 1)`
+- **Load factor**: resize when count (including tombstones) > capacity * 3/4
+- **Capacity**: always power of 2; initial capacity 0, allocates 8 on first insert
+- **Tombstone**: on delete, set key to `MS_TABLE_TOMBSTONE` and value to `MS_BOOL_VAL(true)`; tombstone slots may be reused on insert
+- **`find_string`**: searches by char content and length (not pointer), for string interning; checks hash match before comparing content
+- **`remove_white`**: called during GC sweep; removes unmarked string entries from the intern table
 
 ```c
-// 核心查找逻辑
+// Core lookup logic
 static MsEntry* find_entry(MsEntry* entries, int capacity, MsObjString* key) {
     uint32_t index = key->hash & (uint32_t)(capacity - 1);
     MsEntry* tombstone = NULL;
@@ -81,13 +81,13 @@ static MsEntry* find_entry(MsEntry* entries, int capacity, MsObjString* key) {
 
 ```c
 // tests/unit/test_table.c
-// 注意: 此测试需要 T04 的 MsObjString 才能完整运行
-// 可先用 mock string 结构测试基础逻辑, 或在 T04 完成后一起测试
+// Note: full test requires MsObjString from T04.
+// Use a mock string struct for now, or defer until T04 is complete.
 
 #include "test_assert.h"
 #include "ms/table.h"
 
-// 简易 mock — 真实实现在 T04 后替换
+// Minimal mock — replace with real MsObjString after T04
 typedef struct {
     MsObject obj;
     uint32_t hash;
@@ -155,4 +155,4 @@ int main(void) {
 
 ## .ms Integration Tests
 
-无直接测试 — 哈希表是内部数据结构, 通过变量/全局/类方法表间接测试。
+No direct tests — hash table is an internal structure, tested indirectly through variables, globals, and method tables.

@@ -4,20 +4,20 @@
 
 **Goal:** Implement remaining base object types needed by compiler and VM: ObjFunction, ObjNative, ObjUpvalue, ObjClosure (FAM).
 **Dependencies:** T04
-**Produces:** 可创建函数/闭包对象; Chunk 拥有权归 ObjFunction
+**Produces:** Function and closure objects creatable; chunk ownership belongs to `ObjFunction`
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `include/ms/object.h` | 添加 Function/Native/Upvalue/Closure 结构和宏 |
-| Modify | `src/object.c` | 创建/销毁/打印函数 |
-| Create | `tests/unit/test_base_objects.c` | 基础对象测试 |
+| Modify | `include/ms/object.h` | Add Function/Native/Upvalue/Closure structs and macros |
+| Modify | `src/object.c` | Create/destroy/print functions |
+| Create | `tests/unit/test_base_objects.c` | Base object tests |
 
 ## Key Data Structures / API
 
 ```c
-// 追加到 include/ms/object.h
+// Append to include/ms/object.h
 
 // Forward decl
 typedef struct MsChunk MsChunk;
@@ -25,19 +25,19 @@ typedef struct MsObjUpvalue MsObjUpvalue;
 typedef struct MsObjClosure MsObjClosure;
 typedef struct MsInlineCache MsInlineCache;
 
-// 原生函数签名
+// Native function signature
 typedef MsValue (*MsNativeFn)(struct MsVM* vm, int argc, MsValue* argv);
 
 typedef struct {
     MsObject obj;
-    int arity;           // 参数数量
-    int min_arity;       // 最少参数 (支持默认参数时), -1=无默认参数
+    int arity;           // parameter count
+    int min_arity;       // minimum arity (for default params); -1 = no defaults
     int upvalue_count;
-    int max_stack_size;  // 编译器计算的最大寄存器使用量
+    int max_stack_size;  // max register usage computed by compiler
     bool is_generator;
-    MsChunk chunk;       // 拥有的字节码块 (内联存储)
+    MsChunk chunk;       // owned bytecode chunk (inline storage)
     MsObjString* name;   // NULL = anonymous / top-level script
-    MsInlineCache* ic;   // 内联缓存数组 (T20 填充)
+    MsInlineCache* ic;   // inline cache array (populated in T20)
     int ic_count;
 } MsObjFunction;
 
@@ -50,9 +50,9 @@ typedef struct {
 
 struct MsObjUpvalue {
     MsObject obj;
-    MsValue* location;   // open: 指向栈; closed: 指向 &closed
-    MsValue closed;      // closed 时存储值
-    struct MsObjUpvalue* next;  // open upvalue 链
+    MsValue* location;   // open: points to stack slot; closed: points to &closed
+    MsValue closed;      // stores value when closed
+    struct MsObjUpvalue* next;  // open upvalue chain
 };
 
 struct MsObjClosure {
@@ -81,12 +81,12 @@ MsObjClosure*  ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn);
 
 ## Implementation Notes
 
-- **ObjFunction**: 内联 `MsChunk chunk` (非指针), `ms_obj_function_new` 中调用 `ms_chunk_init(&fn->chunk)`. 析构时调用 `ms_chunk_free(&fn->chunk)`
-- **ObjClosure FAM**: 分配大小 = `sizeof(MsObjClosure) + sizeof(MsObjUpvalue*) * fn->upvalue_count`. 初始化所有 upvalue 指针为 NULL
-- **ObjUpvalue**: 创建时 `location = slot`, `closed = MS_NIL_VAL()`, `next = NULL`
-- **ObjNative**: arity=-1 表示可变参数
-- **ms_object_free 扩展**: 添加 MS_OBJ_FUNCTION/NATIVE/UPVALUE/CLOSURE 分支
-- **ms_object_print 扩展**: function 打印 `<fn name>`, native 打印 `<native name>`, closure 打印 `<fn name>`
+- **`ObjFunction`**: inlines `MsChunk chunk` (not a pointer); `ms_obj_function_new` calls `ms_chunk_init(&fn->chunk)`; destructor calls `ms_chunk_free(&fn->chunk)`
+- **`ObjClosure` FAM**: allocation size = `sizeof(MsObjClosure) + sizeof(MsObjUpvalue*) * fn->upvalue_count`; all upvalue pointers initialized to NULL
+- **`ObjUpvalue`**: on creation, `location = slot`, `closed = MS_NIL_VAL()`, `next = NULL`
+- **`ObjNative`**: `arity = -1` means variadic
+- **`ms_object_free` extension**: add `MS_OBJ_FUNCTION`/`NATIVE`/`UPVALUE`/`CLOSURE` cases
+- **`ms_object_print` extension**: function prints `<fn name>`; native prints `<native name>`; closure prints `<fn name>`
 
 ## C Unit Tests
 
