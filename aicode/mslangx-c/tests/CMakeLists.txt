@@ -286,6 +286,14 @@ mslangc_add_cli_test(resolver_static.duplicate_module_binding
   -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
+mslangc_add_cli_test(resolver_static.duplicate_import_alias_binding
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_import_alias_binding.ms"
+  -DEXPECT_EXIT=66
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
 mslangc_add_cli_test(resolver_static.duplicate_local_binding
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_local_binding.ms"

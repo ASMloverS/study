@@ -727,7 +727,42 @@ static int ms_resolver_initialize_declaration(MsResolver *resolver,
   }
 
   return ms_resolver_initialize_global(resolver, name);
-}static int ms_resolver_resolve_function_body(MsResolver *resolver,
+}
+
+static int ms_resolver_token_present(MsToken token) {
+  return token.start != NULL && token.length > 0;
+}
+
+static MsToken ms_resolver_import_binding_name(const MsAstNode *node) {
+  MsToken empty_token;
+
+  memset(&empty_token, 0, sizeof(empty_token));
+  if (node == NULL) {
+    return empty_token;
+  }
+
+  switch (node->kind) {
+    case MS_AST_IMPORT_STMT:
+      if (ms_resolver_token_present(node->as.import_stmt.alias)) {
+        return node->as.import_stmt.alias;
+      }
+      if (node->as.import_stmt.path.count > 0) {
+        return node->as.import_stmt.path.items[node->as.import_stmt.path.count - 1];
+      }
+      break;
+    case MS_AST_FROM_IMPORT_STMT:
+      if (ms_resolver_token_present(node->as.from_import_stmt.alias)) {
+        return node->as.from_import_stmt.alias;
+      }
+      return node->as.from_import_stmt.name;
+    default:
+      break;
+  }
+
+  return empty_token;
+}
+
+static int ms_resolver_resolve_function_body(MsResolver *resolver,
                                              size_t node_id,
                                              const MsTokenArray *parameters,
                                              const MsAstNode *body,
@@ -1128,8 +1163,26 @@ static int ms_resolver_resolve_statement(MsResolver *resolver,
       return 1;
     }
     case MS_AST_IMPORT_STMT:
-    case MS_AST_FROM_IMPORT_STMT:
-      return ms_resolver_resolve_unsupported(resolver, node);
+    case MS_AST_FROM_IMPORT_STMT: {
+      MsToken binding_name = ms_resolver_import_binding_name(node);
+      MsBindingKind kind;
+      uint8_t slot = 0;
+
+      if (!ms_resolver_token_present(binding_name)) {
+        return ms_resolver_resolve_unsupported(resolver, node);
+      }
+      if (!ms_resolver_bind_declaration(resolver,
+                                        node,
+                                        binding_name,
+                                        &slot,
+                                        &kind)) {
+        return 0;
+      }
+      return ms_resolver_initialize_declaration(resolver,
+                                                binding_name,
+                                                kind,
+                                                slot);
+    }
     default:
       return ms_resolver_resolve_unsupported(resolver, node);
   }

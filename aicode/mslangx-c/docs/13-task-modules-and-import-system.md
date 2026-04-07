@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Subtask 13.1 is `DONE`; subtasks 13.2 through 13.8 are `TODO`.
+In progress. Subtasks 13.1 and 13.2 are `DONE`; subtasks 13.3 through 13.8 are `TODO`.
 
 ## Goal
 
@@ -96,7 +96,7 @@ Use the following status markers consistently in this document:
 | Subtask | Status | Depends on | Summary |
 | --- | --- | --- | --- |
 | 13.1 | `DONE` | Task 03, Task 08 | Module loader state, search roots, and canonical cache keys |
-| 13.2 | `TODO` | 13.1 | Lower import statements and bind local names |
+| 13.2 | `DONE` | 13.1 | Lower import statements and bind local names |
 | 13.3 | `TODO` | 13.2 | End-to-end `import a` and `import a.b as alias` |
 | 13.4 | `TODO` | 13.3 | End-to-end `from a import b as c` and snapshot bindings |
 | 13.5 | `TODO` | 13.4 | Cache reuse and namespace isolation |
@@ -145,7 +145,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "modules\.unit|runtime_co
 
 ### Subtask 13.2 - Lower import statements and bind local names
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 13.1.
 

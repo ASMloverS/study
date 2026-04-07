@@ -285,6 +285,119 @@ static int ms_lowering_emit_name_operand(MsLoweringState* state,
   return 1;
 }
 
+static int ms_lowering_emit_text_operand(MsLoweringState* state,
+                                         const char* text,
+                                         size_t length,
+                                         uint8_t* out_index) {
+  MsChunk* chunk = ms_lowering_current_chunk(state);
+  MsString* string = NULL;
+
+  if (chunk == NULL || text == NULL || out_index == NULL) {
+    return 0;
+  }
+
+  string = ms_string_new(text, length);
+  if (string == NULL) {
+    return 0;
+  }
+
+  if (!ms_chunk_add_constant(chunk,
+                             ms_value_object((MsObject*) string),
+                             out_index)) {
+    return 0;
+  }
+  return 1;
+}
+
+static int ms_lowering_token_present(MsToken token) {
+  return token.start != NULL && token.length > 0;
+}
+
+static MsToken ms_lowering_import_binding_name(const MsAstNode* node) {
+  MsToken empty_token;
+
+  memset(&empty_token, 0, sizeof(empty_token));
+  if (node == NULL) {
+    return empty_token;
+  }
+
+  switch (node->kind) {
+    case MS_AST_IMPORT_STMT:
+      if (ms_lowering_token_present(node->as.import_stmt.alias)) {
+        return node->as.import_stmt.alias;
+      }
+      if (node->as.import_stmt.path.count > 0) {
+        return node->as.import_stmt.path.items[node->as.import_stmt.path.count - 1];
+      }
+      break;
+    case MS_AST_FROM_IMPORT_STMT:
+      if (ms_lowering_token_present(node->as.from_import_stmt.alias)) {
+        return node->as.from_import_stmt.alias;
+      }
+      return node->as.from_import_stmt.name;
+    default:
+      break;
+  }
+
+  return empty_token;
+}
+
+static int ms_lowering_copy_module_path_text(const MsTokenArray* path,
+                                             char** out_text,
+                                             size_t* out_length) {
+  char* text;
+  size_t i;
+  size_t length = 0;
+  size_t offset = 0;
+
+  if (path == NULL || out_text == NULL || out_length == NULL ||
+      path->count == 0) {
+    return 0;
+  }
+
+  for (i = 0; i < path->count; ++i) {
+    length += path->items[i].length;
+    if (i + 1 < path->count) {
+      length += 1;
+    }
+  }
+
+  text = (char*) malloc(length + 1);
+  if (text == NULL) {
+    return 0;
+  }
+
+  for (i = 0; i < path->count; ++i) {
+    memcpy(text + offset, path->items[i].start, path->items[i].length);
+    offset += path->items[i].length;
+    if (i + 1 < path->count) {
+      text[offset] = '.';
+      offset += 1;
+    }
+  }
+
+  text[length] = '\0';
+  *out_text = text;
+  *out_length = length;
+  return 1;
+}
+
+static int ms_lowering_emit_module_path_operand(MsLoweringState* state,
+                                                const MsTokenArray* path,
+                                                uint8_t* out_index) {
+  char* text = NULL;
+  size_t length = 0;
+  int result;
+
+  if (!ms_lowering_copy_module_path_text(path, &text, &length)) {
+    return 0;
+  }
+
+  result = ms_lowering_emit_text_operand(state, text, length, out_index);
+  free(text);
+  return result;
+}
+
 static int ms_lowering_emit_named_opcode(MsLoweringState* state,
                                          MsOpcode opcode,
                                          MsToken token,
@@ -321,6 +434,80 @@ static int ms_lowering_get_function_resolution(MsLoweringState* state,
   }
 
   return ms_resolution_table_get_function(state->resolution, node_id, out_function);
+}
+
+static int ms_lowering_push_local(MsLoweringState* state,
+                                  uint8_t slot,
+                                  int scope_depth,
+                                  int is_captured);
+
+static int ms_lowering_emit_import_binding(MsLoweringState* state,
+                                           const MsAstNode* node) {
+  MsResolvedBinding binding;
+  MsToken binding_name;
+  uint8_t name_index = 0;
+
+  if (!ms_lowering_get_binding(state, node, &binding)) {
+    return 0;
+  }
+
+  binding_name = ms_lowering_import_binding_name(node);
+  if (!ms_lowering_token_present(binding_name)) {
+    return 0;
+  }
+
+  if (binding.kind == MS_BINDING_LOCAL) {
+    return ms_lowering_push_local(state,
+                                  binding.slot,
+                                  binding.scope_depth,
+                                  binding.is_captured);
+  }
+  if (!ms_lowering_emit_name_operand(state,
+                                     binding_name,
+                                     node->line,
+                                     &name_index) ||
+      !ms_lowering_emit_opcode(state, MS_OP_DEFINE_GLOBAL, node->line)) {
+    return 0;
+  }
+  return ms_lowering_emit_byte(state, name_index, node->line);
+}
+
+static int ms_lowering_emit_import_module_stmt(MsLoweringState* state,
+                                               const MsAstNode* node) {
+  uint8_t module_index = 0;
+
+  if (state == NULL || node == NULL || node->kind != MS_AST_IMPORT_STMT ||
+      !ms_lowering_emit_module_path_operand(state,
+                                            &node->as.import_stmt.path,
+                                            &module_index) ||
+      !ms_lowering_emit_opcode(state, MS_OP_IMPORT_MODULE, node->line) ||
+      !ms_lowering_emit_byte(state, module_index, node->line)) {
+    return 0;
+  }
+
+  return ms_lowering_emit_import_binding(state, node);
+}
+
+static int ms_lowering_emit_from_import_stmt(MsLoweringState* state,
+                                             const MsAstNode* node) {
+  uint8_t module_index = 0;
+  uint8_t symbol_index = 0;
+
+  if (state == NULL || node == NULL || node->kind != MS_AST_FROM_IMPORT_STMT ||
+      !ms_lowering_emit_module_path_operand(state,
+                                            &node->as.from_import_stmt.path,
+                                            &module_index) ||
+      !ms_lowering_emit_name_operand(state,
+                                     node->as.from_import_stmt.name,
+                                     node->line,
+                                     &symbol_index) ||
+      !ms_lowering_emit_opcode(state, MS_OP_IMPORT_SYMBOL, node->line) ||
+      !ms_lowering_emit_byte(state, module_index, node->line) ||
+      !ms_lowering_emit_byte(state, symbol_index, node->line)) {
+    return 0;
+  }
+
+  return ms_lowering_emit_import_binding(state, node);
 }
 
 static int ms_lowering_function_local_is_captured(
@@ -1363,6 +1550,10 @@ static int ms_lowering_emit_statement(MsLoweringState* state,
       return ms_lowering_emit_byte(state, name_index, node->line);
     case MS_AST_CLASS_DECL:
       return ms_lowering_emit_class_decl(state, node);
+    case MS_AST_IMPORT_STMT:
+      return ms_lowering_emit_import_module_stmt(state, node);
+    case MS_AST_FROM_IMPORT_STMT:
+      return ms_lowering_emit_from_import_stmt(state, node);
     case MS_AST_EXPR_STMT:
       return ms_lowering_emit_expression(state, node->as.expr_stmt.expression) &&
              ms_lowering_emit_opcode(state, MS_OP_POP, node->line);

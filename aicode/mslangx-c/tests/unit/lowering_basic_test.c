@@ -184,6 +184,41 @@ static int test_reports_resolve_errors_before_lowering(void) {
   return 0;
 }
 
+static int test_lowers_import_statements_with_dedicated_opcodes(void) {
+  static const char kSource[] =
+      "import core.io\n"
+      "from tools.util import helper as alias\n";
+  MsChunk chunk;
+  MsBuffer disassembly;
+  MsDiagnosticList diagnostics;
+  size_t import_module_offset;
+  size_t import_symbol_offset;
+
+  ms_chunk_init(&chunk);
+  ms_buffer_init(&disassembly);
+  ms_diag_list_init(&diagnostics);
+
+  TEST_ASSERT(ms_compile_source("<unit>", kSource, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+  TEST_ASSERT(ms_chunk_disassemble_to_buffer(&chunk, "lowering_basic", &disassembly));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_IMPORT_MODULE"));
+  TEST_ASSERT(buffer_contains(&disassembly, "OP_IMPORT_SYMBOL"));
+  TEST_ASSERT(buffer_contains(&disassembly, "'core.io'"));
+  TEST_ASSERT(buffer_contains(&disassembly, "'tools.util'"));
+  TEST_ASSERT(buffer_contains(&disassembly, "'helper'"));
+  TEST_ASSERT(buffer_contains(&disassembly, "'alias'"));
+
+  import_module_offset = buffer_find(&disassembly, "OP_IMPORT_MODULE");
+  import_symbol_offset = buffer_find(&disassembly, "OP_IMPORT_SYMBOL");
+  TEST_ASSERT(import_module_offset < import_symbol_offset);
+
+  ms_diag_list_destroy(&diagnostics);
+  ms_buffer_destroy(&disassembly);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
 static int test_lowers_class_declarations_and_installs_methods(void) {
   static const char kSource[] =
       "class Brunch {\n"
@@ -454,6 +489,7 @@ int main(void) {
   TEST_ASSERT(test_lowers_globals_and_block_locals() == 0);
   TEST_ASSERT(test_short_circuit_and_loop_control_flow() == 0);
   TEST_ASSERT(test_reports_resolve_errors_before_lowering() == 0);
+  TEST_ASSERT(test_lowers_import_statements_with_dedicated_opcodes() == 0);
   TEST_ASSERT(test_lowers_class_declarations_and_installs_methods() == 0);
   TEST_ASSERT(test_lowers_inheritance_and_super_lookup() == 0);
   TEST_ASSERT(test_lowers_container_literals_and_runs_build_opcodes() == 0);

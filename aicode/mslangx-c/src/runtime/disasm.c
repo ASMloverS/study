@@ -84,6 +84,10 @@ static const char* ms_disasm_opcode_name(uint8_t opcode) {
       return "OP_INDEX_GET";
     case MS_OP_INDEX_SET:
       return "OP_INDEX_SET";
+    case MS_OP_IMPORT_MODULE:
+      return "OP_IMPORT_MODULE";
+    case MS_OP_IMPORT_SYMBOL:
+      return "OP_IMPORT_SYMBOL";
     case MS_OP_CLOSE_UPVALUE:
       return "OP_CLOSE_UPVALUE";
     case MS_OP_RETURN:
@@ -136,6 +140,29 @@ static int ms_disasm_append_constant(MsBuffer* buffer,
   }
 
   return ms_disasm_appendf(buffer, "%-17s%u '%s'\n", name, operand, text);
+}
+
+static int ms_disasm_append_two_constants(MsBuffer* buffer,
+                                          const char* name,
+                                          uint8_t first_operand,
+                                          MsValue first_constant,
+                                          uint8_t second_operand,
+                                          MsValue second_constant) {
+  char first_text[128];
+  char second_text[128];
+
+  if (!ms_value_format(first_constant, first_text, sizeof(first_text)) ||
+      !ms_value_format(second_constant, second_text, sizeof(second_text))) {
+    return 0;
+  }
+
+  return ms_disasm_appendf(buffer,
+                           "%-17s%u '%s' %u '%s'\n",
+                           name,
+                           first_operand,
+                           first_text,
+                           second_operand,
+                           second_text);
 }
 
 static int ms_disasm_append_closure(const MsChunk* chunk,
@@ -207,6 +234,7 @@ static size_t ms_disassemble_instruction(const MsChunk* chunk,
     case MS_OP_GET_PROPERTY:
     case MS_OP_SET_PROPERTY:
     case MS_OP_GET_SUPER:
+    case MS_OP_IMPORT_MODULE:
       if (!ms_chunk_read_byte(chunk, offset + 1, &operand) ||
           !ms_chunk_get_constant(chunk, operand, &constant) ||
           !ms_disasm_append_constant(buffer, name, operand, constant)) {
@@ -226,6 +254,24 @@ static size_t ms_disassemble_instruction(const MsChunk* chunk,
         return chunk->code.length;
       }
       return offset + 2;
+    case MS_OP_IMPORT_SYMBOL: {
+      uint8_t operand2 = 0;
+      MsValue constant2 = ms_value_nil();
+
+      if (!ms_chunk_read_byte(chunk, offset + 1, &operand) ||
+          !ms_chunk_read_byte(chunk, offset + 2, &operand2) ||
+          !ms_chunk_get_constant(chunk, operand, &constant) ||
+          !ms_chunk_get_constant(chunk, operand2, &constant2) ||
+          !ms_disasm_append_two_constants(buffer,
+                                          name,
+                                          operand,
+                                          constant,
+                                          operand2,
+                                          constant2)) {
+        return chunk->code.length;
+      }
+      return offset + 3;
+    }
     case MS_OP_CLOSURE:
       if (!ms_disasm_append_closure(chunk, offset, buffer, &next_offset)) {
         return chunk->code.length;

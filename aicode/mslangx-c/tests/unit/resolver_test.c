@@ -458,6 +458,107 @@ static int test_allows_bare_return_inside_initializer(void) {
   ms_arena_destroy(&arena);
   return 0;
 }
+
+static int test_resolves_import_bindings_in_global_and_local_scopes(void) {
+  static const char kSource[] =
+      "import core.io\n"
+      "from tools.util import helper as alias\n"
+      "{\n"
+      "  import pkg.tool as local_tool\n"
+      "  from data.values import item\n"
+      "  print local_tool\n"
+      "  print item\n"
+      "}\n"
+      "print io\n"
+      "print alias\n";
+  MsArena arena;
+  MsDiagnosticList diagnostics;
+  MsResolutionTable table;
+  MsAstNode *root;
+  MsAstNode *global_import;
+  MsAstNode *global_from_import;
+  MsAstNode *block_stmt;
+  MsAstNode *local_import;
+  MsAstNode *local_from_import;
+  MsAstNode *local_print_import;
+  MsAstNode *local_print_symbol;
+  MsAstNode *global_print_import;
+  MsAstNode *global_print_alias;
+  MsResolvedBinding binding;
+
+  root = parse_program(kSource, &arena, &diagnostics);
+  TEST_ASSERT(root != NULL);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  global_import = root->as.program.declarations.items[0];
+  global_from_import = root->as.program.declarations.items[1];
+  block_stmt = root->as.program.declarations.items[2];
+  global_print_import = root->as.program.declarations.items[3];
+  global_print_alias = root->as.program.declarations.items[4];
+  TEST_ASSERT(global_import->kind == MS_AST_IMPORT_STMT);
+  TEST_ASSERT(global_from_import->kind == MS_AST_FROM_IMPORT_STMT);
+  TEST_ASSERT(block_stmt->kind == MS_AST_BLOCK);
+  TEST_ASSERT(global_print_import->kind == MS_AST_PRINT_STMT);
+  TEST_ASSERT(global_print_alias->kind == MS_AST_PRINT_STMT);
+
+  local_import = block_stmt->as.block.statements.items[0];
+  local_from_import = block_stmt->as.block.statements.items[1];
+  local_print_import = block_stmt->as.block.statements.items[2];
+  local_print_symbol = block_stmt->as.block.statements.items[3];
+  TEST_ASSERT(local_import->kind == MS_AST_IMPORT_STMT);
+  TEST_ASSERT(local_from_import->kind == MS_AST_FROM_IMPORT_STMT);
+  TEST_ASSERT(local_print_import->kind == MS_AST_PRINT_STMT);
+  TEST_ASSERT(local_print_symbol->kind == MS_AST_PRINT_STMT);
+
+  ms_resolution_table_init(&table);
+  TEST_ASSERT(ms_resolve_program("<unit>", root, &table, &diagnostics));
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, global_import->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_GLOBAL);
+  TEST_ASSERT(binding.scope_depth == 0);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, global_from_import->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_GLOBAL);
+  TEST_ASSERT(binding.scope_depth == 0);
+
+  TEST_ASSERT(ms_resolution_table_get(&table,
+                                      global_print_import->as.print_stmt.expression->node_id,
+                                      &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_GLOBAL);
+
+  TEST_ASSERT(ms_resolution_table_get(&table,
+                                      global_print_alias->as.print_stmt.expression->node_id,
+                                      &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_GLOBAL);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, local_import->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_LOCAL);
+  TEST_ASSERT(binding.slot == 0);
+  TEST_ASSERT(binding.scope_depth == 1);
+
+  TEST_ASSERT(ms_resolution_table_get(&table, local_from_import->node_id, &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_LOCAL);
+  TEST_ASSERT(binding.slot == 1);
+  TEST_ASSERT(binding.scope_depth == 1);
+
+  TEST_ASSERT(ms_resolution_table_get(&table,
+                                      local_print_import->as.print_stmt.expression->node_id,
+                                      &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_LOCAL);
+  TEST_ASSERT(binding.slot == 0);
+
+  TEST_ASSERT(ms_resolution_table_get(&table,
+                                      local_print_symbol->as.print_stmt.expression->node_id,
+                                      &binding));
+  TEST_ASSERT(binding.kind == MS_BINDING_LOCAL);
+  TEST_ASSERT(binding.slot == 1);
+
+  ms_resolution_table_destroy(&table);
+  ms_diag_list_destroy(&diagnostics);
+  ms_arena_destroy(&arena);
+  return 0;
+}
 int main(void) {
   TEST_ASSERT(test_rejects_top_level_return() == 0);
   TEST_ASSERT(test_resolves_function_declaration_and_parameter_reads() == 0);
@@ -466,5 +567,6 @@ int main(void) {
   TEST_ASSERT(test_resolves_method_self_binding_and_nested_capture() == 0);
   TEST_ASSERT(test_resolves_subclass_super_binding_and_nested_capture() == 0);
   TEST_ASSERT(test_allows_bare_return_inside_initializer() == 0);
+  TEST_ASSERT(test_resolves_import_bindings_in_global_and_local_scopes() == 0);
   return 0;
 }

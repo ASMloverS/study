@@ -1,2 +1,2 @@
-var value = 1
-var value = 2
+var tool = 1
+import pkg.tool
