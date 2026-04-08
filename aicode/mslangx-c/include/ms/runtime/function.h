@@ -39,6 +39,7 @@ typedef struct MsUpvalue {
 typedef struct MsClosure {
   MsObject object;
   MsFunction* function;
+  struct MsModule* module;
   struct MsClass* owner_class;
   MsUpvalue** upvalues;
   uint8_t upvalue_count;

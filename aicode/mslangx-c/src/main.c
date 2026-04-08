@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "ms/diag.h"
 #include "ms/frontend/lowering.h"
@@ -162,6 +163,89 @@ static char *mslangc_dirname(const char *path) {
   return directory;
 }
 
+static char *mslangc_join_path(const char *left, const char *right) {
+  size_t left_length;
+  size_t right_length;
+  int needs_separator;
+  char *joined;
+
+  if (left == NULL || right == NULL) {
+    return NULL;
+  }
+
+  left_length = strlen(left);
+  right_length = strlen(right);
+  needs_separator =
+      left_length > 0 && left[left_length - 1] != '/' && left[left_length - 1] != '\\';
+  joined =
+      (char *) malloc(left_length + (needs_separator ? 1u : 0u) + right_length + 1);
+  if (joined == NULL) {
+    return NULL;
+  }
+
+  memcpy(joined, left, left_length);
+  if (needs_separator) {
+    joined[left_length] = '/';
+  }
+  memcpy(joined + left_length + (needs_separator ? 1u : 0u), right, right_length);
+  joined[left_length + (needs_separator ? 1u : 0u) + right_length] = '\0';
+  return joined;
+}
+
+static int mslangc_directory_exists(const char *path) {
+#if defined(_WIN32)
+  struct _stat info;
+#else
+  struct stat info;
+#endif
+
+  if (path == NULL) {
+    return 0;
+  }
+
+#if defined(_WIN32)
+  return _stat(path, &info) == 0 && (info.st_mode & _S_IFDIR) != 0;
+#else
+  return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+#endif
+}
+
+static void mslangc_add_module_search_roots(MsVM *vm, const char *file) {
+  char *script_dir;
+  char *cursor;
+
+  if (vm == NULL || file == NULL || strcmp(file, "<inline>") == 0) {
+    return;
+  }
+
+  script_dir = mslangc_dirname(file);
+  if (script_dir == NULL) {
+    return;
+  }
+
+  ms_vm_add_search_root(vm, script_dir);
+  cursor = script_dir;
+  while (cursor != NULL) {
+    char *fixtures_root = mslangc_join_path(cursor, "fixtures/modules");
+    char *parent;
+
+    if (fixtures_root != NULL && mslangc_directory_exists(fixtures_root)) {
+      ms_vm_add_search_root(vm, fixtures_root);
+    }
+    free(fixtures_root);
+
+    parent = mslangc_dirname(cursor);
+    if (parent == NULL || strcmp(parent, cursor) == 0) {
+      free(parent);
+      break;
+    }
+    free(cursor);
+    cursor = parent;
+  }
+
+  free(cursor);
+}
+
 static int mslangc_run_source(const char *file,
                               const char *source,
                               FILE *error_stream) {
@@ -170,7 +254,6 @@ static int mslangc_run_source(const char *file,
   MsCompileResult compile_result;
   MsVM vm;
   MsModule module;
-  char *module_search_root = NULL;
   int exit_code = 0;
 
   ms_chunk_init(&chunk);
@@ -186,12 +269,7 @@ static int mslangc_run_source(const char *file,
   ms_diag_list_destroy(&diagnostics);
 
   ms_vm_init(&vm);
-  if (file != NULL && strcmp(file, "<inline>") != 0) {
-    module_search_root = mslangc_dirname(file);
-    if (module_search_root != NULL) {
-      ms_vm_add_search_root(&vm, module_search_root);
-    }
-  }
+  mslangc_add_module_search_roots(&vm, file);
   ms_module_init(&module, file);
   ms_vm_set_current_module(&vm, &module);
   if (ms_vm_run_chunk(&vm, &chunk) != MS_VM_RESULT_OK) {
@@ -199,7 +277,6 @@ static int mslangc_run_source(const char *file,
     exit_code = kExitRuntime;
   }
 
-  free(module_search_root);
   ms_module_destroy(&module);
   ms_vm_destroy(&vm);
   ms_chunk_destroy(&chunk);

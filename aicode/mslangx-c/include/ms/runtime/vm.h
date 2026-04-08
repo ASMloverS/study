@@ -16,6 +16,7 @@ typedef enum MsModuleState {
 } MsModuleState;
 
 typedef struct MsModule {
+  MsObject object;
   char* name;
   char* canonical_path;
   MsModuleState state;
@@ -38,6 +39,7 @@ typedef enum MsVmResult {
 typedef struct MsCallFrame {
   const MsChunk* chunk;
   MsClosure* closure;
+  MsModule* module;
   size_t ip;
   size_t stack_base;
   MsValue receiver;

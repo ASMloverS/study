@@ -131,6 +131,10 @@ int ms_value_is_map(MsValue value) {
   return ms_value_has_object_type(value, MS_OBJ_MAP);
 }
 
+int ms_value_is_module(MsValue value) {
+  return ms_value_has_object_type(value, MS_OBJ_MODULE);
+}
+
 int ms_value_get_bool(MsValue value, int* out_boolean) {
   if (!ms_value_is_bool(value) || out_boolean == NULL) {
     return 0;
@@ -255,6 +259,15 @@ int ms_value_get_map(MsValue value, MsMap** out_map) {
   }
 
   *out_map = (MsMap*) value.as.object;
+  return 1;
+}
+
+int ms_value_get_module(MsValue value, MsModule** out_module) {
+  if (!ms_value_is_module(value) || out_module == NULL) {
+    return 0;
+  }
+
+  *out_module = (MsModule*) value.as.object;
   return 1;
 }
 

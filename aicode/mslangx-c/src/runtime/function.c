@@ -43,6 +43,7 @@ MsClosure* ms_closure_new(MsFunction* function) {
 
   ms_object_init(&closure->object, MS_OBJ_CLOSURE);
   closure->function = function;
+  closure->module = NULL;
   closure->owner_class = NULL;
   closure->upvalue_count = function->upvalue_count;
   if (closure->upvalue_count > 0) {

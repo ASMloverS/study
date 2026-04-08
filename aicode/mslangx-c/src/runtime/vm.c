@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ms/frontend/lowering.h"
 #include "ms/frontend/resolution_table.h"
 #include "ms/object.h"
 #include "ms/runtime/opcode.h"
@@ -172,6 +173,98 @@ static MsCallFrame* ms_vm_current_frame(MsVM* vm) {
   return &vm->frames[vm->frame_count - 1];
 }
 
+static MsModule* ms_vm_active_module(MsVM* vm) {
+  MsCallFrame* frame = ms_vm_current_frame(vm);
+
+  if (frame != NULL && frame->module != NULL) {
+    return frame->module;
+  }
+  if (vm != NULL) {
+    return vm->current_module;
+  }
+  return NULL;
+}
+
+static char* ms_vm_read_file(const char* path) {
+  FILE* file = NULL;
+  long size;
+  size_t read_size;
+  char* buffer;
+
+  if (path == NULL) {
+    return NULL;
+  }
+
+#if defined(_MSC_VER)
+  if (fopen_s(&file, path, "rb") != 0) {
+    file = NULL;
+  }
+#else
+  file = fopen(path, "rb");
+#endif
+  if (file == NULL) {
+    return NULL;
+  }
+  if (fseek(file, 0, SEEK_END) != 0) {
+    fclose(file);
+    return NULL;
+  }
+
+  size = ftell(file);
+  if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+    fclose(file);
+    return NULL;
+  }
+
+  buffer = (char*) malloc((size_t) size + 1);
+  if (buffer == NULL) {
+    fclose(file);
+    return NULL;
+  }
+
+  read_size = fread(buffer, 1, (size_t) size, file);
+  fclose(file);
+  if (read_size != (size_t) size) {
+    free(buffer);
+    return NULL;
+  }
+
+  buffer[size] = '\0';
+  return buffer;
+}
+
+static int ms_vm_file_exists(const char* path) {
+  FILE* file = NULL;
+  int exists = 0;
+
+  if (path == NULL) {
+    return 0;
+  }
+
+#if defined(_MSC_VER)
+  if (fopen_s(&file, path, "rb") != 0) {
+    file = NULL;
+  }
+#else
+  file = fopen(path, "rb");
+#endif
+  if (file != NULL) {
+    exists = 1;
+    fclose(file);
+  }
+
+  return exists;
+}
+
+static int ms_vm_push_entry_frame(MsVM* vm,
+                                  const MsChunk* chunk,
+                                  MsClosure* closure,
+                                  MsModule* module,
+                                  size_t stack_base,
+                                  MsValue receiver,
+                                  int has_receiver);
+static MsVmResult ms_vm_execute(MsVM* vm, size_t stop_frame_count);
+
 static int ms_vm_ensure_stack(MsVM* vm, size_t min_capacity) {
   MsValue* stack;
   MsValue* old_stack;
@@ -298,6 +391,7 @@ static int ms_vm_append_runtime_error(MsVM* vm,
                                       const char* message) {
   MsDiagnostic diagnostic;
   MsCallFrame* frame;
+  MsModule* module;
   int line = 0;
   const char* file = "<chunk>";
 
@@ -314,8 +408,9 @@ static int ms_vm_append_runtime_error(MsVM* vm,
       instruction_offset > 0) {
     ms_chunk_get_line(frame->chunk, instruction_offset - 1, &line);
   }
-  if (vm->current_module != NULL && vm->current_module->name != NULL) {
-    file = vm->current_module->name;
+  module = ms_vm_active_module(vm);
+  if (module != NULL && module->name != NULL) {
+    file = module->name;
   }
 
   diagnostic.phase = "runtime";
@@ -436,7 +531,7 @@ static int ms_vm_get_function_constant(MsVM* vm,
 }
 
 static int ms_vm_require_module(MsVM* vm, size_t instruction_offset) {
-  if (vm != NULL && vm->current_module != NULL) {
+  if (ms_vm_active_module(vm) != NULL) {
     return 1;
   }
 
@@ -635,6 +730,7 @@ static MsVmResult ms_vm_call_closure(MsVM* vm,
   frame = &vm->frames[vm->frame_count];
   frame->chunk = &closure->function->chunk;
   frame->closure = closure;
+  frame->module = closure->module;
   frame->ip = 0;
   frame->stack_base = callee_index;
   frame->receiver = ms_value_nil();
@@ -696,6 +792,7 @@ static MsVmResult ms_vm_call_bound_method(MsVM* vm,
   frame = &vm->frames[vm->frame_count];
   frame->chunk = &method->function->chunk;
   frame->closure = method;
+  frame->module = method->module;
   frame->ip = 0;
   frame->stack_base = callee_index;
   frame->receiver = receiver;
@@ -891,6 +988,20 @@ static MsVmResult ms_vm_push_class(MsVM* vm,
   return MS_VM_RESULT_OK;
 }
 
+MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
+  if (vm == NULL || chunk == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+
+  ms_vm_reset(vm);
+  if (!ms_vm_push_entry_frame(
+          vm, chunk, NULL, vm->current_module, 0, ms_value_nil(), 0)) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+
+  return ms_vm_execute(vm, 0);
+}
+
 static MsVmResult ms_vm_define_method(MsVM* vm,
                                       MsString* name,
                                       size_t instruction_offset) {
@@ -1027,6 +1138,7 @@ static MsVmResult ms_vm_get_property(MsVM* vm,
   MsValue receiver = ms_value_nil();
   MsValue value = ms_value_nil();
   MsInstance* instance = NULL;
+  MsModule* module = NULL;
   MsClosure* method = NULL;
   MsBoundMethod* bound_method = NULL;
   int found = 0;
@@ -1040,11 +1152,34 @@ static MsVmResult ms_vm_get_property(MsVM* vm,
                                "MS4002",
                                "stack underflow");
   }
+  if (ms_value_get_module(receiver, &module)) {
+    if (!ms_table_get(&module->globals, name, &value, &found)) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+    if (!found) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4010",
+                                 "undefined property");
+    }
+
+    vm->stack_count -= 1;
+    if (!ms_vm_push(vm, value)) {
+      return ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    }
+    return MS_VM_RESULT_OK;
+  }
   if (!ms_value_get_instance(receiver, &instance)) {
     return ms_vm_runtime_error(vm,
                                instruction_offset,
                                "MS4009",
-                               "only instances have properties");
+                               "only instances and modules have properties");
   }
   if (!ms_table_get(&instance->fields, name, &value, &found)) {
     return ms_vm_runtime_error(vm,
@@ -1502,6 +1637,7 @@ void ms_module_init(MsModule* module, const char* name) {
     canonical_path = ms_vm_normalize_path(name);
   }
 
+  ms_object_init(&module->object, MS_OBJ_MODULE);
   module->name = ms_vm_strdup(name);
   if (name != NULL && module->name == NULL) {
     free(canonical_path);
@@ -1663,8 +1799,11 @@ int ms_vm_resolve_module_path(const MsVM* vm,
 
   for (i = 0; i < vm->module_search_root_count; ++i) {
     char* candidate_path = ms_vm_join_path(vm->module_search_roots[i], relative_path);
-    char* normalized_path = ms_vm_normalize_path(candidate_path);
+    char* normalized_path = NULL;
 
+    if (candidate_path != NULL && ms_vm_file_exists(candidate_path)) {
+      normalized_path = ms_vm_normalize_path(candidate_path);
+    }
     free(candidate_path);
     if (normalized_path != NULL) {
       *out_canonical_path = normalized_path;
@@ -1755,7 +1894,7 @@ int ms_vm_define_native(MsVM* vm,
 
   target_module = module;
   if (target_module == NULL && vm != NULL) {
-    target_module = vm->current_module;
+    target_module = ms_vm_active_module(vm);
   }
   if (target_module == NULL || name == NULL || function == NULL) {
     return 0;
@@ -1775,24 +1914,230 @@ int ms_vm_define_native(MsVM* vm,
                       &inserted_new);
 }
 
-MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
-  if (vm == NULL || chunk == NULL) {
+static int ms_vm_append_diagnostics(MsDiagnosticList* destination,
+                                    const MsDiagnosticList* source) {
+  size_t i;
+
+  if (destination == NULL || source == NULL) {
+    return 0;
+  }
+
+  for (i = 0; i < ms_diag_list_count(source); ++i) {
+    const MsDiagnostic* diagnostic = ms_diag_list_at(source, i);
+
+    if (diagnostic != NULL && !ms_diag_list_append(destination, diagnostic)) {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+static int ms_vm_push_entry_frame(MsVM* vm,
+                                  const MsChunk* chunk,
+                                  MsClosure* closure,
+                                  MsModule* module,
+                                  size_t stack_base,
+                                  MsValue receiver,
+                                  int has_receiver) {
+  MsCallFrame* frame;
+
+  if (vm == NULL || chunk == NULL ||
+      !ms_vm_ensure_frames(vm, vm->frame_count + 1)) {
+    return 0;
+  }
+
+  frame = &vm->frames[vm->frame_count];
+  frame->chunk = chunk;
+  frame->closure = closure;
+  frame->module = module;
+  frame->ip = 0;
+  frame->stack_base = stack_base;
+  frame->receiver = receiver;
+  frame->has_receiver = has_receiver;
+  vm->frame_count += 1;
+  return 1;
+}
+
+static MsVmResult ms_vm_load_module(MsVM* vm,
+                                    MsString* module_name,
+                                    size_t instruction_offset,
+                                    MsModule** out_module) {
+  char* resolved_path = NULL;
+  char* source = NULL;
+  MsChunk chunk;
+  MsDiagnosticList diagnostics;
+  MsCompileResult compile_result;
+  MsModule* module = NULL;
+  MsModule* caller_module;
+  size_t caller_frame_count;
+  size_t caller_stack_count;
+  int inserted_new = 0;
+  MsVmResult result = MS_VM_RESULT_RUNTIME_ERROR;
+
+  if (out_module != NULL) {
+    *out_module = NULL;
+  }
+  if (vm == NULL || module_name == NULL || out_module == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_vm_resolve_module_path(vm, module_name->bytes, &resolved_path)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4004",
+                               "module not found");
+  }
+
+  module = ms_vm_get_or_create_module(vm, resolved_path, &inserted_new);
+  free(resolved_path);
+  if (module == NULL) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (module->state == MS_MODULE_STATE_INITIALIZED) {
+    *out_module = module;
+    return MS_VM_RESULT_OK;
+  }
+  if (module->state != MS_MODULE_STATE_UNSEEN ||
+      !ms_module_transition_state(module, MS_MODULE_STATE_INITIALIZING)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4004",
+                               "module is not ready");
+  }
+
+  source = ms_vm_read_file(module->canonical_path);
+  if (source == NULL) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4004",
+                               "failed to read module");
+  }
+
+  ms_chunk_init(&chunk);
+  ms_diag_list_init(&diagnostics);
+  compile_result =
+      ms_compile_source(module->canonical_path, source, &chunk, &diagnostics);
+  free(source);
+
+  if (compile_result != MS_COMPILE_RESULT_OK) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    ms_vm_append_diagnostics(&vm->diagnostics, &diagnostics);
+    ms_diag_list_destroy(&diagnostics);
+    ms_chunk_destroy(&chunk);
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
 
-  ms_vm_reset(vm);
-  if (!ms_vm_ensure_frames(vm, 1)) {
+  caller_module = vm->current_module;
+  caller_frame_count = vm->frame_count;
+  caller_stack_count = vm->stack_count;
+  if (!ms_vm_push_entry_frame(
+          vm, &chunk, NULL, module, caller_stack_count, ms_value_nil(), 0)) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    vm->current_module = caller_module;
+    ms_diag_list_destroy(&diagnostics);
+    ms_chunk_destroy(&chunk);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  result = ms_vm_execute(vm, caller_frame_count);
+  vm->current_module = caller_module;
+  if (result != MS_VM_RESULT_OK) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    ms_diag_list_destroy(&diagnostics);
+    ms_chunk_destroy(&chunk);
+    return result;
+  }
+  if (vm->stack_count > caller_stack_count && !ms_vm_pop(vm, NULL)) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    ms_diag_list_destroy(&diagnostics);
+    ms_chunk_destroy(&chunk);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4002",
+                               "stack underflow");
+  }
+  if (!ms_module_transition_state(module, MS_MODULE_STATE_INITIALIZED)) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    ms_diag_list_destroy(&diagnostics);
+    ms_chunk_destroy(&chunk);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  *out_module = module;
+  ms_diag_list_destroy(&diagnostics);
+  ms_chunk_destroy(&chunk);
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_import_module(MsVM* vm,
+                                      MsString* module_name,
+                                      size_t instruction_offset) {
+  MsModule* module = NULL;
+
+  if (ms_vm_load_module(vm, module_name, instruction_offset, &module) !=
+      MS_VM_RESULT_OK) {
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
-  vm->frames[0].chunk = chunk;
-  vm->frames[0].closure = NULL;
-  vm->frames[0].ip = 0;
-  vm->frames[0].stack_base = 0;
-  vm->frames[0].receiver = ms_value_nil();
-  vm->frames[0].has_receiver = 0;
-  vm->frame_count = 1;
+  if (!ms_vm_push(vm, ms_value_object((MsObject*) module))) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
 
-  while (vm->frame_count > 0) {
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_import_symbol(MsVM* vm,
+                                      MsString* module_name,
+                                      MsString* symbol_name,
+                                      size_t instruction_offset) {
+  MsModule* module = NULL;
+  MsValue value = ms_value_nil();
+  int found = 0;
+
+  if (ms_vm_load_module(vm, module_name, instruction_offset, &module) !=
+      MS_VM_RESULT_OK) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+  if (!ms_table_get(&module->globals, symbol_name, &value, &found)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+  if (!found) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4004",
+                               "module export not found");
+  }
+  if (!ms_vm_push(vm, value)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
+
+  return MS_VM_RESULT_OK;
+}
+
+static MsVmResult ms_vm_execute(MsVM* vm, size_t stop_frame_count) {
+  if (vm == NULL) {
+    return MS_VM_RESULT_RUNTIME_ERROR;
+  }
+
+  while (vm->frame_count > stop_frame_count) {
     MsCallFrame* frame = ms_vm_current_frame(vm);
     MsValue value = ms_value_nil();
     MsValue left = ms_value_nil();
@@ -1803,6 +2148,7 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
     uint16_t jump = 0;
     size_t instruction_offset;
     MsString* name = NULL;
+    MsString* function_name = NULL;
     MsFunction* function = NULL;
     MsClosure* closure = NULL;
     MsValue global_value = ms_value_nil();
@@ -1812,6 +2158,10 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
 
     if (frame == NULL || frame->chunk == NULL) {
       return MS_VM_RESULT_RUNTIME_ERROR;
+    }
+
+    if (frame->module != NULL) {
+      vm->current_module = frame->module;
     }
 
     instruction_offset = frame->ip;
@@ -2231,6 +2581,28 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
         break;
+      case MS_OP_IMPORT_MODULE:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_import_module(vm, name, instruction_offset) != MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
+      case MS_OP_IMPORT_SYMBOL:
+        if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand, &name) ||
+            !ms_vm_read_byte(vm, frame, instruction_offset, &operand2) ||
+            !ms_vm_get_string_constant(vm, frame, instruction_offset, operand2,
+                                       &function_name)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        if (ms_vm_import_symbol(vm, name, function_name, instruction_offset) !=
+            MS_VM_RESULT_OK) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
+        }
+        break;
       case MS_OP_CLOSURE:
         if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand) ||
             !ms_vm_get_function_constant(vm, frame, instruction_offset, operand,
@@ -2244,6 +2616,7 @@ MsVmResult ms_vm_run_chunk(MsVM* vm, const MsChunk* chunk) {
                                      "MS4001",
                                      "invalid opcode stream");
         }
+        closure->module = ms_vm_active_module(vm);
         for (operand = 0; operand < closure->upvalue_count; ++operand) {
           uint8_t slot = 0;
 

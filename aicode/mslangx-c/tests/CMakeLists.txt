@@ -256,6 +256,14 @@ mslangc_add_e2e_named_test(class.super_dispatch
   "e2e/class/super_dispatch.ms"
   "e2e/class/super_dispatch.ms.out"
   "class")
+mslangc_add_e2e_named_test(modules.import_basic
+  "e2e/modules/import_basic.ms"
+  "e2e/modules/import_basic.ms.out"
+  "modules")
+mslangc_add_e2e_named_test(modules.import_alias
+  "e2e/modules/import_alias.ms"
+  "e2e/modules/import_alias.ms.out"
+  "modules")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"
