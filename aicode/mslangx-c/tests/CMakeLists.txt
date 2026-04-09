@@ -276,6 +276,18 @@ mslangc_add_e2e_named_test(modules.from_import_snapshot
   "e2e/modules/from_import_snapshot.ms"
   "e2e/modules/from_import_snapshot.ms.out"
   "modules")
+mslangc_add_e2e_named_test(modules.cache_once
+  "e2e/modules/cache_once.ms"
+  "e2e/modules/cache_once.ms.out"
+  "modules")
+mslangc_add_e2e_named_test(modules.shared_dependency_once
+  "e2e/modules/shared_dependency_once.ms"
+  "e2e/modules/shared_dependency_once.ms.out"
+  "modules")
+mslangc_add_e2e_named_test(modules.namespace_isolation
+  "e2e/modules/namespace_isolation.ms"
+  "e2e/modules/namespace_isolation.ms.out"
+  "modules")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"

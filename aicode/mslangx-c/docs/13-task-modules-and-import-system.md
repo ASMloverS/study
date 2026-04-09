@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Subtasks 13.1 through 13.4 are `DONE`; subtasks 13.5 through 13.8 are `TODO`.
+In progress. Subtasks 13.1 through 13.5 are `DONE`; subtasks 13.6 through 13.8 are `TODO`.
 
 ## Goal
 
@@ -99,7 +99,7 @@ Use the following status markers consistently in this document:
 | 13.2 | `DONE` | 13.1 | Lower import statements and bind local names |
 | 13.3 | `DONE` | 13.2 | End-to-end `import a` and `import a.b as alias` |
 | 13.4 | `DONE` | 13.3 | End-to-end `from a import b as c` and snapshot bindings |
-| 13.5 | `TODO` | 13.4 | Cache reuse and namespace isolation |
+| 13.5 | `DONE` | 13.4 | Cache reuse and namespace isolation |
 | 13.6 | `TODO` | 13.3 | `MS5001` missing-module diagnostics |
 | 13.7 | `TODO` | 13.4 | `MS5002` missing-export diagnostics |
 | 13.8 | `TODO` | 13.5, 13.6, 13.7 | `MS5003` and `MS5004` failures plus full module regression |
@@ -264,7 +264,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "modules\.(from_import|fr
 
 ### Subtask 13.5 - Cache reuse and namespace isolation
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 13.4.
 
