@@ -1,5 +1,6 @@
 # T01: Project Skeleton & Build System
 
+**Status:** DONE
 **Goal:** CMake project → buildable binary + test infra.
 **Deps:** None
 **Output:** `mslang-c` binary (`--version` prints version); CTest ready.
