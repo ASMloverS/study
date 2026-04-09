@@ -30,6 +30,7 @@ MARK.CNYX
 MARK.NOTE
 .agents
 .claude
+.clangd
 .opencode
 .codex
 .kimi
