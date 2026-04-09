@@ -1,6 +1,6 @@
 # Maple Scripting Language
 
-A pure **C11** bytecode-compiled scripting language, inspired by the `clox` interpreter from [Crafting Interpreters](https://craftinginterpreters.com/).
+Pure C11 bytecode-compiled lang. Inspired by `clox` ([Crafting Interpreters](https://craftinginterpreters.com/)).
 
 ```
 Source (.ms) → Scanner → Parser → Compiler → VM ←→ GC
@@ -8,15 +8,15 @@ Source (.ms) → Scanner → Parser → Compiler → VM ←→ GC
 
 ## Features
 
-- **Bytecode compilation** with single-pass compiler
-- **Stack-based VM** with switch dispatch
-- **Mark-and-sweep GC** with tri-color marking
-- **First-class functions** with closures and upvalues
-- **Classes & inheritance** with constructors, `this`, `super`
-- **Module system** — `import` / `from ... import ... as`
-- **List/array** support with literal syntax
-- **Cross-platform** — Windows (MSVC) and Linux (GCC/Clang)
-- **Zero dependencies** — C standard library only
+- Bytecode compilation, single-pass compiler
+- Stack-based VM, switch dispatch
+- Mark-and-sweep GC, tri-color marking
+- First-class fn → closures + upvalues
+- Classes + inheritance → `init`, `this`, `super`
+- Modules → `import` / `from ... import ... as`
+- Lists → literal syntax, indexing
+- Cross-platform → Win (MSVC) + Linux (GCC/Clang)
+- Zero deps → C stdlib only
 
 ## Quick Start
 
@@ -31,21 +31,21 @@ Source (.ms) → Scanner → Parser → Compiler → VM ←→ GC
 cmake -B build
 cmake --build build
 
-# Interactive REPL
+# REPL
 ./build/maple
 
-# Execute a script
+# Script
 ./build/maple script.ms
 ```
 
 ### CLI
 
 ```
-maple                  Interactive REPL
-maple script.ms        Run a script
-maple --path dir script.ms    Add module search path
-maple --version        Show version
-maple --help           Show help
+maple                          REPL
+maple script.ms                Run script
+maple --path dir script.ms     Add module search path
+maple --version                Show version
+maple --help                   Show help
 ```
 
 ## Language Tour
@@ -111,18 +111,18 @@ print len(list)
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [REQUIREMENTS.md](REQUIREMENTS.md) | Features, code style, testing, implementation phases |
-| [DESIGN.md](DESIGN.md) | Architecture, data structures, APIs, algorithms |
-| [AGENTS.md](AGENTS.md) | AI assistant configuration and code conventions |
+| Doc | Purpose |
+|-----|---------|
+| [REQUIREMENTS.md](REQUIREMENTS.md) | Features, style, tests, phases |
+| [DESIGN.md](DESIGN.md) | Arch, structs, APIs, algos |
+| [AGENTS.md](AGENTS.md) | AI config + code conventions |
 
 ### Implementation Tasks
 
-The project is decomposed into 24 TDD-driven tasks in [docs/](docs/). Each task follows Red-Green-Refactor cycles and is independently compilable and testable.
+24 TDD tasks in [docs/](docs/). Red-Green-Refactor cycles. Each independently buildable + testable.
 
-| # | Task | Phase | Dependencies |
-|---|------|-------|--------------|
+| # | Task | Phase | Deps |
+|---|------|-------|------|
 | [T01](docs/T01-project-skeleton.md) | Project Skeleton & Build System | 1 Foundation | — |
 | [T02](docs/T02-common-definitions.md) | Common Definitions | 1 Foundation | T01 |
 | [T03](docs/T03-memory-subsystem.md) | Memory Subsystem | 1 Foundation | T02 |
@@ -165,11 +165,11 @@ T01 → T02 → T03 → T04 → T05
 
 ```
 mslang4/
-├── CMakeLists.txt          # Build configuration
+├── CMakeLists.txt          # Build config
 ├── src/
 │   ├── main.c              # Entry point & CLI
 │   ├── common.h            # Constants, result types, debug macros
-│   ├── memory.h/c          # Allocation wrapper & GC
+│   ├── memory.h/c          # Alloc wrapper & GC
 │   ├── platform.h/c        # Cross-platform file I/O, paths, colors
 │   ├── logger.h/c          # Leveled, colored logging
 │   ├── token.h             # Token type enum & struct
@@ -178,7 +178,7 @@ mslang4/
 │   ├── parser.h/c          # Pratt parser + recursive descent
 │   ├── chunk.h/c           # Bytecode instruction set & storage
 │   ├── value.h/c           # Tagged-union value representation
-│   ├── object.h/c          # Object system (strings, functions, classes...)
+│   ├── object.h/c          # Object system (strings, fns, classes...)
 │   ├── table.h/c           # Hash table (open addressing)
 │   ├── compiler.h/c        # Single-pass AST → bytecode compiler
 │   ├── vm.h/c              # Stack-based virtual machine
@@ -188,34 +188,34 @@ mslang4/
 ├── tests/
 │   ├── unit/               # C unit tests
 │   ├── basic/              # .ms integration tests
-│   ├── functions/          # Function/closure tests
+│   ├── functions/          # Fn/closure tests
 │   ├── classes/            # OOP tests
 │   └── modules/            # Import system tests
-├── docs/                   # T01–T24 implementation task docs
+├── docs/                   # T01–T24 impl task docs
 └── examples/               # Example .ms programs
 ```
 
 ## Built-in Functions
 
-| Function | Description |
-|----------|-------------|
-| `print(value)` | Print value to stdout |
-| `clock()` | Return elapsed time in seconds |
-| `type(value)` | Return type name as string |
-| `len(string\|list)` | Return length |
+| Fn | Desc |
+|----|------|
+| `print(value)` | Print to stdout |
+| `clock()` | Elapsed time in seconds |
+| `type(value)` | Type name as string |
+| `len(string\|list)` | Length |
 | `input([prompt])` | Read line from stdin |
 | `str(value)` | Convert to string |
 | `num(value)` | Convert to number |
 
 ## Code Conventions
 
-- **C11 only** — no C++ features, no external dependencies
-- **Naming**: `MsPascalCase` types, `ms_snake_case` functions, `MS_UPPER_CASE` macros
-- **Memory**: All allocation via `ms_reallocate()`, init/free lifecycle pairs
-- **Style**: Linux Kernel Coding Style, 4-space indentation, UTF-8/LF
-- **Error handling**: `MsResult` return codes with line/column info
+- C11 only → no C++, no ext deps
+- `MsPascalCase` types, `ms_snake_case` fns, `MS_UPPER_CASE` macros
+- All alloc → `ms_reallocate()`, init/free lifecycle pairs
+- Linux Kernel Style, 4-space indent, UTF-8/LF
+- `MsResult` return codes + line/col info
 
-See [AGENTS.md](AGENTS.md) and [REQUIREMENTS.md](REQUIREMENTS.md) §2.3 for full conventions.
+See [AGENTS.md](AGENTS.md) + [REQUIREMENTS.md](REQUIREMENTS.md) §2.3.
 
 ## Acknowledgments
 

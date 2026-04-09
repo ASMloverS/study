@@ -1,14 +1,14 @@
-# Maple Scripting Language - Design Specification
+# Maple Scripting Language — Design Spec
 
-> **Convention**: All code blocks below omit `#ifndef`/`#define`/`#endif` include guards and `#include` directives for brevity. Every `.h` file uses them in practice.
+> **Conv**: Code blocks omit `#ifndef`/`#define`/`#endif` guards + `#include`. All `.h` use them.
 
-## 1. Architecture
+## 1. Arch
 
 ```
 Source (.ms) → Scanner → Parser → Compiler → VM ←→ GC
 ```
 
-Data flow: `"var x = 42"` → `[VAR, IDENTIFIER("x"), EQUAL, NUMBER(42)]` → `VarDecl{name:"x", init:Literal(42)}` → `[OP_CONSTANT, 0, OP_DEFINE_GLOBAL, 1]` → VM executes.
+`"var x = 42"` → `[VAR, IDENTIFIER("x"), EQUAL, NUMBER(42)]` → `VarDecl{name:"x", init:Literal(42)}` → `[OP_CONSTANT, 0, OP_DEFINE_GLOBAL, 1]` → VM exec.
 
 ## 2. Component APIs
 
@@ -89,7 +89,7 @@ void ms_scanner_init(MsScanner* scanner, const char* source);
 MsToken ms_scanner_scan_token(MsScanner* scanner);
 ```
 
-Internal helpers (all `static`): `advance()`, `peek()`, `peekNext()`, `match()`, `skipWhitespace()`, `scanString()`, `scanNumber()`, `scanIdentifier()`, `identifierType()`, `checkKeyword()`. Token lexeme is pointer+length into original source (no allocation).
+Static helpers: `advance()`, `peek()`, `peekNext()`, `match()`, `skipWhitespace()`, `scanString()`, `scanNumber()`, `scanIdentifier()`, `identifierType()`, `checkKeyword()`. Lexeme = pointer+length into source. Zero alloc.
 
 ### 2.4 AST (`ast.h`)
 
@@ -143,7 +143,7 @@ typedef enum {
 
 typedef struct {
     MsToken name;
-    MsToken alias;  // alias.length == 0 if no alias
+    MsToken alias;
 } MsImportItem;
 
 struct MsStmt {
@@ -173,7 +173,7 @@ void ms_stmt_list_free(MsStmt** stmts, int count);
 
 ### 2.5 Parser (`parser.h / .c`)
 
-Pratt parser for expressions, recursive descent for statements.
+Pratt exprs, recursive descent stmts.
 
 ```c
 typedef struct {
@@ -191,11 +191,11 @@ typedef struct {
 } MsParser;
 
 void ms_parser_init(MsParser* parser, const char* source);
-int ms_parser_parse(MsParser* parser, MsStmt*** outStatements);  // returns count, -1 on error
+int ms_parser_parse(MsParser* parser, MsStmt*** outStatements);
 bool ms_parser_had_error(const MsParser* parser);
 ```
 
-Internal (static in `parser.c`): `advance()`, `consume()`, `check()`, `match()`, `synchronize()`. Expression parsing by precedence: `parseAssignment→parseOr→parseAnd→parseEquality→parseComparison→parseTerm→parseFactor→parseUnary→parseCall→parsePrimary`. Statement parsing: `parseStatement→parseDeclaration`, `parseVarDeclaration`, `parseFunctionDeclaration`, `parseClassDeclaration`, `parseImportStatement`, `parseBlock`, `parseIfStatement`, `parseWhileStatement`, `parseForStatement`, `parseReturnStatement`.
+Static: `advance()`, `consume()`, `check()`, `match()`, `synchronize()`. Expr precedence: `parseAssignment→parseOr→parseAnd→parseEquality→parseComparison→parseTerm→parseFactor→parseUnary→parseCall→parsePrimary`. Stmt fns: `parseStatement→parseDeclaration`, `parseVarDeclaration`, `parseFunctionDeclaration`, `parseClassDeclaration`, `parseImportStatement`, `parseBlock`, `parseIfStatement`, `parseWhileStatement`, `parseForStatement`, `parseReturnStatement`.
 
 ### 2.6 Bytecode (`chunk.h / .c`)
 
@@ -354,7 +354,7 @@ void ms_table_mark(MsTable* table);
 
 ### 2.10 Compiler (`compiler.h / .c`)
 
-Single-pass compiler: walks AST and emits bytecode.
+Single-pass: walks AST → emits bytecode.
 
 ```c
 typedef enum { MS_FUNC_SCRIPT, MS_FUNC_FUNCTION, MS_FUNC_METHOD, MS_FUNC_INITIALIZER } MsFunctionType;
@@ -384,9 +384,9 @@ MsFunction* ms_compiler_compile(MsCompiler* compiler, const char* source);
 void ms_compiler_mark_roots(MsCompiler* compiler);
 ```
 
-Internal (static): emit: `emitByte`, `emitBytes`, `emitLoop`, `emitJump`, `emitReturn`, `emitConstant`, `patchJump`. Constants: `makeConstant`, `identifierConstant`. Variables: `declareVariable`, `defineVariable`, `markInitialized`, `resolveLocal`, `addUpvalue`, `resolveUpvalue`. Scope: `beginScope`, `endScope`. Compile expressions: `compileExpr`, `compileLiteral`, `compileVariable`, `compileAssign`, `compileBinary`, `compileUnary`, `compileLogical`, `compileCall`, `compileGet`, `compileSet`, `compileThis`, `compileSuper`, `compileList`, `compileSubscript`. Compile statements: `compileStmt`, `compileBlock`, `compileVarDecl`, `compileFuncDecl`, `compileClassDecl`, `compileIfStmt`, `compileWhileStmt`, `compileForStmt`, `compileReturnStmt`, `compileImportStmt`, `compileBreakStmt`, `compileContinueStmt`, `compileExprStmt`.
+Static emit: `emitByte`, `emitBytes`, `emitLoop`, `emitJump`, `emitReturn`, `emitConstant`, `patchJump`. Consts: `makeConstant`, `identifierConstant`. Vars: `declareVariable`, `defineVariable`, `markInitialized`, `resolveLocal`, `addUpvalue`, `resolveUpvalue`. Scope: `beginScope`, `endScope`. Expr: `compileExpr`, `compileLiteral`, `compileVariable`, `compileAssign`, `compileBinary`, `compileUnary`, `compileLogical`, `compileCall`, `compileGet`, `compileSet`, `compileThis`, `compileSuper`, `compileList`, `compileSubscript`. Stmt: `compileStmt`, `compileBlock`, `compileVarDecl`, `compileFuncDecl`, `compileClassDecl`, `compileIfStmt`, `compileWhileStmt`, `compileForStmt`, `compileReturnStmt`, `compileImportStmt`, `compileBreakStmt`, `compileContinueStmt`, `compileExprStmt`.
 
-### 2.11 Virtual Machine (`vm.h / .c`)
+### 2.11 VM (`vm.h / .c`)
 
 ```c
 typedef struct { MsClosure* closure; uint8_t* ip; MsValue* slots; } MsCallFrame;
@@ -418,7 +418,7 @@ MsInterpretResult ms_vm_import_from(MsVM* vm, const char* moduleName, const char
 void ms_vm_add_module_path(MsVM* vm, const char* path);
 ```
 
-Internal (static): Stack: `push`, `pop`, `peek`, `resetStack`. Execution: `run` (switch-based dispatch). Call: `callValue`, `call`, `invokeFromClass`, `invoke`, `bindMethod`. Upvalue: `captureUpvalue`, `closeUpvalues`. Error: `runtimeError`. GC: `collectGarbage`, `markObject`, `markValue`, `markRoots`, `traceReferences`, `sweep`, `blackenObject`. Natives: `defineNative`, `defineNatives`. Module: `resolveModulePath`, `loadModule`. Debug: `printStack`, `disassembleInstruction`.
+Static: Stack (`push`, `pop`, `peek`, `resetStack`), Exec (`run`, switch-dispatch), Call (`callValue`, `call`, `invokeFromClass`, `invoke`, `bindMethod`), Upvalue (`captureUpvalue`, `closeUpvalues`), Error (`runtimeError`), GC (`collectGarbage`, `markObject`, `markValue`, `markRoots`, `traceReferences`, `sweep`, `blackenObject`), Natives (`defineNative`, `defineNatives`), Module (`resolveModulePath`, `loadModule`), Debug (`printStack`, `disassembleInstruction`).
 
 ### 2.12 Module System (`module.h / .c`)
 
@@ -431,7 +431,7 @@ void ms_module_add_search_path(MsVM* vm, const char* path);
 char* ms_module_resolve_path(MsVM* vm, const char* moduleName);
 ```
 
-Internal (static): `readFile`, `fileExists`, `detectCircularDependency`.
+Static: `readFile`, `fileExists`, `detectCircularDependency`.
 
 ### 2.13 Logger (`logger.h / .c`)
 
@@ -555,15 +555,15 @@ MsValue ms_builtin_num(MsVM* vm, int argCount, MsValue* args);
 **Syntax**: `import <module>` | `from <module> import <item> (as <alias>)? (, <item> (as <alias>)?)*`
 
 **Resolution**:
-1. Cache lookup in `vm->modules` → return if found
-2. Resolve path: try `"./<module>.ms"`, then each `vm->modulePaths` entry
-3. Circular dependency check via per-VM loading stack
-4. Load file → compile via `ms_compiler_compile()` → execute module body → capture top-level declarations as exports
+1. Cache lookup `vm->modules` → return if hit
+2. Path resolve: `"./<module>.ms"` → each `vm->modulePaths`
+3. Circular dep check via per-VM loading stack
+4. Load file → compile `ms_compiler_compile()` → exec module body → top-level decls become exports
 5. Cache module, bind imported symbols to current scope
 
 **Bytecodes**:
-- `MS_OP_IMPORT <constant>` — push module object (contains exports table)
-- `MS_OP_IMPORT_FROM <module_const> <item_const> <alias_const?>` — import specific item, optionally aliased
+- `MS_OP_IMPORT <constant>` — push module obj (exports table)
+- `MS_OP_IMPORT_FROM <module_const> <item_const> <alias_const?>` — import item, optional alias
 
 ## 4. Error Handling
 
@@ -581,7 +581,7 @@ typedef struct {
 } MsRuntimeError;
 ```
 
-**Recovery**: Lexer → skip to next token, return `MS_TOKEN_ERROR`. Parser → synchronize to next boundary (newline, `}`, class, fn, var, for, if, while, print, return). Compiler → stop after first error. VM → unwind stack, print stack trace.
+**Recovery**: Lexer → skip to next token, return `MS_TOKEN_ERROR`. Parser → synchronize to boundary (newline, `}`, class, fn, var, for, if, while, print, return). Compiler → stop on first error. VM → unwind stack, print trace.
 
 ## 5. Testing
 
@@ -616,7 +616,7 @@ extern MsTestSuite* ms_current_suite;
 #define ASSERT_STR_EQ(expected, actual) do { if (strcmp((expected),(actual)) != 0) { /* snprintf error + return */ } } while(0)
 ```
 
-## 6. Build Configuration
+## 6. Build Config
 
 ```cmake
 cmake_minimum_required(VERSION 3.10)
@@ -649,31 +649,31 @@ endif()
 install(TARGETS maple RUNTIME DESTINATION bin)
 ```
 
-## 7. Memory Patterns
+## 7. Mem Patterns
 
-### 7.1 Dynamic Arrays
+### 7.1 Dynarrays
 
-All dynamic arrays follow: `init(data=NULL, count=0, capacity=0)` → `write` grows with `MS_GROW_CAPACITY` + `MS_GROW_ARRAY` → `free` uses `MS_FREE_ARRAY` then re-inits.
+`init(data=NULL, count=0, cap=0)` → `write` grows via `MS_GROW_CAPACITY` + `MS_GROW_ARRAY` → `free` via `MS_FREE_ARRAY` then re-init.
 
-### 7.2 Object Allocation
+### 7.2 Obj Alloc
 
-All VM-managed objects allocated via `ms_alloc_object(vm, size, type)` which calls `ms_reallocate`, links into `vm->objects` list, tracks `vm->bytesAllocated`.
+All VM-managed objs → `ms_alloc_object(vm, size, type)` → calls `ms_reallocate`, links `vm->objects` list, tracks `vm->bytesAllocated`.
 
 ### 7.3 GC Lifecycle
 
-1. Threshold: `if (bytesAllocated > nextGC) ms_gc_collect()`
+1. Threshold: `bytesAllocated > nextGC` → `ms_gc_collect()`
 2. Mark: stack → call frames → globals → open upvalues → compiler roots → trace gray stack
-3. Sweep: walk object list, free unmarked, reset marks on survivors, update nextGC
+3. Sweep: walk obj list, free unmarked, reset marks, update `nextGC`
 
-## 8. Performance
+## 8. Perf
 
-- **String interning** in `vm->strings` table
-- **Switch dispatch** (computed goto optional for GCC/Clang via labels-as-values)
-- **Fixed stack**: pre-allocated `MsValue[MS_STACK_MAX]`
+- **String interning** via `vm->strings`
+- **Switch dispatch** (computed goto opt for GCC/Clang via labels-as-values)
+- **Fixed stack**: pre-alloc `MsValue[MS_STACK_MAX]`
 - **Values**: 16-byte tagged union inline (type + union)
 - **Objects**: heap via `ms_reallocate`, intrusive linked list
 
-Computed goto (optional):
+Computed goto opt:
 ```c
 #ifdef __GNUC__
   #define MS_DISPATCH() goto *dispatch_table[*ip++]
@@ -684,29 +684,29 @@ Computed goto (optional):
 #endif
 ```
 
-## 9. C vs C++ Pattern Mapping
+## 9. C vs C++ Mapping
 
 | C++ | C |
 |---|---|
-| `namespace ms {}` | `ms_` function prefix |
-| class/struct with methods | `struct` + separate functions |
-| `std::vector<T>` | Dynamic array (`T*` + count + capacity) |
+| `namespace ms {}` | `ms_` fn prefix |
+| class/struct + methods | `struct` + separate fns |
+| `std::vector<T>` | Dynarray (`T*` + count + cap) |
 | `std::string` | `char*` + `int length` |
 | `std::string_view` | `const char*` + `int length` |
-| `std::variant<A,B,C>` | Tagged union (enum type + union) |
-| `std::expected<T,E>` | Return `MsResult` + output param |
+| `std::variant<A,B,C>` | Tagged union (enum + union) |
+| `std::expected<T,E>` | `MsResult` + output param |
 | `std::optional<T>` | Return bool + output param |
-| virtual/polymorphism | Function pointers / tag dispatch |
+| virtual/polymorphism | Fn ptrs / tag dispatch |
 | `std::unique_ptr` | Manual init/free pairs |
-| `std::unordered_map` | Custom `MsTable` |
+| `std::unordered_map` | `MsTable` |
 | `std::format()` | `snprintf()` |
 | `std::source_location` | `__FILE__`, `__LINE__`, `__func__` |
 | `#pragma once` | `#ifndef`/`#define`/`#endif` guards |
-| RAII destructors | Explicit `ms_xxx_free()` |
+| RAII dtors | Explicit `ms_xxx_free()` |
 | `template<typename T>` | Macros (`MS_GROW_ARRAY`, etc.) |
 | `static_assert(cond)` | `_Static_assert(cond, msg)` |
-| Exceptions | Error codes + `setjmp`/`longjmp` (optional) |
+| Exceptions | Error codes + `setjmp`/`longjmp` (opt) |
 
-## 10. Future Extensions
+## 10. Future
 
-JIT compilation, generational GC, coroutines (setjmp/longjmp or ucontext), pattern matching, optional static typing, standard library, debugger, profiler, LSP, package manager.
+JIT, generational GC, coroutines (setjmp/longjmp | ucontext), pattern matching, optional static typing, stdlib, debugger, profiler, LSP, pkg mgr.
