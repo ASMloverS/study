@@ -4,30 +4,30 @@
 
 **Goal:** Implement ObjList, ObjMap, ObjTuple with creation opcodes, index access, and literal syntax.
 **Dependencies:** T18
-**Produces:** 列表 `[1,2,3]`, 映射 `{"a":1}`, 元组 `(1,2,3)` 创建和索引
+**Produces:** List `[1,2,3]`, map `{"a":1}`, tuple `(1,2,3)` creation and indexing
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `include/ms/object.h` | ObjList, ObjMap, ObjTuple 结构 |
+| Modify | `include/ms/object.h` | ObjList, ObjMap, ObjTuple structs |
 | Create | `include/ms/vtable.h` | MsValueTable (Value-keyed hash table for ObjMap) |
-| Create | `src/vtable.c` | ValueTable 实现 |
-| Modify | `src/object.c` | 集合对象 创建/销毁/打印 |
-| Modify | `src/compiler_expr.c` | 列表/映射/元组字面量, 下标运算 |
+| Create | `src/vtable.c` | ValueTable implementation |
+| Modify | `src/object.c` | Collection object create/destroy/print |
+| Modify | `src/compiler_expr.c` | List/map/tuple literals, subscript ops |
 | Modify | `src/vm.c` | NEWLIST, NEWMAP, NEWTUPLE, GETIDX, SETIDX |
-| Create | `tests/unit/test_collections.c` | 集合测试 |
+| Create | `tests/unit/test_collections.c` | Collection tests |
 
 ## Key Data Structures / API
 
 ```c
-// ObjList: 动态数组
+// ObjList: dynamic array
 typedef struct {
     MsObject obj;
     MsValueArray items;
 } MsObjList;
 
-// ObjTuple: 不可变, 可哈希
+// ObjTuple: immutable, hashable
 typedef struct {
     MsObject obj;
     uint32_t hash;
@@ -77,7 +77,8 @@ bool ms_vtable_delete(MsValueTable* t, MsValue key);
 ## Implementation Notes
 
 ### NEWLIST A B
-创建 ObjList, 从 R(A)..R(A+B-1) 取 B 个初始元素:
+
+Create `ObjList` from `B` elements in `R(A)..R(A+B-1)`:
 ```c
 case MS_OP_NEWLIST: {
     int count = MS_GET_B(instr);
@@ -98,7 +99,7 @@ case MS_OP_GETIDX: {
     if (MS_IS_LIST(obj) && MS_IS_INT(idx)) {
         MsObjList* list = MS_AS_LIST(obj);
         int i = (int)MS_AS_INT(idx);
-        if (i < 0) i += list->items.count;  // 负索引
+        if (i < 0) i += list->items.count;  // negative index
         R(A) = list->items.data[i];
     } else if (MS_IS_MAP(obj)) {
         MsObjMap* map = MS_AS_MAP(obj);
@@ -106,23 +107,23 @@ case MS_OP_GETIDX: {
         ms_vtable_get(&map->table, idx, &val);
         R(A) = val;
     } else if (MS_IS_STRING(obj) && MS_IS_INT(idx)) {
-        // 字符串按字符索引
+        // string char indexing
     }
     break;
 }
 ```
 
-### ValueTable 哈希
+### ValueTable Hashing
 
-Value 的哈希: nil → 0, bool → 0/1, int → (uint32_t)val, number → bit_cast to u64 then fold, string → string.hash, tuple → tuple.hash.
+Value hash by type: `nil` → 0; `bool` → 0/1; `int` → `(uint32_t)val`; `number` → bit-cast to u64 then fold; `string` → `string.hash`; `tuple` → `tuple.hash`.
 
-### 编译器侧
+### Compiler Side
 
-- `[expr, expr, ...]` → 编译各元素到连续寄存器, 发射 `NEWLIST A count`
-- `{"key": val, ...}` → 编译 key-value 对, 发射 `NEWMAP A count`
-- `(expr, expr)` → 编译各元素, 发射 `NEWTUPLE A count` (需与分组括号区分: 单元素 `(x)` 是分组, `(x,)` 是 tuple)
-- `expr[idx]` → 编译 obj 和 idx, 发射 `GETIDX`
-- `expr[idx] = val` → 编译 obj, idx, val, 发射 `SETIDX`
+- `[expr, ...]` → compile elements to consecutive registers, emit `NEWLIST A count`
+- `{"key": val, ...}` → compile key-value pairs, emit `NEWMAP A count`
+- `(expr, expr)` → compile elements, emit `NEWTUPLE A count` (disambiguate from grouping: `(x)` is grouping, `(x,)` is tuple)
+- `expr[idx]` → compile obj and idx, emit `GETIDX`
+- `expr[idx] = val` → compile obj, idx, val, emit `SETIDX`
 
 ## C Unit Tests
 

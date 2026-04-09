@@ -4,48 +4,48 @@
 
 **Goal:** Register all built-in native functions and implement ASCII character cache for fast single-char string allocation.
 **Dependencies:** T13, T21
-**Produces:** clock(), type(), str(), num(), len(), input(), assert(), int(), float() 等可用
+**Produces:** `clock()`, `type()`, `str()`, `num()`, `len()`, `input()`, `assert()`, `int()`, `float()` and others available
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `src/vm_natives.c` | 原生函数注册和实现 |
-| Modify | `src/vm.c` | 在 ms_vm_init 中注册原生函数 |
-| Modify | `include/ms/vm.h` | ASCII char cache 字段 |
-| Create | `tests/unit/test_natives.c` | 原生函数测试 |
+| Create | `src/vm_natives.c` | Native function registration and implementations |
+| Modify | `src/vm.c` | Register natives in `ms_vm_init` |
+| Modify | `include/ms/vm.h` | ASCII char cache field |
+| Create | `tests/unit/test_natives.c` | Native function tests |
 
 ## Key Data Structures / API
 
 ```c
-// 追加到 MsVM:
-MsObjString* ascii_cache[128];  // 单字符 ASCII 字符串缓存
+// Append to MsVM:
+MsObjString* ascii_cache[128];  // single-char ASCII string cache
 
-// 注册所有原生函数
+// Register all native functions
 void ms_register_natives(MsVM* vm);
 ```
 
 ## Implementation Notes
 
-### 原生函数列表
+### Native Function List
 
-| 函数 | 参数 | 返回 | 说明 |
-|------|------|------|------|
-| `clock()` | 0 | number | 当前时间 (秒, 浮点) |
-| `type(val)` | 1 | string | 值类型名 ("nil"/"bool"/"number"/"int"/"string"/"list"/"map"/"function"/"class"/"instance") |
-| `str(val)` | 1 | string | 值转字符串 |
-| `num(val)` | 1 | number | 值转数字 |
-| `int(val)` | 1 | int | 值转整数 |
-| `float(val)` | 1 | number | 值转浮点 |
-| `len(val)` | 1 | int | 长度 (string/list/map/tuple) |
-| `input(prompt?)` | 0-1 | string | 读取一行输入 |
-| `assert(cond, msg?)` | 1-2 | nil | 断言, 失败则 runtime error |
-| `hasattr(obj, name)` | 2 | bool | 对象是否有属性 |
-| `getattr(obj, name)` | 2 | value | 获取属性值 |
-| `setattr(obj, name, val)` | 3 | nil | 设置属性值 |
-| `print(val)` | 1 | nil | 打印值 + 换行 (也可作为全局函数而非语句) |
+| Function | Args | Return | Description |
+|----------|------|--------|-------------|
+| `clock()` | 0 | number | current time in seconds (float) |
+| `type(val)` | 1 | string | value type name (`"nil"/"bool"/"number"/"int"/"string"/"list"/"map"/"function"/"class"/"instance"`) |
+| `str(val)` | 1 | string | convert to string |
+| `num(val)` | 1 | number | convert to number |
+| `int(val)` | 1 | int | convert to integer |
+| `float(val)` | 1 | number | convert to float |
+| `len(val)` | 1 | int | length (string/list/map/tuple) |
+| `input(prompt?)` | 0–1 | string | read one line of input |
+| `assert(cond, msg?)` | 1–2 | nil | assert; runtime error on failure |
+| `hasattr(obj, name)` | 2 | bool | object has property |
+| `getattr(obj, name)` | 2 | value | get property value |
+| `setattr(obj, name, val)` | 3 | nil | set property value |
+| `print(val)` | 1 | nil | print value + newline (also available as statement) |
 
-### 实现示例
+### Implementation Examples
 
 ```c
 static MsValue native_clock(MsVM* vm, int argc, MsValue* argv) {
@@ -84,7 +84,7 @@ static MsValue native_len(MsVM* vm, int argc, MsValue* argv) {
 }
 ```
 
-### 注册
+### Registration
 
 ```c
 void ms_register_natives(MsVM* vm) {
@@ -107,14 +107,14 @@ void ms_register_natives(MsVM* vm) {
 ### ASCII Character Cache
 
 ```c
-// 在 ms_vm_init 中初始化
+// Initialize in ms_vm_init
 for (int i = 0; i < 128; i++) {
     char c = (char)i;
     vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
 }
 ```
 
-单字符 string 分配时直接返回缓存 (在 ms_obj_string_copy 中检查 length==1 && chars[0] < 128).
+Single-char string allocation returns from cache (check `length==1 && chars[0] < 128` in `ms_obj_string_copy`).
 
 ## C Unit Tests
 

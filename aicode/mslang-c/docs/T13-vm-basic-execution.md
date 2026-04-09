@@ -4,17 +4,17 @@
 
 **Goal:** Implement the VM dispatch loop — **first milestone where .ms scripts run end-to-end**.
 **Dependencies:** T05, T06, T07, T12
-**Produces:** `mslang-c` 可执行 .ms 脚本, 支持算术/比较/逻辑/位运算/变量/条件/循环/简单函数
+**Produces:** `mslang-c` executes `.ms` scripts; supports arithmetic, comparison, logical, bitwise ops, variables, conditionals, loops, and basic functions
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/vm.h` | MsVM 结构, interpret API |
-| Create | `src/vm.c` | 分派循环, 基础操作码 |
+| Create | `include/ms/vm.h` | `MsVM` struct, interpret API |
+| Create | `src/vm.c` | Dispatch loop, basic opcodes |
 | Create | `src/vm_call.c` | CALL / RETURN |
-| Modify | `src/main.c` | 接入编译+执行管线 |
-| Create | `tests/unit/test_vm_basic.c` | VM 基础测试 |
+| Modify | `src/main.c` | Wire up compile+execute pipeline |
+| Create | `tests/unit/test_vm_basic.c` | VM basic tests |
 
 ## Key Data Structures / API
 
@@ -25,7 +25,7 @@
 typedef struct {
     MsObjClosure* closure;
     MsInstruction* ip;
-    MsValue* slots;  // 帧的栈基地址
+    MsValue* slots;  // base address of frame's register window
 } MsCallFrame;
 
 typedef enum {
@@ -40,31 +40,31 @@ typedef struct MsVM {
     MsCallFrame frames[MS_FRAMES_MAX];
     int frame_count;
     MsTable globals;
-    MsTable strings;       // 字符串驻留表
-    MsObject* objects;     // GC 全对象链表
+    MsTable strings;       // string intern table
+    MsObject* objects;     // GC linked list of all objects
     size_t bytes_allocated;
     size_t next_gc;
     MsObjUpvalue* open_upvalues;
     MsObjString* init_string;  // "init"
-    struct MsCompiler* compiler; // GC root (编译期间)
-    // GC gray stack (T16 填充)
+    struct MsCompiler* compiler; // GC root (during compilation)
+    // GC gray stack (populated in T16)
     MsObject** gray_stack;
     int gray_count;
     int gray_capacity;
 } MsVM;
 
-void             ms_vm_init(MsVM* vm);
-void             ms_vm_free(MsVM* vm);
+void              ms_vm_init(MsVM* vm);
+void              ms_vm_free(MsVM* vm);
 MsInterpretResult ms_vm_interpret(MsVM* vm, const char* source, const char* path);
 MsInterpretResult ms_vm_run(MsVM* vm);
-void             ms_vm_runtime_error(MsVM* vm, const char* fmt, ...);
-void             ms_vm_define_native(MsVM* vm, const char* name,
+void              ms_vm_runtime_error(MsVM* vm, const char* fmt, ...);
+void              ms_vm_define_native(MsVM* vm, const char* name,
                                       MsNativeFn fn, int arity);
 ```
 
 ## Implementation Notes
 
-### 分派循环 (switch-based)
+### Dispatch Loop (switch-based)
 
 ```c
 MsInterpretResult ms_vm_run(MsVM* vm) {
@@ -86,8 +86,8 @@ MsInterpretResult ms_vm_run(MsVM* vm) {
         case MS_OP_LOADFALSE: R(A) = MS_BOOL_VAL(false); break;
         case MS_OP_MOVE:      R(A) = R(MS_GET_B(instr)); break;
         case MS_OP_ADD:       /* RK(B) + RK(C) */ break;
-        // ... 其余操作码
-        case MS_OP_RETURN:    /* 返回 */ break;
+        // ... remaining opcodes
+        case MS_OP_RETURN:    /* return */ break;
         }
     }
 #undef READ_INSTR
@@ -97,9 +97,9 @@ MsInterpretResult ms_vm_run(MsVM* vm) {
 }
 ```
 
-### 算术
+### Arithmetic
 
-支持 int-int, float-float, int-float 混合 (int 提升为 float):
+Supports int-int, float-float, and mixed int-float (int promoted to float):
 ```c
 case MS_OP_ADD: {
     MsValue b = RK(B), c = RK(C);
@@ -116,20 +116,20 @@ case MS_OP_ADD: {
 
 ### CALL / RETURN
 
-CALL A B C: 调用 R(A), B-1 个参数 (R(A+1)..R(A+B-1)), C-1 个返回值.
-- 检查 R(A) 是 Closure 或 Native
-- Closure: push 新 MsCallFrame, slots = &R(A+1), ip = function->chunk.code
-- Native: 直接调用 C 函数
-- RETURN A B: 返回 B-1 个值从 R(A). pop frame, 将返回值写入调用者的目标寄存器
+`CALL A B C`: call `R(A)` with B-1 args (`R(A+1)..R(A+B-1)`), C-1 return values.
+- Check `R(A)` is `Closure` or `Native`
+- `Closure`: push new `MsCallFrame`, `slots = &R(A+1)`, `ip = function->chunk.code`
+- `Native`: call the C function directly
+- `RETURN A B`: return B-1 values from `R(A)`; pop frame, write return values to caller's target register
 
-### ms_vm_interpret 流程
+### ms_vm_interpret Flow
 
 ```c
 MsInterpretResult ms_vm_interpret(MsVM* vm, const char* src, const char* path) {
     MsObjFunction* fn = ms_compile(vm, src, path, ...);
     if (!fn) return MS_INTERPRET_COMPILE_ERROR;
     MsObjClosure* cl = ms_obj_closure_new(vm, fn);
-    // 设置第一帧
+    // set up first frame
     vm->frames[0].closure = cl;
     vm->frames[0].ip = fn->chunk.code;
     vm->frames[0].slots = vm->stack;

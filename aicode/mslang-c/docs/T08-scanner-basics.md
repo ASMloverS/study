@@ -4,16 +4,16 @@
 
 **Goal:** Implement scanner producing all basic tokens: numbers (int/float), identifiers, keywords, operators, string literals.
 **Dependencies:** T01
-**Produces:** `MsScanner` 可将源码转化为 token 流; ASI 基础支持
+**Produces:** `MsScanner` converts source to token stream; basic ASI support
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/token.h` | TokenType 枚举 (X-macro), Token 结构 |
-| Create | `include/ms/scanner.h` | MsScanner 状态和 API |
-| Create | `src/scanner.c` | 词法分析实现 |
-| Create | `tests/unit/test_scanner.c` | 基础词法分析测试 |
+| Create | `include/ms/token.h` | `TokenType` enum (X-macro), `Token` struct |
+| Create | `include/ms/scanner.h` | `MsScanner` state and API |
+| Create | `src/scanner.c` | Lexer implementation |
+| Create | `tests/unit/test_scanner.c` | Basic lexer tests |
 
 ## Key Data Structures / API
 
@@ -101,15 +101,15 @@ void           ms_scanner_restore(MsScanner* s, MsScannerState st);
 
 ## Implementation Notes
 
-- **关键字识别**: trie 或简单长度+首字母分派。关键字表: and, or, not, if, else, while, for, in, break, continue, return, var, fun, class, this, super, static, true, false, nil, print, import, from, as, try, catch, throw, defer, yield, switch, case, default, enum
-- **数字字面量**: 扫描数字序列; 遇到 `.` 后变为 float; 支持 `0x` (hex), `0b` (binary), `0o` (octal) 前缀
-- **字符串字面量**: `"..."` 支持转义 `\n \t \r \\ \" \0`; 字符串插值 `${...}` 在 T09 实现
-- **ASI (自动分号插入)**: 在换行处, 若 `prev_type` 为以下之一且 `paren_depth==0 && bracket_depth==0`, 则产出 `MS_TK_NEWLINE`:
-  - IDENTIFIER, NUMBER_INT, NUMBER_FLOAT, STRING, STRING_INTERP_END
-  - RIGHT_PAREN, RIGHT_BRACKET, RIGHT_BRACE
-  - TRUE, FALSE, NIL, RETURN, BREAK, CONTINUE
-- **行注释**: `//` 到行末
-- **块注释**: `/* ... */` 可嵌套 (在 T09 实现)
+- **Keyword recognition**: trie or simple length+first-char dispatch. Keywords: `and or not if else while for in break continue return var fun class this super static true false nil print import from as try catch throw defer yield switch case default enum`
+- **Number literals**: scan digit sequence; `.` makes it float; supports `0x` (hex), `0b` (binary), `0o` (octal) prefixes
+- **String literals**: `"..."` with escapes `\n \t \r \\ \" \0`; string interpolation `${...}` implemented in T09
+- **ASI**: at a newline, emit `MS_TK_NEWLINE` if `paren_depth==0 && bracket_depth==0` and `prev_type` is one of:
+  - `IDENTIFIER NUMBER_INT NUMBER_FLOAT STRING STRING_INTERP_END`
+  - `RIGHT_PAREN RIGHT_BRACKET RIGHT_BRACE`
+  - `TRUE FALSE NIL RETURN BREAK CONTINUE`
+- **Line comments**: `//` to end of line
+- **Block comments**: nestable `/* ... */` (implemented in T09)
 
 ## C Unit Tests
 
@@ -184,7 +184,7 @@ int main(void) {
 
 ## .ms Integration Tests
 
-Scanner 通过编译器和 VM 间接测试:
+Scanner is tested indirectly through the compiler and VM:
 
 ```ms
 // tests/fixtures/scanner_asi.ms (run after T13)

@@ -4,17 +4,17 @@
 
 **Goal:** Implement .msc binary serialization/deserialization with auto-caching, and incremental marking for major GC.
 **Dependencies:** T17, T28
-**Produces:** .msc 缓存加速重复执行; 增量 GC 减少暂停时间
+**Produces:** .msc cache accelerates repeated execution; incremental GC reduces pause time
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/serializer.h` | 序列化 API |
-| Create | `src/serializer.c` | .msc 二进制格式读写 |
-| Modify | `src/vm_gc.c` | 增量标记 |
-| Modify | `include/ms/vm.h` | 增量 GC 状态 |
-| Create | `tests/unit/test_serializer.c` | 序列化 roundtrip 测试 |
+| Create | `include/ms/serializer.h` | Serializer API |
+| Create | `src/serializer.c` | .msc binary format read/write |
+| Modify | `src/vm_gc.c` | Incremental marking |
+| Modify | `include/ms/vm.h` | Incremental GC state |
+| Create | `tests/unit/test_serializer.c` | Serializer roundtrip tests |
 
 ## Key Data Structures / API
 
@@ -23,43 +23,43 @@
 #pragma once
 #include "ms/object.h"
 
-// .msc 文件头 (16 bytes)
+// .msc file header (16 bytes)
 #define MS_MSC_MAGIC  "MSC\0"
 #define MS_MSC_VERSION 1
 
 typedef struct {
     char magic[4];     // "MSC\0"
-    uint32_t version;  // 格式版本
-    uint32_t flags;    // 保留
-    uint32_t src_hash; // 源文件 FNV-1a hash (用于验证缓存有效性)
+    uint32_t version;  // format version
+    uint32_t flags;    // reserved
+    uint32_t src_hash; // source FNV-1a hash (validates cache freshness)
 } MsMscHeader;
 
-// 序列化 ObjFunction 到文件
+// Serialize ObjFunction to file
 bool ms_serialize(MsObjFunction* fn, const char* path, uint32_t src_hash);
-// 反序列化; 返回 NULL 若文件不存在或 hash 不匹配
+// Deserialize; returns NULL if file missing or hash mismatch
 MsObjFunction* ms_deserialize(MsVM* vm, const char* path, uint32_t src_hash);
 
-// 自动缓存包装
+// Auto-caching wrapper
 MsObjFunction* ms_compile_cached(MsVM* vm, const char* source,
                                    const char* src_path);
 ```
 
 ```c
-// 增量 GC 状态 (追加到 MsVM)
+// Incremental GC state (append to MsVM)
 typedef enum {
     MS_GC_IDLE,
     MS_GC_MARKING,
     MS_GC_SWEEPING,
 } MsGcPhase;
 
-// 追加到 MsVM:
+// Append to MsVM:
 MsGcPhase gc_phase;
-MsObject* sweep_cursor;  // SWEEPING 阶段的当前位置
+MsObject* sweep_cursor;  // current position during SWEEPING phase
 ```
 
 ## Implementation Notes
 
-### .msc 二进制格式
+### .msc Binary Format
 
 ```
 [Header: 16 bytes]
@@ -85,51 +85,51 @@ MsObject* sweep_cursor;  // SWEEPING 阶段的当前位置
       [line: u32] [column: u32] [count: u32]
 ```
 
-### DFS 后序
+### DFS Post-Order
 
-内嵌函数先序列化 (post-order), 这样反序列化时读到 FUNCTION 常量引用时, 被引用的函数已经被创建.
+Nested functions serialize first (post-order), so when deserializing a FUNCTION constant reference, the referenced function is already created.
 
-### 自动缓存
+### Auto-Caching
 
 ```c
 MsObjFunction* ms_compile_cached(MsVM* vm, const char* source, const char* src_path) {
     uint32_t src_hash = ms_fnv1a(source, strlen(source));
-    // 构造 .msc 路径: src_path + ".msc" 或替换 .ms → .msc
+    // Build .msc path: append "c" to src_path (.ms → .msc)
     char msc_path[PATH_MAX];
-    snprintf(msc_path, sizeof(msc_path), "%sc", src_path); // .ms → .msc
+    snprintf(msc_path, sizeof(msc_path), "%sc", src_path);
 
-    // 尝试从缓存加载
+    // Try loading from cache
     MsObjFunction* fn = ms_deserialize(vm, msc_path, src_hash);
     if (fn) return fn;
 
-    // 缓存无效: 编译
+    // Cache invalid: compile and save
     fn = ms_compile(vm, source, src_path, ...);
     if (fn) ms_serialize(fn, msc_path, src_hash);
     return fn;
 }
 ```
 
-### 增量标记
+### Incremental Marking
 
-将 major GC 的标记阶段拆分为多个小步:
+Split the major GC marking phase into small steps:
 
 ```c
 void ms_gc_incremental_step(MsVM* vm) {
     switch (vm->gc_phase) {
     case MS_GC_IDLE:
-        // 开始标记: mark roots
+        // Begin marking: mark roots
         mark_roots(vm);
         vm->gc_phase = MS_GC_MARKING;
         break;
 
     case MS_GC_MARKING:
-        // 每次处理 MS_GC_INCR_WORK (64) 个灰色对象
+        // Process MS_GC_INCR_WORK (64) gray objects per step
         for (int i = 0; i < MS_GC_INCR_WORK && vm->gray_count > 0; i++) {
             MsObject* obj = vm->gray_stack[--vm->gray_count];
             blacken_object(vm, obj);
         }
         if (vm->gray_count == 0) {
-            // 标记完成, 进入清扫
+            // Marking complete; begin sweeping
             ms_table_remove_white(&vm->strings);
             vm->sweep_cursor = vm->objects;
             vm->gc_phase = MS_GC_SWEEPING;
@@ -137,13 +137,13 @@ void ms_gc_incremental_step(MsVM* vm) {
         break;
 
     case MS_GC_SWEEPING:
-        // 每次清扫 MS_GC_INCR_WORK 个对象
+        // Sweep MS_GC_INCR_WORK objects per step
         for (int i = 0; i < MS_GC_INCR_WORK && vm->sweep_cursor; i++) {
             MsObject* obj = vm->sweep_cursor;
             vm->sweep_cursor = obj->next;
             if (!obj->is_marked) {
-                // 从链表移除并释放
-                // (需要 prev 指针或使用 pointer-to-pointer 技巧)
+                // Remove from list and free
+                // (requires prev pointer or pointer-to-pointer technique)
             } else {
                 obj->is_marked = false;
             }
@@ -157,16 +157,15 @@ void ms_gc_incremental_step(MsVM* vm) {
 }
 ```
 
-在 `ms_reallocate` 中: 若 `gc_phase != IDLE`, 调用 `ms_gc_incremental_step`.
-若 `gc_phase == IDLE && bytes_allocated > threshold`, 启动增量 GC.
+In `ms_reallocate`: if `gc_phase != IDLE`, call `ms_gc_incremental_step`. If `gc_phase == IDLE && bytes_allocated > threshold`, start an incremental GC cycle.
 
-### 补充特性 (Phase 15 剩余)
+### Additional Phase 15 Features
 
-同时在此任务实现:
-- **运算符重载**: `__add`, `__sub`, `__mul`, `__div`, `__mod`, `__eq`, `__lt`, `__gt`, `__str` — 在算术/比较操作中, 若操作数是 ObjInstance, 查找对应的 dunder 方法
-- **枚举声明**: `enum Color { Red, Green, Blue }` → 编译为带整数值的类
-- **三元运算符**: `cond ? then : else` → TEST + JMP
-- **for-in 迭代**: 完善 FORITER 以支持 list/map/range 迭代
+Implement alongside this task:
+- **Operator overloading**: `__add`, `__sub`, `__mul`, `__div`, `__mod`, `__eq`, `__lt`, `__gt`, `__str` — in arithmetic/comparison ops, if an operand is ObjInstance, look up the corresponding dunder method.
+- **Enum declarations**: `enum Color { Red, Green, Blue }` → compile to a class with integer-valued static fields.
+- **Ternary operator**: `cond ? then : else` → TEST + JMP.
+- **for-in iteration**: complete FORITER to support list/map/range iteration.
 
 ## C Unit Tests
 
@@ -260,8 +259,8 @@ for (var key in {"a": 1, "b": 2}) {
 // expect: b
 
 // tests/fixtures/serializer_cache.ms
-// 此测试验证 .msc 缓存: 运行两次, 第二次应从缓存加载
-// (需要测试 runner 支持, 此处仅验证语义正确性)
+// Validates .msc caching: run twice, second run loads from cache
+// (requires test runner support; this script only verifies correct semantics)
 fun compute() {
   var sum = 0
   for (var i = 0; i < 100; i = i + 1) {

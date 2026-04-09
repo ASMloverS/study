@@ -4,41 +4,41 @@
 
 **Goal:** Implement runtime quickening: arithmetic opcodes adaptively specialize to type-specific variants; computed goto dispatch for GCC/Clang.
 **Dependencies:** T13, T28
-**Produces:** 算术操作自动特化; dispatch 性能提升
+**Produces:** Arithmetic operations auto-specialize; dispatch performance improved
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
 | Modify | `src/vm.c` | Quickened opcode handlers, computed goto |
-| Modify | `include/ms/object.h` | ObjFunction.arith_deopt 计数器 |
-| Create | `tests/unit/test_quickening.c` | Quickening 验证 |
+| Modify | `include/ms/object.h` | ObjFunction.arith_deopt counter |
+| Create | `tests/unit/test_quickening.c` | Quickening validation |
 
 ## Implementation Notes
 
-### Quickening 原理
+### How Quickening Works
 
-首次执行 `MS_OP_ADD` 时, 检查操作数类型:
-- 两个 int → **rewrite** instruction in-place to `MS_OP_ADD_II`
-- 两个 float → rewrite to `MS_OP_ADD_FF`
-- 两个 string → rewrite to `MS_OP_ADD_SS`
+On first execution of `MS_OP_ADD`, check operand types:
+- Both int → **rewrite** instruction in-place to `MS_OP_ADD_II`
+- Both float → rewrite to `MS_OP_ADD_FF`
+- Both string → rewrite to `MS_OP_ADD_SS`
 
-下次执行同一条指令时, 直接走特化路径 (无需类型检查).
+Subsequent executions of the same instruction take the specialized path directly (no type check).
 
-### Deopt (退特化)
+### Deoptimization
 
-若特化版本遇到类型不匹配 (e.g., ADD_II 遇到 float):
-1. 递增该指令位置的 deopt 计数器
-2. 若 deopt_count < 3: 尝试重新特化
-3. 若 deopt_count >= 3: 回退到通用 `MS_OP_ADD` (不再尝试特化)
+When a specialized variant encounters a type mismatch (e.g., ADD_II sees a float):
+1. Increment the deopt counter for that instruction offset.
+2. If `deopt_count < 3`: attempt re-specialization.
+3. If `deopt_count >= 3`: fall back to generic `MS_OP_ADD` permanently.
 
 ```c
-// ObjFunction 中:
+// In ObjFunction:
 ms_u8* arith_deopt;   // lazy alloc, indexed by instruction offset
 int arith_deopt_size;
 ```
 
-### 特化 dispatch 示例
+### Specialization Dispatch Example
 
 ```c
 case MS_OP_ADD: {
@@ -90,9 +90,9 @@ case MS_OP_ADD_II: {
 #endif
 ```
 
-使用方式:
+Usage:
 ```c
-DISPATCH();  // 初始分派
+DISPATCH();  // initial dispatch
 CASE(LOADK) {
     R(A) = K(MS_GET_Bx(instr));
     DISPATCH();
@@ -103,10 +103,10 @@ CASE(ADD) {
 }
 ```
 
-### 支持 Quickening 的操作码
+### Quickened Opcodes
 
-| 通用 | int-int | float-float | string-string |
-|------|---------|-------------|---------------|
+| Generic | int-int | float-float | string-string |
+|---------|---------|-------------|---------------|
 | ADD | ADD_II | ADD_FF | ADD_SS |
 | SUB | SUB_II | SUB_FF | — |
 | MUL | MUL_II | MUL_FF | — |
@@ -123,19 +123,19 @@ CASE(ADD) {
 
 static void test_add_quickens_to_ii(void) {
     MsVM vm; ms_vm_init(&vm);
-    // 循环执行整数加法, 应触发 quickening
+    // Loop integer addition to trigger quickening
     MsInterpretResult r = ms_vm_interpret(&vm,
         "var sum = 0\n"
         "for (var i = 0; i < 10; i = i + 1) { sum = sum + i }\n"
         "print(sum)", "<test>");
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
-    // 可检查 function 的字节码中 ADD 已被替换为 ADD_II
+    // Can inspect function bytecode to verify ADD was replaced with ADD_II
     ms_vm_free(&vm);
 }
 
 static void test_deopt(void) {
     MsVM vm; ms_vm_init(&vm);
-    // 先整数加法 (quicken to II), 然后浮点 (deopt + requicken to FF)
+    // Integer add (quicken to II), then float (deopt + requicken to FF)
     MsInterpretResult r = ms_vm_interpret(&vm,
         "fun add(a, b) { return a + b }\n"
         "print(add(1, 2))\n"

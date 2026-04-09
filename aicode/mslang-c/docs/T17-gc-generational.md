@@ -4,7 +4,7 @@
 
 **Goal:** Extend GC to generational (young/old), write barriers, remembered set, ObjectPool slab allocator.
 **Dependencies:** T16
-**Produces:** 高效分代 GC; 短命对象由 minor GC 快速回收
+**Produces:** Efficient generational GC; short-lived objects quickly reclaimed by minor GC
 
 ## Files
 
@@ -13,13 +13,13 @@
 | Modify | `src/vm_gc.c` | minor/major GC, promotion, remembered set |
 | Modify | `src/memory.c` | write_barrier, ObjectPool |
 | Modify | `include/ms/memory.h` | write_barrier API, MsObjectPool |
-| Modify | `include/ms/vm.h` | 分代 GC 字段 |
-| Create | `tests/unit/test_gc_gen.c` | 分代 GC 测试 |
+| Modify | `include/ms/vm.h` | Generational GC fields |
+| Create | `tests/unit/test_gc_gen.c` | Generational GC tests |
 
 ## Key Data Structures / API
 
 ```c
-// include/ms/memory.h 追加
+// Append to include/ms/memory.h
 typedef struct MsPoolSlab {
     struct MsPoolSlab* next;
     int used;
@@ -42,37 +42,35 @@ void ms_write_barrier(MsVM* vm, MsObject* owner, MsValue val);
 ```
 
 ```c
-// include/ms/vm.h 追加字段
-MsObject* young_objects;     // young 代链表
-MsObject* old_objects;       // old 代链表
-MsObject** remembered_set;   // old 对象引用了 young 对象
+// Append to include/ms/vm.h
+MsObject* young_objects;     // young-gen linked list
+MsObject* old_objects;       // old-gen linked list
+MsObject** remembered_set;   // old-gen objects referencing young-gen objects
 int remembered_count;
 int remembered_capacity;
-size_t young_bytes;          // nursery 已分配字节数
-MsObjectPool upvalue_pool;   // ObjUpvalue 池
-MsObjectPool bound_pool;     // ObjBoundMethod 池 (T18)
+size_t young_bytes;          // bytes allocated in nursery
+MsObjectPool upvalue_pool;   // ObjUpvalue slab pool
+MsObjectPool bound_pool;     // ObjBoundMethod slab pool (T18)
 ```
 
 ## Implementation Notes
 
-### 分配策略
+### Allocation Strategy
 
-新对象进入 young 代: `obj->generation = 0; obj->age = 0;` 挂到 `vm->young_objects`.
+New objects enter the young generation: `obj->generation = 0; obj->age = 0;` appended to `vm->young_objects`.
 
 ### Minor GC (triggered when young_bytes > MS_GC_NURSERY_SIZE)
 
-1. mark_roots (同 T16)
-2. mark remembered_set 中的所有对象
-3. trace (仅 young 代中已标记的灰色对象)
-4. sweep young_objects:
-   - 未标记 → 释放
-   - 已标记 → `age++`; 若 `age >= MS_GC_PROMOTE_AGE`: 移到 old_objects, generation=1
-5. 清空 remembered_set
-6. 重置 young_bytes = 0
+1. mark_roots (same as T16)
+2. Mark all objects in `remembered_set`
+3. Trace (only gray objects in the young generation)
+4. Sweep `young_objects`: unmarked → free; marked → `age++`; if `age >= MS_GC_PROMOTE_AGE` → move to `old_objects`, `generation=1`
+5. Clear `remembered_set`
+6. Reset `young_bytes = 0`
 
-### Major GC (触发条件: 多次 minor 后 old 代增长过快)
+### Major GC (triggered when old generation grows too large after multiple minor GCs)
 
-完整标记-清扫: sweep 两条链表 (young + old).
+Full mark-and-sweep: sweeps both lists (`young` + `old`).
 
 ### Write Barrier
 
@@ -88,18 +86,18 @@ void ms_write_barrier(MsVM* vm, MsObject* owner, MsValue val) {
 }
 ```
 
-需在以下写操作后调用 write_barrier:
-- SETUPVAL: `ms_write_barrier(vm, (MsObject*)frame->closure, R(A))`
-- SETPROP: `ms_write_barrier(vm, (MsObject*)instance, value)`
-- SETGLOBAL: 全局表的 value 变更 (可简化: 全局表不做分代, 总是 root)
+Call `write_barrier` after these write operations:
+- `SETUPVAL`: `ms_write_barrier(vm, (MsObject*)frame->closure, R(A))`
+- `SETPROP`: `ms_write_barrier(vm, (MsObject*)instance, value)`
+- `SETGLOBAL`: globals are always roots; skip generational tracking
 
 ### ObjectPool
 
-Slab 分配器用于频繁分配/释放的小对象 (ObjUpvalue, ObjBoundMethod):
-- 每个 slab 容纳 64 个对象
-- free_list: 已释放对象的单链表 (在对象内存中存放 next 指针)
-- alloc: 从 free_list 取; 空则分配新 slab
-- free: 归还到 free_list
+Slab allocator for frequently allocated/freed small objects (`ObjUpvalue`, `ObjBoundMethod`):
+- Each slab holds 64 objects
+- `free_list`: singly-linked list of freed objects (next pointer stored in-place)
+- alloc: take from `free_list`; allocate a new slab if empty
+- free: return to `free_list`
 
 ## C Unit Tests
 
@@ -135,7 +133,7 @@ int main(void) {
 
 ```ms
 // tests/fixtures/gc_generational.ms
-// 大量短命对象 (nursery 压力)
+// Many short-lived objects (nursery pressure)
 fun stress() {
   var total = 0
   var i = 0
@@ -150,7 +148,7 @@ print(stress())
 // expect: 10000
 
 // tests/fixtures/gc_promotion.ms
-// 长命对象应晋升到 old 代
+// Long-lived objects should be promoted to old generation
 var long_lived = "permanent"
 var i = 0
 while (i < 5000) {
@@ -166,7 +164,6 @@ fun make() {
   return fun() { return x }
 }
 var f = make()
-// 大量分配触发 GC
 var i = 0
 while (i < 5000) { var _ = "gc_pressure"; i = i + 1 }
 print(f())

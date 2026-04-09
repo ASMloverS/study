@@ -4,16 +4,16 @@
 
 **Goal:** Implement 32-bit instruction format (iABC/iABx/iAsBx), all 70+ opcodes, `MsChunk` with constant pool and RLE source info.
 **Dependencies:** T02
-**Produces:** 可编码/解码所有指令; Chunk 存储字节码和常量池; 行号 RLE 压缩
+**Produces:** All instructions encodable/decodable; chunk stores bytecode and constant pool; RLE source line compression
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/opcode.h` | MsOpCode 枚举, 指令编解码 |
-| Create | `include/ms/chunk.h` | MsChunk 结构 |
-| Create | `src/chunk.c` | Chunk 操作实现 |
-| Create | `tests/unit/test_chunk.c` | 指令编解码和 Chunk 测试 |
+| Create | `include/ms/opcode.h` | `MsOpCode` enum, instruction encode/decode |
+| Create | `include/ms/chunk.h` | `MsChunk` struct |
+| Create | `src/chunk.c` | Chunk operation implementations |
+| Create | `tests/unit/test_chunk.c` | Instruction encode/decode and chunk tests |
 
 ## Key Data Structures / API
 
@@ -114,9 +114,9 @@ int  ms_chunk_get_line(MsChunk* c, int offset);
 
 ## Implementation Notes
 
-- **RLE 行号**: `ms_chunk_write` 检查最后一个 SourceRun 的 line/col 是否相同, 相同则 `count++`, 否则追加新 SourceRun
-- **ms_chunk_get_line**: 遍历 SourceRun 数组, 累加 count 直到覆盖 offset
-- **ms_opcode_name**: static const char* 数组, 索引 = opcode 值
+- **RLE line info**: `ms_chunk_write` checks whether the last `SourceRun` has the same line/col; if so, `count++`; otherwise appends a new `SourceRun`
+- **`ms_chunk_get_line`**: iterates `SourceRun` array, accumulating `count` until the offset is covered
+- **`ms_opcode_name`**: static `const char*` array indexed by opcode value
 
 ## C Unit Tests
 
@@ -187,4 +187,4 @@ int main(void) {
 
 ## .ms Integration Tests
 
-无 — 指令编码是内部基础设施, 通过编译器和 VM 间接测试。
+None — instruction encoding is internal infrastructure, tested indirectly through the compiler and VM.

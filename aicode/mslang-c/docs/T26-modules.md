@@ -11,13 +11,13 @@
 | Action | Path | Purpose |
 |--------|------|---------|
 | Create | `include/ms/module.h` | MsModuleLoader API |
-| Create | `src/module.c` | 路径解析, 文件读取 |
-| Modify | `include/ms/object.h` | ObjModule 结构 |
-| Modify | `src/object.c` | 模块创建/销毁 |
-| Create | `src/vm_import.c` | IMPORT/IMPFROM/IMPALIAS 实现 |
-| Modify | `src/compiler.c` | import 语句编译 |
-| Modify | `src/vm.c` | import 操作码分派 |
-| Create | `tests/unit/test_modules.c` | 模块测试 |
+| Create | `src/module.c` | Path resolution, file reading |
+| Modify | `include/ms/object.h` | ObjModule struct |
+| Modify | `src/object.c` | Module create/destroy |
+| Create | `src/vm_import.c` | IMPORT/IMPFROM/IMPALIAS implementation |
+| Modify | `src/compiler.c` | Import statement compilation |
+| Modify | `src/vm.c` | Import opcode dispatch |
+| Create | `tests/unit/test_modules.c` | Module tests |
 
 ## Key Data Structures / API
 
@@ -34,7 +34,7 @@ typedef struct {
     MsObject obj;
     MsObjString* name;
     MsObjString* path;      // canonical file path
-    MsTable exports;         // 导出的绑定
+    MsTable exports;         // exported bindings
     MsModuleState state;
 } MsObjModule;
 
@@ -49,36 +49,36 @@ MsObjModule* ms_obj_module_new(MsVM* vm, MsObjString* name, MsObjString* path);
 #pragma once
 #include "ms/vm.h"
 
-// 模块缓存 (by canonical path)
-// 追加到 MsVM:
+// Module cache (by canonical path)
+// Append to MsVM:
 //   MsTable module_cache;  // path → ObjModule
 
-// 加载并执行模块; 返回 ObjModule* (缓存命中直接返回)
+// Load and execute a module; returns ObjModule* (cache hit returns immediately)
 MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
                              const char* from_path);
-// 读取文件内容 (heap alloc, caller frees)
+// Read file contents (heap-allocated, caller frees)
 char* ms_read_file(const char* path);
-// 解析相对路径 → 绝对路径
+// Resolve relative path → absolute path
 char* ms_resolve_path(const char* import_path, const char* from_dir);
 ```
 
 ## Implementation Notes
 
-### Import 语法
+### Import Syntax
 
 ```ms
 import "math"              // → ObjModule as namespace
-from "math" import sqrt    // → 导入单个绑定
-from "math" import sqrt as s  // → 别名
+from "math" import sqrt    // → import a single binding
+from "math" import sqrt as s  // → aliased
 ```
 
-### 编译
+### Compilation
 
-- `import "path"` → `IMPORT A Bx` (K(Bx) = 路径字符串, R(A) = ObjModule)
+- `import "path"` → `IMPORT A Bx` (K(Bx) = path string, R(A) = ObjModule)
 - `from "path" import name` → `IMPORT A Bx` + `IMPFROM A A C` (K(C) = name)
-- `from "path" import name as alias` → 同上 + `IMPALIAS`
+- `from "path" import name as alias` → same as above + `IMPALIAS`
 
-### VM 执行
+### VM Execution
 
 ```c
 case MS_OP_IMPORT: {
@@ -102,42 +102,42 @@ case MS_OP_IMPFROM: {
 }
 ```
 
-### 模块加载流程
+### Module Load Flow
 
 ```c
 MsObjModule* ms_module_load(MsVM* vm, const char* import_path, const char* from) {
     char* resolved = ms_resolve_path(import_path, from);
     MsObjString* key = ms_obj_string_copy(vm, resolved, strlen(resolved));
-    // 1. 缓存命中?
+    // 1. Cache hit?
     MsValue cached;
     if (ms_table_get(&vm->module_cache, key, &cached))
         return MS_AS_MODULE(cached);
-    // 2. 循环依赖检测
+    // 2. Circular dependency detection
     MsObjModule* mod = ms_obj_module_new(vm, ...);
     mod->state = MS_MOD_INITIALIZING;
     ms_table_set(&vm->module_cache, key, MS_OBJ_VAL(mod));
-    // 3. 读取并编译
+    // 3. Read and compile
     char* source = ms_read_file(resolved);
     MsObjFunction* fn = ms_compile(vm, source, resolved, ...);
     free(source);
-    // 4. 执行模块顶层代码
+    // 4. Execute module top-level code
     ms_vm_execute_module(vm, fn, mod);
     mod->state = MS_MOD_INITIALIZED;
     return mod;
 }
 ```
 
-### 模块导出
+### Module Exports
 
-模块顶层的 `var`/`fun`/`class` 声明自动成为导出. 实现: 模块执行后, 将 globals 中以模块内部前缀标记的绑定复制到 `mod->exports`.
+Top-level `var`/`fun`/`class` declarations automatically become exports. Implementation: after execution, copy marked bindings from globals into `mod->exports`.
 
-或更简单: 模块执行时, DEFGLOBAL 写入 mod->exports 而非 vm->globals.
+Simpler alternative: during module execution, `DEFGLOBAL` writes to `mod->exports` instead of `vm->globals`.
 
-### 路径解析
+### Path Resolution
 
-- 相对路径: 相对于导入者所在目录
-- 自动添加 `.ms` 后缀
-- 规范化为绝对路径用于缓存 key
+- Relative paths: relative to the importing file's directory
+- Automatically append `.ms` extension
+- Normalize to absolute path for cache key
 
 ## C Unit Tests
 
@@ -147,7 +147,7 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path, const char* from)
 #include "ms/module.h"
 
 static void test_read_file(void) {
-    // 创建临时文件测试
+    // Create a temp file for testing
     FILE* f = fopen("_test_mod.ms", "w");
     fprintf(f, "var x = 42\n");
     fclose(f);

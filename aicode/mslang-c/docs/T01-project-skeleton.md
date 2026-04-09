@@ -1,10 +1,8 @@
-# Task 01: Project Skeleton and Build System
+# T01: Project Skeleton & Build System
 
-> **For agentic workers:** Use superpowers:executing-plans to implement this task.
-
-**Goal:** Create a buildable CMake project with directory structure, type definitions, and version-printing binary.
-**Dependencies:** None
-**Produces:** `mslang-c` binary that prints version; unit test infrastructure ready
+**Goal:** CMake project → buildable binary + test infra.
+**Deps:** None
+**Output:** `mslang-c` binary (`--version` prints version); CTest ready.
 
 ## Files
 
@@ -18,7 +16,7 @@
 | Create | `tests/CMakeLists.txt` | Test targets |
 | Create | `cmake/MslangTesting.cmake` | Test helper module |
 
-## Key Data Structures / API
+## API
 
 ```c
 // include/ms/common.h
@@ -67,14 +65,14 @@ typedef size_t   ms_sz;
 #define MS_VERSION          "0.1.0"
 ```
 
-## Implementation Notes
+## Notes
 
-- `CMakeLists.txt`: `cmake_minimum_required(VERSION 3.20)`, `set(CMAKE_C_STANDARD 11)`; MSVC: `/W4 /WX`; others: `-Wall -Wextra -Wpedantic -Werror`
-- `tests/test_assert.h`: `TEST_ASSERT(cond)`, `TEST_ASSERT_EQ(a,b)`, `TEST_ASSERT_STR_EQ(a,b)` — print file:line on failure and `exit(1)`
-- `cmake/MslangTesting.cmake`: `ms_add_test(name source_file)` creates a test target and registers it with CTest
-- `src/main.c`: parses `--version`, otherwise prints usage
+- `CMakeLists.txt`: min 3.20, C11; MSVC `/W4 /WX`; GCC/Clang `-Wall -Wextra -Wpedantic -Werror`
+- `test_assert.h`: `TEST_ASSERT(cond)`, `TEST_ASSERT_EQ(a,b)`, `TEST_ASSERT_STR_EQ(a,b)` → print file:line + `exit(1)` on fail
+- `MslangTesting.cmake`: `ms_add_test(name src)` → target + CTest registration
+- `main.c`: `--version` → print version; else → usage
 
-## C Unit Tests
+## Unit Tests
 
 ```c
 // tests/unit/test_smoke.c
@@ -93,6 +91,4 @@ int main(void) {
 }
 ```
 
-## .ms Integration Tests
-
-None — VM not yet implemented.
+No .ms integration tests — VM not yet impl.

@@ -4,44 +4,44 @@
 
 **Goal:** Implement try/catch/throw exception handling with stack unwinding, and Go-style defer statements.
 **Dependencies:** T15, T18
-**Produces:** try/catch 异常捕获, throw 抛出, defer 延迟执行
+**Produces:** try/catch exception handling, throw, defer deferred execution
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `include/ms/vm.h` | 异常处理栈, CallFrame 添加 defer 缓冲 |
-| Modify | `src/compiler.c` | try/catch/throw/defer 语句编译 |
-| Modify | `src/vm.c` | TRY, ENDTRY, THROW, DEFER 操作码 |
-| Modify | `src/vm_call.c` | 栈回退, defer 执行 |
-| Create | `tests/unit/test_exceptions.c` | 异常和 defer 测试 |
+| Modify | `include/ms/vm.h` | Exception handler stack, defer buffer added to CallFrame |
+| Modify | `src/compiler.c` | try/catch/throw/defer statement compilation |
+| Modify | `src/vm.c` | TRY, ENDTRY, THROW, DEFER opcodes |
+| Modify | `src/vm_call.c` | Stack unwinding, defer execution |
+| Create | `tests/unit/test_exceptions.c` | Exception and defer tests |
 
 ## Key Data Structures / API
 
 ```c
-// 异常处理器 (栈式)
+// Exception handler (stack-based)
 typedef struct {
-    MsInstruction* handler_ip;  // catch 块的 IP
-    int frame_index;            // 所属帧索引
-    int catch_reg;              // 捕获的异常值放入的寄存器
-    MsValue* stack_top;         // 进入 try 时的栈顶 (用于恢复)
+    MsInstruction* handler_ip;  // IP of catch block
+    int frame_index;            // index of owning frame
+    int catch_reg;              // register for caught exception value
+    MsValue* stack_top;         // stack top at try entry (for restoration)
 } MsExceptionHandler;
 
 #define MS_MAX_EXCEPTION_HANDLERS 16
 
-// 追加到 MsVM:
+// Append to MsVM:
 MsExceptionHandler exception_handlers[MS_MAX_EXCEPTION_HANDLERS];
 int exception_count;
 
-// 追加到 MsCallFrame:
-MsObjClosure** deferred;   // defer 闭包缓冲区
+// Append to MsCallFrame:
+MsObjClosure** deferred;   // defer closure buffer
 int deferred_count;
 int deferred_capacity;
 ```
 
 ## Implementation Notes
 
-### 编译 try/catch
+### Compiling try/catch
 
 ```ms
 try {
@@ -51,17 +51,17 @@ try {
 }
 ```
 
-编译为:
+Compiles to:
 ```
-TRY Bx(offset_to_catch)     ; 推入异常处理器
+TRY Bx(offset_to_catch)     ; push exception handler
   ... body ...
-ENDTRY                       ; 弹出异常处理器
-JMP past_catch               ; 跳过 catch 块
-catch_start:                  ; handler_ip 指向这里
-  ... catch body ...          ; e 在 catch_reg 中
+ENDTRY                       ; pop exception handler
+JMP past_catch               ; skip catch block
+catch_start:                  ; handler_ip points here
+  ... catch body ...          ; e is in catch_reg
 ```
 
-### TRY 操作码
+### TRY Opcode
 
 ```c
 case MS_OP_TRY: {
@@ -79,47 +79,47 @@ case MS_OP_ENDTRY: {
 }
 ```
 
-### THROW 操作码
+### THROW Opcode
 
 ```c
 case MS_OP_THROW: {
     MsValue error = R(A);
     if (!throw_exception(vm, error)) {
-        // 无处理器: 未捕获异常 → runtime error
+        // No handler: uncaught exception → runtime error
         ms_vm_runtime_error(vm, "Uncaught exception: %s", ...);
         return MS_INTERPRET_RUNTIME_ERROR;
     }
-    // throw_exception 已更新 frame/ip
+    // throw_exception has updated frame/ip
     frame = &vm->frames[vm->frame_count - 1];
     ip = frame->ip;
     break;
 }
 ```
 
-### 栈回退 (throw_exception)
+### Stack Unwinding (throw_exception)
 
 ```c
 static bool throw_exception(MsVM* vm, MsValue error) {
     while (vm->exception_count > 0) {
         MsExceptionHandler* h = &vm->exception_handlers[vm->exception_count - 1];
-        // 回退到 handler 所在的帧
+        // Unwind to the frame containing the handler
         while (vm->frame_count - 1 > h->frame_index) {
             MsCallFrame* f = &vm->frames[--vm->frame_count];
-            run_deferred(vm, f);  // 执行该帧的 defer
+            run_deferred(vm, f);  // run deferred for this frame
             close_upvalues(vm, f->slots);
         }
         vm->exception_count--;
         MsCallFrame* target = &vm->frames[h->frame_index];
         target->ip = h->handler_ip;
-        target->slots[h->catch_reg] = error;  // 将异常值放入 catch 寄存器
+        target->slots[h->catch_reg] = error;  // place exception in catch register
         vm->stack_top = h->stack_top;
         return true;
     }
-    return false;  // 无处理器
+    return false;  // no handler
 }
 ```
 
-### DEFER 操作码
+### DEFER Opcode
 
 ```c
 case MS_OP_DEFER: {
@@ -135,15 +135,15 @@ case MS_OP_DEFER: {
 }
 ```
 
-### Defer 执行 (LIFO)
+### Defer Execution (LIFO)
 
-函数返回 (RETURN) 或异常回退时, 按 LIFO 顺序执行 deferred 闭包:
+On function return (`RETURN`) or exception unwinding, execute deferred closures in LIFO order:
 ```c
 static void run_deferred(MsVM* vm, MsCallFrame* frame) {
     for (int i = frame->deferred_count - 1; i >= 0; i--) {
-        // 调用 deferred[i] (0 参数)
+        // call deferred[i] (0 args)
         call_closure(vm, frame->deferred[i], 0);
-        ms_vm_run(vm);  // 递归执行
+        ms_vm_run(vm);  // recursive execution
     }
     frame->deferred_count = 0;
 }

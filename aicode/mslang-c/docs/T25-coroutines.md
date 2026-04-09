@@ -4,41 +4,41 @@
 
 **Goal:** Implement generator functions (`fun*`), ObjCoroutine with independent stacks, yield/resume semantics.
 **Dependencies:** T14, T24
-**Produces:** `fun* gen() { yield val }` 生成器, `resume(co)` 恢复执行
+**Produces:** `fun* gen() { yield val }` generators, `resume(co)` resumes execution
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `include/ms/object.h` | ObjCoroutine 结构 |
-| Modify | `src/object.c` | 协程创建/销毁/打印 |
-| Modify | `src/compiler.c` | `fun*` 语法, yield 语句 |
-| Modify | `src/vm.c` | YIELD, RESUME 操作码 |
-| Modify | `src/vm_call.c` | 协程调度 (栈切换) |
-| Create | `tests/unit/test_coroutines.c` | 协程测试 |
+| Modify | `include/ms/object.h` | ObjCoroutine struct |
+| Modify | `src/object.c` | Coroutine create/destroy/print |
+| Modify | `src/compiler.c` | `fun*` syntax, yield statement |
+| Modify | `src/vm.c` | YIELD, RESUME opcodes |
+| Modify | `src/vm_call.c` | Coroutine scheduling (stack swap) |
+| Create | `tests/unit/test_coroutines.c` | Coroutine tests |
 
 ## Key Data Structures / API
 
 ```c
 typedef enum {
-    MS_CORO_CREATED,    // 已创建但未启动
-    MS_CORO_RUNNING,    // 正在执行
-    MS_CORO_SUSPENDED,  // yield 后暂停
-    MS_CORO_DEAD,       // 执行完毕
+    MS_CORO_CREATED,    // created but not yet started
+    MS_CORO_RUNNING,    // currently running
+    MS_CORO_SUSPENDED,  // suspended after yield
+    MS_CORO_DEAD,       // execution complete
 } MsCoroState;
 
 typedef struct {
     MsObject obj;
     MsCoroState state;
     MsObjClosure* closure;
-    // 独立的栈和帧
+    // Independent stack and frames
     MsValue* stack;
     int stack_size;
     MsValue* stack_top;
     MsCallFrame* frames;
     int frame_count;
     int frame_capacity;
-    // Open upvalues (独立链表)
+    // Open upvalues (independent chain)
     MsObjUpvalue* open_upvalues;
 } MsObjCoroutine;
 
@@ -50,7 +50,7 @@ MsObjCoroutine* ms_obj_coroutine_new(MsVM* vm, MsObjClosure* cl);
 
 ## Implementation Notes
 
-### 编译 `fun*`
+### Compiling `fun*`
 
 ```ms
 fun* range(n) {
@@ -60,23 +60,23 @@ fun* range(n) {
 }
 ```
 
-编译器设 `function->is_generator = true`. yield 编译为 `MS_OP_YIELD A B` (B-1 个值从 R(A)).
+Compiler sets `function->is_generator = true`. `yield` compiles to `MS_OP_YIELD A B` (B-1 values from `R(A)`).
 
-### 调用生成器函数
+### Calling a Generator Function
 
-当 CALL 遇到 generator closure: 不立即执行, 而是创建 ObjCoroutine 并返回:
+When `CALL` encounters a generator closure: do not execute immediately; create `ObjCoroutine` and return:
 ```c
 if (closure->function->is_generator) {
     MsObjCoroutine* co = ms_obj_coroutine_new(vm, closure);
-    // 设置协程的初始帧 (closure + 参数拷贝到协程栈)
+    // set up coroutine's initial frame (closure + args copied to coroutine stack)
     R(A) = MS_OBJ_VAL(co);
-    // 不进入协程执行
+    // do not enter the coroutine
 }
 ```
 
-### RESUME 操作码
+### RESUME Opcode
 
-`RESUME A B C` — resume coroutine R(B), 传入 R(C) 作为 yield 返回值:
+`RESUME A B C` — resume coroutine `R(B)`, passing `R(C)` as the yield return value:
 ```c
 case MS_OP_RESUME: {
     MsObjCoroutine* co = MS_AS_COROUTINE(R(MS_GET_B(instr)));
@@ -85,53 +85,53 @@ case MS_OP_RESUME: {
         runtime_error("Cannot resume dead coroutine");
         break;
     }
-    // 保存当前 VM 状态
+    // Save current VM state
     save_vm_state(vm);
-    // 切换到协程栈
+    // Switch to coroutine stack
     swap_to_coroutine(vm, co, sent);
     co->state = MS_CORO_RUNNING;
-    // 继续执行
+    // Continue execution
     MsInterpretResult r = ms_vm_run(vm);
-    // 执行到 YIELD 或 RETURN 后回来
+    // Returns after YIELD or RETURN
     restore_vm_state(vm);
     R(A) = co->yield_value;
     break;
 }
 ```
 
-### YIELD 操作码
+### YIELD Opcode
 
 ```c
 case MS_OP_YIELD: {
     MsValue val = R(A);
-    // 保存协程状态
+    // Save coroutine state
     save_coroutine_state(vm, co);
     co->state = MS_CORO_SUSPENDED;
     co->yield_value = val;
-    // 返回到 caller (ms_vm_run returns)
+    // Return to caller (ms_vm_run returns)
     return MS_INTERPRET_OK;
 }
 ```
 
-### 栈切换 (O(1) 指针交换)
+### Stack Swap (O(1) pointer exchange)
 
 ```c
 static void swap_to_coroutine(MsVM* vm, MsObjCoroutine* co, MsValue sent) {
-    // 保存 caller 状态到某处 (可用 vm 的额外字段或调用者的协程)
-    vm->saved_stack = vm->stack;  // 简化: 用独立栈数组
-    // 切换到协程栈
+    // Save caller state (use extra VM fields or caller's coroutine)
+    vm->saved_stack = vm->stack;  // simplification: use independent stack arrays
+    // Switch to coroutine stack
     vm->stack_top = co->stack_top;
-    // 将 sent 值放入协程的 yield 返回位置
+    // Place sent value at coroutine's yield return slot
 }
 ```
 
-简化实现: 使用递归 `ms_vm_run` 而非真正的栈切换. 协程有自己的 stack/frames 数组, swap 时交换 vm 的指针.
+Simplified implementation: uses recursive `ms_vm_run` rather than true stack switching. The coroutine has its own `stack`/`frames` arrays; swap by exchanging VM pointers.
 
-### 默认参数和 Rest 参数
+### Default and Rest Parameters
 
-同时在此任务实现 (编译器 + VM):
-- 默认参数: `fun foo(a, b = 10)` → `min_arity = 1, arity = 2`, 缺失参数用默认值填充
-- Rest 参数: `fun foo(a, ...rest)` → 将多余参数打包为 ObjList
+Also implemented in this task (compiler + VM):
+- Default params: `fun foo(a, b = 10)` → `min_arity = 1, arity = 2`; missing args filled with defaults
+- Rest params: `fun foo(a, ...rest)` → packs extra args into `ObjList`
 
 ## C Unit Tests
 

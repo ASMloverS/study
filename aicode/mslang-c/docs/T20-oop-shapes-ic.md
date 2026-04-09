@@ -4,18 +4,18 @@
 
 **Goal:** Implement Shape-based field layout for ObjInstance (O(1) property access) and polymorphic inline caching for GETPROP/SETPROP/INVOKE.
 **Dependencies:** T19
-**Produces:** 属性访问 O(1) by slot index; 多态内联缓存 (PIC)
+**Produces:** O(1) property access by slot index; polymorphic inline caching (PIC)
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
 | Create | `include/ms/shape.h` | MsShape, MsSmallMap, MsInlineCache |
-| Create | `src/shape.c` | Shape 转换, SmallMap |
-| Modify | `include/ms/object.h` | ObjInstance 改用 Shape |
-| Modify | `src/object.c` | 实例字段按 Shape slot 存取 |
-| Modify | `src/vm.c` | GETPROP/SETPROP 使用 IC |
-| Create | `tests/unit/test_shapes.c` | Shape + IC 测试 |
+| Create | `src/shape.c` | Shape transitions, SmallMap |
+| Modify | `include/ms/object.h` | ObjInstance switched to Shape-based layout |
+| Modify | `src/object.c` | Instance fields accessed by Shape slot |
+| Modify | `src/vm.c` | GETPROP/SETPROP uses IC |
+| Create | `tests/unit/test_shapes.c` | Shape + IC tests |
 
 ## Key Data Structures / API
 
@@ -28,7 +28,7 @@ typedef struct {
     uint32_t value;
 } MsSmallEntry;
 
-// 小型线性映射, 溢出到 MsTable
+// Small linear map, spills to MsTable when full
 typedef struct {
     MsSmallEntry data[MS_SMALL_MAP_INLINE];
     int count;
@@ -53,13 +53,13 @@ int ms_shape_find_slot(MsShape* shape, MsObjString* name);
 ```
 
 ```c
-// ObjInstance 改为 Shape-based 布局
+// ObjInstance with Shape-based layout
 typedef struct {
     MsObject obj;
     MsObjClass* klass;
     MsShape* shape;
-    MsValue inline_fields[MS_SBO_FIELDS];  // SBO: 8 内联
-    MsValue* overflow_fields;               // NULL 直到超过 8 个
+    MsValue inline_fields[MS_SBO_FIELDS];  // SBO: 8 inline fields
+    MsValue* overflow_fields;               // NULL until more than 8 fields
     int field_count;
 } MsObjInstance;
 ```
@@ -85,18 +85,18 @@ typedef struct MsInlineCache {
 
 ## Implementation Notes
 
-### Shape 转换
+### Shape Transitions
 
-每个 class 有一个 root Shape (空). 当实例添加属性时:
-1. 在当前 shape 的 transitions 中查找 name
-2. 找到 → 使用现有 child shape
-3. 未找到 → 创建新 shape, slot_count++, 记录 name→slot, 添加 transition
+Each class has a root shape (empty). When an instance adds a property:
+1. Look up `name` in the current shape's transitions
+2. Found → use the existing child shape
+3. Not found → create new shape, `slot_count++`, record `name→slot`, add transition
 
-相同属性添加顺序的实例共享同一 Shape 链.
+Instances with the same property-addition order share the same shape chain.
 
 ### SBO (Small Buffer Optimization)
 
-前 8 个字段存储在 `inline_fields[]` 中 (无额外分配). 超过 8 个时分配 `overflow_fields`:
+The first 8 fields are stored in `inline_fields[]` (no extra allocation). If more than 8, allocate `overflow_fields`:
 ```c
 static MsValue* get_field_ptr(MsObjInstance* inst, int slot) {
     if (slot < MS_SBO_FIELDS) return &inst->inline_fields[slot];
@@ -104,9 +104,9 @@ static MsValue* get_field_ptr(MsObjInstance* inst, int slot) {
 }
 ```
 
-### IC 使用流程
+### IC Usage
 
-GETPROP 后紧跟 EXTRAARG Bx (Bx = IC slot index in function->ic[]):
+`GETPROP` is followed by `EXTRAARG Bx` (`Bx` = IC slot index in `function->ic[]`):
 ```c
 case MS_OP_GETPROP: {
     MsInstruction extra = READ_INSTR(); // EXTRAARG
@@ -126,7 +126,7 @@ case MS_OP_GETPROP: {
 }
 ```
 
-IC 满 (4 entries) → `megamorphic = true`, 跳过 IC 直接走慢路径.
+When IC is full (4 entries) → `megamorphic = true`, skip IC and use slow path directly.
 
 ## C Unit Tests
 

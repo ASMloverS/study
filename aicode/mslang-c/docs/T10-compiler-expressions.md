@@ -4,18 +4,18 @@
 
 **Goal:** Implement single-pass Pratt parser for expressions: literals, arithmetic, comparisons, logical and/or, unary, bitwise, grouping. Uses ExprDesc to minimize register moves.
 **Dependencies:** T05, T06, T08
-**Produces:** `ms_compile()` 可编译表达式为字节码; 反汇编可验证输出
+**Produces:** `ms_compile()` compiles expressions to bytecode; disassembler verifies output
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/compiler.h` | 公共编译接口 |
-| Create | `src/compiler_impl.h` | 内部结构 (MsCompiler, ExprDesc, Local 等) |
-| Create | `src/compiler.c` | 核心编译逻辑, advance/consume/emit |
-| Create | `src/compiler_expr.c` | 表达式解析函数 |
-| Modify | `CMakeLists.txt` | 添加 ms_frontend 库 |
-| Create | `tests/unit/test_compiler_expr.c` | 表达式编译测试 |
+| Create | `include/ms/compiler.h` | Public compiler interface |
+| Create | `src/compiler_impl.h` | Internal structures (MsCompiler, ExprDesc, Local, etc.) |
+| Create | `src/compiler.c` | Core compile logic, advance/consume/emit |
+| Create | `src/compiler_expr.c` | Expression parsing functions |
+| Modify | `CMakeLists.txt` | Add `ms_frontend` library |
+| Create | `tests/unit/test_compiler_expr.c` | Expression compile tests |
 
 ## Key Data Structures / API
 
@@ -31,13 +31,13 @@ typedef struct {
 
 typedef struct MsVM MsVM;
 
-// 编译源码为顶层函数; 失败返回 NULL
+// Compile source to top-level function; returns NULL on error
 MsObjFunction* ms_compile(MsVM* vm, const char* source, const char* path,
                            MsDiagnostic* diags, int* diag_count, int max_diags);
 ```
 
 ```c
-// src/compiler_impl.h (内部头文件)
+// src/compiler_impl.h (internal header)
 typedef enum {
     EDESC_VOID, EDESC_NIL, EDESC_TRUE, EDESC_FALSE,
     EDESC_NUMBER, EDESC_INT, EDESC_CONST,
@@ -123,13 +123,13 @@ typedef struct MsCompiler {
 
 ## Implementation Notes
 
-- **Pratt Parser**: `parse_precedence(c, min_prec)` 先调用 prefix 函数, 然后循环调用 infix 函数 (只要当前 token 的优先级 >= min_prec)
-- **ExprDesc**: 延迟求值描述符. `EDESC_NUMBER/INT` 不立即发射 LOADK, 直到需要放入寄存器时才发射. 这允许常量折叠
-- **expr_to_reg(c, e)**: 将 ExprDesc 物化为寄存器: NIL→LOADNIL, TRUE→LOADTRUE, NUMBER→LOADK, REG→无操作, GLOBAL→GETGLOBAL, etc.
-- **常量折叠**: binary(+,-,*,/,%) 若两侧均为 EDESC_NUMBER/INT, 直接计算返回新 EDESC. 例: `1 + 2` → EDESC_INT(3)
-- **逻辑 and/or**: 使用 TEST + JMP 短路. and: 若左侧 false → 跳过右侧; or: 若左侧 true → 跳过右侧
+- **Pratt Parser**: `parse_precedence(c, min_prec)` calls the prefix function, then loops calling infix functions while the current token's precedence ≥ `min_prec`
+- **ExprDesc**: deferred evaluation descriptor. `EDESC_NUMBER/INT` does not emit `LOADK` immediately — only when materialized into a register, enabling constant folding
+- **`expr_to_reg(c, e)`**: materializes an `ExprDesc` into a register: `NIL`→`LOADNIL`, `TRUE`→`LOADTRUE`, `NUMBER`→`LOADK`, `REG`→no-op, `GLOBAL`→`GETGLOBAL`, etc.
+- **Constant folding**: for binary `+,-,*,/,%`, if both sides are `EDESC_NUMBER/INT`, evaluate at compile time. e.g. `1 + 2` → `EDESC_INT(3)`
+- **Logical and/or**: short-circuit via `TEST` + `JMP`. `and`: if left is false → skip right; `or`: if left is true → skip right
 
-核心函数:
+Core functions:
 ```c
 static void advance(MsCompiler* c);
 static void consume(MsCompiler* c, MsTokenType type, const char* msg);

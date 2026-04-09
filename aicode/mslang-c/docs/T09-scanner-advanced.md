@@ -4,55 +4,54 @@
 
 **Goal:** Extend scanner to handle string interpolation `"Hello, ${expr}!"` and nestable block comments `/* ... */`.
 **Dependencies:** T08
-**Produces:** 完整词法分析器, 支持插值和块注释
+**Produces:** Complete lexer with interpolation and block comment support
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `src/scanner.c` | 添加字符串插值和块注释 |
-| Modify | `include/ms/scanner.h` | 可选: 插值状态栈 |
-| Create | `tests/unit/test_scanner_interp.c` | 插值词法测试 |
+| Modify | `src/scanner.c` | Add string interpolation and block comments |
+| Modify | `include/ms/scanner.h` | Optional: interpolation state stack |
+| Create | `tests/unit/test_scanner_interp.c` | Interpolation lexer tests |
 
 ## Key Data Structures / API
 
-无新公共 API, 仅修改内部行为。
+No new public API; internal behavior only.
 
 ## Implementation Notes
 
-### 字符串插值
+### String Interpolation
 
-当扫描 `"hello ${name}!"` 时产出的 token 序列:
+Token sequence produced for `"hello ${name}!"`:
 ```
-MS_TK_STRING_INTERP  "hello "    (前缀, 不含 ${)
+MS_TK_STRING_INTERP  "hello "    (prefix, excluding ${)
 MS_TK_IDENTIFIER     name
-MS_TK_STRING         "!"         (后缀) 或 MS_TK_STRING_INTERP (若还有更多 ${)
+MS_TK_STRING_INTERP_END "!"     (suffix)
 ```
 
-实现策略 — 在 MsScanner 中追踪插值状态:
+Track interpolation state in `MsScanner`:
 
 ```c
-// 在 scanner 结构中添加:
 #define MS_MAX_INTERP_DEPTH 8
 typedef struct {
-    // ... 已有字段 ...
-    int interp_depth;  // 当前嵌套的 ${} 层数
+    // ... existing fields ...
+    int interp_depth;  // current nesting depth of ${}
 } MsScanner;
 ```
 
-扫描字符串时:
-1. 扫描到 `${` → 产出 `MS_TK_STRING_INTERP` (包含到 `${` 前的文本), interp_depth++
-2. 正常扫描 tokens 直到遇到 `}` 且 brace_depth 回到插值层的初始值
-3. 遇到配对的 `}` → interp_depth--, 继续扫描字符串剩余部分
-4. 如果又遇到 `${` → 重复步骤 1
-5. 遇到 `"` → 产出最终的 `MS_TK_STRING` 或 `MS_TK_STRING_INTERP_END`
+When scanning a string:
+1. Scan to `${` → emit `MS_TK_STRING_INTERP` (text before `${`), `interp_depth++`
+2. Scan tokens normally until `}` closes the interpolation brace
+3. Matching `}` → `interp_depth--`, resume scanning string remainder
+4. Another `${` → repeat step 1
+5. `"` → emit `MS_TK_STRING` or `MS_TK_STRING_INTERP_END`
 
-编译器侧 (T10 中实现): 将 `"a ${x} b"` 编译为 `"a " + str(x) + " b"` 的字节码。
+Compiler side (T10): compiles `"a ${x} b"` to `"a " + str(x) + " b"` bytecode.
 
-### 嵌套块注释
+### Nested Block Comments
 
 ```c
-// scanner.c 中处理 '/' 时:
+// In scanner.c when handling '/':
 if (peek == '*') {
     int depth = 1;
     advance(); advance();  // skip /*
@@ -65,13 +64,13 @@ if (peek == '*') {
 }
 ```
 
-### 字符串转义序列完善
+### String Escape Sequences
 
-在 T08 基础上确保所有转义正确处理:
+Ensure all escapes from T08 are handled correctly:
 - `\n` → newline, `\t` → tab, `\r` → carriage return
 - `\\` → backslash, `\"` → double quote
 - `\0` → null byte
-- `\x41` → hex escape (可选)
+- `\x41` → hex escape (optional)
 
 ## C Unit Tests
 

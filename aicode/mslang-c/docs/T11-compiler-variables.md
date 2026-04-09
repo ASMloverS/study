@@ -4,45 +4,45 @@
 
 **Goal:** Add variable declarations, local/global resolution, scoping with block statements, and compound assignment.
 **Dependencies:** T10
-**Produces:** 编译器支持 `var` 声明, 块作用域, 赋值和复合赋值
+**Produces:** Compiler supports `var` declarations, block scoping, assignment, and compound assignment
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `src/compiler.c` | 添加 var 声明, 作用域管理, 赋值 |
-| Modify | `src/compiler_expr.c` | 添加标识符解析 (local/global) |
-| Create | `tests/unit/test_compiler_vars.c` | 变量编译测试 |
+| Modify | `src/compiler.c` | Add `var` declaration, scope management, assignment |
+| Modify | `src/compiler_expr.c` | Add identifier resolution (local/global) |
+| Create | `tests/unit/test_compiler_vars.c` | Variable compile tests |
 
 ## Key Data Structures / API
 
-无新公共 API — 扩展 MsCompiler 内部行为。
+No new public API — extends `MsCompiler` internal behavior.
 
 ## Implementation Notes
 
-### 全局变量
+### Global Variables
 
 ```
-var x = expr    // 顶层 (scope_depth == 0)
+var x = expr    // top-level (scope_depth == 0)
 ```
-1. 编译 expr → 寄存器 reg
-2. 发射 `DEFGLOBAL reg, K(name_idx)` — 其中 name_idx 是变量名字符串在常量池的索引
+1. Compile `expr` → register `reg`
+2. Emit `DEFGLOBAL reg, K(name_idx)` — `name_idx` is the string constant index for the variable name
 
-读全局: GETGLOBAL A Bx — `R(A) = globals[K(Bx)]`
-写全局: SETGLOBAL A Bx — `globals[K(Bx)] = R(A)`
+Read global: `GETGLOBAL A Bx` — `R(A) = globals[K(Bx)]`
+Write global: `SETGLOBAL A Bx` — `globals[K(Bx)] = R(A)`
 
-### 局部变量
+### Local Variables
 
 ```
 { var x = expr }    // scope_depth > 0
 ```
-1. `alloc_reg()` 为 x 分配寄存器 slot
-2. 编译 expr → 该寄存器
-3. 记录到 `locals[]`: name=token, depth=scope_depth, slot=reg, is_captured=false
+1. `alloc_reg()` assigns a register slot to `x`
+2. Compile `expr` into that register
+3. Record in `locals[]`: `name=token`, `depth=scope_depth`, `slot=reg`, `is_captured=false`
 
-**解析标识符**: 从 `locals[]` 尾部向前扫描, 匹配 token 文本 → 返回 `EDESC_LOCAL(slot)`. 未找到 → 返回 `EDESC_GLOBAL(name_const_idx)`.
+**Identifier resolution**: scan `locals[]` backward for a name match → return `EDESC_LOCAL(slot)`. Not found → return `EDESC_GLOBAL(name_const_idx)`.
 
-### 作用域管理
+### Scope Management
 
 ```c
 static void begin_scope(MsCompiler* c) { c->scope_depth++; }
@@ -60,13 +60,13 @@ static void end_scope(MsCompiler* c) {
 }
 ```
 
-### 赋值和复合赋值
+### Assignment and Compound Assignment
 
-赋值在 Pratt parser 中通过 `can_assign` 参数控制:
-- 解析标识符时, 若 `can_assign && match(EQUAL)` → 编译右值, 发射 SET 指令
-- 复合赋值 `x += expr` 等价于 `x = x + expr`: 读取 x → 编译 expr → 发射 ADD → 发射 SET
+Assignment is controlled by the `can_assign` parameter in the Pratt parser:
+- When resolving an identifier, if `can_assign && match(EQUAL)` → compile RHS, emit `SET`
+- `x += expr` is equivalent to `x = x + expr`: read `x` → compile `expr` → emit `ADD` → emit `SET`
 
-### 字符串常量去重
+### String Constant Deduplication
 
 ```c
 static int add_string_constant(MsCompiler* c, MsObjString* s) {

@@ -4,34 +4,34 @@
 
 **Goal:** Complete VM support for break/continue in loops, switch/case dispatch, and anonymous functions (lambda).
 **Dependencies:** T14
-**Produces:** 循环中的 break/continue, switch 分派, 匿名函数
+**Produces:** break/continue in loops, switch dispatch, anonymous functions
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `src/vm.c` | 确保 JMP/TEST 正确支持循环控制 |
-| Modify | `src/compiler.c` | 完善 break/continue 补丁, lambda 语法 |
-| Create | `tests/unit/test_vm_control.c` | 控制流测试 |
+| Modify | `src/vm.c` | Ensure JMP/TEST correctly support loop control |
+| Modify | `src/compiler.c` | Complete break/continue patching, lambda syntax |
+| Create | `tests/unit/test_vm_control.c` | Control flow tests |
 
 ## Implementation Notes
 
 ### break / continue
 
-break/continue 在编译器侧已处理 (T12): 发射 JMP 并链入 LoopCtx 的 break_list. VM 侧只需正确执行 JMP (已在 T13 实现). 本任务确保:
-- 嵌套循环中 break 只跳出最内层
-- continue 跳到循环的 post 部分 (for) 或条件判断 (while)
-- break 在 switch 中跳出 switch (不影响外层循环)
+break/continue are handled compiler-side (T12): emit `JMP` into `LoopCtx.break_list`. The VM only needs to execute `JMP` correctly (done in T13). This task ensures:
+- `break` in nested loops exits only the innermost loop
+- `continue` jumps to the loop's post expression (`for`) or condition (`while`)
+- `break` in a `switch` exits the switch without affecting outer loops
 
-### Lambda (匿名函数)
+### Lambda (Anonymous Functions)
 
-语法: `fun(x) { return x * 2 }` 或 `fun(x, y) { return x + y }`
+Syntax: `fun(x) { return x * 2 }` or `fun(x, y) { return x + y }`
 
-编译方式与命名函数相同, 但 ObjFunction.name = NULL 或 `<lambda>`. 通过 CLOSURE 指令创建.
+Compiled identically to named functions, but `ObjFunction.name = NULL` or `<lambda>`. Created via `CLOSURE`.
 
-### switch 执行
+### switch Execution
 
-switch 在编译器侧生成线性比较链 (EQ + JMP). VM 只需正确执行 EQ 比较和条件跳转.
+switch generates a linear comparison chain (EQ + JMP) compiler-side. The VM only executes EQ comparisons and conditional jumps.
 
 ## C Unit Tests
 

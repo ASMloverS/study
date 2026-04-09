@@ -4,36 +4,36 @@
 
 **Goal:** Implement class declarations, instance creation, field access, method definitions, and method invocation.
 **Dependencies:** T15, T16
-**Produces:** 类声明, 实例化, 字段读写, 方法调用, this 绑定
+**Produces:** Class declarations, instantiation, field read/write, method calls, `this` binding
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
 | Modify | `include/ms/object.h` | ObjClass, ObjInstance, ObjBoundMethod |
-| Modify | `src/object.c` | 类/实例/绑定方法 创建/销毁/打印 |
-| Modify | `src/compiler.c` | class 声明, this, method |
+| Modify | `src/object.c` | Class/instance/bound-method create/destroy/print |
+| Modify | `src/compiler.c` | class declaration, this, method |
 | Modify | `src/vm.c` | CLASS, METHOD, GETPROP, SETPROP, INVOKE, CALL for class |
-| Modify | `src/vm_call.c` | 实例化 (调用 init), 绑定方法调用 |
-| Create | `tests/unit/test_oop.c` | OOP 测试 |
+| Modify | `src/vm_call.c` | Instantiation (call `init`), bound method calls |
+| Create | `tests/unit/test_oop.c` | OOP tests |
 
 ## Key Data Structures / API
 
 ```c
-// 追加到 include/ms/object.h
+// Append to include/ms/object.h
 
 typedef struct {
     MsObject obj;
     MsObjString* name;
     MsTable methods;
-    MsTable* static_methods;  // 懒分配
-    MsTable* getters;         // 懒分配
-    MsTable* setters;         // 懒分配
-    MsTable* abstract_methods; // 懒分配
+    MsTable* static_methods;   // lazily allocated
+    MsTable* getters;          // lazily allocated
+    MsTable* setters;          // lazily allocated
+    MsTable* abstract_methods; // lazily allocated
     struct MsObjClass* superclass;
 } MsObjClass;
 
-// ObjInstance 字段存储 (简化版, Shape 在 T20)
+// ObjInstance field storage (simplified; Shape added in T20)
 typedef struct {
     MsObject obj;
     MsObjClass* klass;
@@ -42,7 +42,7 @@ typedef struct {
 
 typedef struct {
     MsObject obj;
-    MsValue receiver;       // 通常是 ObjInstance
+    MsValue receiver;       // typically ObjInstance
     MsObjClosure* method;
 } MsObjBoundMethod;
 
@@ -61,7 +61,7 @@ MsObjBoundMethod* ms_obj_bound_method_new(MsVM* vm, MsValue receiver,
 
 ## Implementation Notes
 
-### 编译 class 声明
+### Compiling class Declarations
 
 ```
 class Foo {
@@ -70,13 +70,13 @@ class Foo {
 }
 ```
 
-1. `CLASS A Bx` — 创建 ObjClass, 名字 = K(Bx), 放入 R(A)
-2. 编译每个方法 → CLOSURE → `METHOD A B` (class 在 R(A), 方法名 = K(B), 闭包在 R(A-1))
-3. `DEFGLOBAL` 绑定类名
+1. `CLASS A Bx` — create `ObjClass`, name = `K(Bx)`, store in `R(A)`
+2. Compile each method → `CLOSURE` → `METHOD A B` (class in `R(A)`, method name = `K(B)`, closure in `R(A-1)`)
+3. `DEFGLOBAL` binds the class name
 
 ### this
 
-`this` 在方法体中解析为 local slot 0 (隐式参数). 编译器追踪 `klass` 上下文.
+`this` resolves to local slot 0 (implicit parameter) inside method bodies. The compiler tracks the `klass` context.
 
 ### GETPROP / SETPROP
 
@@ -96,15 +96,15 @@ case MS_OP_GETPROP: {
 }
 ```
 
-### INVOKE (优化的方法调用)
+### INVOKE (Optimized Method Call)
 
-`obj.method(args)` 直接调用, 无需创建 BoundMethod:
-1. 在 instance.fields 查方法名 — 若找到 (field is closure) → 直接 CALL
-2. 在 klass.methods 查 → 直接 CALL with receiver in slots[0]
+Calls `obj.method(args)` directly, without creating a `BoundMethod`:
+1. Look up method name in `instance.fields` — if found (field is closure) → direct `CALL`
+2. Look up in `klass.methods` → direct `CALL` with receiver in `slots[0]`
 
-### 实例化
+### Instantiation
 
-调用 class 作为函数: 创建 ObjInstance, 查找 `init` 方法, 调用 init(args), 返回实例.
+Call the class as a function: create `ObjInstance`, look up `init` method, call `init(args)`, return the instance.
 
 ## C Unit Tests
 

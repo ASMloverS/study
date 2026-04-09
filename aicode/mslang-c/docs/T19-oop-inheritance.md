@@ -4,40 +4,40 @@
 
 **Goal:** Implement single inheritance, `super` calls, static methods, getters, setters, abstract methods.
 **Dependencies:** T18
-**Produces:** 完整 OOP: 继承链, super 调用, 静态方法, getter/setter, 抽象方法
+**Produces:** Complete OOP: inheritance chain, super calls, static methods, getter/setter, abstract methods
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `src/compiler.c` | super 语法, static, getter/setter/abstract |
+| Modify | `src/compiler.c` | super syntax, static, getter/setter/abstract |
 | Modify | `src/vm.c` | INHERIT, GETSUPER, SUPERINV, STATICMETH, GETTER, SETTER, ABSTMETH |
-| Modify | `src/vm_call.c` | super 方法调用, 静态方法调用 |
-| Create | `tests/unit/test_oop_inherit.c` | 继承测试 |
+| Modify | `src/vm_call.c` | super method calls, static method calls |
+| Create | `tests/unit/test_oop_inherit.c` | Inheritance tests |
 
 ## Implementation Notes
 
 ### INHERIT
 
-`class Sub : Super` → 编译器发射 `INHERIT A B` (A=子类 reg, B=父类 reg).
-VM 中: `sub->superclass = super; ms_table_add_all(&sub->methods, &super->methods)` (方法继承).
+`class Sub : Super` → compiler emits `INHERIT A B` (A=subclass reg, B=superclass reg).
+VM: `sub->superclass = super; ms_table_add_all(&sub->methods, &super->methods)` (method inheritance).
 
 ### super
 
-`super.method(args)` 编译为:
-1. 在编译器中: super 解析为 upvalue (指向外层 scope 的特殊 local)
-2. `GETSUPER A B C` — A=结果, B=receiver(this), C=方法名常量
-3. VM 中: 从 superclass 的方法表查找, 创建 BoundMethod
+`super.method(args)` compiles to:
+1. In the compiler: `super` resolves as an upvalue (a special local in an outer scope)
+2. `GETSUPER A B C` — A=result, B=receiver (`this`), C=method name constant
+3. VM: look up in superclass method table, create `BoundMethod`
 
-`SUPERINV A B C` — 优化的 super 方法调用 (无需创建 BoundMethod):
-1. 从 super 的方法表查方法
-2. 直接以 this 为 receiver 调用
+`SUPERINV A B C` — optimized super method call (no `BoundMethod` created):
+1. Look up method in super's method table
+2. Call directly with `this` as receiver
 
 ### Static Methods
 
 `static greet() { ... }` → `STATICMETH A B` (A=class, B=method name).
-VM 中: `ms_table_set(class->static_methods, name, closure)`.
-访问: `ClassName.staticMethod()` → GETPROP 先查 instance fields, 再查 methods, 最后查 static_methods.
+VM: `ms_table_set(class->static_methods, name, closure)`.
+Access: `ClassName.staticMethod()` → `GETPROP` checks `instance.fields`, then `methods`, then `static_methods`.
 
 ### Getter / Setter
 
@@ -48,15 +48,15 @@ class Circle {
   set radius(v) { this.r = v }
 }
 ```
-- `GETTER A B`: 将闭包注册为 getter
-- `SETTER A B`: 将闭包注册为 setter
-- GETPROP 时: 若 name 在 getters 表中, 直接调用 getter (0 参数) 并返回结果
-- SETPROP 时: 若 name 在 setters 表中, 调用 setter (1 参数)
+- `GETTER A B`: registers closure as getter
+- `SETTER A B`: registers closure as setter
+- On `GETPROP`: if name is in getters table, call getter (0 args) and return result
+- On `SETPROP`: if name is in setters table, call setter (1 arg)
 
 ### Abstract Methods
 
-`abstract foo()` → `ABSTMETH A B`. 在 methods 表中放一个标记值.
-实例化时: 若类有未实现的 abstract methods → runtime error.
+`abstract foo()` → `ABSTMETH A B`. Places a sentinel value in the methods table.
+On instantiation: if the class has unimplemented abstract methods → runtime error.
 
 ## C Unit Tests
 

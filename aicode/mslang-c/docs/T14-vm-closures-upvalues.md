@@ -4,26 +4,26 @@
 
 **Goal:** Implement CLOSURE opcode, upvalue capture (local/transitive), open upvalue chain, and close semantics.
 **Dependencies:** T13
-**Produces:** 闭包捕获变量, 上值关闭, 嵌套闭包
+**Produces:** Closures capture variables, upvalue closing, nested closures
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
 | Modify | `src/vm.c` | CLOSURE, GETUPVAL, SETUPVAL, CLOSE |
-| Modify | `src/vm_call.c` | 闭包创建时捕获上值 |
-| Create | `tests/unit/test_vm_closures.c` | 闭包测试 |
+| Modify | `src/vm_call.c` | Capture upvalues during closure creation |
+| Create | `tests/unit/test_vm_closures.c` | Closure tests |
 
 ## Implementation Notes
 
-### CLOSURE 指令
+### CLOSURE Opcode
 
 ```c
 case MS_OP_CLOSURE: {
     MsObjFunction* fn = MS_AS_FUNCTION(K(MS_GET_Bx(instr)));
     MsObjClosure* cl = ms_obj_closure_new(vm, fn);
     R(A) = MS_OBJ_VAL(cl);
-    // 读取后续伪指令来填充 upvalue 数组
+    // Read trailing pseudo-instructions to populate the upvalue array
     for (int i = 0; i < fn->upvalue_count; i++) {
         MsInstruction uv_instr = READ_INSTR();
         bool is_local = MS_GET_A(uv_instr);
@@ -40,7 +40,7 @@ case MS_OP_CLOSURE: {
 
 ### Open Upvalue Chain
 
-`vm->open_upvalues` 按栈位置降序排列的链表 (栈顶在前):
+`vm->open_upvalues` is a linked list sorted by descending stack position (highest address first):
 ```c
 static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
     MsObjUpvalue* prev = NULL;
@@ -49,7 +49,7 @@ static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
         prev = uv;
         uv = uv->next;
     }
-    if (uv != NULL && uv->location == local) return uv;  // 已存在
+    if (uv != NULL && uv->location == local) return uv;  // already captured
     MsObjUpvalue* created = ms_obj_upvalue_new(vm, local);
     created->next = uv;
     if (prev) prev->next = created; else vm->open_upvalues = created;
@@ -59,7 +59,7 @@ static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
 
 ### Close Upvalues
 
-作用域退出或 CLOSE 指令时, 关闭所有 location >= last 的 open upvalue:
+On scope exit or `CLOSE` opcode, close all open upvalues whose `location >= last`:
 ```c
 static void close_upvalues(MsVM* vm, MsValue* last) {
     while (vm->open_upvalues && vm->open_upvalues->location >= last) {
@@ -152,22 +152,10 @@ fun outer() {
 print(outer()()())
 // expect: 3
 
-// tests/fixtures/closure_in_loop.ms
-var fns = []
-for (var i = 0; i < 3; i = i + 1) {
-  var val = i
-  fns.push(fun() { return val })
-}
-// 注: 此测试需要 T21 (列表) 才能运行; 先留作参考
+// tests/fixtures/closure_in_loop.ms (requires T21 — lists)
+// Note: requires T21 (lists) to run; kept for reference
 
 // tests/fixtures/upvalue_close.ms
-fun make_pair() {
-  var x = 0
-  fun getter() { return x }
-  fun setter(v) { x = v }
-  return [getter, setter]
-}
-// 注: 需要 T21 (列表) — 可改为嵌套调用版本:
 var val = 0
 fun setter(v) { val = v }
 fun getter() { return val }

@@ -4,23 +4,23 @@
 
 **Goal:** Implement built-in methods for string, list, map, tuple types, plus ObjStringBuilder.
 **Dependencies:** T21
-**Produces:** `"hello".len()`, `list.push()`, `map.keys()` 等内置方法可用
+**Produces:** `"hello".len()`, `list.push()`, `map.keys()` and other built-in methods available
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `src/vm_builtins.c` | 内置方法分派 |
-| Modify | `include/ms/object.h` | ObjStringBuilder 结构 |
-| Modify | `src/object.c` | StringBuilder 创建/销毁 |
-| Modify | `src/vm.c` | INVOKE 分派到 builtins |
-| Create | `tests/unit/test_builtins.c` | 内置方法测试 |
+| Create | `src/vm_builtins.c` | Built-in method dispatch |
+| Modify | `include/ms/object.h` | ObjStringBuilder struct |
+| Modify | `src/object.c` | StringBuilder create/destroy |
+| Modify | `src/vm.c` | INVOKE dispatches to builtins |
+| Create | `tests/unit/test_builtins.c` | Built-in method tests |
 
 ## Key Data Structures / API
 
 ```c
-// 内置方法分派入口 (从 INVOKE / GETPROP 调用)
-// 返回 true 表示已处理, result 放入 *out
+// Built-in method dispatch entry (called from INVOKE / GETPROP)
+// Returns true if handled; result placed in *out
 bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
                         int argc, MsValue* argv, MsValue* out);
 
@@ -39,59 +39,59 @@ MsObjString* ms_obj_sb_to_string(MsVM* vm, MsObjStringBuilder* sb);
 
 ## Implementation Notes
 
-### String 方法
+### String Methods
 
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| `len()` | → int | 字符串长度 |
-| `upper()` | → string | 转大写 |
-| `lower()` | → string | 转小写 |
-| `contains(s)` | → bool | 是否包含子串 |
-| `starts_with(s)` | → bool | 前缀匹配 |
-| `ends_with(s)` | → bool | 后缀匹配 |
-| `index_of(s)` | → int | 子串位置, -1=未找到 |
-| `split(sep)` | → list | 按分隔符拆分 |
-| `trim()` | → string | 去除首尾空白 |
-| `replace(old, new)` | → string | 替换子串 |
-| `slice(start, end)` | → string | 子串切片 |
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `len()` | → int | string length |
+| `upper()` | → string | to uppercase |
+| `lower()` | → string | to lowercase |
+| `contains(s)` | → bool | substring check |
+| `starts_with(s)` | → bool | prefix match |
+| `ends_with(s)` | → bool | suffix match |
+| `index_of(s)` | → int | substring position, -1 if not found |
+| `split(sep)` | → list | split by separator |
+| `trim()` | → string | strip leading/trailing whitespace |
+| `replace(old, new)` | → string | replace substring |
+| `slice(start, end)` | → string | substring slice |
 
-### List 方法
+### List Methods
 
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| `len()` | → int | 列表长度 |
-| `push(val)` | → nil | 追加元素 |
-| `pop()` | → value | 弹出末尾元素 |
-| `contains(val)` | → bool | 是否包含 |
-| `index_of(val)` | → int | 元素位置 |
-| `remove(idx)` | → value | 按索引移除 |
-| `sort()` | → list | 原地排序 (数值/字符串) |
-| `reverse()` | → list | 原地反转 |
-| `map(fn)` | → list | 映射函数 |
-| `filter(fn)` | → list | 过滤函数 |
-| `join(sep)` | → string | 用分隔符连接 |
-| `slice(start, end)` | → list | 切片 |
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `len()` | → int | list length |
+| `push(val)` | → nil | append element |
+| `pop()` | → value | remove and return last element |
+| `contains(val)` | → bool | membership check |
+| `index_of(val)` | → int | element position |
+| `remove(idx)` | → value | remove by index |
+| `sort()` | → list | sort in-place (numeric/string) |
+| `reverse()` | → list | reverse in-place |
+| `map(fn)` | → list | apply function to each element |
+| `filter(fn)` | → list | filter by predicate |
+| `join(sep)` | → string | join with separator |
+| `slice(start, end)` | → list | slice |
 
-### Map 方法
+### Map Methods
 
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| `len()` | → int | 条目数 |
-| `keys()` | → list | 所有键列表 |
-| `values()` | → list | 所有值列表 |
-| `has(key)` | → bool | 是否存在 |
-| `remove(key)` | → bool | 删除条目 |
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `len()` | → int | entry count |
+| `keys()` | → list | all keys |
+| `values()` | → list | all values |
+| `has(key)` | → bool | key existence |
+| `remove(key)` | → bool | delete entry |
 
-### Tuple 方法
+### Tuple Methods
 
-| 方法 | 签名 | 说明 |
-|------|------|------|
-| `len()` | → int | 长度 |
-| `contains(val)` | → bool | 是否包含 |
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `len()` | → int | length |
+| `contains(val)` | → bool | membership check |
 
-### 分派逻辑
+### Dispatch Logic
 
-在 INVOKE 中, 若 receiver 不是 ObjInstance, 尝试 ms_builtin_invoke:
+In `INVOKE`, if receiver is not `ObjInstance`, try `ms_builtin_invoke`:
 ```c
 if (MS_IS_STRING(receiver)) {
     return string_invoke(vm, MS_AS_STRING(receiver), method, argc, argv, out);
