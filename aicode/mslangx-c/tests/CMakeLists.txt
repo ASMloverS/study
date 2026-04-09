@@ -264,6 +264,18 @@ mslangc_add_e2e_named_test(modules.import_alias
   "e2e/modules/import_alias.ms"
   "e2e/modules/import_alias.ms.out"
   "modules")
+mslangc_add_e2e_named_test(modules.from_import
+  "e2e/modules/from_import.ms"
+  "e2e/modules/from_import.ms.out"
+  "modules")
+mslangc_add_e2e_named_test(modules.from_import_alias
+  "e2e/modules/from_import_alias.ms"
+  "e2e/modules/from_import_alias.ms.out"
+  "modules")
+mslangc_add_e2e_named_test(modules.from_import_snapshot
+  "e2e/modules/from_import_snapshot.ms"
+  "e2e/modules/from_import_snapshot.ms.out"
+  "modules")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"
