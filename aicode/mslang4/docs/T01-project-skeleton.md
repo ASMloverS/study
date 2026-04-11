@@ -1,49 +1,39 @@
 # T01: Project Skeleton & Build System
 
-**Phase**: 1 - Foundation
-**Dependencies**: None
-**Estimated Complexity**: Low
-**Status**: ✅ COMPLETED
+**Phase**: 1 · **Deps**: none · **Complexity**: low · **Status**: ✅ COMPLETED
 
 ## Goal
 
-Set up the project directory structure, CMake build configuration, and a minimal `main.c` that compiles and runs. This establishes the build pipeline that all subsequent tasks depend on.
+Dir structure + CMake config + minimal `main.c` → build pipeline for all later tasks.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `CMakeLists.txt` | Root build configuration |
-| `src/main.c` | Entry point (minimal hello-world stub) |
-| `src/common.h` | Common definitions placeholder |
-| `include/` | Include directory (empty) |
-| `tests/CMakeLists.txt` | Test build configuration placeholder |
-| `tests/unit/` | Unit test directory (empty) |
-| `tests/basic/` | Basic integration test directory (empty) |
-| `examples/` | Example scripts directory (empty) |
-| `.gitignore` | Ignore build/ directory and binaries |
+| `CMakeLists.txt` | Root build config |
+| `src/main.c` | Entry point stub |
+| `src/common.h` | Definitions placeholder |
+| `include/` | Include dir (empty) |
+| `tests/CMakeLists.txt` | Test build placeholder |
+| `tests/unit/` | Unit tests (empty) |
+| `tests/basic/` | Integration tests (empty) |
+| `examples/` | Example scripts (empty) |
+| `.gitignore` | Ignore `build/`, binaries |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-Since there is no test framework yet, the "test" in each cycle is the build itself — cmake configure, compile, and run.
+No test framework yet → each "test" = cmake configure + compile + run.
 
-### Cycle 1: CMake Configuration and Empty Main
+### Cycle 1: CMake + Empty Main
 
-**RED** — Write failing test:
-- Create `CMakeLists.txt` referencing `src/main.c` but do NOT create `src/main.c` yet
-- Create the `src/` directory but leave it empty
-- The build will fail because the source file is missing
-
-**Verify RED**: 
+**RED**: `CMakeLists.txt` refs `src/main.c` but file missing → build fails.
 ```
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
-Expected: link/compile error — `main.c` not found or no `main` symbol
+Expected: compile/link error — `main.c` not found or no `main` symbol.
 
-**GREEN** — Minimal implementation:
-- Create `src/main.c` with the smallest possible program:
-
+**GREEN**: Create `src/main.c`:
 ```c
 #include <stdio.h>
 
@@ -54,8 +44,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
-- Create `CMakeLists.txt`:
-
+Create `CMakeLists.txt`:
 ```cmake
 cmake_minimum_required(VERSION 3.10)
 project(Maple LANGUAGES C)
@@ -79,31 +68,15 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 ```
+Verify: `cmake -B build … && cmake --build build` → compiles clean.
 
-**Verify GREEN**: 
-```
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-```
-Expected: compiles and links successfully with no errors
+**REFACTOR**: Zero warnings with `-Wall -Wextra -Wpedantic` / `/W4`. `(void)argc; (void)argv;` suppresses unused-param warnings.
 
-**REFACTOR**: Ensure no compiler warnings with `-Wall -Wextra -Wpedantic` (GCC/Clang) or `/W4` (MSVC). The `(void)argc; (void)argv;` suppresses unused-parameter warnings.
+### Cycle 2: Version Output
 
-### Cycle 2: Version Output on Run
+**RED**: `./build/maple` → empty stdout, expect version string.
 
-**RED** — Write failing test:
-- Run the compiled binary and check its output — currently it prints nothing
-- Expected failure: `./build/maple` produces no output, but we expect a version string
-
-**Verify RED**: 
-```
-./build/maple
-```
-Expected: no output (empty stdout)
-
-**GREEN** — Minimal implementation:
-- Update `src/main.c` to print the version string:
-
+**GREEN**: Update `src/main.c`:
 ```c
 #include <stdio.h>
 
@@ -114,45 +87,25 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 ```
+Verify: `./build/maple` → prints `Maple Scripting Language v0.1`, exit 0.
 
-**Verify GREEN**: 
-```
-cmake --build build
-./build/maple
-```
-Expected: prints `Maple Scripting Language v0.1` to stdout, exits with code 0
+**REFACTOR**: none.
 
-**REFACTOR**: No changes needed.
+### Cycle 3: Common Header + Test Infra
 
-### Cycle 3: Common Header Placeholder and Test Infrastructure
+**RED**: `add_subdirectory(tests)` → CMake error: `tests/CMakeLists.txt` missing.
 
-**RED** — Write failing test:
-- `CMakeLists.txt` references `add_subdirectory(tests)`, but `tests/CMakeLists.txt` does not exist yet
-- Expected failure: CMake configure error — `tests/CMakeLists.txt` not found
-
-**Verify RED**: 
-```
-cmake -B build
-```
-Expected: CMake error about missing `tests/CMakeLists.txt`
-
-**GREEN** — Minimal implementation:
-- Create `src/common.h` with empty include guards:
-
+**GREEN**:
+- `src/common.h` with include guards:
 ```c
 #ifndef MS_COMMON_H
 #define MS_COMMON_H
 
 #endif
 ```
-
-- Create `tests/CMakeLists.txt` as an empty placeholder file (zero content).
-
-- Create empty directories: `tests/unit/`, `tests/basic/`, `examples/`, `include/`
-  - Place a `.gitkeep` file in each empty directory so git tracks them.
-
-- Create `.gitignore`:
-
+- `tests/CMakeLists.txt` — empty file.
+- Empty dirs + `.gitkeep`: `tests/unit/`, `tests/basic/`, `examples/`, `include/`.
+- `.gitignore`:
 ```
 build/
 *.o
@@ -160,27 +113,20 @@ build/
 *.exe
 *.out
 ```
+Verify: configure + build + run → version string prints.
 
-**Verify GREEN**: 
-```
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-./build/maple
-```
-Expected: full configure + build + run succeeds, version string prints
-
-**REFACTOR**: Verify the directory structure matches REQUIREMENTS.md §2.3.1. Confirm no warnings at any build step.
+**REFACTOR**: Structure matches REQUIREMENTS.md §2.3.1. Zero warnings.
 
 ## Acceptance Criteria
 
 - [x] `cmake -B build` succeeds
-- [x] `cmake --build build` compiles without errors
-- [x] `./build/maple` (or `build\Debug\maple.exe`) prints "Maple Scripting Language v0.1"
-- [x] Directory structure matches REQUIREMENTS.md §2.3.1
-- [x] No warnings with `-Wall -Wextra -Wpedantic` (GCC/Clang) or `/W4` (MSVC)
+- [x] `cmake --build build` — zero errors
+- [x] `./build/maple` prints "Maple Scripting Language v0.1"
+- [x] Dir structure matches REQUIREMENTS.md §2.3.1
+- [x] Zero warnings: `-Wall -Wextra -Wpedantic` / `/W4`
 
 ## Notes
 
-- This task creates no test framework — that comes in later tasks. The "test" here is the build pipeline itself.
-- `common.h` is an empty placeholder; filled in T02.
-- `tests/CMakeLists.txt` is empty; populated in T02 when the first unit test is written.
+- No test framework yet → "test" = build pipeline.
+- `common.h` empty → filled T02.
+- `tests/CMakeLists.txt` empty → populated T02.

@@ -1,28 +1,24 @@
 # T02: Common Definitions
 
-**Phase**: 1 - Foundation
-**Dependencies**: T01 (Project Skeleton)
-**Estimated Complexity**: Low
-**Status**: ✅ COMPLETED
+**Phase**: 1 · **Deps**: T01 · **Complexity**: low · **Status**: ✅ COMPLETED
 
 ## Goal
 
-Define all shared constants, result types, and debug macros used across the entire project. This is the foundational header included by every other source file.
+Shared constants, `MsResult`, debug macros → foundational header included everywhere.
 
-## Files to Create/Modify
+## Files
 
 | File | Action |
 |------|--------|
-| `src/common.h` | Fill in with complete definitions |
-| `tests/unit/test_common.c` | Unit tests for common definitions |
-| `tests/CMakeLists.txt` | Add test_common target |
+| `src/common.h` | Fill definitions |
+| `tests/unit/test_common.c` | Unit tests |
+| `tests/CMakeLists.txt` | Add `test_common` target |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Include Guards and Standard Includes — Compiles Standalone
+### Cycle 1: Include Guards + Standard Includes
 
-**RED** — Write failing test:
-- Create `tests/unit/test_common.c` that includes `common.h` and calls `printf`. This will fail to link if `common.h` has syntax errors, or fail to compile if standard headers are missing.
+**RED**: Create test that `#include "common.h"` — `common.h` is empty placeholder from T01, test infra not yet in `tests/CMakeLists.txt`.
 
 ```c
 #include "common.h"
@@ -38,26 +34,16 @@ int main(void) {
 }
 ```
 
-- Add to `tests/CMakeLists.txt`:
-
+Add to `tests/CMakeLists.txt`:
 ```cmake
 add_executable(test_common tests/unit/test_common.c)
 target_include_directories(test_common PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_common COMMAND test_common)
 ```
 
-- `common.h` is currently an empty placeholder from T01 — the test compiles but has no real assertions yet.
+Verify: `cmake --build build && ctest --test-dir build -R test_common` → passes trivially.
 
-**Verify RED**: 
-```
-cmake --build build
-ctest --test-dir build -R test_common
-```
-Expected: passes trivially (no assertions to fail). This establishes the test infrastructure is working.
-
-**GREEN** — Minimal implementation:
-- Fill `src/common.h` with include guards and standard includes only:
-
+**GREEN**: Fill `src/common.h`:
 ```c
 #ifndef MS_COMMON_H
 #define MS_COMMON_H
@@ -69,19 +55,11 @@ Expected: passes trivially (no assertions to fail). This establishes the test in
 #endif
 ```
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_common
-```
-Expected: compiles and test passes
-
-**REFACTOR**: No changes needed.
+**REFACTOR**: none.
 
 ### Cycle 2: Compile-Time Constants
 
-**RED** — Write failing test:
-- Add test functions to `tests/unit/test_common.c` that assert on constant values:
+**RED**: Test asserts on undefined constants → compile error.
 
 ```c
 static void test_stack_max(void) {
@@ -127,18 +105,7 @@ static void test_table_max_load(void) {
 }
 ```
 
-- Call all from `main()`.
-- `MS_STACK_MAX` etc. are not defined yet — compile error.
-
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `MS_STACK_MAX` undeclared (and others)
-
-**GREEN** — Minimal implementation:
-- Add constants to `src/common.h` (after the standard includes, before `#endif`):
-
+**GREEN**: Add to `src/common.h`:
 ```c
 #define MS_STACK_MAX    256
 #define MS_FRAMES_MAX   64
@@ -148,19 +115,11 @@ Expected: compile error — `MS_STACK_MAX` undeclared (and others)
 #define MS_TABLE_MAX_LOAD 0.75
 ```
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_common
-```
-Expected: compiles and all assertions pass
-
-**REFACTOR**: No changes needed.
+**REFACTOR**: none.
 
 ### Cycle 3: MsResult Enum
 
-**RED** — Write failing test:
-- Add test functions that verify `MsResult` enum exists and has correct values:
+**RED**: Test references `MsResult` / `MS_OK` → undeclared.
 
 ```c
 static void test_result_values(void) {
@@ -184,38 +143,18 @@ static void test_result_is_enum(void) {
 }
 ```
 
-- `MsResult` is not defined yet — compile error.
-
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `MsResult` and `MS_OK` undeclared
-
-**GREEN** — Minimal implementation:
-- Add `MsResult` enum to `src/common.h`:
-
+**GREEN**: Add to `src/common.h`:
 ```c
 typedef enum { MS_OK, MS_COMPILE_ERROR, MS_RUNTIME_ERROR } MsResult;
 ```
 
-Design decisions:
-- `MsResult` is the universal return type for operations that can fail
-- Values start at 0 (C default) and are sequential
+Universal return type for fallible ops. Values sequential from 0.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_common
-```
-Expected: compiles and all assertions pass
-
-**REFACTOR**: No changes needed.
+**REFACTOR**: none.
 
 ### Cycle 4: Debug Macros
 
-**RED** — Write failing test:
-- Add test functions that verify debug macros behave correctly both when the flag is defined and when it is not:
+**RED**: Test references `MS_DEBUG_LOG_GC_EXECUTE` → undeclared.
 
 ```c
 static int debug_gc_counter;
@@ -242,17 +181,7 @@ static void test_debug_macros_off(void) {
 }
 ```
 
-- `MS_DEBUG_LOG_GC_EXECUTE` etc. are not defined yet — compile error.
-
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `MS_DEBUG_LOG_GC_EXECUTE` undeclared
-
-**GREEN** — Minimal implementation:
-- Add debug macros to `src/common.h`:
-
+**GREEN**: Add to `src/common.h`:
 ```c
 #ifdef MS_DEBUG_LOG_GC
   #define MS_DEBUG_LOG_GC_EXECUTE(code) code
@@ -273,30 +202,20 @@ Expected: compile error — `MS_DEBUG_LOG_GC_EXECUTE` undeclared
 #endif
 ```
 
-Design decisions:
-- Debug macros use the execute-pattern to avoid evaluating code in release builds
-- The `code` argument is only expanded when the corresponding flag is defined
+Execute-pattern: `code` arg only expanded when corresponding flag defined. No-op in release.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_common
-```
-Expected: compiles and test passes (macros expand to nothing when flags not defined)
-
-**REFACTOR**: Verify the test also compiles when flags ARE defined. A separate build with `-DMS_DEBUG_LOG_GC` can confirm the macro expands correctly, but this is optional for now. Add a comment noting that when `MS_DEBUG_LOG_GC` is defined, `MS_DEBUG_LOG_GC_EXECUTE(debug_gc_counter++)` should increment the counter.
+**REFACTOR**: Optional — verify with `-DMS_DEBUG_LOG_GC` build that macro expands correctly.
 
 ## Acceptance Criteria
 
-- [x] `common.h` compiles when included from a `.c` file
-- [x] All constants are defined with correct values
-- [x] `MsResult` enum has exactly 3 values
-- [x] Debug macros expand to nothing when their flag is not defined
-- [x] Debug macros expand to their argument when the flag IS defined
-- [x] No warnings with strict compilation flags
+- [x] `common.h` compiles standalone
+- [x] All constants defined with correct values
+- [x] `MsResult` has exactly 3 values
+- [x] Debug macros → no-op without flag, expand `code` with flag
+- [x] Zero warnings with strict flags
 
 ## Notes
 
-- `common.h` is a header-only module — no `.c` file needed.
-- The constants (`MS_STACK_MAX`, `MS_FRAMES_MAX`, etc.) are compile-time constants for fixed-stack allocation.
-- Debug macros will be used by the GC (T17) and VM tracing (T14).
+- `common.h` header-only — no `.c` file.
+- Constants = compile-time for fixed-stack alloc.
+- Debug macros → GC (T17), VM tracing (T14).
