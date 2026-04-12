@@ -107,7 +107,7 @@ MsObjString* ms_table_find_string(MsTable* t, const char* chars, int length,
         if (entry->key != MS_TABLE_TOMBSTONE &&
             entry->key->hash == hash &&
             entry->key->length == length &&
-            memcmp(entry->key->chars, chars, (size_t)length) == 0) {
+            memcmp(entry->key->data, chars, (size_t)length) == 0) {
             return entry->key;
         }
         index = (index + 1) & (uint32_t)(t->capacity - 1);

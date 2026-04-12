@@ -2,12 +2,12 @@
 #include "ms/table.h"
 #include <stdio.h>
 
-// MockString mirrors MsObjString layout exactly (chars ptr + inline storage).
+// MockString mirrors MsObjString layout: MsObject header + hash + length + inline chars.
+// Uses a fixed-size trailing buffer to simulate the FAM char data[].
 typedef struct {
     MsObject obj;
     uint32_t hash;
     int length;
-    char* chars;
     char data[32];
 } MockString;
 
@@ -24,8 +24,8 @@ static MockString make_mock(const char* s, uint32_t h) {
     return m;
 }
 
-// Must be called after the MockString is in its final stack location.
-#define MOCK_FIX(m) ((m).chars = (m).data)
+// No-op: no chars pointer to fix up anymore.
+#define MOCK_FIX(m) ((void)0)
 
 static void test_set_get(void) {
     MsTable t;

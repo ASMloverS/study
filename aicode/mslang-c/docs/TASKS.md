@@ -5,7 +5,7 @@
 | ✅ | [T01](T01-project-skeleton.md) | Project Skeleton & Build System |
 | ✅ | [T02](T02-value-system.md) | Value System (`MsValue`) |
 | ✅ | [T03](T03-hash-table.md) | Hash Table (`MsTable`) |
-| ⬜ | [T04](T04-object-strings.md) | Object System — Strings |
+| ✅ | [T04](T04-object-strings.md) | Object System — Strings |
 | ⬜ | [T05](T05-base-objects.md) | Object System — Base Objects |
 | ⬜ | [T06](T06-chunk-instructions.md) | Chunk & Instruction Encoding |
 | ⬜ | [T07](T07-disassembler.md) | Disassembler |

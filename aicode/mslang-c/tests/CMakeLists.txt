@@ -7,3 +7,6 @@ target_link_libraries(test_value PRIVATE ms_support)
 
 ms_add_test(test_table unit/test_table.c)
 target_link_libraries(test_table PRIVATE ms_table)
+
+ms_add_test(test_object_string unit/test_object_string.c)
+target_link_libraries(test_object_string PRIVATE ms_vm)
