@@ -2,18 +2,18 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement `MsObject` base header and `MsObjString` with flexible array member (FAM), FNV-1a hashing, and string interning.
-**Dependencies:** T02, T03
-**Produces:** String creation and interning; string equality is O(1) pointer comparison
+**Goal:** Implement `MsObject` base header + `MsObjString` w/ FAM, FNV-1a hashing, string interning.
+**Deps:** T02, T03
+**Produces:** String create/intern; equality → O(1) ptr compare
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
 | Create | `include/ms/object.h` | `MsObject` header, `MsObjString`, type macros |
-| Create | `include/ms/memory.h` | Memory allocation interface |
+| Create | `include/ms/memory.h` | Memory alloc interface |
 | Create | `src/object.c` | Object create/destroy/print |
-| Create | `src/memory.c` | `ms_reallocate` base implementation |
+| Create | `src/memory.c` | `ms_reallocate` base impl |
 | Create | `tests/unit/test_object_string.c` | String object tests |
 
 ## Key Data Structures / API
@@ -84,15 +84,15 @@ void* ms_reallocate(struct MsVM* vm, void* ptr, size_t old_size, size_t new_size
 #define MS_GROW_CAPACITY(cap) ((cap) < 8 ? 8 : (cap) * 2)
 ```
 
-## Implementation Notes
+## Impl Notes
 
-- **`ms_alloc_object`**: `malloc(size)`, initializes `MsObject` header (`type`, `is_marked=false`, `generation=0`, `age=0`), prepends to `vm->objects` list
+- **`ms_alloc_object`**: `malloc(size)` → init header (`type`, `is_marked=false`, `generation=0`, `age=0`) → prepend to `vm->objects`
 - **FNV-1a**: `hash = 2166136261u; for each byte: hash ^= byte; hash *= 16777619u;`
-- **String interning**: `ms_obj_string_copy` computes hash, looks up via `ms_table_find_string` in `vm->strings`. Returns existing string if found; otherwise allocates `sizeof(MsObjString) + length + 1`, copies data, null-terminates, and inserts into the intern table
-- **`ms_obj_string_take`**: same as `ms_obj_string_copy` but takes ownership of `chars` (frees it after copying into FAM)
-- **`ms_obj_string_concat`**: allocates a new FAM string, copies `a`+`b` content, then runs the intern flow
-- **`ms_object_free`**: `switch(obj->type)`; `MS_OBJ_STRING` → free the object itself (FAM is released with the struct, no extra free needed)
-- **`ms_value_equals`**: for `OBJECT` type, uses direct pointer comparison (strings are interned, so same content = same pointer)
+- **String interning**: `ms_obj_string_copy` → hash → `ms_table_find_string` in `vm->strings`. Hit → return existing. Miss → alloc `sizeof(MsObjString) + length + 1`, copy, null-terminate, insert
+- **`ms_obj_string_take`**: same as copy; owns `chars` → frees after FAM copy
+- **`ms_obj_string_concat`**: alloc new FAM string, copy `a`+`b`, run intern flow
+- **`ms_object_free`**: `switch(obj->type)`; `MS_OBJ_STRING` → free obj (FAM released w/ struct)
+- **`ms_value_equals`**: `OBJECT` type → ptr compare (interned → same content = same ptr)
 
 ## C Unit Tests
 

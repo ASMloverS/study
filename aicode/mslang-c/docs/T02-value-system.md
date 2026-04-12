@@ -1,21 +1,21 @@
 # Task 02: Value System
 
-> **For agentic workers:** Use superpowers:executing-plans to implement this task.
+> **Agentic workers:** Use superpowers:executing-plans.
 
-**Goal:** Implement `MsValue` tagged union with nil/bool/double/int64/object types, dynamic array, and value operations.
-**Dependencies:** T01
-**Produces:** Compilable `ms_support` library; unit tests for value creation, truthiness, equality
+**Goal:** Impl `MsValue` tagged union (nil/bool/double/int64/object), dynamic array, value ops.
+**Deps:** T01
+**Produces:** Compilable `ms_support` lib; unit tests for creation, truthiness, equality.
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/value.h` | `MsValue` definition, construction/check/extraction macros |
-| Create | `src/value.c` | Value operation implementations |
-| Modify | `CMakeLists.txt` | Add `ms_support` static library |
-| Create | `tests/unit/test_value.c` | Value system unit tests |
+| Create | `include/ms/value.h` | `MsValue` def, construction/check/extraction macros |
+| Create | `src/value.c` | Value op impls |
+| Modify | `CMakeLists.txt` | Add `ms_support` static lib |
+| Create | `tests/unit/test_value.c` | Value unit tests |
 
-## Key Data Structures / API
+## API
 
 ```c
 // include/ms/value.h
@@ -39,14 +39,14 @@ typedef struct {
     } as;
 } MsValue;
 
-// --- Construction macros ---
+// Construction macros
 #define MS_NIL_VAL()     ((MsValue){MS_VAL_NIL,    {.integer = 0}})
 #define MS_BOOL_VAL(b)   ((MsValue){MS_VAL_BOOL,   {.boolean = (b)}})
 #define MS_NUMBER_VAL(n) ((MsValue){MS_VAL_NUMBER,  {.number = (n)}})
 #define MS_INT_VAL(i)    ((MsValue){MS_VAL_INT,     {.integer = (i)}})
 #define MS_OBJ_VAL(p)    ((MsValue){MS_VAL_OBJECT,  {.object = (MsObject*)(p)}})
 
-// --- Type check macros ---
+// Type checks
 #define MS_IS_NIL(v)     ((v).type == MS_VAL_NIL)
 #define MS_IS_BOOL(v)    ((v).type == MS_VAL_BOOL)
 #define MS_IS_NUMBER(v)  ((v).type == MS_VAL_NUMBER)
@@ -54,25 +54,25 @@ typedef struct {
 #define MS_IS_OBJECT(v)  ((v).type == MS_VAL_OBJECT)
 #define MS_IS_NUMERIC(v) (MS_IS_NUMBER(v) || MS_IS_INT(v))
 
-// --- Extraction macros ---
+// Extraction
 #define MS_AS_BOOL(v)    ((v).as.boolean)
 #define MS_AS_NUMBER(v)  ((v).as.number)
 #define MS_AS_INT(v)     ((v).as.integer)
 #define MS_AS_OBJECT(v)  ((v).as.object)
 
-// --- Numeric coercion helper ---
+// Numeric coercion
 static inline double ms_as_double(MsValue v) {
     return MS_IS_INT(v) ? (double)MS_AS_INT(v) : MS_AS_NUMBER(v);
 }
 
-// --- Dynamic array ---
+// Dynamic array
 typedef struct {
     MsValue* data;
     int count;
     int capacity;
 } MsValueArray;
 
-// Generic grow-and-push macro (reusable for any array type)
+// Generic grow-and-push (reusable for any array type)
 #define MS_ARRAY_PUSH(arr, item, T) do { \
     if ((arr)->count >= (arr)->capacity) { \
         int _cap = (arr)->capacity < 8 ? 8 : (arr)->capacity * 2; \
@@ -86,21 +86,21 @@ void ms_value_array_init(MsValueArray* arr);
 void ms_value_array_push(MsValueArray* arr, MsValue val);
 void ms_value_array_free(MsValueArray* arr);
 
-// --- Value operations ---
+// Value ops
 bool  ms_value_equals(MsValue a, MsValue b);
 bool  ms_value_is_truthy(MsValue v);
-void  ms_value_print(MsValue v);        // to stdout
-char* ms_value_to_cstring(MsValue v);   // heap alloc, caller frees
+void  ms_value_print(MsValue v);        // stdout
+char* ms_value_to_cstring(MsValue v);   // heap alloc; caller frees
 ```
 
-## Implementation Notes
+## Impl Notes
 
-- **Equality**: nil==nil; bool by value; numeric cross-type (int 5 == double 5.0); object by pointer (strings are interned, so pointer equality suffices)
-- **Truthiness**: nil → false; bool → its value; 0 → false; 0.0 → false; all else → true (empty containers → false, added in T21)
-- **`ms_value_print`**: int prints without decimal point; double uses `%g` (omits decimal if whole number); string prints its data content
-- **`ms_value_to_cstring`**: returns heap-allocated `char*`; caller must free
+- **Equality:** nil==nil; bool by val; numeric cross-type (int 5 == double 5.0); object by ptr (strings interned → ptr eq)
+- **Truthiness:** nil→false; bool→its val; 0→false; 0.0→false; else→true (empty containers→false, added T21)
+- **`ms_value_print`:** int: no decimal; double: `%g`; string: data content
+- **`ms_value_to_cstring`:** heap-alloc `char*`; caller frees
 
-## C Unit Tests
+## Unit Tests
 
 ```c
 // tests/unit/test_value.c

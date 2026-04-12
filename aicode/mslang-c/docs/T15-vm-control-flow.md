@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Complete VM support for break/continue in loops, switch/case dispatch, and anonymous functions (lambda).
-**Dependencies:** T14
+**Goal:** Complete VM support for break/continue in loops, switch/case dispatch, anonymous functions (lambda).
+**Deps:** T14
 **Produces:** break/continue in loops, switch dispatch, anonymous functions
 
 ## Files
@@ -14,24 +14,24 @@
 | Modify | `src/compiler.c` | Complete break/continue patching, lambda syntax |
 | Create | `tests/unit/test_vm_control.c` | Control flow tests |
 
-## Implementation Notes
+## Impl Notes
 
 ### break / continue
 
-break/continue are handled compiler-side (T12): emit `JMP` into `LoopCtx.break_list`. The VM only needs to execute `JMP` correctly (done in T13). This task ensures:
-- `break` in nested loops exits only the innermost loop
-- `continue` jumps to the loop's post expression (`for`) or condition (`while`)
-- `break` in a `switch` exits the switch without affecting outer loops
+Handled compiler-side (T12): emit `JMP` into `LoopCtx.break_list`. VM executes `JMP` (T13). This task ensures:
+- `break` in nested loops exits only innermost loop
+- `continue` → loop's post expr (`for`) or condition (`while`)
+- `break` in `switch` exits switch without affecting outer loops
 
 ### Lambda (Anonymous Functions)
 
 Syntax: `fun(x) { return x * 2 }` or `fun(x, y) { return x + y }`
 
-Compiled identically to named functions, but `ObjFunction.name = NULL` or `<lambda>`. Created via `CLOSURE`.
+Same as named fn; `ObjFunction.name = NULL` / `<lambda>`. Created via `CLOSURE`.
 
 ### switch Execution
 
-switch generates a linear comparison chain (EQ + JMP) compiler-side. The VM only executes EQ comparisons and conditional jumps.
+Linear EQ+JMP chain (compiler-side). VM executes EQ comparisons + conditional jumps only.
 
 ## C Unit Tests
 

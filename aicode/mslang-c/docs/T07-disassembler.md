@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement bytecode disassembler that prints human-readable instruction listings, essential for debugging compiler output.
-**Dependencies:** T06
+**Goal:** Bytecode disassembler → human-readable instruction listings for debugging compiler output.
+**Deps:** T06
 **Produces:** `ms_disasm_chunk` / `ms_disasm_instr` print disassembly for any chunk
 
 ## Files
@@ -11,7 +11,7 @@
 | Action | Path | Purpose |
 |--------|------|---------|
 | Create | `include/ms/debug.h` | Disassembler API |
-| Create | `src/debug.c` | Disassembler implementation |
+| Create | `src/debug.c` | Disassembler impl |
 | Create | `tests/unit/test_debug.c` | Disassembly output validation |
 
 ## Key Data Structures / API
@@ -27,7 +27,7 @@ void ms_disasm_chunk(const MsChunk* chunk, const char* name);
 int  ms_disasm_instr(const MsChunk* chunk, int offset);
 ```
 
-## Implementation Notes
+## Impl Notes
 
 Output format:
 ```
@@ -38,20 +38,20 @@ Output format:
 0003    | CLOSURE    R(0)  proto[2]
 ```
 
-- Column 1: instruction offset (4 digits, zero-padded)
-- Column 2: line number (new line → number; same line → `|`)
-- Column 3: opcode name (left-aligned, 12 chars)
-- Remaining: operands by format
+- Col 1: offset (4-digit, zero-padded)
+- Col 2: line number (new line → number; same → `|`)
+- Col 3: opcode name (left-aligned, 12 chars)
+- Rest: operands by format
 
-Operand formatting by instruction type:
-- **iABC** (arithmetic/compare): `R(A)  RK(B) RK(C)` — if B/C ≥ 128 print `K(n)` and append `; value`
-- **iABx** (`LOADK`/`GETGLOBAL`/`DEFGLOBAL`): `R(A)  K(Bx)` with appended `; value`
+Operand formatting:
+- **iABC** (arith/compare): `R(A)  RK(B) RK(C)` — B/C ≥ 128 → `K(n)` + `; value`
+- **iABx** (`LOADK`/`GETGLOBAL`/`DEFGLOBAL`): `R(A)  K(Bx)` + `; value`
 - **iAsBx** (`JMP`): `+sBx` or `-sBx`
 - **`CLOSURE`**: `R(A)  proto[Bx]`
 - **`CALL`**: `R(A)  args=B-1 rets=C-1`
 - **`RETURN`**: `R(A)  count=B-1`
 
-`ms_opcode_name(op)` (defined in T06) provides the opcode string.
+`ms_opcode_name(op)` (T06) provides opcode string.
 
 ## C Unit Tests
 
@@ -95,4 +95,4 @@ int main(void) {
 
 ## .ms Integration Tests
 
-None — disassembler is a dev/debug tool, not exposed to the script layer.
+None — disassembler is a dev/debug tool, not exposed to script layer.

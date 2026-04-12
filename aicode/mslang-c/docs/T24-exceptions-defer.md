@@ -2,16 +2,16 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement try/catch/throw exception handling with stack unwinding, and Go-style defer statements.
-**Dependencies:** T15, T18
+**Goal:** try/catch/throw exception handling with stack unwinding + Go-style defer.
+**Deps:** T15, T18
 **Produces:** try/catch exception handling, throw, defer deferred execution
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `include/ms/vm.h` | Exception handler stack, defer buffer added to CallFrame |
-| Modify | `src/compiler.c` | try/catch/throw/defer statement compilation |
+| Modify | `include/ms/vm.h` | Exception handler stack, defer buffer in CallFrame |
+| Modify | `src/compiler.c` | try/catch/throw/defer compilation |
 | Modify | `src/vm.c` | TRY, ENDTRY, THROW, DEFER opcodes |
 | Modify | `src/vm_call.c` | Stack unwinding, defer execution |
 | Create | `tests/unit/test_exceptions.c` | Exception and defer tests |
@@ -39,7 +39,7 @@ int deferred_count;
 int deferred_capacity;
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Compiling try/catch
 
@@ -137,7 +137,7 @@ case MS_OP_DEFER: {
 
 ### Defer Execution (LIFO)
 
-On function return (`RETURN`) or exception unwinding, execute deferred closures in LIFO order:
+On `RETURN` or exception unwind: execute deferred closures LIFO:
 ```c
 static void run_deferred(MsVM* vm, MsCallFrame* frame) {
     for (int i = frame->deferred_count - 1; i >= 0; i--) {

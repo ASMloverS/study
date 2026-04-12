@@ -2,18 +2,18 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement tri-color mark-and-sweep garbage collector with root marking, gray stack tracing, and sweep.
-**Dependencies:** T14
+**Goal:** Tri-color mark-and-sweep GC: root marking, gray stack tracing, sweep.
+**Deps:** T14
 **Produces:** Automatic memory reclamation; long-running scripts don't exhaust memory
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `src/vm_gc.c` | GC mark/trace/sweep implementation |
+| Create | `src/vm_gc.c` | GC mark/trace/sweep impl |
 | Modify | `src/memory.c` | `ms_reallocate` triggers GC |
 | Modify | `include/ms/memory.h` | GC API: mark_object, mark_value, collect |
-| Modify | `include/ms/vm.h` | Add `gray_stack` and other GC fields |
+| Modify | `include/ms/vm.h` | Add `gray_stack` + GC fields |
 | Create | `tests/unit/test_gc.c` | GC tests |
 
 ## Key Data Structures / API
@@ -26,14 +26,14 @@ void ms_mark_value(MsVM* vm, MsValue val);
 void ms_mark_table(MsVM* vm, MsTable* table);
 ```
 
-GC fields needed by `MsVM` (pre-declared in T13):
+GC fields in `MsVM` (pre-declared T13):
 ```c
 MsObject** gray_stack;
 int gray_count;
 int gray_capacity;
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Tri-Color Mark-and-Sweep
 
@@ -83,9 +83,9 @@ void ms_mark_object(MsVM* vm, MsObject* obj) {
 
 ### blacken_object (trace children)
 
-Traces references by object type:
-- STRING: no child references
-- FUNCTION: trace name, trace objects in constant pool
+Traces by type:
+- STRING: no children
+- FUNCTION: trace name, trace constant pool objects
 - CLOSURE: trace function, trace each upvalue
 - UPVALUE: trace closed value
 - NATIVE: trace name
@@ -116,7 +116,7 @@ Initial `next_gc` = 1 MB.
 
 ### Intern Table Cleanup
 
-Call `ms_table_remove_white(&vm->strings)` before sweep — removes unmarked interned strings to prevent dangling pointers.
+Before sweep: `ms_table_remove_white(&vm->strings)` — removes unmarked interned strings (prevent dangling ptrs).
 
 ## C Unit Tests
 

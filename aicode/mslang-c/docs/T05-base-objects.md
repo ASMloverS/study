@@ -2,16 +2,16 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement remaining base object types needed by compiler and VM: ObjFunction, ObjNative, ObjUpvalue, ObjClosure (FAM).
-**Dependencies:** T04
-**Produces:** Function and closure objects creatable; chunk ownership belongs to `ObjFunction`
+**Goal:** Implement `ObjFunction`, `ObjNative`, `ObjUpvalue`, `ObjClosure` (FAM).
+**Deps:** T04
+**Produces:** Function/closure objects creatable; chunk owned by `ObjFunction`
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `include/ms/object.h` | Add Function/Native/Upvalue/Closure structs and macros |
-| Modify | `src/object.c` | Create/destroy/print functions |
+| Modify | `include/ms/object.h` | Add Function/Native/Upvalue/Closure structs + macros |
+| Modify | `src/object.c` | Create/destroy/print fns |
 | Create | `tests/unit/test_base_objects.c` | Base object tests |
 
 ## Key Data Structures / API
@@ -79,14 +79,14 @@ MsObjUpvalue*  ms_obj_upvalue_new(struct MsVM* vm, MsValue* slot);
 MsObjClosure*  ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn);
 ```
 
-## Implementation Notes
+## Impl Notes
 
-- **`ObjFunction`**: inlines `MsChunk chunk` (not a pointer); `ms_obj_function_new` calls `ms_chunk_init(&fn->chunk)`; destructor calls `ms_chunk_free(&fn->chunk)`
-- **`ObjClosure` FAM**: allocation size = `sizeof(MsObjClosure) + sizeof(MsObjUpvalue*) * fn->upvalue_count`; all upvalue pointers initialized to NULL
-- **`ObjUpvalue`**: on creation, `location = slot`, `closed = MS_NIL_VAL()`, `next = NULL`
-- **`ObjNative`**: `arity = -1` means variadic
-- **`ms_object_free` extension**: add `MS_OBJ_FUNCTION`/`NATIVE`/`UPVALUE`/`CLOSURE` cases
-- **`ms_object_print` extension**: function prints `<fn name>`; native prints `<native name>`; closure prints `<fn name>`
+- **`ObjFunction`**: inlines `MsChunk chunk`; `ms_obj_function_new` → `ms_chunk_init(&fn->chunk)`; destructor → `ms_chunk_free(&fn->chunk)`
+- **`ObjClosure` FAM**: alloc size = `sizeof(MsObjClosure) + sizeof(MsObjUpvalue*) * fn->upvalue_count`; all upvalue ptrs → NULL
+- **`ObjUpvalue`**: `location = slot`, `closed = MS_NIL_VAL()`, `next = NULL`
+- **`ObjNative`**: `arity = -1` → variadic
+- **`ms_object_free`**: add `MS_OBJ_FUNCTION`/`NATIVE`/`UPVALUE`/`CLOSURE` cases
+- **`ms_object_print`**: fn → `<fn name>`; native → `<native name>`; closure → `<fn name>`
 
 ## C Unit Tests
 

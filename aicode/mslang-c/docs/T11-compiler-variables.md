@@ -2,45 +2,45 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Add variable declarations, local/global resolution, scoping with block statements, and compound assignment.
-**Dependencies:** T10
-**Produces:** Compiler supports `var` declarations, block scoping, assignment, and compound assignment
+**Goal:** Add var declarations, local/global resolution, block scoping, compound assignment.
+**Deps:** T10
+**Produces:** Compiler supports `var`, block scoping, assignment, compound assignment
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `src/compiler.c` | Add `var` declaration, scope management, assignment |
-| Modify | `src/compiler_expr.c` | Add identifier resolution (local/global) |
+| Modify | `src/compiler.c` | `var` decl, scope mgmt, assignment |
+| Modify | `src/compiler_expr.c` | Identifier resolution (local/global) |
 | Create | `tests/unit/test_compiler_vars.c` | Variable compile tests |
 
 ## Key Data Structures / API
 
-No new public API — extends `MsCompiler` internal behavior.
+No new public API — extends `MsCompiler` internals.
 
-## Implementation Notes
+## Impl Notes
 
 ### Global Variables
 
 ```
 var x = expr    // top-level (scope_depth == 0)
 ```
-1. Compile `expr` → register `reg`
-2. Emit `DEFGLOBAL reg, K(name_idx)` — `name_idx` is the string constant index for the variable name
+1. Compile `expr` → reg
+2. Emit `DEFGLOBAL reg, K(name_idx)` — `name_idx` = string constant index for var name
 
-Read global: `GETGLOBAL A Bx` — `R(A) = globals[K(Bx)]`
-Write global: `SETGLOBAL A Bx` — `globals[K(Bx)] = R(A)`
+Read: `GETGLOBAL A Bx` → `R(A) = globals[K(Bx)]`
+Write: `SETGLOBAL A Bx` → `globals[K(Bx)] = R(A)`
 
 ### Local Variables
 
 ```
 { var x = expr }    // scope_depth > 0
 ```
-1. `alloc_reg()` assigns a register slot to `x`
-2. Compile `expr` into that register
+1. `alloc_reg()` → assigns slot to `x`
+2. Compile `expr` into that slot
 3. Record in `locals[]`: `name=token`, `depth=scope_depth`, `slot=reg`, `is_captured=false`
 
-**Identifier resolution**: scan `locals[]` backward for a name match → return `EDESC_LOCAL(slot)`. Not found → return `EDESC_GLOBAL(name_const_idx)`.
+**Identifier resolution**: scan `locals[]` backward → name match → `EDESC_LOCAL(slot)`. Not found → `EDESC_GLOBAL(name_const_idx)`.
 
 ### Scope Management
 
@@ -62,9 +62,9 @@ static void end_scope(MsCompiler* c) {
 
 ### Assignment and Compound Assignment
 
-Assignment is controlled by the `can_assign` parameter in the Pratt parser:
-- When resolving an identifier, if `can_assign && match(EQUAL)` → compile RHS, emit `SET`
-- `x += expr` is equivalent to `x = x + expr`: read `x` → compile `expr` → emit `ADD` → emit `SET`
+Controlled by `can_assign` param in Pratt parser:
+- Identifier resolve + `can_assign && match(EQUAL)` → compile RHS → emit `SET`
+- `x += expr` → read `x` → compile `expr` → emit `ADD` → emit `SET`
 
 ### String Constant Deduplication
 

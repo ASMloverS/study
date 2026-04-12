@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement import/from-import/aliased-import, ObjModule with export table, module caching, circular dependency detection.
-**Dependencies:** T13, T18
+**Goal:** import/from-import/aliased-import, ObjModule + export table, module caching, circular dep detection.
+**Deps:** T13, T18
 **Produces:** `import "path"`, `from "path" import name`, `from "path" import name as alias`
 
 ## Files
@@ -62,7 +62,7 @@ char* ms_read_file(const char* path);
 char* ms_resolve_path(const char* import_path, const char* from_dir);
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Import Syntax
 
@@ -76,7 +76,7 @@ from "math" import sqrt as s  // → aliased
 
 - `import "path"` → `IMPORT A Bx` (K(Bx) = path string, R(A) = ObjModule)
 - `from "path" import name` → `IMPORT A Bx` + `IMPFROM A A C` (K(C) = name)
-- `from "path" import name as alias` → same as above + `IMPALIAS`
+- `from "path" import name as alias` → same + `IMPALIAS`
 
 ### VM Execution
 
@@ -129,15 +129,15 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path, const char* from)
 
 ### Module Exports
 
-Top-level `var`/`fun`/`class` declarations automatically become exports. Implementation: after execution, copy marked bindings from globals into `mod->exports`.
+Top-level `var`/`fun`/`class` → auto-exported. After execution, copy marked bindings from globals → `mod->exports`.
 
-Simpler alternative: during module execution, `DEFGLOBAL` writes to `mod->exports` instead of `vm->globals`.
+Simpler alt: during module exec, `DEFGLOBAL` writes to `mod->exports` instead of `vm->globals`.
 
 ### Path Resolution
 
-- Relative paths: relative to the importing file's directory
-- Automatically append `.ms` extension
-- Normalize to absolute path for cache key
+- Relative: relative to importing file's dir
+- Auto-append `.ms` extension
+- Normalize → absolute path for cache key
 
 ## C Unit Tests
 

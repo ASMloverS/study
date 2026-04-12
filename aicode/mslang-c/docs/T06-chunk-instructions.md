@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement 32-bit instruction format (iABC/iABx/iAsBx), all 70+ opcodes, `MsChunk` with constant pool and RLE source info.
-**Dependencies:** T02
-**Produces:** All instructions encodable/decodable; chunk stores bytecode and constant pool; RLE source line compression
+**Goal:** Implement 32-bit instruction format (iABC/iABx/iAsBx), 70+ opcodes, `MsChunk` w/ constant pool + RLE source info.
+**Deps:** T02
+**Produces:** Instructions encodable/decodable; chunk stores bytecode + constant pool; RLE line compression
 
 ## Files
 
@@ -12,8 +12,8 @@
 |--------|------|---------|
 | Create | `include/ms/opcode.h` | `MsOpCode` enum, instruction encode/decode |
 | Create | `include/ms/chunk.h` | `MsChunk` struct |
-| Create | `src/chunk.c` | Chunk operation implementations |
-| Create | `tests/unit/test_chunk.c` | Instruction encode/decode and chunk tests |
+| Create | `src/chunk.c` | Chunk op impls |
+| Create | `tests/unit/test_chunk.c` | Instruction encode/decode + chunk tests |
 
 ## Key Data Structures / API
 
@@ -112,10 +112,10 @@ int  ms_chunk_add_constant(MsChunk* c, MsValue val);
 int  ms_chunk_get_line(MsChunk* c, int offset);
 ```
 
-## Implementation Notes
+## Impl Notes
 
-- **RLE line info**: `ms_chunk_write` checks whether the last `SourceRun` has the same line/col; if so, `count++`; otherwise appends a new `SourceRun`
-- **`ms_chunk_get_line`**: iterates `SourceRun` array, accumulating `count` until the offset is covered
+- **RLE line info**: `ms_chunk_write` → last `SourceRun` same line/col? → `count++`. Else append new `SourceRun`
+- **`ms_chunk_get_line`**: iterate `SourceRun` array, accumulate `count` until offset covered
 - **`ms_opcode_name`**: static `const char*` array indexed by opcode value
 
 ## C Unit Tests
@@ -187,4 +187,4 @@ int main(void) {
 
 ## .ms Integration Tests
 
-None — instruction encoding is internal infrastructure, tested indirectly through the compiler and VM.
+None — instruction encoding is internal; tested indirectly via compiler + VM.

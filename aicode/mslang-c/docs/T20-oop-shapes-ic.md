@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement Shape-based field layout for ObjInstance (O(1) property access) and polymorphic inline caching for GETPROP/SETPROP/INVOKE.
-**Dependencies:** T19
+**Goal:** Shape-based field layout for ObjInstance (O(1) property access) + polymorphic inline caching for GETPROP/SETPROP/INVOKE.
+**Deps:** T19
 **Produces:** O(1) property access by slot index; polymorphic inline caching (PIC)
 
 ## Files
@@ -83,20 +83,20 @@ typedef struct MsInlineCache {
 } MsInlineCache;
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Shape Transitions
 
-Each class has a root shape (empty). When an instance adds a property:
-1. Look up `name` in the current shape's transitions
-2. Found → use the existing child shape
+Each class has root shape (empty). Adding property:
+1. Look up `name` in current shape's transitions
+2. Found → use existing child shape
 3. Not found → create new shape, `slot_count++`, record `name→slot`, add transition
 
-Instances with the same property-addition order share the same shape chain.
+Same property-addition order → shared shape chain.
 
 ### SBO (Small Buffer Optimization)
 
-The first 8 fields are stored in `inline_fields[]` (no extra allocation). If more than 8, allocate `overflow_fields`:
+First 8 fields → `inline_fields[]` (no alloc). >8 → allocate `overflow_fields`:
 ```c
 static MsValue* get_field_ptr(MsObjInstance* inst, int slot) {
     if (slot < MS_SBO_FIELDS) return &inst->inline_fields[slot];
@@ -106,7 +106,7 @@ static MsValue* get_field_ptr(MsObjInstance* inst, int slot) {
 
 ### IC Usage
 
-`GETPROP` is followed by `EXTRAARG Bx` (`Bx` = IC slot index in `function->ic[]`):
+`GETPROP` followed by `EXTRAARG Bx` (`Bx` = IC slot index in `function->ic[]`):
 ```c
 case MS_OP_GETPROP: {
     MsInstruction extra = READ_INSTR(); // EXTRAARG
@@ -126,7 +126,7 @@ case MS_OP_GETPROP: {
 }
 ```
 
-When IC is full (4 entries) → `megamorphic = true`, skip IC and use slow path directly.
+IC full (4 entries) → `megamorphic = true`, skip IC, use slow path directly.
 
 ## C Unit Tests
 

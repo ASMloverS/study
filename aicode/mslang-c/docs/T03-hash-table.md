@@ -1,20 +1,20 @@
 # Task 03: Hash Table
 
-> **For agentic workers:** Use superpowers:executing-plans to implement this task.
+> **Agentic workers:** Use superpowers:executing-plans.
 
-**Goal:** Implement open-addressing hash table with `MsObjString*` keys, used for globals, string interning, and method tables.
-**Dependencies:** T02
-**Produces:** `MsTable` with insert/get/delete/find_string; unit tests passing
+**Goal:** Open-addressing hash table w/ `MsObjString*` keys — globals, string interning, method tables.
+**Deps:** T02
+**Produces:** `MsTable` insert/get/delete/find_string; unit tests passing.
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Create | `include/ms/table.h` | `MsTable` definition and API |
-| Create | `src/table.c` | Hash table implementation |
+| Create | `include/ms/table.h` | `MsTable` def + API |
+| Create | `src/table.c` | Hash table impl |
 | Create | `tests/unit/test_table.c` | Unit tests |
 
-## Key Data Structures / API
+## API
 
 ```c
 // include/ms/table.h
@@ -23,7 +23,7 @@
 
 typedef struct MsObjString MsObjString;
 
-// Tombstone sentinel — non-NULL invalid pointer for deleted slots
+// Tombstone: non-NULL invalid ptr for deleted slots
 #define MS_TABLE_TOMBSTONE ((MsObjString*)(uintptr_t)1)
 
 typedef struct {
@@ -33,9 +33,9 @@ typedef struct {
 
 typedef struct {
     MsEntry* entries;
-    int count;      // live + tombstones (used for load factor)
-    int live_count; // live entries only
-    int capacity;   // always power of 2
+    int count;       // live + tombstones (load factor)
+    int live_count;  // live only
+    int capacity;    // always pow2
 } MsTable;
 
 void         ms_table_init(MsTable* t);
@@ -48,18 +48,18 @@ MsObjString* ms_table_find_string(MsTable* t, const char* chars, int length, uin
 void         ms_table_remove_white(MsTable* t);  // GC: remove unmarked string entries
 ```
 
-## Implementation Notes
+## Impl Notes
 
-- **Hashing**: uses `ObjString`'s built-in `hash` field (FNV-1a, implemented in T04)
-- **Probing**: linear probing, `index = hash & (capacity - 1)`
-- **Load factor**: resize when count (including tombstones) > capacity * 3/4
-- **Capacity**: always power of 2; initial capacity 0, allocates 8 on first insert
-- **Tombstone**: on delete, set key to `MS_TABLE_TOMBSTONE` and value to `MS_BOOL_VAL(true)`; tombstone slots may be reused on insert
-- **`find_string`**: searches by char content and length (not pointer), for string interning; checks hash match before comparing content
-- **`remove_white`**: called during GC sweep; removes unmarked string entries from the intern table
+- **Hashing:** uses `ObjString->hash` (FNV-1a, impl in T04)
+- **Probing:** linear; `index = hash & (capacity - 1)`
+- **Load factor:** resize when count (incl. tombstones) > capacity × 3/4
+- **Capacity:** pow2; init 0, alloc 8 on first insert
+- **Tombstone:** on delete, set key=`MS_TABLE_TOMBSTONE`, val=`MS_BOOL_VAL(true)`; reusable on insert
+- **`find_string`:** search by char content + length (not ptr) for interning; hash check before content compare
+- **`remove_white`:** called during GC sweep; removes unmarked string entries from intern table
 
 ```c
-// Core lookup logic
+// Core lookup
 static MsEntry* find_entry(MsEntry* entries, int capacity, MsObjString* key) {
     uint32_t index = key->hash & (uint32_t)(capacity - 1);
     MsEntry* tombstone = NULL;
@@ -70,19 +70,18 @@ static MsEntry* find_entry(MsEntry* entries, int capacity, MsObjString* key) {
         } else if (entry->key == MS_TABLE_TOMBSTONE) {
             if (tombstone == NULL) tombstone = entry;
         } else if (entry->key == key) {
-            return entry;  // found (interned string → pointer compare)
+            return entry;  // interned string → ptr compare
         }
         index = (index + 1) & (uint32_t)(capacity - 1);
     }
 }
 ```
 
-## C Unit Tests
+## Unit Tests
 
 ```c
 // tests/unit/test_table.c
-// Note: full test requires MsObjString from T04.
-// Use a mock string struct for now, or defer until T04 is complete.
+// Full test requires MsObjString from T04. Use mock or defer until T04.
 
 #include "test_assert.h"
 #include "ms/table.h"
@@ -155,4 +154,4 @@ int main(void) {
 
 ## .ms Integration Tests
 
-No direct tests — hash table is an internal structure, tested indirectly through variables, globals, and method tables.
+None — internal structure; tested indirectly via variables, globals, method tables.

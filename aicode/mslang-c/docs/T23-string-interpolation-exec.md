@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Complete string interpolation end-to-end: compile `"a ${expr} b"` into concatenation bytecode, execute at runtime.
-**Dependencies:** T09, T13, T22
+**Goal:** Complete string interpolation end-to-end: compile `"a ${expr} b"` → concatenation bytecode, execute at runtime.
+**Deps:** T09, T13, T22
 **Produces:** `"hello ${name}!"` correctly concatenated at runtime
 
 ## Files
@@ -14,18 +14,18 @@
 | Modify | `src/vm.c` | Ensure STR (tostring) + ADD (concat) work correctly |
 | Create | `tests/unit/test_interp_exec.c` | Interpolation execution tests |
 
-## Implementation Notes
+## Impl Notes
 
 ### Compilation Strategy
 
-Token sequence from scanner (T09):
+Scanner (T09) token sequence:
 ```
 "hello "     → STRING_INTERP
 name         → IDENTIFIER
 "!"          → STRING_INTERP_END
 ```
 
-Compiler translates this into concatenation operations:
+Compiled to concatenation:
 ```
 LOADK   R(0) K("hello ")
 GETLOCAL R(1) slot(name)   ; or other expr
@@ -36,12 +36,12 @@ ADD     R(0) R(0) R(1)     ; concat
 ```
 
 Steps:
-1. On `STRING_INTERP` token → load prefix text as string constant
-2. Compile interpolated expression → register `reg`
-3. Emit `STR dest, reg` (convert value to string)
+1. `STRING_INTERP` → load prefix as string constant
+2. Compile interpolated expr → reg
+3. Emit `STR dest, reg` (value → string)
 4. Emit `ADD dest, prefix_reg, str_reg` (concat)
-5. If next is `STRING_INTERP_END` → load suffix, concat again
-6. If next is another `STRING_INTERP` → repeat steps 1–4
+5. `STRING_INTERP_END` → load suffix, concat again
+6. Another `STRING_INTERP` → repeat steps 1–4
 
 ### MS_OP_STR Implementation
 
@@ -60,9 +60,9 @@ case MS_OP_STR: {
 
 ### Optimization Notes
 
-Multi-segment interpolation `"a ${x} b ${y} c"` can use StringBuilder to avoid many intermediate strings:
-- Simple: multiple ADD ops (sufficient for initial version)
-- Advanced: compile to NEWSTR_BUILDER → APPEND × N → TO_STRING (deferred to T28+)
+Multi-segment `"a ${x} b ${y} c"`: StringBuilder avoids intermediate strings:
+- Simple: multiple ADD ops (initial version)
+- Advanced: NEWSTR_BUILDER → APPEND × N → TO_STRING (T28+)
 
 ## C Unit Tests
 

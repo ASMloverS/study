@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement the VM dispatch loop — **first milestone where .ms scripts run end-to-end**.
-**Dependencies:** T05, T06, T07, T12
-**Produces:** `mslang-c` executes `.ms` scripts; supports arithmetic, comparison, logical, bitwise ops, variables, conditionals, loops, and basic functions
+**Goal:** Implement VM dispatch loop — **first milestone where .ms scripts run end-to-end**.
+**Deps:** T05, T06, T07, T12
+**Produces:** `mslang-c` executes `.ms` scripts; arithmetic, comparison, logical, bitwise, variables, conditionals, loops, basic functions
 
 ## Files
 
@@ -13,7 +13,7 @@
 | Create | `include/ms/vm.h` | `MsVM` struct, interpret API |
 | Create | `src/vm.c` | Dispatch loop, basic opcodes |
 | Create | `src/vm_call.c` | CALL / RETURN |
-| Modify | `src/main.c` | Wire up compile+execute pipeline |
+| Modify | `src/main.c` | Wire compile+execute pipeline |
 | Create | `tests/unit/test_vm_basic.c` | VM basic tests |
 
 ## Key Data Structures / API
@@ -62,7 +62,7 @@ void              ms_vm_define_native(MsVM* vm, const char* name,
                                       MsNativeFn fn, int arity);
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Dispatch Loop (switch-based)
 
@@ -99,7 +99,7 @@ MsInterpretResult ms_vm_run(MsVM* vm) {
 
 ### Arithmetic
 
-Supports int-int, float-float, and mixed int-float (int promoted to float):
+int×int, float×float, mixed (int → float):
 ```c
 case MS_OP_ADD: {
     MsValue b = RK(B), c = RK(C);
@@ -117,10 +117,10 @@ case MS_OP_ADD: {
 ### CALL / RETURN
 
 `CALL A B C`: call `R(A)` with B-1 args (`R(A+1)..R(A+B-1)`), C-1 return values.
-- Check `R(A)` is `Closure` or `Native`
-- `Closure`: push new `MsCallFrame`, `slots = &R(A+1)`, `ip = function->chunk.code`
-- `Native`: call the C function directly
-- `RETURN A B`: return B-1 values from `R(A)`; pop frame, write return values to caller's target register
+- `R(A)` must be `Closure` or `Native`
+- `Closure`: push `MsCallFrame`, `slots = &R(A+1)`, `ip = function->chunk.code`
+- `Native`: call C fn directly
+- `RETURN A B`: return B-1 values from `R(A)`; pop frame, write returns to caller's target reg
 
 ### ms_vm_interpret Flow
 

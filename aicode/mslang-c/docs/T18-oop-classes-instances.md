@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement class declarations, instance creation, field access, method definitions, and method invocation.
-**Dependencies:** T15, T16
+**Goal:** Class declarations, instance creation, field access, method definitions, method invocation.
+**Deps:** T15, T16
 **Produces:** Class declarations, instantiation, field read/write, method calls, `this` binding
 
 ## Files
@@ -59,9 +59,9 @@ MsObjBoundMethod* ms_obj_bound_method_new(MsVM* vm, MsValue receiver,
                                            MsObjClosure* method);
 ```
 
-## Implementation Notes
+## Impl Notes
 
-### Compiling class Declarations
+### Compiling Class Declarations
 
 ```
 class Foo {
@@ -76,7 +76,7 @@ class Foo {
 
 ### this
 
-`this` resolves to local slot 0 (implicit parameter) inside method bodies. The compiler tracks the `klass` context.
+`this` → local slot 0 (implicit param) in method bodies. Compiler tracks `klass` context.
 
 ### GETPROP / SETPROP
 
@@ -98,13 +98,13 @@ case MS_OP_GETPROP: {
 
 ### INVOKE (Optimized Method Call)
 
-Calls `obj.method(args)` directly, without creating a `BoundMethod`:
+Direct `obj.method(args)` — no `BoundMethod` alloc:
 1. Look up method name in `instance.fields` — if found (field is closure) → direct `CALL`
 2. Look up in `klass.methods` → direct `CALL` with receiver in `slots[0]`
 
 ### Instantiation
 
-Call the class as a function: create `ObjInstance`, look up `init` method, call `init(args)`, return the instance.
+Class called as fn: create `ObjInstance` → look up `init` → call `init(args)` → return instance.
 
 ## C Unit Tests
 

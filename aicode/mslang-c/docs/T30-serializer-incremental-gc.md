@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement .msc binary serialization/deserialization with auto-caching, and incremental marking for major GC.
-**Dependencies:** T17, T28
-**Produces:** .msc cache accelerates repeated execution; incremental GC reduces pause time
+**Goal:** .msc binary serialization/deserialization + auto-caching; incremental marking for major GC.
+**Deps:** T17, T28
+**Produces:** .msc cache accelerates repeated exec; incremental GC reduces pause time
 
 ## Files
 
@@ -57,7 +57,7 @@ MsGcPhase gc_phase;
 MsObject* sweep_cursor;  // current position during SWEEPING phase
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### .msc Binary Format
 
@@ -87,7 +87,7 @@ MsObject* sweep_cursor;  // current position during SWEEPING phase
 
 ### DFS Post-Order
 
-Nested functions serialize first (post-order), so when deserializing a FUNCTION constant reference, the referenced function is already created.
+Nested fns serialize first (post-order) → FUNCTION const ref already exists on deserialize.
 
 ### Auto-Caching
 
@@ -111,7 +111,7 @@ MsObjFunction* ms_compile_cached(MsVM* vm, const char* source, const char* src_p
 
 ### Incremental Marking
 
-Split the major GC marking phase into small steps:
+Major GC marking → small steps:
 
 ```c
 void ms_gc_incremental_step(MsVM* vm) {
@@ -157,13 +157,13 @@ void ms_gc_incremental_step(MsVM* vm) {
 }
 ```
 
-In `ms_reallocate`: if `gc_phase != IDLE`, call `ms_gc_incremental_step`. If `gc_phase == IDLE && bytes_allocated > threshold`, start an incremental GC cycle.
+In `ms_reallocate`: `gc_phase != IDLE` → call `ms_gc_incremental_step`; `gc_phase == IDLE && bytes_allocated > threshold` → start incremental GC cycle.
 
 ### Additional Phase 15 Features
 
-Implement alongside this task:
-- **Operator overloading**: `__add`, `__sub`, `__mul`, `__div`, `__mod`, `__eq`, `__lt`, `__gt`, `__str` — in arithmetic/comparison ops, if an operand is ObjInstance, look up the corresponding dunder method.
-- **Enum declarations**: `enum Color { Red, Green, Blue }` → compile to a class with integer-valued static fields.
+Implement alongside:
+- **Operator overloading**: `__add`, `__sub`, `__mul`, `__div`, `__mod`, `__eq`, `__lt`, `__gt`, `__str` — in arithmetic/comparison ops, if operand is ObjInstance, look up the dunder method.
+- **Enum declarations**: `enum Color { Red, Green, Blue }` → compile to class with integer-valued static fields.
 - **Ternary operator**: `cond ? then : else` → TEST + JMP.
 - **for-in iteration**: complete FORITER to support list/map/range iteration.
 

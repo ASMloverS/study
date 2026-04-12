@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Add all control-flow statements and function declarations to compiler: if/else, while, for, break/continue, switch/case, fun.
-**Dependencies:** T11
-**Produces:** Compiler supports complete control flow and function declarations
+**Goal:** Add all control-flow statements + function declarations: if/else, while, for, break/continue, switch/case, fun.
+**Deps:** T11
+**Produces:** Compiler supports complete control flow + function declarations
 
 ## Files
 
@@ -13,14 +13,14 @@
 | Modify | `src/compiler.c` | Add if/while/for/switch/fun/return |
 | Create | `tests/unit/test_compiler_stmts.c` | Control flow compile tests |
 
-## Implementation Notes
+## Impl Notes
 
 ### if / else
 
 ```
 if (cond) { then } else { alt }
 ```
-1. Compile `cond` → register
+1. Compile `cond` → reg
 2. Emit `TEST A 0` + `JMP exit_then` (skip then if false)
 3. Compile then-body
 4. Emit `JMP exit_else` (skip else)
@@ -45,10 +45,10 @@ while (cond) { body }
 for (init; cond; post) { body }
 ```
 1. `begin_scope`
-2. Compile init (var declaration or expression)
+2. Compile init (var decl or expr)
 3. `loop_start = current_ip`
 4. Compile `cond` → `TEST + JMP(exit)`
-5. Compile body (break/continue register to `LoopCtx`)
+5. Compile body (break/continue → `LoopCtx`)
 6. Compile post
 7. `JMP(loop_start)`
 8. Patch exit + break list
@@ -57,9 +57,9 @@ for (init; cond; post) { body }
 ### break / continue
 
 - `break`: emit `JMP(placeholder)`, add to `loop->break_list` patch chain
-- `continue`: emit `JMP(placeholder)`, jump to before the post expression (or `loop_start`)
+- `continue`: emit `JMP(placeholder)`, jump to before post expr (or `loop_start`)
 
-The patch chain stores the previous offset in the `JMP` instruction's `sBx` field (in-place linked list):
+Patch chain: prev offset stored in `JMP.sBx` (in-place linked list):
 ```c
 static void patch_list(MsCompiler* c, int list, int target) {
     while (list != NO_JUMP) {
@@ -75,9 +75,9 @@ static void patch_list(MsCompiler* c, int list, int target) {
 ```
 switch (expr) { case v1: ... case v2: ... default: ... }
 ```
-Compiled as a linear comparison chain:
-1. Compile switch `expr` → register `reg`
-2. For each case: compile case value → constant, `EQ reg K(value)`, `JMP(next_case)`, compile case body
+Linear comparison chain:
+1. Compile switch `expr` → reg
+2. Each case: compile value → constant, `EQ reg K(value)`, `JMP(next_case)`, compile body
 3. `default`: compile body directly
 4. Patch all case jumps
 
@@ -86,18 +86,18 @@ Compiled as a linear comparison chain:
 ```
 fun foo(a, b) { body }
 ```
-1. Create nested `MsCompiler` (`enclosing` = current compiler)
-2. Parameters become `locals[0]`, `locals[1]`, ...
-3. Compile function body
-4. End compilation → return `MsObjFunction*` (as proto)
-5. Outer compiler emits `CLOSURE A Bx` (`Bx` = proto's constant pool index)
+1. Create nested `MsCompiler` (`enclosing` = current)
+2. Params → `locals[0]`, `locals[1]`, ...
+3. Compile body
+4. End compilation → `MsObjFunction*` (proto)
+5. Outer emits `CLOSURE A Bx` (`Bx` = proto constant pool index)
 
-**return**: compile `expr` → `reg`, emit `RETURN reg 2` (1 value). No expression: `RETURN 0 1` (nil).
+**return**: compile `expr` → reg → `RETURN reg 2` (1 value). No expr: `RETURN 0 1` (nil).
 
 ### Expression Statements and print
 
-- `print(expr)` is handled as a builtin statement for now; it can also be compiled as a global function call
-- Expression statement: compile expression, discard result (`free_reg`)
+- `print(expr)`: builtin stmt; can also compile as global fn call
+- Expr stmt: compile, discard result (`free_reg`)
 
 ## C Unit Tests
 

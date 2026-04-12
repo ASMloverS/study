@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement generator functions (`fun*`), ObjCoroutine with independent stacks, yield/resume semantics.
-**Dependencies:** T14, T24
+**Goal:** Generator functions (`fun*`), ObjCoroutine with independent stacks, yield/resume semantics.
+**Deps:** T14, T24
 **Produces:** `fun* gen() { yield val }` generators, `resume(co)` resumes execution
 
 ## Files
@@ -48,7 +48,7 @@ typedef struct {
 MsObjCoroutine* ms_obj_coroutine_new(MsVM* vm, MsObjClosure* cl);
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Compiling `fun*`
 
@@ -60,11 +60,11 @@ fun* range(n) {
 }
 ```
 
-Compiler sets `function->is_generator = true`. `yield` compiles to `MS_OP_YIELD A B` (B-1 values from `R(A)`).
+Compiler sets `function->is_generator = true`. `yield` → `MS_OP_YIELD A B` (B-1 values from `R(A)`).
 
 ### Calling a Generator Function
 
-When `CALL` encounters a generator closure: do not execute immediately; create `ObjCoroutine` and return:
+`CALL` + generator closure → create `ObjCoroutine`, return immediately:
 ```c
 if (closure->function->is_generator) {
     MsObjCoroutine* co = ms_obj_coroutine_new(vm, closure);
@@ -76,7 +76,7 @@ if (closure->function->is_generator) {
 
 ### RESUME Opcode
 
-`RESUME A B C` — resume coroutine `R(B)`, passing `R(C)` as the yield return value:
+`RESUME A B C` — resume coroutine `R(B)`, passing `R(C)` as yield return value:
 ```c
 case MS_OP_RESUME: {
     MsObjCoroutine* co = MS_AS_COROUTINE(R(MS_GET_B(instr)));
@@ -125,11 +125,10 @@ static void swap_to_coroutine(MsVM* vm, MsObjCoroutine* co, MsValue sent) {
 }
 ```
 
-Simplified implementation: uses recursive `ms_vm_run` rather than true stack switching. The coroutine has its own `stack`/`frames` arrays; swap by exchanging VM pointers.
+Simplified: recursive `ms_vm_run` rather than true stack switching. Coroutine has own `stack`/`frames`; swap by exchanging VM pointers.
 
-### Default and Rest Parameters
+### Default and Rest Parameters (compiler + VM)
 
-Also implemented in this task (compiler + VM):
 - Default params: `fun foo(a, b = 10)` → `min_arity = 1, arity = 2`; missing args filled with defaults
 - Rest params: `fun foo(a, ...rest)` → packs extra args into `ObjList`
 

@@ -3,7 +3,7 @@
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
 **Goal:** Extend GC to generational (young/old), write barriers, remembered set, ObjectPool slab allocator.
-**Dependencies:** T16
+**Deps:** T16
 **Produces:** Efficient generational GC; short-lived objects quickly reclaimed by minor GC
 
 ## Files
@@ -53,13 +53,13 @@ MsObjectPool upvalue_pool;   // ObjUpvalue slab pool
 MsObjectPool bound_pool;     // ObjBoundMethod slab pool (T18)
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Allocation Strategy
 
-New objects enter the young generation: `obj->generation = 0; obj->age = 0;` appended to `vm->young_objects`.
+New objs → young gen: `obj->generation = 0; obj->age = 0;` → appended to `vm->young_objects`.
 
-### Minor GC (triggered when young_bytes > MS_GC_NURSERY_SIZE)
+### Minor GC (trigger: `young_bytes > MS_GC_NURSERY_SIZE`)
 
 1. mark_roots (same as T16)
 2. Mark all objects in `remembered_set`
@@ -68,9 +68,9 @@ New objects enter the young generation: `obj->generation = 0; obj->age = 0;` app
 5. Clear `remembered_set`
 6. Reset `young_bytes = 0`
 
-### Major GC (triggered when old generation grows too large after multiple minor GCs)
+### Major GC (trigger: old gen too large after multiple minors)
 
-Full mark-and-sweep: sweeps both lists (`young` + `old`).
+Full mark+sweep: sweeps both `young` + `old`.
 
 ### Write Barrier
 
@@ -86,17 +86,17 @@ void ms_write_barrier(MsVM* vm, MsObject* owner, MsValue val) {
 }
 ```
 
-Call `write_barrier` after these write operations:
+Call after:
 - `SETUPVAL`: `ms_write_barrier(vm, (MsObject*)frame->closure, R(A))`
 - `SETPROP`: `ms_write_barrier(vm, (MsObject*)instance, value)`
-- `SETGLOBAL`: globals are always roots; skip generational tracking
+- `SETGLOBAL`: globals always roots; skip generational tracking
 
 ### ObjectPool
 
-Slab allocator for frequently allocated/freed small objects (`ObjUpvalue`, `ObjBoundMethod`):
+Slab allocator for small hot objs (`ObjUpvalue`, `ObjBoundMethod`):
 - Each slab holds 64 objects
-- `free_list`: singly-linked list of freed objects (next pointer stored in-place)
-- alloc: take from `free_list`; allocate a new slab if empty
+- `free_list`: singly-linked list of freed objects (next ptr stored in-place)
+- alloc: take from `free_list`; new slab if empty
 - free: return to `free_list`
 
 ## C Unit Tests

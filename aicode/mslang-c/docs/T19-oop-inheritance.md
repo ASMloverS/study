@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement single inheritance, `super` calls, static methods, getters, setters, abstract methods.
-**Dependencies:** T18
+**Goal:** Single inheritance, `super` calls, static methods, getters, setters, abstract methods.
+**Deps:** T18
 **Produces:** Complete OOP: inheritance chain, super calls, static methods, getter/setter, abstract methods
 
 ## Files
@@ -15,7 +15,7 @@
 | Modify | `src/vm_call.c` | super method calls, static method calls |
 | Create | `tests/unit/test_oop_inherit.c` | Inheritance tests |
 
-## Implementation Notes
+## Impl Notes
 
 ### INHERIT
 
@@ -25,11 +25,11 @@ VM: `sub->superclass = super; ms_table_add_all(&sub->methods, &super->methods)` 
 ### super
 
 `super.method(args)` compiles to:
-1. In the compiler: `super` resolves as an upvalue (a special local in an outer scope)
+1. `super` resolves as upvalue (special local in outer scope)
 2. `GETSUPER A B C` — A=result, B=receiver (`this`), C=method name constant
 3. VM: look up in superclass method table, create `BoundMethod`
 
-`SUPERINV A B C` — optimized super method call (no `BoundMethod` created):
+`SUPERINV A B C` — optimized super call (no `BoundMethod` alloc):
 1. Look up method in super's method table
 2. Call directly with `this` as receiver
 
@@ -50,13 +50,13 @@ class Circle {
 ```
 - `GETTER A B`: registers closure as getter
 - `SETTER A B`: registers closure as setter
-- On `GETPROP`: if name is in getters table, call getter (0 args) and return result
-- On `SETPROP`: if name is in setters table, call setter (1 arg)
+- `GETPROP`: name in getters table → call getter (0 args), return result
+- `SETPROP`: name in setters table → call setter (1 arg)
 
 ### Abstract Methods
 
-`abstract foo()` → `ABSTMETH A B`. Places a sentinel value in the methods table.
-On instantiation: if the class has unimplemented abstract methods → runtime error.
+`abstract foo()` → `ABSTMETH A B`. Sentinel placed in methods table.
+Instantiation: unimplemented abstract methods → runtime error.
 
 ## C Unit Tests
 

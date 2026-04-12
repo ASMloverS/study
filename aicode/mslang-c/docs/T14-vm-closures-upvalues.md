@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement CLOSURE opcode, upvalue capture (local/transitive), open upvalue chain, and close semantics.
-**Dependencies:** T13
-**Produces:** Closures capture variables, upvalue closing, nested closures
+**Goal:** Implement CLOSURE opcode, upvalue capture (local/transitive), open upvalue chain, close semantics.
+**Deps:** T13
+**Produces:** Closures capture vars, upvalue closing, nested closures
 
 ## Files
 
@@ -14,7 +14,7 @@
 | Modify | `src/vm_call.c` | Capture upvalues during closure creation |
 | Create | `tests/unit/test_vm_closures.c` | Closure tests |
 
-## Implementation Notes
+## Impl Notes
 
 ### CLOSURE Opcode
 
@@ -40,7 +40,7 @@ case MS_OP_CLOSURE: {
 
 ### Open Upvalue Chain
 
-`vm->open_upvalues` is a linked list sorted by descending stack position (highest address first):
+`vm->open_upvalues`: linked list, descending stack order (highest addr first):
 ```c
 static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
     MsObjUpvalue* prev = NULL;
@@ -59,7 +59,7 @@ static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
 
 ### Close Upvalues
 
-On scope exit or `CLOSE` opcode, close all open upvalues whose `location >= last`:
+Scope exit / `CLOSE`: close open upvalues where `location >= last`:
 ```c
 static void close_upvalues(MsVM* vm, MsValue* last) {
     while (vm->open_upvalues && vm->open_upvalues->location >= last) {

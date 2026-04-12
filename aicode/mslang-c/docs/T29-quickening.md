@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement runtime quickening: arithmetic opcodes adaptively specialize to type-specific variants; computed goto dispatch for GCC/Clang.
-**Dependencies:** T13, T28
-**Produces:** Arithmetic operations auto-specialize; dispatch performance improved
+**Goal:** Runtime quickening: arithmetic opcodes adaptively specialize to type-specific variants; computed goto dispatch for GCC/Clang.
+**Deps:** T13, T28
+**Produces:** Arithmetic ops auto-specialize; dispatch perf improved
 
 ## Files
 
@@ -14,21 +14,21 @@
 | Modify | `include/ms/object.h` | ObjFunction.arith_deopt counter |
 | Create | `tests/unit/test_quickening.c` | Quickening validation |
 
-## Implementation Notes
+## Impl Notes
 
 ### How Quickening Works
 
-On first execution of `MS_OP_ADD`, check operand types:
-- Both int → **rewrite** instruction in-place to `MS_OP_ADD_II`
+First exec of `MS_OP_ADD` → check operand types:
+- Both int → **rewrite** in-place to `MS_OP_ADD_II`
 - Both float → rewrite to `MS_OP_ADD_FF`
 - Both string → rewrite to `MS_OP_ADD_SS`
 
-Subsequent executions of the same instruction take the specialized path directly (no type check).
+Subsequent execs → specialized path (no type check).
 
 ### Deoptimization
 
-When a specialized variant encounters a type mismatch (e.g., ADD_II sees a float):
-1. Increment the deopt counter for that instruction offset.
+Specialized variant sees type mismatch (e.g., ADD_II sees float):
+1. Increment deopt counter for that instr offset.
 2. If `deopt_count < 3`: attempt re-specialization.
 3. If `deopt_count >= 3`: fall back to generic `MS_OP_ADD` permanently.
 
@@ -38,7 +38,7 @@ ms_u8* arith_deopt;   // lazy alloc, indexed by instruction offset
 int arith_deopt_size;
 ```
 
-### Specialization Dispatch Example
+### Specialization Dispatch
 
 ```c
 case MS_OP_ADD: {

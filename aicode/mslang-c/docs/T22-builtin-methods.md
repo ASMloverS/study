@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement built-in methods for string, list, map, tuple types, plus ObjStringBuilder.
-**Dependencies:** T21
-**Produces:** `"hello".len()`, `list.push()`, `map.keys()` and other built-in methods available
+**Goal:** Built-in methods for string, list, map, tuple types + ObjStringBuilder.
+**Deps:** T21
+**Produces:** `"hello".len()`, `list.push()`, `map.keys()` and other built-in methods
 
 ## Files
 
@@ -37,50 +37,50 @@ void ms_obj_sb_append(MsObjStringBuilder* sb, const char* str, int len);
 MsObjString* ms_obj_sb_to_string(MsVM* vm, MsObjStringBuilder* sb);
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### String Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `len()` | → int | string length |
-| `upper()` | → string | to uppercase |
-| `lower()` | → string | to lowercase |
-| `contains(s)` | → bool | substring check |
+| `len()` | → int | length |
+| `upper()` | → string | uppercase |
+| `lower()` | → string | lowercase |
+| `contains(s)` | → bool | substr check |
 | `starts_with(s)` | → bool | prefix match |
 | `ends_with(s)` | → bool | suffix match |
-| `index_of(s)` | → int | substring position, -1 if not found |
-| `split(sep)` | → list | split by separator |
-| `trim()` | → string | strip leading/trailing whitespace |
-| `replace(old, new)` | → string | replace substring |
-| `slice(start, end)` | → string | substring slice |
+| `index_of(s)` | → int | substr pos, -1 if absent |
+| `split(sep)` | → list | split by sep |
+| `trim()` | → string | strip whitespace |
+| `replace(old, new)` | → string | replace substr |
+| `slice(start, end)` | → string | substr slice |
 
 ### List Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `len()` | → int | list length |
-| `push(val)` | → nil | append element |
-| `pop()` | → value | remove and return last element |
+| `len()` | → int | length |
+| `push(val)` | → nil | append |
+| `pop()` | → value | remove + return last |
 | `contains(val)` | → bool | membership check |
-| `index_of(val)` | → int | element position |
-| `remove(idx)` | → value | remove by index |
-| `sort()` | → list | sort in-place (numeric/string) |
+| `index_of(val)` | → int | elem pos |
+| `remove(idx)` | → value | remove at idx |
+| `sort()` | → list | sort in-place |
 | `reverse()` | → list | reverse in-place |
-| `map(fn)` | → list | apply function to each element |
-| `filter(fn)` | → list | filter by predicate |
-| `join(sep)` | → string | join with separator |
+| `map(fn)` | → list | apply fn to each |
+| `filter(fn)` | → list | filter by pred |
+| `join(sep)` | → string | join w/ sep |
 | `slice(start, end)` | → list | slice |
 
 ### Map Methods
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `len()` | → int | entry count |
+| `len()` | → int | count |
 | `keys()` | → list | all keys |
 | `values()` | → list | all values |
-| `has(key)` | → bool | key existence |
-| `remove(key)` | → bool | delete entry |
+| `has(key)` | → bool | key exists |
+| `remove(key)` | → bool | delete |
 
 ### Tuple Methods
 
@@ -91,7 +91,7 @@ MsObjString* ms_obj_sb_to_string(MsVM* vm, MsObjStringBuilder* sb);
 
 ### Dispatch Logic
 
-In `INVOKE`, if receiver is not `ObjInstance`, try `ms_builtin_invoke`:
+`INVOKE`: non-`ObjInstance` receiver → try `ms_builtin_invoke`:
 ```c
 if (MS_IS_STRING(receiver)) {
     return string_invoke(vm, MS_AS_STRING(receiver), method, argc, argv, out);

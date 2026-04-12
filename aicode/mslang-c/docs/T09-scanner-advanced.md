@@ -2,15 +2,15 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Extend scanner to handle string interpolation `"Hello, ${expr}!"` and nestable block comments `/* ... */`.
-**Dependencies:** T08
-**Produces:** Complete lexer with interpolation and block comment support
+**Goal:** Extend scanner: string interpolation `"Hello, ${expr}!"` + nestable block comments `/* ... */`.
+**Deps:** T08
+**Produces:** Complete lexer w/ interpolation + block comment support
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
-| Modify | `src/scanner.c` | Add string interpolation and block comments |
+| Modify | `src/scanner.c` | Add string interpolation + block comments |
 | Modify | `include/ms/scanner.h` | Optional: interpolation state stack |
 | Create | `tests/unit/test_scanner_interp.c` | Interpolation lexer tests |
 
@@ -18,18 +18,18 @@
 
 No new public API; internal behavior only.
 
-## Implementation Notes
+## Impl Notes
 
 ### String Interpolation
 
-Token sequence produced for `"hello ${name}!"`:
+Token sequence for `"hello ${name}!"`:
 ```
 MS_TK_STRING_INTERP  "hello "    (prefix, excluding ${)
 MS_TK_IDENTIFIER     name
 MS_TK_STRING_INTERP_END "!"     (suffix)
 ```
 
-Track interpolation state in `MsScanner`:
+Track in `MsScanner`:
 
 ```c
 #define MS_MAX_INTERP_DEPTH 8
@@ -39,14 +39,14 @@ typedef struct {
 } MsScanner;
 ```
 
-When scanning a string:
+When scanning string:
 1. Scan to `${` → emit `MS_TK_STRING_INTERP` (text before `${`), `interp_depth++`
-2. Scan tokens normally until `}` closes the interpolation brace
+2. Scan tokens normally until `}` closes interpolation brace
 3. Matching `}` → `interp_depth--`, resume scanning string remainder
 4. Another `${` → repeat step 1
 5. `"` → emit `MS_TK_STRING` or `MS_TK_STRING_INTERP_END`
 
-Compiler side (T10): compiles `"a ${x} b"` to `"a " + str(x) + " b"` bytecode.
+Compiler side (T10): compiles `"a ${x} b"` → `"a " + str(x) + " b"` bytecode.
 
 ### Nested Block Comments
 
@@ -66,7 +66,7 @@ if (peek == '*') {
 
 ### String Escape Sequences
 
-Ensure all escapes from T08 are handled correctly:
+All escapes from T08:
 - `\n` → newline, `\t` → tab, `\r` → carriage return
 - `\\` → backslash, `\"` → double quote
 - `\0` → null byte

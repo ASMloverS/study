@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement 5-pass peephole optimizer on compiled bytecode, with NOP compaction and jump fixup.
-**Dependencies:** T12, T13
-**Produces:** Compiled bytecode automatically optimized; before/after comparison verifiable
+**Goal:** 5-pass peephole optimizer on compiled bytecode; NOP compaction + jump fixup.
+**Deps:** T12, T13
+**Produces:** Bytecode auto-optimized; before/after verifiable
 
 ## Files
 
@@ -12,7 +12,7 @@
 |--------|------|---------|
 | Create | `include/ms/optimize.h` | Optimizer API |
 | Create | `src/optimize.c` | 5-pass peephole optimizer + NOP compaction |
-| Modify | `src/compiler.c` | Call peephole after compilation completes |
+| Modify | `src/compiler.c` | Call peephole after compilation |
 | Create | `tests/unit/test_optimize.c` | Before/after optimization validation |
 
 ## Key Data Structures / API
@@ -26,11 +26,11 @@
 void ms_peephole_optimize(MsChunk* chunk);
 ```
 
-## Implementation Notes
+## Impl Notes
 
 ### Pass 1: Redundant MOVE Elimination
 
-`MOVE R(A), R(A)` → `NOP` (same destination and source)
+`MOVE R(A), R(A)` → `NOP` (same dst and src)
 
 ```c
 for (int i = 0; i < chunk->code_count; i++) {
@@ -43,7 +43,7 @@ for (int i = 0; i < chunk->code_count; i++) {
 
 ### Pass 2: LOADNIL Merging
 
-Consecutive `LOADNIL R(n)` + `LOADNIL R(n+1)` → merged into `LOADNIL R(n), R(n+1)` (range nil load).
+Consecutive `LOADNIL R(n)` + `LOADNIL R(n+1)` → merged `LOADNIL R(n), R(n+1)` (range nil load).
 
 ```c
 for (int i = 0; i < chunk->code_count - 1; i++) {
@@ -61,9 +61,9 @@ for (int i = 0; i < chunk->code_count - 1; i++) {
 
 ### Pass 3: Dead Code Elimination
 
-Instructions after `RETURN` or `THROW` (not jump targets) are marked NOP.
+Instructions after `RETURN` or `THROW` (not jump targets) → NOP.
 
-First build the set of jump targets:
+Build jump target set first:
 ```c
 bool* is_jump_target = calloc(chunk->code_count, sizeof(bool));
 for (int i = 0; i < chunk->code_count; i++) {
@@ -78,13 +78,13 @@ for (int i = 0; i < chunk->code_count; i++) {
 // Scan: after RETURN/THROW, until the next jump target, mark as NOP
 ```
 
-### Pass 4: LOADK + NEG Folding
+### Pass 4: LOADK+NEG Folding
 
 ```
 LOADK R(A) K(n)   ; n is a numeric constant
 NEG   R(A) R(A)
 ```
-→ negate K(n) in-place, remove NEG:
+→ negate K(n) in-place, drop NEG:
 ```c
 if (MS_GET_OP(inst) == MS_OP_LOADK && i + 1 < count) {
     MsInstruction next = chunk->code[i+1];
@@ -104,7 +104,7 @@ if (MS_GET_OP(inst) == MS_OP_LOADK && i + 1 < count) {
 }
 ```
 
-### Pass 5: MOVE + RETURN Tail Merging
+### Pass 5: MOVE+RETURN Tail Merging
 
 ```
 MOVE   R(A), R(B)
@@ -118,7 +118,7 @@ NOP
 
 ### NOP Compaction + Jump Fixup
 
-After all passes, remove NOPs and fix jump offsets:
+After all passes:
 ```c
 static void compact_nops(MsChunk* chunk) {
     // 1. Build offset_map[old_idx] = new_idx

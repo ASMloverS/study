@@ -2,8 +2,8 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement ObjList, ObjMap, ObjTuple with creation opcodes, index access, and literal syntax.
-**Dependencies:** T18
+**Goal:** Implement ObjList, ObjMap, ObjTuple with creation opcodes, index access, literal syntax.
+**Deps:** T18
 **Produces:** List `[1,2,3]`, map `{"a":1}`, tuple `(1,2,3)` creation and indexing
 
 ## Files
@@ -12,7 +12,7 @@
 |--------|------|---------|
 | Modify | `include/ms/object.h` | ObjList, ObjMap, ObjTuple structs |
 | Create | `include/ms/vtable.h` | MsValueTable (Value-keyed hash table for ObjMap) |
-| Create | `src/vtable.c` | ValueTable implementation |
+| Create | `src/vtable.c` | ValueTable impl |
 | Modify | `src/object.c` | Collection object create/destroy/print |
 | Modify | `src/compiler_expr.c` | List/map/tuple literals, subscript ops |
 | Modify | `src/vm.c` | NEWLIST, NEWMAP, NEWTUPLE, GETIDX, SETIDX |
@@ -74,11 +74,10 @@ bool ms_vtable_get(MsValueTable* t, MsValue key, MsValue* out);
 bool ms_vtable_delete(MsValueTable* t, MsValue key);
 ```
 
-## Implementation Notes
+## Impl Notes
 
-### NEWLIST A B
+### NEWLIST A B — create `ObjList` from `B` elems in `R(A)..R(A+B-1)`
 
-Create `ObjList` from `B` elements in `R(A)..R(A+B-1)`:
 ```c
 case MS_OP_NEWLIST: {
     int count = MS_GET_B(instr);
@@ -119,11 +118,11 @@ Value hash by type: `nil` → 0; `bool` → 0/1; `int` → `(uint32_t)val`; `num
 
 ### Compiler Side
 
-- `[expr, ...]` → compile elements to consecutive registers, emit `NEWLIST A count`
-- `{"key": val, ...}` → compile key-value pairs, emit `NEWMAP A count`
-- `(expr, expr)` → compile elements, emit `NEWTUPLE A count` (disambiguate from grouping: `(x)` is grouping, `(x,)` is tuple)
-- `expr[idx]` → compile obj and idx, emit `GETIDX`
-- `expr[idx] = val` → compile obj, idx, val, emit `SETIDX`
+- `[expr, ...]` → compile elems → consecutive regs → `NEWLIST A count`
+- `{"key": val, ...}` → compile key-value pairs → `NEWMAP A count`
+- `(expr, expr)` → compile elems → `NEWTUPLE A count` (disambiguate: `(x)` = grouping, `(x,)` = tuple)
+- `expr[idx]` → compile obj + idx → `GETIDX`
+- `expr[idx] = val` → compile obj, idx, val → `SETIDX`
 
 ## C Unit Tests
 

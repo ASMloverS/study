@@ -2,17 +2,17 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
-**Goal:** Implement scanner producing all basic tokens: numbers (int/float), identifiers, keywords, operators, string literals.
-**Dependencies:** T01
-**Produces:** `MsScanner` converts source to token stream; basic ASI support
+**Goal:** Scanner producing all basic tokens: numbers (int/float), identifiers, keywords, operators, string literals.
+**Deps:** T01
+**Produces:** `MsScanner` converts source → token stream; basic ASI support
 
 ## Files
 
 | Action | Path | Purpose |
 |--------|------|---------|
 | Create | `include/ms/token.h` | `TokenType` enum (X-macro), `Token` struct |
-| Create | `include/ms/scanner.h` | `MsScanner` state and API |
-| Create | `src/scanner.c` | Lexer implementation |
+| Create | `include/ms/scanner.h` | `MsScanner` state + API |
+| Create | `src/scanner.c` | Lexer impl |
 | Create | `tests/unit/test_scanner.c` | Basic lexer tests |
 
 ## Key Data Structures / API
@@ -99,17 +99,17 @@ MsScannerState ms_scanner_save(const MsScanner* s);
 void           ms_scanner_restore(MsScanner* s, MsScannerState st);
 ```
 
-## Implementation Notes
+## Impl Notes
 
-- **Keyword recognition**: trie or simple length+first-char dispatch. Keywords: `and or not if else while for in break continue return var fun class this super static true false nil print import from as try catch throw defer yield switch case default enum`
-- **Number literals**: scan digit sequence; `.` makes it float; supports `0x` (hex), `0b` (binary), `0o` (octal) prefixes
-- **String literals**: `"..."` with escapes `\n \t \r \\ \" \0`; string interpolation `${...}` implemented in T09
-- **ASI**: at a newline, emit `MS_TK_NEWLINE` if `paren_depth==0 && bracket_depth==0` and `prev_type` is one of:
+- **Keywords**: trie or length+first-char dispatch. Full list: `and or not if else while for in break continue return var fun class this super static true false nil print import from as try catch throw defer yield switch case default enum`
+- **Numbers**: scan digits; `.` → float; prefixes: `0x` hex, `0b` binary, `0o` octal
+- **Strings**: `"..."` w/ escapes `\n \t \r \\ \" \0`; `${...}` interp → T09
+- **ASI**: at newline, emit `MS_TK_NEWLINE` if `paren_depth==0 && bracket_depth==0` and `prev_type` ∈:
   - `IDENTIFIER NUMBER_INT NUMBER_FLOAT STRING STRING_INTERP_END`
   - `RIGHT_PAREN RIGHT_BRACKET RIGHT_BRACE`
   - `TRUE FALSE NIL RETURN BREAK CONTINUE`
-- **Line comments**: `//` to end of line
-- **Block comments**: nestable `/* ... */` (implemented in T09)
+- **Line comments**: `//` to EOL
+- **Block comments**: nestable `/* ... */` → T09
 
 ## C Unit Tests
 
@@ -184,7 +184,7 @@ int main(void) {
 
 ## .ms Integration Tests
 
-Scanner is tested indirectly through the compiler and VM:
+Tested indirectly via compiler + VM:
 
 ```ms
 // tests/fixtures/scanner_asi.ms (run after T13)
