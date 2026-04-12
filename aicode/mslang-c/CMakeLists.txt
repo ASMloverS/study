@@ -15,9 +15,14 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
+add_library(ms_support STATIC src/value.c)
+target_include_directories(ms_support PUBLIC include)
+target_compile_options(ms_support PRIVATE ${MSLANG_COMPILE_OPTIONS})
+
 add_executable(mslang-c src/main.c)
 target_include_directories(mslang-c PRIVATE include)
 target_compile_options(mslang-c PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(mslang-c PRIVATE ms_support)
 
 enable_testing()
 add_subdirectory(tests)
