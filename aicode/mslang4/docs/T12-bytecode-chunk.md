@@ -1,32 +1,25 @@
 # T12: Bytecode Chunk
 
-**Phase**: 5 - Bytecode
-**Dependencies**: T07 (Value System)
-**Estimated Complexity**: Medium
+**Phase**: 5 · **Deps**: T07 (Value System) · **Complexity**: Medium
 
 ## Goal
 
-Implement the bytecode instruction set and the chunk data structure that holds compiled bytecode, line information, and constant pool.
+Bytecode instruction set + chunk data structure: compiled bytecode, line info, constant pool.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/chunk.h` | OpCode enum, MsChunk struct, API |
-| `src/chunk.c` | Chunk operations and disassembler |
+| `src/chunk.h` | `MsOpCode` enum, `MsChunk` struct, API |
+| `src/chunk.c` | Chunk ops + disassembler |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: OpCode Enum and Chunk Init/Free
+### Cycle 1: OpCode Enum + Chunk Init/Free
 
-**RED** — Write failing test:
-
-Create `tests/unit/test_chunk.c`. Write a test function `test_chunk_init_free` that:
-- Initializes a `MsChunk`
-- Verifies `code == NULL`, `lines == NULL`, `count == 0`, `capacity == 0`, constants initialized
+**RED**: `chunk.h` missing → compile error.
 
 ```c
-// tests/unit/test_chunk.c (initial skeleton)
 #include "chunk.h"
 #include "value.h"
 #include <stdio.h>
@@ -58,11 +51,17 @@ int main(void) {
 }
 ```
 
-**Verify RED**: `gcc -I src -o build/test_chunk tests/unit/test_chunk.c src/chunk.c src/value.c` → compilation error: `chunk.h: No such file or directory`
+Add to `tests/CMakeLists.txt`:
+```cmake
+add_executable(test_chunk tests/unit/test_chunk.c)
+target_include_directories(test_chunk PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_chunk PRIVATE maple)
+add_test(NAME test_chunk COMMAND test_chunk)
+```
 
-**GREEN** — Minimal implementation:
+**Verify RED**: `gcc -I src -o build/test_chunk tests/unit/test_chunk.c src/chunk.c src/value.c` → `chunk.h` not found
 
-Create `src/chunk.h`:
+**GREEN**: Create `src/chunk.h`:
 
 ```c
 #ifndef MS_CHUNK_H
@@ -130,17 +129,13 @@ void ms_chunk_free(MsChunk* chunk) {
 }
 ```
 
-**Verify GREEN**: `gcc -I src -o build/test_chunk tests/unit/test_chunk.c src/chunk.c src/value.c && ./build/test_chunk` → test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_chunk`
 
-**REFACTOR**: None needed.
-
----
+**REFACTOR**: None.
 
 ### Cycle 2: Chunk Write (Single Byte)
 
-**RED** — Write failing test:
-
-Add `test_chunk_write` to `test_chunk.c`:
+**RED**: `ms_chunk_write` undefined → link error.
 
 ```c
 static void test_chunk_write(void) {
@@ -162,11 +157,7 @@ static void test_chunk_write(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_chunk_write` undefined.
-
-**GREEN** — Minimal implementation:
-
-Add to `src/chunk.c`:
+**GREEN**: Add to `src/chunk.c`:
 
 ```c
 void ms_chunk_write(MsChunk* chunk, uint8_t byte, int line) {
@@ -182,19 +173,13 @@ void ms_chunk_write(MsChunk* chunk, uint8_t byte, int line) {
 }
 ```
 
-Grow if `count == capacity` using `MS_GROW_CAPACITY` + `MS_GROW_ARRAY`. Append byte and line.
+**Verify GREEN**: build + run → both tests pass.
 
-**Verify GREEN**: Build and run — both tests pass.
-
-**REFACTOR**: None needed.
-
----
+**REFACTOR**: None.
 
 ### Cycle 3: Line Number Tracking
 
-**RED** — Write failing test:
-
-Add `test_line_tracking` to `test_chunk.c`:
+**RED**: Verification cycle — line tracking inherent in `ms_chunk_write`.
 
 ```c
 static void test_line_tracking(void) {
@@ -216,19 +201,13 @@ static void test_line_tracking(void) {
 }
 ```
 
-**Verify RED**: Should compile and pass — line tracking is inherent in `ms_chunk_write`. This is a verification cycle.
+**Verify GREEN**: build + run → all three tests pass.
 
-**Verify GREEN**: Build and run — all three tests pass.
-
-**REFACTOR**: None needed.
-
----
+**REFACTOR**: None.
 
 ### Cycle 4: Chunk Dynamic Growth
 
-**RED** — Write failing test:
-
-Add `test_chunk_growth` to `test_chunk.c`:
+**RED**: Stress test — growth implemented in Cycle 2.
 
 ```c
 static void test_chunk_growth(void) {
@@ -249,19 +228,13 @@ static void test_chunk_growth(void) {
 }
 ```
 
-**Verify RED**: Should compile and pass — growth was implemented in Cycle 2. Stress test to verify.
+**Verify GREEN**: build + run → all four tests pass. Verify no leaks with ASan.
 
-**Verify GREEN**: Build and run — all four tests pass.
-
-**REFACTOR**: Run with address sanitizer to verify no leaks during growth.
-
----
+**REFACTOR**: None.
 
 ### Cycle 5: Constant Pool (add_constant)
 
-**RED** — Write failing test:
-
-Add `test_constant_pool` to `test_chunk.c`:
+**RED**: `ms_chunk_add_constant` undefined → link error.
 
 ```c
 static void test_constant_pool(void) {
@@ -277,12 +250,10 @@ static void test_constant_pool(void) {
     int idx2 = ms_chunk_add_constant(&chunk, ms_number_val(3.0));
     assert(idx2 == 2);
 
-    /* Verify constants are retrievable by index */
     assert(ms_as_number(chunk.constants.values[0]) == 1.0);
     assert(ms_as_number(chunk.constants.values[1]) == 2.0);
     assert(ms_as_number(chunk.constants.values[2]) == 3.0);
 
-    /* Write OP_CONSTANT referencing the constant */
     ms_chunk_write(&chunk, MS_OP_CONSTANT, 1);
     ms_chunk_write(&chunk, (uint8_t)idx0, 1);
 
@@ -291,11 +262,7 @@ static void test_constant_pool(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_chunk_add_constant` undefined.
-
-**GREEN** — Minimal implementation:
-
-Add to `src/chunk.c`:
+**GREEN**: Add to `src/chunk.c`:
 
 ```c
 int ms_chunk_add_constant(MsChunk* chunk, MsValue value) {
@@ -304,21 +271,15 @@ int ms_chunk_add_constant(MsChunk* chunk, MsValue value) {
 }
 ```
 
-Returns sequential indices (0, 1, 2...). Constants retrievable via `chunk.constants.values[index]`.
+Returns sequential indices (0, 1, 2…). Dedup optional; compiler layer handles if needed.
 
-Note: Duplicate checking is optional for the basic implementation. The compiler layer handles deduplication if needed.
+**Verify GREEN**: build + run → all five tests pass.
 
-**Verify GREEN**: Build and run — all five tests pass.
-
-**REFACTOR**: None needed.
-
----
+**REFACTOR**: None.
 
 ### Cycle 6: Disassembler — Simple Opcodes
 
-**RED** — Write failing test:
-
-Add `test_disassemble_simple` to `test_chunk.c`:
+**RED**: `ms_chunk_disassemble` / `ms_chunk_disassemble_instruction` undefined → link error.
 
 ```c
 #include <string.h>
@@ -331,26 +292,19 @@ static void test_disassemble_simple(void) {
     ms_chunk_write(&chunk, MS_OP_NIL, 1);
     ms_chunk_write(&chunk, MS_OP_RETURN, 1);
 
-    /* Disassemble should not crash and should return correct offsets */
     int next = ms_chunk_disassemble_instruction(&chunk, 0);
     assert(next == 1);
     next = ms_chunk_disassemble_instruction(&chunk, 1);
     assert(next == 2);
 
-    /* Full disassemble */
     ms_chunk_disassemble(&chunk, "test");
-    /* Visual check: should print opcode names */
 
     ms_chunk_free(&chunk);
     printf("  test_disassemble_simple PASSED\n");
 }
 ```
 
-**Verify RED**: Build fails — `ms_chunk_disassemble` and `ms_chunk_disassemble_instruction` undefined.
-
-**GREEN** — Minimal implementation:
-
-Add to `src/chunk.c`:
+**GREEN**: Add to `src/chunk.c`:
 
 ```c
 static const char* ms_opcode_name(MsOpCode code) {
@@ -442,58 +396,46 @@ int ms_chunk_disassemble_instruction(const MsChunk* chunk, int offset) {
 }
 ```
 
-Print header, iterate all instructions calling `ms_chunk_disassemble_instruction`. Dispatch on opcode. Print offset and opcode name. Return new offset. Simple opcodes are 1 byte.
+**Verify GREEN**: build + run → all six tests pass.
 
-**Verify GREEN**: Build and run — all six tests pass.
+**REFACTOR**: None.
 
-**REFACTOR**: None needed.
+### Cycle 7: Disassembler — Constant + Jump Opcodes
 
----
-
-### Cycle 7: Disassembler — Constant Opcodes and Jump Opcodes
-
-**RED** — Write failing test:
-
-Add `test_disassemble_constant_and_jump` to `test_chunk.c`:
+**RED**: `OP_CONSTANT`/`OP_JUMP` hit default case → wrong offset returned.
 
 ```c
 static void test_disassemble_constant_and_jump(void) {
     MsChunk chunk;
     ms_chunk_init(&chunk);
 
-    /* OP_CONSTANT with operand */
     int idx = ms_chunk_add_constant(&chunk, ms_number_val(42.0));
     ms_chunk_write(&chunk, MS_OP_CONSTANT, 1);
     ms_chunk_write(&chunk, (uint8_t)idx, 1);
 
-    /* OP_JUMP with 2-byte operand */
     ms_chunk_write(&chunk, MS_OP_JUMP, 2);
     ms_chunk_write(&chunk, 0x00, 2);
     ms_chunk_write(&chunk, 0x05, 2);
 
     ms_chunk_write(&chunk, MS_OP_RETURN, 3);
 
-    /* Disassemble and verify offsets */
     int offset = ms_chunk_disassemble_instruction(&chunk, 0);
-    assert(offset == 2);  /* OP_CONSTANT + 1 byte operand */
+    assert(offset == 2);
 
     offset = ms_chunk_disassemble_instruction(&chunk, offset);
-    assert(offset == 5);  /* OP_JUMP + 2 byte operand */
+    assert(offset == 5);
 
     offset = ms_chunk_disassemble_instruction(&chunk, offset);
-    assert(offset == 6);  /* OP_RETURN + 1 byte */
+    assert(offset == 6);
 
     ms_chunk_disassemble(&chunk, "test2");
-    /* Visual check: should show constant value and jump offset */
 
     ms_chunk_free(&chunk);
     printf("  test_disassemble_constant_and_jump PASSED\n");
 }
 ```
 
-**Verify RED**: Build and run — `OP_CONSTANT` and `OP_JUMP` fall through to "Unknown opcode" or return wrong offset. Tests fail.
-
-**GREEN** — Update `ms_chunk_disassemble_instruction`:
+**GREEN**: Update `ms_chunk_disassemble_instruction`:
 
 ```c
 static int ms_disassemble_constant(const char* name, const MsChunk* chunk, int offset) {
@@ -509,69 +451,52 @@ static int ms_disassemble_jump(const char* name, int sign, const MsChunk* chunk,
     printf("%04d %-16s %4d -> %d\n", offset, name, offset + 3 + sign * jump, offset + 3);
     return offset + 3;
 }
+```
 
-int ms_chunk_disassemble_instruction(const MsChunk* chunk, int offset) {
-    uint8_t instruction = chunk->code[offset];
-    switch (instruction) {
-        case MS_OP_CONSTANT:
-            return ms_disassemble_constant(ms_opcode_name(instruction), chunk, offset);
-        case MS_OP_JUMP:
-        case MS_OP_JUMP_IF_FALSE:
-        case MS_OP_LOOP:
-            return ms_disassemble_jump(ms_opcode_name(instruction), 1, chunk, offset);
-        /* ... simple opcodes from Cycle 6 ... */
-        case MS_OP_NIL:
-        case MS_OP_TRUE:
-        case MS_OP_FALSE:
-        case MS_OP_POP:
-        case MS_OP_RETURN:
-        case MS_OP_NEGATE:
-        case MS_OP_NOT:
-        case MS_OP_CLOSE_UPVALUE:
-        case MS_OP_INHERIT:
-        case MS_OP_DEBUG_BREAK:
-            return ms_disassemble_simple(ms_opcode_name(instruction), chunk, offset);
-        /* Byte-operand opcodes */
-        case MS_OP_DEFINE_GLOBAL:
-        case MS_OP_GET_GLOBAL:
-        case MS_OP_SET_GLOBAL:
-        case MS_OP_CALL:
-        case MS_OP_CLASS:
-        case MS_OP_METHOD:
-            printf("%04d %-16s %4d\n", offset, ms_opcode_name(instruction), chunk->code[offset + 1]);
-            return offset + 2;
-        default:
-            printf("%04d Unknown opcode %d\n", offset, instruction);
-            return offset + 1;
-    }
-}
+Update switch in `ms_chunk_disassemble_instruction`:
+```c
+case MS_OP_CONSTANT:
+    return ms_disassemble_constant(ms_opcode_name(instruction), chunk, offset);
+case MS_OP_JUMP:
+case MS_OP_JUMP_IF_FALSE:
+case MS_OP_LOOP:
+    return ms_disassemble_jump(ms_opcode_name(instruction), 1, chunk, offset);
+/* simple opcodes */
+case MS_OP_NIL: case MS_OP_TRUE: case MS_OP_FALSE: case MS_OP_POP:
+case MS_OP_RETURN: case MS_OP_NEGATE: case MS_OP_NOT:
+case MS_OP_CLOSE_UPVALUE: case MS_OP_INHERIT: case MS_OP_DEBUG_BREAK:
+    return ms_disassemble_simple(ms_opcode_name(instruction), chunk, offset);
+/* byte-operand opcodes */
+case MS_OP_DEFINE_GLOBAL: case MS_OP_GET_GLOBAL: case MS_OP_SET_GLOBAL:
+case MS_OP_CALL: case MS_OP_CLASS: case MS_OP_METHOD:
+    printf("%04d %-16s %4d\n", offset, ms_opcode_name(instruction), chunk->code[offset + 1]);
+    return offset + 2;
 ```
 
 Instruction format:
-- Simple opcodes: 1 byte (opcode only)
-- Constant opcodes: opcode + 1 byte (constant index)
-- Jump opcodes: opcode + 2 bytes (signed offset, big-endian)
-- MS_OP_CLOSURE: opcode + 1 byte + upvalue entries (complex, handled later)
+- Simple: 1 byte (opcode only)
+- Constant: opcode + 1 byte (constant index)
+- Jump: opcode + 2 bytes (signed offset, big-endian)
+- `MS_OP_CLOSURE`: opcode + 1 byte + upvalue entries (complex, handled later)
 
-**Verify GREEN**: Build and run — all seven tests pass.
+**Verify GREEN**: build + run → all seven tests pass.
 
-**REFACTOR**: None needed. The disassembler is complete for all defined opcodes.
+**REFACTOR**: None. Disassembler complete for all defined opcodes.
 
 ## Acceptance Criteria
 
-- [x] Init/free cycle completes without leak
-- [x] Write 256 bytes into chunk, all readable at correct indices
-- [x] `ms_chunk_add_constant` returns sequential indices (0, 1, 2...)
-- [x] Constants can be retrieved by index from `chunk.constants.values[index]`
-- [x] Line numbers are stored alongside bytes
-- [x] Chunk grows dynamically (write 1000+ bytes)
+- [x] Init/free cycle, no leak
+- [x] Write 256 bytes → all readable at correct indices
+- [x] `ms_chunk_add_constant` → sequential indices (0, 1, 2…)
+- [x] Constants retrievable via `chunk.constants.values[index]`
+- [x] Line numbers stored alongside bytes
+- [x] Dynamic growth (1000+ bytes)
 - [x] Disassembler prints readable output for basic opcodes
-- [x] Disassembler handles MS_OP_CONSTANT with constant value display
+- [x] `MS_OP_CONSTANT` → constant value display
 - [x] Disassembler returns correct next offset
 
 ## Notes
 
-- Simple instruction format: opcode (1 byte). Some opcodes have operands: MS_OP_CONSTANT (1 byte index), MS_OP_DEFINE_GLOBAL (1 byte), jumps (2 bytes signed offset), MS_OP_CLOSURE (1 byte + upvalue entries), etc.
-- The disassembler starts with basic support for simple, constant, and jump opcodes. Full operand printing for all opcodes can be extended as needed.
-- `ms_chunk_add_constant` does not deduplicate in this basic implementation. Deduplication is handled at the compiler layer if needed.
-- The `MsChunk` struct owns the `constants` MsValueArray and frees it in `ms_chunk_free`. Note that if constants include OBJ values, those objects are not freed by the chunk — they are owned by the GC.
+- Instruction format: simple (1B), constant (+1B index), global/local (+1B), jump (+2B signed BE), `MS_OP_CLOSURE` (+1B + upvalue entries).
+- `ms_chunk_add_constant` does not deduplicate. Compiler layer handles if needed.
+- `MsChunk` owns `constants` `MsValueArray` and frees it. OBJ constants not freed by chunk — owned by GC.

@@ -1,36 +1,30 @@
-# T14: Compiler - Basic
+# T14: Compiler — Basic
 
-**Phase**: 6 - Compiler & VM (Basic)
-**Dependencies**: T12 (Bytecode Chunk), T13 (Parser)
-**Estimated Complexity**: High
+**Phase**: 6 · **Deps**: T12 (Bytecode Chunk), T13 (Parser) · **Complexity**: High
 
 ## Goal
 
-Implement a single-pass compiler that walks AST and emits bytecode. This task covers basic expressions, variables, and control flow statements. Functions, classes, and closures are deferred to later tasks.
+Single-pass compiler: walk AST → emit bytecode. Covers expressions, variables, control flow. Functions/classes/closures → later tasks.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/compiler.h` | Compiler struct, state, and API |
-| `src/compiler.c` | Compiler implementation (basic subset) |
+| `src/compiler.h` | `MsCompiler` struct, state, API |
+| `src/compiler.c` | Impl (basic subset) |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Compiler Init and Literal Expressions
+### Cycle 1: Compiler Init + Literal Expressions
 
-**RED** — Write failing test:
-- Create `tests/unit/test_compiler.c`
-- Write `test_compiler_init_free()`: call `ms_compiler_init(&compiler)`, then `ms_compiler_free(&compiler)`, verify no crash/leak
-- Write `test_compile_number()`: compile `"42"`, get `MsFunction*`, verify chunk contains `MS_OP_CONSTANT` pointing to `MS_VALUE_NUMBER(42)`, followed by `MS_OP_POP` and `MS_OP_RETURN`
-- Write `test_compile_bool()`: compile `"true"`, verify `MS_OP_TRUE`; compile `"false"`, verify `MS_OP_FALSE`; compile `"nil"`, verify `MS_OP_NIL`
-- Write `test_compile_string()`: compile `"\"hello\""`, verify `MS_OP_CONSTANT` pointing to string value
-- Expected failure: linker error — `ms_compiler_init`, `ms_compiler_free`, `ms_compiler_compile` undefined
+**RED**: `ms_compiler_init`, `ms_compiler_free`, `ms_compiler_compile` undefined → link error.
 
-**Verify RED**: `cmake --build build 2>&1 | grep "undefined reference"` — link errors for compiler symbols
+- `test_compiler_init_free()`: init + free, no crash/leak
+- `test_compile_number()`: compile `"42"` → `MS_OP_CONSTANT(42)`, `MS_OP_POP`, `MS_OP_RETURN`
+- `test_compile_bool()`: `"true"` → `MS_OP_TRUE`; `"false"` → `MS_OP_FALSE`; `"nil"` → `MS_OP_NIL`
+- `test_compile_string()`: `"\"hello\""` → `MS_OP_CONSTANT` pointing to string value
 
-**GREEN** — Minimal implementation:
-- Create `src/compiler.h` with full struct definitions:
+**GREEN**: Create `src/compiler.h`:
 ```c
 #ifndef MS_COMPILER_H
 #define MS_COMPILER_H
@@ -66,215 +60,200 @@ void ms_compiler_mark_roots(MsCompiler* compiler);
 
 #endif
 ```
-- Update `src/object.h`/`src/object.c` to fully implement `MsFunction` with `MsChunk chunk` field (replace any placeholder)
-- Create `src/compiler.c` implementing:
-  - `ms_compiler_init()`: zero-init compiler struct
-  - `ms_compiler_free()`: free compiler state chain, close parser
-  - `ms_compiler_compile()`: init parser, parse source into AST, init compiler state, create top-level `MsFunction` (type `MS_FUNC_SCRIPT`), walk AST compiling each statement, emit `MS_OP_RETURN` at end, return compiled function
-  - Internal emit helpers: `emitByte()`, `emitBytes()`, `emitConstant()`, `emitReturn()`
-  - `makeConstant()`: add value to current chunk's constant pool, return index
-  - `compileExpr()`: dispatch on AST expression type — `MS_EXPR_LITERAL` → emit `MS_OP_CONSTANT`/`MS_OP_NIL`/`MS_OP_TRUE`/`MS_OP_FALSE`
-  - `compileStmt()`: dispatch on `MS_STMT_EXPR` → compile expression, emit `MS_OP_POP`
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — init and literal tests pass
+- Update `src/object.h`/`src/object.c`: fully implement `MsFunction` with `MsChunk chunk` field.
+- Create `src/compiler.c`:
+  - `ms_compiler_init()`: zero-init
+  - `ms_compiler_free()`: free state chain, close parser
+  - `ms_compiler_compile()`: init parser → parse → init compiler state → create top-level `MsFunction` (`MS_FUNC_SCRIPT`) → walk AST compiling each stmt → emit `MS_OP_RETURN` → return compiled function
+  - Emit helpers: `emitByte()`, `emitBytes()`, `emitConstant()`, `emitReturn()`
+  - `makeConstant()`: add value to constant pool, return index
+  - `compileExpr()`: dispatch on type — `MS_EXPR_LITERAL` → `MS_OP_CONSTANT`/`MS_OP_NIL`/`MS_OP_TRUE`/`MS_OP_FALSE`
+  - `compileStmt()`: `MS_STMT_EXPR` → compile expr + `MS_OP_POP`
 
-**REFACTOR**: Ensure `MsFunction` is properly freed via `ms_object_free()` chain
+**Verify GREEN**: `cmake --build build && ./build/test_compiler`
 
-### Cycle 2: Unary and Binary Arithmetic
+**REFACTOR**: Ensure `MsFunction` freed via `ms_object_free()` chain.
 
-**RED** — Write failing test:
-- Add `test_compile_unary_negate()`: compile `"-42"`, verify chunk: `OP_CONSTANT(42)`, `OP_NEGATE`, `OP_POP`, `OP_RETURN`
-- Add `test_compile_unary_not()`: compile `"!true"`, verify: `OP_TRUE`, `OP_NOT`, `OP_POP`, `OP_RETURN`
-- Add `test_compile_add()`: compile `"1 + 2"`, verify: `OP_CONSTANT(1)`, `OP_CONSTANT(2)`, `OP_ADD`, `OP_POP`, `OP_RETURN`
-- Add `test_compile_arithmetic()`: compile `"1 + 2 * 3 - 4 / 5 % 6"`, verify all ops emitted in correct order (respecting precedence from AST)
-- Expected failure: assertion failure — unary/binary expressions not compiled
+### Cycle 2: Unary + Binary Arithmetic
 
-**Verify RED**: `./build/test_compiler` — arithmetic tests fail with wrong bytecode
+**RED**: Unary/binary expressions not compiled → wrong bytecode.
 
-**GREEN** — Minimal implementation:
-- Extend `compileExpr()`:
-  - `MS_EXPR_UNARY`: compile operand, then emit `MS_OP_NEGATE` (for `-`) or `MS_OP_NOT` (for `!`)
-  - `MS_EXPR_BINARY`: compile left, compile right, then emit corresponding opcode (`MS_OP_ADD`, `MS_OP_SUBTRACT`, `MS_OP_MULTIPLY`, `MS_OP_DIVIDE`, `MS_OP_MODULO`)
-- Opcode-to-token mapping for binary ops: `+`→`ADD`, `-`→`SUBTRACT`, `*`→`MULTIPLY`, `/`→`DIVIDE`, `%`→`MODULO`
+- `test_compile_unary_negate()`: `"-42"` → `OP_CONSTANT(42)`, `OP_NEGATE`, `OP_POP`, `OP_RETURN`
+- `test_compile_unary_not()`: `"!true"` → `OP_TRUE`, `OP_NOT`, `OP_POP`, `OP_RETURN`
+- `test_compile_add()`: `"1 + 2"` → `OP_CONSTANT(1)`, `OP_CONSTANT(2)`, `OP_ADD`, `OP_POP`, `OP_RETURN`
+- `test_compile_arithmetic()`: `"1 + 2 * 3 - 4 / 5 % 6"` → all ops in correct order
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — arithmetic tests pass
+**GREEN**: Extend `compileExpr()`:
+- `MS_EXPR_UNARY`: compile operand → emit `MS_OP_NEGATE` (`-`) or `MS_OP_NOT` (`!`)
+- `MS_EXPR_BINARY`: compile left, right → emit opcode (`ADD`/`SUBTRACT`/`MULTIPLY`/`DIVIDE`/`MODULO`)
+- Mapping: `+`→`ADD`, `-`→`SUBTRACT`, `*`→`MULTIPLY`, `/`→`DIVIDE`, `%`→`MODULO`
 
-**REFACTOR**: Use a lookup table or switch for operator→opcode mapping to avoid repetition
+**Verify GREEN**: build + run → arithmetic tests pass.
 
-### Cycle 3: Comparison, Equality, and Logical Expressions
+**REFACTOR**: Lookup table or switch for operator→opcode mapping.
 
-**RED** — Write failing test:
-- Add `test_compile_comparison()`: compile `"1 < 2"`, verify: `OP_CONSTANT(1)`, `OP_CONSTANT(2)`, `OP_LESS`
-- Add `test_compile_equality()`: compile `"1 == 2"`, verify `OP_EQUAL`; compile `"1 != 2"`, verify `OP_NOT` after `OP_EQUAL`
-- Add `test_compile_logical_and()`: compile `"true and false"`, verify: `OP_TRUE`, `OP_JUMP_IF_FALSE(offset)`, `OP_POP`, `OP_FALSE`, `OP_AND` pattern (or short-circuit: `OP_JUMP_IF_FALSE`)
-- Add `test_compile_logical_or()`: compile `"true or false"`, verify short-circuit jump pattern
-- Expected failure: wrong opcodes or missing jump instructions
+### Cycle 3: Comparison, Equality, Logical Expressions
 
-**Verify RED**: `./build/test_compiler` — comparison/logical tests fail
+**RED**: Wrong opcodes or missing jump instructions.
 
-**GREEN** — Minimal implementation:
-- `MS_EXPR_BINARY` for comparison: emit `MS_OP_LESS`, `MS_OP_GREATER`, `MS_OP_LESS_EQUAL`, `MS_OP_GREATER_EQUAL`, `MS_OP_EQUAL`; for `!=`, emit `MS_OP_EQUAL` then `MS_OP_NOT`
-- Implement `emitJump()` and `patchJump()` for forward jumps
+- `test_compile_comparison()`: `"1 < 2"` → `OP_CONSTANT(1)`, `OP_CONSTANT(2)`, `OP_LESS`
+- `test_compile_equality()`: `"1 == 2"` → `OP_EQUAL`; `"1 != 2"` → `OP_EQUAL`, `OP_NOT`
+- `test_compile_logical_and()`: `"true and false"` → short-circuit: `OP_TRUE`, `OP_JUMP_IF_FALSE`, `OP_POP`, `OP_FALSE`
+- `test_compile_logical_or()`: `"true or false"` → short-circuit jump pattern
+
+**GREEN**:
+- Comparison: emit `LESS`/`GREATER`/`LESS_EQUAL`/`GREATER_EQUAL`/`EQUAL`; `!=` → `EQUAL` + `NOT`
+- Implement `emitJump()` + `patchJump()` for forward jumps
 - `MS_EXPR_LOGICAL`:
-  - `and`: compile left, emit `MS_OP_JUMP_IF_FALSE` (skip right if left is falsy), `MS_OP_POP`, compile right
-  - `or`: compile left, emit `MS_OP_JUMP_IF_TRUE` (skip right if left is truthy), `MS_OP_POP`, compile right
-- Logical ops use two-byte signed offset for jump destination
+  - `and`: compile left → `OP_JUMP_IF_FALSE` → `OP_POP` → compile right
+  - `or`: compile left → `OP_JUMP_IF_TRUE` → `OP_POP` → compile right
+- Jump offsets: 2-byte signed
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — comparison and logical tests pass
+**Verify GREEN**: build + run → comparison/logical tests pass.
 
-**REFACTOR**: Verify jump offset calculation is correct for all cases
+**REFACTOR**: Verify jump offset calculation correct for all cases.
 
 ### Cycle 4: Global Variables
 
-**RED** — Write failing test:
-- Add `test_compile_var_decl()`: compile `"var x = 42"`, verify: `OP_CONSTANT(42)`, `OP_DEFINE_GLOBAL("x")`
-- Add `test_compile_var_decl_no_init()`: compile `"var x"`, verify: `OP_NIL`, `OP_DEFINE_GLOBAL("x")`
-- Add `test_compile_get_global()`: compile `"print x"` (where x is defined), verify `OP_GET_GLOBAL("x")`
-- Add `test_compile_set_global()`: compile `"x = 42"`, verify: `OP_CONSTANT(42)`, `OP_SET_GLOBAL("x")`
-- Add `test_compile_undefined_var()`: compile `"print undefined_var"`, verify compiler reports error
-- Add `test_compile_redeclare()`: compile `"var x = 1\nvar x = 2"`, verify compiler reports error
-- Expected failure: assertion failures — variable opcodes not emitted
+**RED**: Variable opcodes not emitted.
 
-**Verify RED**: `./build/test_compiler` — variable tests fail
+- `test_compile_var_decl()`: `"var x = 42"` → `OP_CONSTANT(42)`, `OP_DEFINE_GLOBAL("x")`
+- `test_compile_var_decl_no_init()`: `"var x"` → `OP_NIL`, `OP_DEFINE_GLOBAL("x")`
+- `test_compile_get_global()`: `"print x"` → `OP_GET_GLOBAL("x")`
+- `test_compile_set_global()`: `"x = 42"` → `OP_CONSTANT(42)`, `OP_SET_GLOBAL("x")`
+- `test_compile_undefined_var()`: `"print undefined_var"` → compile error
+- `test_compile_redeclare()`: `"var x = 1\nvar x = 2"` → compile error
 
-**GREEN** — Minimal implementation:
-- `identifierConstant()`: add token's lexeme string to constant pool, return index
-- Compile `MS_STMT_VAR_DECL`: compile initializer (or emit `MS_OP_NIL`), emit `MS_OP_DEFINE_GLOBAL` with name constant index
-- `MS_EXPR_VARIABLE`: emit `MS_OP_GET_GLOBAL` with name constant index
-- `MS_EXPR_ASSIGN`: compile value, emit `MS_OP_SET_GLOBAL` with name constant index
-- Undefined variable check: during compilation, variables used before definition should produce a compile error (for locals in later cycle; for globals, this may be deferred to runtime)
+**GREEN**:
+- `identifierConstant()`: add lexeme string to constant pool, return index
+- `MS_STMT_VAR_DECL`: compile init (or `OP_NIL`) → `OP_DEFINE_GLOBAL` with name index
+- `MS_EXPR_VARIABLE` → `OP_GET_GLOBAL`; `MS_EXPR_ASSIGN` → compile value + `OP_SET_GLOBAL`
+- Undefined var: error at compile time (locals) or deferred to runtime (globals)
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — variable tests pass
+**Verify GREEN**: build + run → variable tests pass.
 
-**REFACTOR**: Consolidate identifier constant lookup (reuse existing constant if same string already in pool)
+**REFACTOR**: Consolidate identifier constant lookup (reuse existing same-string constant).
 
-### Cycle 5: Local Variables and Scoping
+### Cycle 5: Local Variables + Scoping
 
-**RED** — Write failing test:
-- Add `test_compile_local_var()`: compile `"{ var x = 1\nprint x }"`, verify: `OP_CONSTANT(1)`, `OP_DEFINE_LOCAL`(slot 0), `OP_GET_LOCAL(0)`, `OP_PRINT`, `OP_POP` — no global ops
-- Add `test_compile_scope_depth()`: compile `"{ var x = 1\n{ var y = 2\nprint x\nprint y }\nprint x }"`, verify local slot indices and scope behavior
-- Add `test_compile_set_local()`: compile `"{ var x = 1\nx = 2 }"`, verify `OP_SET_LOCAL`
-- Add `test_compile_error_read_own_init()`: compile `"var x = x"`, verify compile error (reading own uninitialized local)
-- Expected failure: wrong opcodes (global instead of local) or missing scoping
+**RED**: Global ops instead of local, or missing scoping.
 
-**Verify RED**: `./build/test_compiler` — local variable tests fail
+- `test_compile_local_var()`: `"{ var x = 1\nprint x }"` → local slot 0, no global ops
+- `test_compile_scope_depth()`: nested blocks → correct slot indices + scope behavior
+- `test_compile_set_local()`: `"{ var x = 1\nx = 2 }"` → `OP_SET_LOCAL`
+- `test_compile_error_read_own_init()`: `"var x = x"` → compile error
 
-**GREEN** — Minimal implementation:
+**GREEN**:
 - `beginScope()`: increment `scopeDepth`
-- `endScope()`: decrement `scopeDepth`, emit `MS_OP_POP` for each local variable that goes out of scope
-- `declareVariable()`: add local to current state's locals array with current scopeDepth
-- `defineVariable()`: mark local as initialized (set `depth = scopeDepth`)
-- `resolveLocal()`: walk locals array backward to find matching name, return slot index (or -1 if not found / error if in own initializer)
-- Modify variable compilation: if `resolveLocal()` finds the variable, use `OP_GET_LOCAL`/`OP_SET_LOCAL` with slot index instead of global ops
-- Compile `MS_STMT_BLOCK`: `beginScope()`, compile each statement in block, `endScope()`
+- `endScope()`: decrement, emit `OP_POP` per out-of-scope local
+- `declareVariable()`: add local with current scopeDepth
+- `defineVariable()`: mark initialized (`depth = scopeDepth`)
+- `resolveLocal()`: walk locals backward → slot index (-1 if not found, error if in own init)
+- If `resolveLocal()` finds var → `OP_GET_LOCAL`/`OP_SET_LOCAL` instead of global ops
+- `MS_STMT_BLOCK`: `beginScope()` → compile stmts → `endScope()`
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — local variable and scope tests pass
+**Verify GREEN**: build + run → local/scope tests pass.
 
-**REFACTOR**: Verify slot indices are correct across nested scopes
+**REFACTOR**: Verify slot indices across nested scopes.
 
 ### Cycle 6: If/Else Statements
 
-**RED** — Write failing test:
-- Add `test_compile_if()`: compile `"if (true) print 1"`, verify: `OP_TRUE`, `OP_JUMP_IF_FALSE(then_jump)`, `OP_POP`, `OP_CONSTANT(1)`, `OP_PRINT`, `OP_JUMP(end_jump)`, patching then_jump to else section, `OP_POP`
-- Add `test_compile_if_else()`: compile `"if (true) print 1 else print 2"`, verify both branches with correct jump offsets
-- Add `test_compile_nested_if()`: compile nested if-else chain, verify all jumps patch correctly
-- Expected failure: wrong jump offsets or missing jump instructions
+**RED**: Wrong jump offsets or missing jumps.
 
-**Verify RED**: `./build/test_compiler` — if/else tests fail with wrong bytecode
+- `test_compile_if()`: `"if (true) print 1"` → `OP_TRUE`, `OP_JUMP_IF_FALSE(then)`, `OP_POP`, body, `OP_JUMP(end)`, patch then, `OP_POP`
+- `test_compile_if_else()`: `"if (true) print 1 else print 2"` → both branches with correct offsets
+- `test_compile_nested_if()`: nested chain → all jumps patched correctly
 
-**GREEN** — Minimal implementation:
-- Compile `MS_STMT_IF`:
-  1. Compile condition expression
-  2. Emit `MS_OP_JUMP_IF_FALSE` (then jump) — save offset to patch later
-  3. Emit `MS_OP_POP` (pop condition)
-  4. Compile then-branch
-  5. Emit `MS_OP_JUMP` (else jump) — save offset to patch later
-  6. Patch then-jump to here
-  7. Emit `MS_OP_POP` (pop condition on false path)
-  8. If else-branch exists, compile it
-  9. Patch else-jump to here
-- Use `emitJump()` returning offset, `patchJump()` to write destination
+**GREEN**: Compile `MS_STMT_IF`:
+1. Compile condition
+2. `MS_OP_JUMP_IF_FALSE` (then jump, save to patch)
+3. `MS_OP_POP`
+4. Compile then-branch
+5. `MS_OP_JUMP` (else jump, save to patch)
+6. Patch then-jump
+7. `MS_OP_POP` (false path)
+8. If else exists, compile it
+9. Patch else-jump
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — if/else tests pass
+`emitJump()` returns offset, `patchJump()` writes destination.
 
-**REFACTOR**: Verify jump offset arithmetic is consistent (2-byte signed offset)
+**Verify GREEN**: build + run → if/else tests pass.
 
-### Cycle 7: While/For Loops with Break/Continue
+**REFACTOR**: Verify 2-byte signed offset arithmetic consistent.
 
-**RED** — Write failing test:
-- Add `test_compile_while()`: compile `"while (true) print 1"`, verify: loop start marker, `OP_TRUE`, `OP_JUMP_IF_FALSE(exit)`, `OP_POP`, `OP_CONSTANT(1)`, `OP_PRINT`, `OP_LOOP(loop_start)`, exit patch
-- Add `test_compile_for()`: compile `"for (var i = 0; i < 10; i = i + 1) print i"`, verify: var decl, condition jump, body, increment, loop back, exit
-- Add `test_compile_break()`: compile `"while (true) break"`, verify `OP_JUMP` to loop exit
-- Add `test_compile_continue()`: compile `"while (true) continue"`, verify `OP_JUMP` to loop start (increment in for)
-- Add `test_compile_nested_loops()`: verify break/continue target correct loop
-- Expected failure: wrong loop offsets, break/continue not patched
+### Cycle 7: While/For Loops + Break/Continue
 
-**Verify RED**: `./build/test_compiler` — loop tests fail
+**RED**: Wrong loop offsets, break/continue not patched.
 
-**GREEN** — Minimal implementation:
-- Compile `MS_STMT_WHILE`:
-  1. Record `loopStart` offset
+- `test_compile_while()`: `"while (true) print 1"` → loop start, condition, exit jump, body, `OP_LOOP` back, exit patch
+- `test_compile_for()`: `"for (var i = 0; i < 10; i = i + 1) print i"` → decl, condition, body, increment, loop back, exit
+- `test_compile_break()`: `"while (true) break"` → `OP_JUMP` to loop exit
+- `test_compile_continue()`: `"while (true) continue"` → `OP_JUMP` to loop start (or increment for for)
+- `test_compile_nested_loops()`: break/continue target correct loop
+
+**GREEN**:
+- `MS_STMT_WHILE`:
+  1. Record `loopStart`
   2. Compile condition
-  3. Emit `MS_OP_JUMP_IF_FALSE` (exit jump)
-  4. Emit `MS_OP_POP`
-  5. Compile body (with loop context for break/continue)
-  6. Emit `MS_OP_LOOP` back to `loopStart`
-  7. Patch exit jump
-  8. Emit `MS_OP_POP` (for false branch)
-- Compile `MS_STMT_FOR`:
+  3. `OP_JUMP_IF_FALSE` (exit)
+  4. `OP_POP`
+  5. Compile body (loop context for break/continue)
+  6. `OP_LOOP` back to `loopStart`
+  7. Patch exit
+  8. `OP_POP` (false branch)
+- `MS_STMT_FOR`:
   1. `beginScope()`
-  2. Compile initializer (var decl or expr)
+  2. Compile init (var decl or expr)
   3. Record `loopStart`
-  4. Compile condition; emit exit jump if present, otherwise infinite loop
+  4. Compile condition + exit jump (or infinite loop if absent)
   5. Compile body
-  6. Record increment offset; compile increment expression + `OP_POP`
-  7. Emit `MS_OP_LOOP` back to `loopStart`
-  8. Patch exit jump
+  6. Record increment offset; compile increment + `OP_POP`
+  7. `OP_LOOP` back to `loopStart`
+  8. Patch exit
   9. `endScope()`
-- Break: emit `MS_OP_JUMP`, record in breakJumps array, patch all at loop exit
-- Continue: emit `MS_OP_JUMP` to increment start (for) or loop start (while)
-- `emitLoop()`: emit `MS_OP_LOOP` with offset back to given instruction
+- Break: `OP_JUMP`, record in breakJumps, patch all at loop exit
+- Continue: `OP_JUMP` to increment start (for) or loop start (while)
+- `emitLoop()`: `OP_LOOP` with offset back to given instruction
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — all loop tests pass
+**Verify GREEN**: build + run → all loop tests pass.
 
-**REFACTOR**: Factor out loop-context tracking (break/continue jump lists) into helper functions
+**REFACTOR**: Factor out loop-context (break/continue jump lists) into helpers.
 
-### Cycle 8: Return and Expression Statements
+### Cycle 8: Return + Expression Statements
 
-**RED** — Write failing test:
-- Add `test_compile_return_value()`: compile `"return 42"` (inside a function-like context), verify: `OP_CONSTANT(42)`, `OP_RETURN`
-- Add `test_compile_return_nil()`: compile `"return"`, verify: `OP_NIL`, `OP_RETURN`
-- Add `test_compile_return_at_top_level()`: compile `"return 1"` at top level, verify compile error
-- Add `test_compile_expr_stmt()`: compile `"1 + 2"`, verify expression result is computed then `OP_POP`ped
-- Add `test_compile_print()`: compile `"print 1 + 2"`, verify expression + `OP_PRINT`
-- Expected failure: return not handled, print not recognized
+**RED**: Return/print not handled.
 
-**Verify RED**: `./build/test_compiler` — return/print tests fail
+- `test_compile_return_value()`: `"return 42"` → `OP_CONSTANT(42)`, `OP_RETURN`
+- `test_compile_return_nil()`: `"return"` → `OP_NIL`, `OP_RETURN`
+- `test_compile_return_at_top_level()`: `"return 1"` at top level → compile error
+- `test_compile_expr_stmt()`: `"1 + 2"` → computed + `OP_POP`
+- `test_compile_print()`: `"print 1 + 2"` → expression + `OP_PRINT`
 
-**GREEN** — Minimal implementation:
-- Compile `MS_STMT_RETURN`: if in top-level (`MS_FUNC_SCRIPT`), report error; compile return value (or emit `OP_NIL`), emit `MS_OP_RETURN`
-- Compile `MS_STMT_EXPR`: compile expression, emit `MS_OP_POP`
-- Handle print: if statement starts with `print` keyword, compile expression, emit `MS_OP_PRINT` instead of `MS_OP_POP`
-- Compile `MS_STMT_BREAK` / `MS_STMT_CONTINUE`: emit jumps as handled in Cycle 7; if not inside loop, report compile error
+**GREEN**:
+- `MS_STMT_RETURN`: top-level (`MS_FUNC_SCRIPT`) → error; compile value (or `OP_NIL`) → `OP_RETURN`
+- `MS_STMT_EXPR`: compile expr → `OP_POP`
+- Print: `print` keyword → compile expr → `OP_PRINT` instead of `OP_POP`
+- `MS_STMT_BREAK` / `MS_STMT_CONTINUE`: emit jumps (Cycle 7); outside loop → compile error
 
-**Verify GREEN**: `cmake --build build && ./build/test_compiler` — all tests pass
+**Verify GREEN**: build + run → all tests pass.
 
-**REFACTOR**: Add stubs for `compileFuncDecl`, `compileClassDecl`, `compileImportStmt` that report "not yet implemented" errors, so the compiler doesn't crash on unimplemented constructs
+**REFACTOR**: Add stubs for `compileFuncDecl`/`compileClassDecl`/`compileImportStmt` → "not yet implemented" error.
 
 ## Acceptance Criteria
 
-- [ ] Compile `"print 1 + 2"` → bytecode with OP_CONSTANT, OP_ADD, OP_PRINT
-- [ ] Compile `"var x = 42; print x"` → OP_CONSTANT, OP_DEFINE_GLOBAL, OP_GET_GLOBAL
-- [ ] Compile `"if (true) print 1 else print 2"` → OP_TRUE, OP_JUMP_IF_FALSE, ...
-- [ ] Compile `"while (true) print 1"` → OP_LOOP
-- [ ] Compile `"{ var x = 1; print x }"` → local variable with scope depth
-- [ ] Compile `"for (var i = 0; i < 10; i = i + 1) print i"` → for loop bytecode
-- [ ] Compile `"break"` and `"continue"` → correct jump patching
+- [ ] `"print 1 + 2"` → `OP_CONSTANT`, `OP_ADD`, `OP_PRINT`
+- [ ] `"var x = 42; print x"` → `OP_CONSTANT`, `OP_DEFINE_GLOBAL`, `OP_GET_GLOBAL`
+- [ ] `"if (true) print 1 else print 2"` → `OP_TRUE`, `OP_JUMP_IF_FALSE`, …
+- [ ] `"while (true) print 1"` → `OP_LOOP`
+- [ ] `"{ var x = 1; print x }"` → local variable with scope depth
+- [ ] `"for (var i = 0; i < 10; i = i + 1) print i"` → for loop bytecode
+- [ ] `"break"` / `"continue"` → correct jump patching
 - [ ] Error on undefined variable access
-- [ ] Error on redeclaring variable in same scope
+- [ ] Error on redeclare in same scope
 
 ## Notes
 
-- Internal static functions: `emitByte`, `emitBytes`, `emitLoop`, `emitJump`, `emitReturn`, `emitConstant`, `makeConstant`, `identifierConstant`, `declareVariable`, `defineVariable`, `markInitialized`, `resolveLocal`, `beginScope`, `endScope`, `compileExpr`, `compileStmt`, `compileBlock`, `compileVarDecl`, `compileIfStmt`, `compileWhileStmt`, `compileForStmt`, `compileReturnStmt`, `compileBreakStmt`, `compileContinueStmt`, `compileExprStmt`
-- Statements NOT covered in this task (stubs that report error): `compileFuncDecl` (T16), `compileClassDecl` (T18), `compileImportStmt` (T20)
-- `ms_compiler_mark_roots()` is needed for GC integration (marks compiler-allocated objects as reachable)
+- Static fns: `emitByte`, `emitBytes`, `emitLoop`, `emitJump`, `patchJump`, `emitReturn`, `emitConstant`, `makeConstant`, `identifierConstant`, `declareVariable`, `defineVariable`, `markInitialized`, `resolveLocal`, `beginScope`, `endScope`, `compileExpr`, `compileStmt`, `compileBlock`, `compileVarDecl`, `compileIfStmt`, `compileWhileStmt`, `compileForStmt`, `compileReturnStmt`, `compileBreakStmt`, `compileContinueStmt`, `compileExprStmt`
+- Stubs (error): `compileFuncDecl` (T16), `compileClassDecl` (T18), `compileImportStmt` (T20)
+- `ms_compiler_mark_roots()` — GC integration, marks compiler-allocated objects as reachable

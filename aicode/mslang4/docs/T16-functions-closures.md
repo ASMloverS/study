@@ -1,221 +1,185 @@
 # T16: Functions & Closures
 
-**Phase**: 7 - Functions & Closures
-**Dependencies**: T15 (VM Core)
-**Estimated Complexity**: High
+**Phase**: 7 · **Deps**: T15 (VM Core) · **Complexity**: High
 
 ## Goal
 
-Add first-class functions, closures with upvalues, and native function binding. This extends the compiler, object system, and VM with function declaration, call frames, upvalue capture, and closure execution.
+First-class functions, closures with upvalues, native function binding. Extends compiler, object system, and VM.
 
-## Files to Modify
+## Files
 
 | File | Changes |
 |------|---------|
-| `src/object.h` | Fully implement MsFunction, MsClosure, MsUpvalue, MsNative |
-| `src/object.c` | Function/closure/upvalue/native creation and free |
-| `src/compiler.h` | No changes needed |
-| `src/compiler.c` | Add `compileFuncDecl`, upvalue resolution, OP_CLOSURE emission |
-| `src/vm.h` | No changes needed (call frames already defined) |
-| `src/vm.c` | Add call/callValue, OP_CALL, OP_CLOSURE, OP_CLOSE_UPVALUE, upvalue management |
+| `src/object.h` | Fully implement `MsFunction`, `MsClosure`, `MsUpvalue`, `MsNative` |
+| `src/object.c` | Creation + free for all new types |
+| `src/compiler.c` | `compileFuncDecl`, upvalue resolution, `OP_CLOSURE` emission |
+| `src/vm.c` | `call`/`callValue`, `OP_CALL`, `OP_CLOSURE`, `OP_CLOSE_UPVALUE`, upvalue mgmt |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Object System Extensions (MsFunction, MsClosure, MsUpvalue, MsNative)
+### Cycle 1: Object System Extensions
 
-**RED** — Write failing test:
-- Create `tests/unit/test_functions.c`
-- Write `test_function_object()`: create `MsFunction` via `ms_function_new(vm, name)`, verify type is `MS_OBJ_FUNCTION`, chunk is initialized, name matches
-- Write `test_closure_object()`: create `MsClosure` via `ms_closure_new(vm, function)`, verify type is `MS_OBJ_CLOSURE`, function pointer matches, upvalue array initialized
-- Write `test_upvalue_object()`: create `MsUpvalue` via `ms_upvalue_new(vm, &slot)`, verify type is `MS_OBJ_UPVALUE`, location points to slot
-- Write `test_native_object()`: create `MsNative` via `ms_native_new(vm, fn, name, arity)`, verify type is `MS_OBJ_NATIVE`, arity matches
-- Write `test_type_macros()`: verify `MS_IS_FUNCTION`, `MS_IS_CLOSURE`, `MS_IS_NATIVE` return true for respective types; `MS_AS_FUNCTION`, `MS_AS_CLOSURE`, `MS_AS_NATIVE` cast correctly
-- Write `test_object_free_chain()`: create function + closure + upvalue, free VM, verify no leak
-- Expected failure: linker error — `ms_function_new`, `ms_closure_new`, `ms_upvalue_new`, `ms_native_new` undefined
+**RED**: `ms_function_new`, `ms_closure_new`, `ms_upvalue_new`, `ms_native_new` undefined → link error.
 
-**Verify RED**: `cmake --build build 2>&1 | grep "undefined reference"` — link errors for new object functions
+- `test_function_object()`: `ms_function_new(vm, name)` → type `MS_OBJ_FUNCTION`, chunk init'd, name matches
+- `test_closure_object()`: `ms_closure_new(vm, function)` → type `MS_OBJ_CLOSURE`, function ptr matches, upvalue array init'd
+- `test_upvalue_object()`: `ms_upvalue_new(vm, &slot)` → type `MS_OBJ_UPVALUE`, location = &slot
+- `test_native_object()`: `ms_native_new(vm, fn, name, arity)` → type `MS_OBJ_NATIVE`, arity matches
+- `test_type_macros()`: `MS_IS_FUNCTION`/`MS_IS_CLOSURE`/`MS_IS_NATIVE` → true; `MS_AS_*` casts correctly
+- `test_object_free_chain()`: function + closure + upvalue → free VM → no leak
 
-**GREEN** — Minimal implementation:
-- In `src/object.h`: add type check macros:
-  - `MS_IS_FUNCTION(v)`, `MS_IS_CLOSURE(v)`, `MS_IS_NATIVE(v)`, `MS_IS_UPVALUE(v)`
-  - `MS_AS_FUNCTION(v)`, `MS_AS_CLOSURE(v)`, `MS_AS_NATIVE(v)`, `MS_AS_UPVALUE(v)`
-- In `src/object.c`:
-  - `ms_function_new(vm, name)`: allocate `MsFunction`, init chunk via `ms_chunk_init()`, set name, return
-  - `ms_closure_new(vm, function)`: allocate `MsClosure` with upvalue array of `function->upvalueCount` entries, set function, return
-  - `ms_upvalue_new(vm, slot)`: allocate `MsUpvalue`, set `location = slot`, `closed = MS_VALUE_NIL`, `next = NULL`, return
-  - `ms_native_new(vm, fn, name, arity)`: allocate `MsNative`, set function pointer, name, arity, return
-  - Update `ms_object_free()`: handle `MS_OBJ_FUNCTION` (free chunk, free function), `MS_OBJ_CLOSURE` (free upvalues array, free closure), `MS_OBJ_UPVALUE` (free upvalue), `MS_OBJ_NATIVE` (free name ref, free native)
-- Ensure `MsFunction` uses `MsChunk chunk` (not placeholder), has `int arity` and `int upvalueCount` fields, `MsString* name`
+**GREEN**:
+- `src/object.h`: add `MS_IS_FUNCTION`/`MS_IS_CLOSURE`/`MS_IS_NATIVE`/`MS_IS_UPVALUE`, `MS_AS_*` macros
+- `src/object.c`:
+  - `ms_function_new(vm, name)`: allocate, `ms_chunk_init()`, set name
+  - `ms_closure_new(vm, function)`: allocate with upvalue array of `function->upvalueCount` entries
+  - `ms_upvalue_new(vm, slot)`: allocate, `location = slot`, `closed = NIL`, `next = NULL`
+  - `ms_native_new(vm, fn, name, arity)`: allocate, set fn ptr, name, arity
+  - `ms_object_free()`: handle `FUNCTION`/`CLOSURE`/`UPVALUE`/`NATIVE`
+- `MsFunction` fields: `MsChunk chunk`, `int arity`, `int upvalueCount`, `MsString* name`
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — object creation and free tests pass
+**Verify GREEN**: `cmake --build build && ./build/test_functions`
 
-**REFACTOR**: Verify all object types have consistent allocation pattern through `ms_alloc_object()`
+**REFACTOR**: Verify all types use consistent `ms_alloc_object()` pattern.
 
 ### Cycle 2: Function Declaration Compilation
 
-**RED** — Write failing test:
-- Add `test_compile_function()`: compile `"fn add(a, b) { return a + b }\nprint add(1, 2)"`, verify chunk contains:
-  - `OP_CLOSURE` with function constant index and upvalue operands
-  - `OP_DEFINE_GLOBAL("add")`
-  - `OP_CONSTANT(1)`, `OP_CONSTANT(2)`, `OP_CALL(2)`, `OP_PRINT`
-- Add `test_compile_function_no_params()`: compile `"fn foo() { print 1 }"`, verify `OP_CLOSURE` emitted, arity 0
-- Add `test_compile_nested_function()`: compile function containing another function declaration, verify `OP_CLOSURE` with upvalue operands
-- Expected failure: compiler error — `compileFuncDecl` not implemented
+**RED**: `compileFuncDecl` not implemented → compiler error.
 
-**Verify RED**: `./build/test_functions` — compilation tests fail
+- `test_compile_function()`: `"fn add(a, b) { return a + b }\nprint add(1, 2)"` → `OP_CLOSURE` + upvalue operands, `OP_DEFINE_GLOBAL("add")`, `OP_CONSTANT(1)`, `OP_CONSTANT(2)`, `OP_CALL(2)`, `OP_PRINT`
+- `test_compile_function_no_params()`: `"fn foo() { print 1 }"` → `OP_CLOSURE`, arity 0
+- `test_compile_nested_function()`: nested fn decl → `OP_CLOSURE` with upvalue operands
 
-**GREEN** — Minimal implementation:
-- In `src/compiler.c`:
-  - Replace stub `compileFuncDecl()` with full implementation:
-    1. Consume `fn`, consume identifier (function name)
-    2. Create new `MsCompilerState` linked to current (enclosing)
-    3. Create new `MsFunction` with name
-    4. Set `type = MS_FUNC_FUNCTION`
-    5. Declare function name as local in enclosing scope
-    6. Begin scope, declare parameters as locals
-    7. Compile function body (block)
-    8. Emit `OP_NIL` + `OP_RETURN` at end (implicit return)
-    9. Emit `OP_CLOSURE` with function constant index
-    10. For each upvalue, emit operand: `isLocal` bit + index
-    11. Define as variable in enclosing scope
-  - `addUpvalue(state, index, isLocal)`: check for duplicates in upvalues array, add if new, return upvalue index
-  - `resolveUpvalue(state, name)`: walk enclosing compiler states looking for variable; if found in local scope, add as local upvalue; if found as upvalue in enclosing, add as non-local upvalue; return upvalue index or -1
+**GREEN**: Replace stub `compileFuncDecl()`:
+1. Consume `fn` + identifier (name)
+2. Create new `MsCompilerState` linked to enclosing
+3. Create `MsFunction` with name, `type = MS_FUNC_FUNCTION`
+4. Declare name as local in enclosing scope
+5. Begin scope, declare params as locals
+6. Compile body (block)
+7. Emit `OP_NIL` + `OP_RETURN` (implicit return)
+8. Emit `OP_CLOSURE` + constant index
+9. For each upvalue: emit byte (bit 0 = isLocal, remaining = index)
+10. Define as variable in enclosing scope
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — function compilation tests pass
+- `addUpvalue(state, index, isLocal)`: dedup, add if new, return index
+- `resolveUpvalue(state, name)`: walk enclosing states; found as local → local upvalue; found as upvalue → non-local upvalue; return index or -1
 
-**REFACTOR**: Verify upvalue operand encoding is correct for nested closures
+**Verify GREEN**: build + run → function compilation tests pass.
+
+**REFACTOR**: Verify upvalue operand encoding for nested closures.
 
 ### Cycle 3: Function Calls in VM
 
-**RED** — Write failing test:
-- Add `test_call_simple_function()`: `ms_vm_interpret(vm, "fn add(a, b) { return a + b }\nprint add(1, 2)")` → "3"
-- Add `test_call_no_args()`: `ms_vm_interpret(vm, "fn greet() { print \"hi\" }\ngreet()")` → "hi"
-- Add `test_call_arity_error()`: `ms_vm_interpret(vm, "fn foo(a) {}\nfoo(1, 2)")` → `MS_INTERPRET_RUNTIME_ERROR`
-- Add `test_call_non_callable()`: `ms_vm_interpret(vm, "var x = 1\nx()")` → runtime error
-- Add `test_call_stack_overflow()`: deeply recursive function → `MS_INTERPRET_RUNTIME_ERROR`
-- Expected failure: `OP_CALL` not handled in VM
+**RED**: `OP_CALL` not handled.
 
-**Verify RED**: `./build/test_functions` — call tests fail or crash
+- `test_call_simple_function()`: `"fn add(a, b) { return a + b }\nprint add(1, 2)"` → "3"
+- `test_call_no_args()`: `"fn greet() { print \"hi\" }\ngreet()"` → "hi"
+- `test_call_arity_error()`: `"fn foo(a) {}\nfoo(1, 2)"` → `MS_INTERPRET_RUNTIME_ERROR`
+- `test_call_non_callable()`: `"var x = 1\nx()"` → runtime error
+- `test_call_stack_overflow()`: deep recursion → runtime error
 
-**GREEN** — Minimal implementation:
-- In `src/vm.c`:
-  - `OP_CLOSURE`: read constant index, create `MsClosure` from function, read upvalue operands and populate closure's upvalue array (from stack for local upvalues, from enclosing closure for non-local)
-  - `OP_CALL`: read argCount, `callValue(peek(argCount), argCount)` — dispatch on callee type
-  - `call(closure, argCount)`: check arity, check `frameCount < MS_FRAMES_MAX`, set up new call frame: `frame->closure = closure`, `frame->ip = closure->function->chunk.code`, `frame->slots = stackTop - argCount - 1`
-  - `callValue(callee, argCount)`: if closure → `call()`; if native → execute native, push result; else runtime error "can only call functions"
-  - `OP_RETURN`: close upvalues for current frame, pop call frame, push return value on caller's stack, return from `run()` if top-level frame popped
-- Native function type definition: `typedef MsValue (*MsNativeFn)(MsVM* vm, int argCount, MsValue* args)`
+**GREEN**:
+- `OP_CLOSURE`: read constant index → create `MsClosure`; read upvalue operands → populate (local: `captureUpvalue(vm, &frame->slots[idx])`; non-local: copy from enclosing closure)
+- `OP_CALL`: read argCount → `callValue(peek(argCount), argCount)`
+- `call(closure, argCount)`: check arity, check `frameCount < MS_FRAMES_MAX`, set up frame: `closure`, `ip = chunk.code`, `slots = stackTop - argCount - 1`
+- `callValue(callee, argCount)`: closure → `call()`; native → execute + push result; else → runtime error
+- `OP_RETURN`: close upvalues for current frame, pop frame, push return value on caller stack, return from `run()` if top-level
+- Native fn type: `typedef MsValue (*MsNativeFn)(MsVM* vm, int argCount, MsValue* args)`
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — function call tests pass
+**Verify GREEN**: build + run → call tests pass.
 
-**REFACTOR**: Ensure call frame slot pointers are correct (callee's stack starts at receiver position)
+**REFACTOR**: Verify frame slot pointers (callee stack starts at receiver position).
 
-### Cycle 4: Return Values and Recursion
+### Cycle 4: Return Values + Recursion
 
-**RED** — Write failing test:
-- Add `test_return_value()`: `ms_vm_interpret(vm, "fn double(x) { return x * 2 }\nprint double(5)")` → "10"
-- Add `test_implicit_return_nil()`: `ms_vm_interpret(vm, "fn noop() {}\nvar x = noop()\nprint x")` → "nil"
-- Add `test_return_from_middle()`: `ms_vm_interpret(vm, "fn abs(x) { if (x < 0) return -x\nreturn x }\nprint abs(-3)")` → "3"
-- Add `test_recursion_fib()`: `ms_vm_interpret(vm, "fn fib(n) { if (n <= 1) return n\nreturn fib(n-1) + fib(n-2) }\nprint fib(10)")` → "55"
-- Add `test_recursion_factorial()`: `ms_vm_interpret(vm, "fn fact(n) { if (n <= 1) return 1\nreturn n * fact(n-1) }\nprint fact(5)")` → "120"
-- Expected failure: recursion tests may fail due to incorrect return handling
+**RED**: Incorrect return handling.
 
-**Verify RED**: `./build/test_functions` — return and recursion tests fail
+- `test_return_value()`: `"fn double(x) { return x * 2 }\nprint double(5)"` → "10"
+- `test_implicit_return_nil()`: `"fn noop() {}\nvar x = noop()\nprint x"` → "nil"
+- `test_return_from_middle()`: `"fn abs(x) { if (x < 0) return -x\nreturn x }\nprint abs(-3)"` → "3"
+- `test_recursion_fib()`: `"fn fib(n) { if (n <= 1) return n\nreturn fib(n-1) + fib(n-2) }\nprint fib(10)"` → "55"
+- `test_recursion_factorial()`: `"fn fact(n) { if (n <= 1) return 1\nreturn n * fact(n-1) }\nprint fact(5)"` → "120"
 
-**GREEN** — Minimal implementation:
-- Ensure `OP_RETURN` in VM:
-  - If returning from `MS_FUNC_SCRIPT` (top level), pop frame, return `MS_INTERPRET_OK`
-  - Otherwise: capture return value, close upvalues for current frame (`closeUpvalues(frame->slots)`), pop frame, discard all locals, push return value on caller's stack
-- Ensure `compileFuncDecl()` emits implicit `OP_NIL` + `OP_RETURN` at end of function body if no explicit return
-- Verify `OP_RETURN` in compiler emits `OP_RETURN` opcode
+**GREEN**: Ensure `OP_RETURN`:
+- Top-level (`MS_FUNC_SCRIPT`): pop frame → `MS_INTERPRET_OK`
+- Otherwise: capture return value → `closeUpvalues(frame->slots)` → pop frame → discard locals → push return value
+- `compileFuncDecl()`: implicit `OP_NIL` + `OP_RETURN` at end if no explicit return
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — return and recursion tests pass
+**Verify GREEN**: build + run → return/recursion tests pass.
 
-**REFACTOR**: Verify implicit return doesn't double-emit if last statement is already return
+**REFACTOR**: Verify implicit return doesn't double-emit if last stmt is already return.
 
-### Cycle 5: Upvalue Capture and Closures
+### Cycle 5: Upvalue Capture + Closures
 
-**RED** — Write failing test:
-- Add `test_closure_capture()`: `ms_vm_interpret(vm, "fn makeCounter() { var count = 0\nfn inc() { count = count + 1\nreturn count }\nreturn inc }\nvar c = makeCounter()\nprint c()\nprint c()")` → "1" then "2"
-- Add `test_closure_multiple()`: function returning two closures that share a captured variable, verify both see mutations
-- Add `test_nested_closure()`: closure capturing variable from two levels up, verify correct value
-- Add `test_closure_outlive_scope()`: returned closure still works after enclosing function returns
-- Add `test_upvalue_close()`: `"fn f() { var x = 1\n{ var y = 2\nreturn x + y }\n}\nprint f()"` → "3"
-- Expected failure: upvalues not captured, closures don't see enclosing variables
+**RED**: Closures don't see enclosing variables.
 
-**Verify RED**: `./build/test_functions` — closure tests fail
+- `test_closure_capture()`: `"fn makeCounter() { var count = 0\nfn inc() { count = count + 1\nreturn count }\nreturn inc }\nvar c = makeCounter()\nprint c()\nprint c()"` → "1" then "2"
+- `test_closure_multiple()`: two closures sharing captured var → both see mutations
+- `test_nested_closure()`: closure capturing from two levels up → correct value
+- `test_closure_outlive_scope()`: returned closure works after enclosing fn returns
+- `test_upvalue_close()`: `"fn f() { var x = 1\n{ var y = 2\nreturn x + y }\n}\nprint f()"` → "3"
 
-**GREEN** — Minimal implementation:
-- In `src/vm.c`:
-  - `captureUpvalue(vm, slot)`: walk `vm->openUpvalues` list; if upvalue for this slot exists, return it; otherwise create new `MsUpvalue` pointing to slot, insert into sorted list, return it
-  - `closeUpvalues(vm, last)`: walk open upvalues list; for each upvalue at or above `last`, move value to `closed`, set `location = &closed`, remove from open list
-  - `OP_CLOSE_UPVALUE`: pop value, close upvalue at current stack top
-  - `OP_CLOSURE`: when populating upvalues — if `isLocal`, call `captureUpvalue(vm, &frame->slots[index])`; if not local, copy from enclosing closure's upvalues
-  - Maintain `vm->openUpvalues` linked list (sorted by stack slot, highest first)
-- In `src/compiler.c`:
-  - `resolveUpvalue()`: recursively search enclosing states; if variable found as local, add as local upvalue (isLocal=true); if found as upvalue, add as non-local upvalue (isLocal=false)
+**GREEN**:
+- `captureUpvalue(vm, slot)`: walk `vm->openUpvalues`; exists → return it; else create new, insert sorted, return
+- `closeUpvalues(vm, last)`: walk open list; for each at/above `last`: move value to `closed`, `location = &closed`, remove from list
+- `OP_CLOSE_UPVALUE`: pop → close upvalue at stack top
+- `OP_CLOSURE` upvalue population: local → `captureUpvalue(vm, &frame->slots[idx])`; non-local → copy from enclosing closure
+- `vm->openUpvalues`: linked list sorted by stack slot (descending)
+- `resolveUpvalue()` in compiler: recursive search; local → `isLocal=true`; upvalue → `isLocal=false`
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — all closure tests pass
+**Verify GREEN**: build + run → closure tests pass.
 
-**REFACTOR**: Ensure open upvalues list is correctly maintained and sorted for efficient lookup
+**REFACTOR**: Verify open upvalues list sorted correctly for efficient lookup.
 
 ### Cycle 6: Native Function Binding
 
-**RED** — Write failing test:
-- Add `test_native_clock()`: define native `clock()` returning current time, call it, verify result is a number
-- Add `test_native_custom()`: define a custom native `double(x)` that returns `x * 2`, call `double(5)`, verify output "10"
-- Add `test_native_string_ops()`: define native `strLen(s)` returning string length, call `strLen("hello")`, verify "5"
-- Add `test_native_arity_error()`: call native with wrong number of args → runtime error
-- Expected failure: no native function mechanism
+**RED**: No native function mechanism.
 
-**Verify RED**: `./build/test_functions` — native function tests fail
+- `test_native_clock()`: native `clock()` → result is number
+- `test_native_custom()`: native `double(x)` returning `x * 2` → `double(5)` outputs "10"
+- `test_native_string_ops()`: native `strLen(s)` → `strLen("hello")` outputs "5"
+- `test_native_arity_error()`: wrong arg count → runtime error
 
-**GREEN** — Minimal implementation:
-- In `src/vm.c`:
-  - `defineNative(vm, name, fn, arity)`: create `MsNative` object, store in globals table
-  - In `callValue()`: if `MS_OBJ_NATIVE`, check arity, call `native->function(vm, argCount, args)`, push result
-  - Native functions receive `MsVM*`, `int argCount`, `MsValue* args`; return `MsValue`
-- In `ms_vm_init()`: define standard natives (e.g., `clock`, `print` as native if not opcode-based)
-- Write test helpers to register custom natives during tests
+**GREEN**:
+- `defineNative(vm, name, fn, arity)`: create `MsNative` → store in globals
+- `callValue()`: `MS_OBJ_NATIVE` → check arity → call `native->function(vm, argCount, args)` → push result
+- Signature: `MsValue (*MsNativeFn)(MsVM*, int, MsValue*)`
+- `ms_vm_init()`: define standard natives (`clock`, etc.)
+- Test helpers for registering custom natives
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — native function tests pass
+**Verify GREEN**: build + run → native tests pass.
 
-**REFACTOR**: Move native definitions to a separate `natives.c`/`natives.h` for organization
+**REFACTOR**: Move native definitions to `natives.c`/`natives.h`.
 
 ### Cycle 7: Integration Tests
 
-**RED** — Write failing test:
-- Write `tests/functions/basic.ms`: function declarations, calls, returns, multiple parameters
-- Write `tests/functions/closures.ms`: closure capture, multiple closures sharing state, nested closures
-- Write `tests/functions/recursion.ms`: fibonacci, factorial, mutual recursion (if supported)
-- Expected failure: integration test scripts produce wrong output
+**RED**: Integration scripts produce wrong output.
 
-**Verify RED**: `./build/test_functions` or run `.ms` scripts — integration tests fail
+- `tests/functions/basic.ms`: decls, calls, returns, params
+- `tests/functions/closures.ms`: capture, shared state, nested closures
+- `tests/functions/recursion.ms`: fibonacci, factorial
 
-**GREEN** — Minimal implementation:
-- Run each `.ms` script through full pipeline (source → scanner → parser → compiler → VM)
-- Compare output against expected output files (`.ms.expected`)
-- Fix any issues discovered by integration tests (edge cases in upvalue capture, return handling, etc.)
-- Ensure `ms_compiler_mark_roots()` correctly marks function objects during GC (even though full GC is T17, this prevents premature collection)
+**GREEN**: Run each `.ms` through full pipeline → compare against `.ms.expected`. Fix edge cases. Ensure `ms_compiler_mark_roots()` marks function objects (prevents premature GC collection before T17).
 
-**Verify GREEN**: `cmake --build build && ./build/test_functions` — all tests pass including integration scripts
+**Verify GREEN**: build + run → all integration tests pass.
 
-**REFACTOR**: Final cleanup — verify all function/closure paths are robust
+**REFACTOR**: Verify all function/closure paths robust.
 
 ## Acceptance Criteria
 
-- [ ] Define and call a function: `fn add(a, b) { return a + b }\nprint add(1, 2)` → "3"
-- [ ] Recursive function: `fn fib(n) { if (n <= 1) return n\nreturn fib(n-1) + fib(n-2) }\nprint fib(10)` → "55"
-- [ ] Closures: `fn makeCounter() { var count = 0\nfn increment() { count = count + 1\nreturn count }\nreturn increment }\nvar c = makeCounter()\nprint c()\nprint c()` → "1" then "2"
-- [ ] Upvalues capture and mutate enclosing variables
-- [ ] Native functions can be defined and called
-- [ ] Arity checking: wrong number of args → runtime error
-- [ ] Stack overflow from deep recursion → runtime error
-- [ ] No memory leaks with closures and upvalues
+- [ ] `"fn add(a, b) { return a + b }\nprint add(1, 2)"` → "3"
+- [ ] `"fn fib(n) { if (n <= 1) return n\nreturn fib(n-1) + fib(n-2) }\nprint fib(10)"` → "55"
+- [ ] Closure: `makeCounter` pattern → "1" then "2"
+- [ ] Upvalues capture + mutate enclosing variables
+- [ ] Native functions definable + callable
+- [ ] Wrong arg count → runtime error
+- [ ] Deep recursion → stack overflow runtime error
+- [ ] No leaks with closures/upvalues
 
 ## Notes
 
-- Object types to fully implement: `MsFunction` (with `MsChunk chunk`, `int arity`, `int upvalueCount`, `MsString* name`), `MsClosure` (with `MsFunction* function`, `MsUpvalue** upvalues`), `MsUpvalue` (with `MsValue* location`, `MsValue closed`, `MsUpvalue* next`), `MsNative` (with `MsNativeFn function`, `MsString* name`, `int arity`)
-- Open upvalues form a linked list on the VM, sorted by stack slot (descending), to allow efficient closing
-- `ms_compiler_mark_roots()` marks the current compiler state's function and constants as GC roots
-- `OP_CLOSURE` operands: for each upvalue, one byte with bit 0 = isLocal, remaining bits = index
+- Object types: `MsFunction` (`MsChunk chunk`, `int arity`, `int upvalueCount`, `MsString* name`), `MsClosure` (`MsFunction*`, `MsUpvalue**`), `MsUpvalue` (`MsValue* location`, `MsValue closed`, `MsUpvalue* next`), `MsNative` (`MsNativeFn`, `MsString* name`, `int arity`)
+- Open upvalues: linked list on VM, sorted by stack slot descending, for efficient closing
+- `ms_compiler_mark_roots()` marks compiler state's function + constants as GC roots
+- `OP_CLOSURE` operands: one byte per upvalue — bit 0 = isLocal, remaining = index
