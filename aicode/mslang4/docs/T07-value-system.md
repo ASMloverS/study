@@ -1,36 +1,27 @@
 # T07: Value System
 
-**Phase**: 2 - Core Data Types
-**Dependencies**: T02 (Common Definitions), T03 (Memory Subsystem)
-**Estimated Complexity**: Medium
+**Phase**: 2 — Core Data Types
+**Deps**: T02 (Common Definitions), T03 (Memory Subsystem)
+**Complexity**: Medium
 
 ## Goal
 
-Implement the tagged-union value representation that is the fundamental data type throughout the VM. Values are 16 bytes: a type tag plus a union of bool/double/object pointer.
+Tagged-union value representation — fundamental VM data type. 16 bytes: type tag + union of `bool`/`double`/`MsObject*`.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/value.h` | Value type definitions, inline helpers, MsValueArray |
-| `src/value.c` | Value comparison, printing, array operations |
+| `src/value.h` | Value types, inline helpers, `MsValueArray` |
+| `src/value.c` | Equality, printing, array ops |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Value Constructors and Type Checkers
+### Cycle 1: Value Constructors + Type Checkers
 
-**RED** — Write failing test:
-
-Create `tests/unit/test_value.c`. Write a test function `test_value_constructors` that:
-- Calls `ms_nil_val()`, verifies `.type == MS_VAL_NIL`
-- Calls `ms_bool_val(true)`, verifies `.type == MS_VAL_BOOL` and `.boolean == true`
-- Calls `ms_bool_val(false)`, verifies `.boolean == false`
-- Calls `ms_number_val(3.14)`, verifies `.type == MS_VAL_NUMBER` and `.number` is approximately 3.14
-- Calls `ms_is_nil`, `ms_is_bool`, `ms_is_number`, `ms_is_obj` on appropriate values, verifies each returns true/false correctly
-- Verifies `sizeof(MsValue) == 16` on 64-bit
+**RED** — Create `tests/unit/test_value.c`:
 
 ```c
-// tests/unit/test_value.c (initial skeleton)
 #include "value.h"
 #include <stdio.h>
 #include <assert.h>
@@ -60,13 +51,11 @@ int main(void) {
 }
 ```
 
-This will fail to compile because `value.h` does not exist.
+`value.h` doesn't exist → compile error.
 
-**Verify RED**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c` → compilation error: `value.h: No such file or directory`
+**Verify RED**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c` → `value.h` not found
 
-**GREEN** — Minimal implementation:
-
-Create `src/value.h` with the core type definitions and inline helpers:
+**GREEN** — Create `src/value.h`:
 
 ```c
 #ifndef MS_VALUE_H
@@ -100,9 +89,9 @@ static inline MsObject* ms_as_obj(MsValue v) { return v.obj; }
 #endif
 ```
 
-Create `src/value.c` as an empty translation unit for now (just `#include "value.h"`). The inline functions in the header are sufficient for this cycle.
+Create `src/value.c` as empty TU (just `#include "value.h"`). Inline fns in header sufficient for this cycle.
 
-**Verify GREEN**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c && ./build/test_value` → test passes
+**Verify GREEN**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c && ./build/test_value`
 
 **REFACTOR**: None needed.
 
@@ -110,9 +99,7 @@ Create `src/value.c` as an empty translation unit for now (just `#include "value
 
 ### Cycle 2: Value Equality
 
-**RED** — Write failing test:
-
-Add `test_value_equality` to `test_value.c`:
+**RED** — Add to `test_value.c`:
 
 ```c
 static void test_value_equality(void) {
@@ -126,13 +113,11 @@ static void test_value_equality(void) {
 }
 ```
 
-Call it from `main`. This will fail to link because `ms_values_equal` is not implemented.
+`ms_values_equal` undefined → linker error.
 
-**Verify RED**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c` → linker error: undefined reference to `ms_values_equal`
+**Verify RED**: link error — `ms_values_equal` undefined
 
-**GREEN** — Minimal implementation:
-
-Add declaration to `src/value.h`:
+**GREEN** — Declare in `src/value.h`:
 ```c
 bool ms_values_equal(MsValue a, MsValue b);
 ```
@@ -154,9 +139,9 @@ bool ms_values_equal(MsValue a, MsValue b) {
 }
 ```
 
-Compare type tags first, then union payload. For OBJ type, use pointer equality (interned strings).
+Compare type tags first, then union payload. OBJ → pointer equality (interned strings).
 
-**Verify GREEN**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c && ./build/test_value` → both tests pass
+**Verify GREEN**: build + run → both tests pass.
 
 **REFACTOR**: None needed.
 
@@ -164,9 +149,7 @@ Compare type tags first, then union payload. For OBJ type, use pointer equality 
 
 ### Cycle 3: Falsey Semantics
 
-**RED** — Write failing test:
-
-Add `test_falsey` to `test_value.c`:
+**RED** — Add to `test_value.c`:
 
 ```c
 static void test_falsey(void) {
@@ -179,11 +162,9 @@ static void test_falsey(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_is_falsey` undeclared / undefined.
+`ms_is_falsey` undeclared → compile error.
 
-**GREEN** — Minimal implementation:
-
-Add declaration to `src/value.h`:
+**GREEN** — Declare in `src/value.h`:
 ```c
 bool ms_is_falsey(MsValue value);
 ```
@@ -195,9 +176,9 @@ bool ms_is_falsey(MsValue value) {
 }
 ```
 
-`nil` and `false` are falsey; everything else (including 0 and empty string) is truthy.
+`nil` and `false` are falsey; everything else (including `0`, empty string) is truthy.
 
-**Verify GREEN**: Build and run — all three tests pass.
+**Verify GREEN**: build + run → all three tests pass.
 
 **REFACTOR**: None needed.
 
@@ -205,47 +186,7 @@ bool ms_is_falsey(MsValue value) {
 
 ### Cycle 4: Value Printing
 
-**RED** — Write failing test:
-
-Add `test_print_value` to `test_value.c`:
-
-```c
-#include <string.h>
-#include <stdio.h>
-
-static void test_print_value(void) {
-    char buf[128];
-    FILE* old = stdout;
-
-    /* Test nil */
-    stdout = fmemopen(buf, sizeof(buf), "w");
-    ms_print_value(ms_nil_val());
-    fflush(stdout);
-    fclose(stdout);
-    stdout = old;
-    assert(strcmp(buf, "nil") == 0);
-
-    /* Test bool true */
-    stdout = fmemopen(buf, sizeof(buf), "w");
-    ms_print_value(ms_bool_val(true));
-    fflush(stdout);
-    fclose(stdout);
-    stdout = old;
-    assert(strcmp(buf, "true") == 0);
-
-    /* Test number */
-    stdout = fmemopen(buf, sizeof(buf), "w");
-    ms_print_value(ms_number_val(42));
-    fflush(stdout);
-    fclose(stdout);
-    stdout = old;
-    assert(strcmp(buf, "42") == 0);
-
-    printf("  test_print_value PASSED\n");
-}
-```
-
-Note: On Windows, `fmemopen` may not be available. Alternatively, use a portable approach with `freopen` to a temp file, or simply test that `ms_print_value` does not crash and returns. Adapt the test to your platform's capabilities. A simpler alternative:
+**RED** — Add to `test_value.c`:
 
 ```c
 static void test_print_value(void) {
@@ -258,11 +199,9 @@ static void test_print_value(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_print_value` undeclared / undefined.
+`ms_print_value` undeclared → compile error.
 
-**GREEN** — Minimal implementation:
-
-Add declaration to `src/value.h`:
+**GREEN** — Declare in `src/value.h`:
 ```c
 void ms_print_value(MsValue value);
 ```
@@ -281,19 +220,17 @@ void ms_print_value(MsValue value) {
 }
 ```
 
-Note: `ms_object_print` will be implemented in T08. For now, stub it or use a forward declaration. Since OBJ printing is tested in T08, this cycle only tests NIL, BOOL, NUMBER printing. Add a forward declaration in `value.h` or use a placeholder.
+`ms_object_print` stubbed via forward decl; implemented in T08. This cycle tests NIL/BOOL/NUMBER only.
 
-**Verify GREEN**: Build and run — test passes (NIL, BOOL, NUMBER output verified).
+**Verify GREEN**: build + run → test passes.
 
-**REFACTOR**: None needed. The `ms_object_print` call will resolve when T08 is linked.
+**REFACTOR**: None. `ms_object_print` resolves when T08 linked.
 
 ---
 
 ### Cycle 5: ValueArray Init/Free/Write
 
-**RED** — Write failing test:
-
-Add `test_value_array` to `test_value.c`:
+**RED** — Add to `test_value.c`:
 
 ```c
 static void test_value_array_basic(void) {
@@ -319,11 +256,9 @@ static void test_value_array_basic(void) {
 }
 ```
 
-**Verify RED**: Build fails — `MsValueArray`, `ms_value_array_init`, etc. undeclared.
+`MsValueArray` etc. undeclared → compile error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/value.h`:
+**GREEN** — Add to `src/value.h`:
 ```c
 typedef struct { MsValue* values; int count; int capacity; } MsValueArray;
 
@@ -356,9 +291,9 @@ void ms_value_array_write(MsValueArray* array, MsValue value) {
 }
 ```
 
-Grow with `MS_GROW_CAPACITY` + `MS_GROW_ARRAY` when `count == capacity`, append value.
+Grow via `MS_GROW_CAPACITY` + `MS_GROW_ARRAY` when full.
 
-**Verify GREEN**: Build and run — all four tests pass.
+**Verify GREEN**: build + run → all four tests pass.
 
 **REFACTOR**: None needed.
 
@@ -366,9 +301,7 @@ Grow with `MS_GROW_CAPACITY` + `MS_GROW_ARRAY` when `count == capacity`, append 
 
 ### Cycle 6: ValueArray Dynamic Growth
 
-**RED** — Write failing test:
-
-Add `test_value_array_growth` to `test_value.c`:
+**RED** — Add to `test_value.c`:
 
 ```c
 static void test_value_array_growth(void) {
@@ -388,30 +321,30 @@ static void test_value_array_growth(void) {
 }
 ```
 
-**Verify RED**: This test should already compile and link (uses existing API). It will fail at runtime if growth is broken, but since Cycle 5 implemented growth, it should pass. Run to confirm.
+Uses existing API — should already compile. Fails at runtime if growth broken.
 
-**Verify GREEN**: `gcc -I src -o build/test_value tests/unit/test_value.c src/value.c && ./build/test_value` → all tests pass.
-
-**REFACTOR**: Verify no memory leaks by running with a sanitizer if available:
+**Verify GREEN**: build + run → all tests pass. Verify no leaks with ASan:
 `gcc -fsanitize=address -I src -o build/test_value tests/unit/test_value.c src/value.c && ./build/test_value`
+
+**REFACTOR**: None needed.
 
 ## Acceptance Criteria
 
-- [x] `sizeof(MsValue) == 16` on 64-bit platforms
+- [x] `sizeof(MsValue) == 16` on 64-bit
 - [x] `ms_nil_val().type == MS_VAL_NIL`
 - [x] `ms_bool_val(true).boolean == true`
-- [x] `ms_number_val(3.14).number` is approximately 3.14
-- [x] `ms_values_equal(ms_number_val(42), ms_number_val(42))` is true
-- [x] `ms_values_equal(ms_number_val(1), ms_number_val(2))` is false
-- [x] `ms_is_falsey(ms_nil_val())` is true
-- [x] `ms_is_falsey(ms_bool_val(false))` is true
-- [x] `ms_is_falsey(ms_number_val(0))` is false
-- [x] `ms_print_value(ms_number_val(42))` prints "42"
-- [x] MsValueArray init/write/free cycle works without leaks
-- [x] MsValueArray grows correctly (write 100+ values)
+- [x] `ms_number_val(3.14).number` ≈ 3.14
+- [x] `ms_values_equal(ms_number_val(42), ms_number_val(42))` → true
+- [x] `ms_values_equal(ms_number_val(1), ms_number_val(2))` → false
+- [x] `ms_is_falsey(ms_nil_val())` → true
+- [x] `ms_is_falsey(ms_bool_val(false))` → true
+- [x] `ms_is_falsey(ms_number_val(0))` → false
+- [x] `ms_print_value(ms_number_val(42))` prints `"42"`
+- [x] `MsValueArray` init/write/free cycle, no leaks
+- [x] `MsValueArray` grows correctly (100+ values)
 
 ## Notes
 
-- `ms_print_value` for OBJ type delegates to `ms_object_print()`, which is implemented in T08. Until T08 is linked, only NIL/BOOL/NUMBER printing can be tested.
-- All inline helpers are defined in the header for performance — they are called frequently throughout the VM.
-- `ms_values_equal` uses pointer equality for OBJ values because strings are interned. This is correct for the final design but relies on the VM's string interning table.
+- `ms_print_value` for OBJ delegates to `ms_object_print()` (T08). Until T08 linked, only NIL/BOOL/NUMBER printing testable.
+- All inline helpers in header — called frequently throughout VM.
+- `ms_values_equal` uses pointer equality for OBJ (strings interned). Relies on VM's string interning table.

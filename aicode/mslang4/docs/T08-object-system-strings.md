@@ -1,34 +1,27 @@
-# T08: Object System - Strings
+# T08: Object System — Strings
 
-**Phase**: 2 - Core Data Types
-**Dependencies**: T07 (Value System)
-**Estimated Complexity**: Medium
+**Phase**: 2 — Core Data Types
+**Deps**: T07 (Value System)
+**Complexity**: Medium
 
 ## Goal
 
-Implement the base object system and string object type. This includes the `MsObject` header, string allocation (copy and take), hashing, concatenation, and object lifecycle management. String interning is deferred to the VM task.
+Base object system + string object. `MsObject` header, string alloc (copy/take), FNV-1a hashing, concatenation, lifecycle. String interning deferred to VM task.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/object.h` | Object types, all object structs (string only populated initially), macros |
-| `src/object.c` | String operations, object free/print (string only initially) |
+| `src/object.h` | Object types, all object structs (string populated, others placeholder), macros |
+| `src/object.c` | String ops, `ms_object_free`/`ms_object_print` (string only initially) |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: MsObject Header and Type Enums
+### Cycle 1: `MsObject` Header + Type Enums
 
-**RED** — Write failing test:
-
-Create `tests/unit/test_object_string.c`. Write a test function `test_object_header` that:
-- Creates a MsString via a helper (not yet available — will use direct allocation for now)
-- Verifies the `MsObjectType` enum values exist
-- Verifies the `MsObject` struct has `type`, `next`, and `isMarked` fields
-- Verifies `MS_IS_STRING` and `MS_AS_STRING` macros compile and work
+**RED** — Create `tests/unit/test_object_string.c`:
 
 ```c
-// tests/unit/test_object_string.c (initial skeleton)
 #include "object.h"
 #include "value.h"
 #include <stdio.h>
@@ -36,7 +29,6 @@ Create `tests/unit/test_object_string.c`. Write a test function `test_object_hea
 #include <string.h>
 
 static void test_object_header(void) {
-    /* We'll create a string to test the header and macros */
     MsString* s = ms_string_copy("hello", 5);
     assert(s != NULL);
     assert(s->base.type == MS_OBJ_STRING);
@@ -46,7 +38,6 @@ static void test_object_header(void) {
     assert(strncmp(s->chars, "hello", 5) == 0);
     assert(s->hash != 0);
 
-    /* Test macros */
     MsValue val = ms_obj_val((MsObject*)s);
     assert(MS_IS_STRING(val));
     assert(MS_AS_STRING(val) == s);
@@ -63,13 +54,11 @@ int main(void) {
 }
 ```
 
-This will fail to compile because `object.h` does not exist.
+`object.h` doesn't exist → compile error.
 
-**Verify RED**: `gcc -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c` → compilation error: `object.h: No such file or directory`
+**Verify RED**: `gcc -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c` → `object.h` not found
 
-**GREEN** — Minimal implementation:
-
-Create `src/object.h` with all object type definitions (forward-declare structs for later tasks):
+**GREEN** — Create `src/object.h`:
 
 ```c
 #ifndef MS_OBJECT_H
@@ -118,7 +107,7 @@ void ms_object_print(MsValue value);
 #endif
 ```
 
-Create `src/object.c` with a minimal `ms_string_copy` implementation (enough to pass this test):
+Create `src/object.c`:
 
 ```c
 #include "object.h"
@@ -167,11 +156,11 @@ void ms_object_free(MsObject* obj) {
 }
 ```
 
-Design decision: Define ALL structs now (with placeholders for unimplemented fields) to avoid circular dependency issues later. Only implement string-related functions in this task.
+All structs defined now (placeholders for unimplemented) → avoid circular deps later. Only string fns implemented here.
 
-Allocate `MsString` using `MS_ALLOCATE(MsString, 1)` and set `base.next = NULL`, `base.isMarked = false`. The GC-linked-list integration happens in T15/T17.
+Allocate via `MS_ALLOCATE(MsString, 1)`. `base.next = NULL`, `base.isMarked = false`. GC linked-list integration in T15/T17.
 
-**Verify GREEN**: `gcc -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c && ./build/test_object_string` → test passes
+**Verify GREEN**: `gcc -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c && ./build/test_object_string`
 
 **REFACTOR**: None needed.
 
@@ -179,25 +168,19 @@ Allocate `MsString` using `MS_ALLOCATE(MsString, 1)` and set `base.next = NULL`,
 
 ### Cycle 2: FNV-1a Hash Function
 
-**RED** — Write failing test:
-
-Add `test_string_hash` to `test_object_string.c`:
+**RED** — Add to `test_object_string.c`:
 
 ```c
 static void test_string_hash(void) {
-    /* Empty string: FNV-1a offset basis */
     assert(ms_string_hash("", 0) == 2166136261u);
 
-    /* Deterministic: same input always same hash */
     uint32_t h1 = ms_string_hash("hello", 5);
     uint32_t h2 = ms_string_hash("hello", 5);
     assert(h1 == h2);
 
-    /* Different strings: different hashes (with high probability) */
     uint32_t h3 = ms_string_hash("world", 5);
     assert(h1 != h3);
 
-    /* String created via copy has matching hash */
     MsString* s = ms_string_copy("hello", 5);
     assert(s->hash == h1);
     ms_object_free((MsObject*)s);
@@ -206,9 +189,9 @@ static void test_string_hash(void) {
 }
 ```
 
-**Verify RED**: Build and run — should already pass since `ms_string_hash` was implemented in Cycle 1. This is a verification cycle. If hash is not yet separately callable (e.g., declared static), this test would fail. Ensure `ms_string_hash` is declared in the header and exported.
+**Verify RED**: Should already pass — `ms_string_hash` from Cycle 1. Verification cycle.
 
-**Verify GREEN**: `gcc -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c && ./build/test_object_string` → both tests pass.
+**Verify GREEN**: build + run → both tests pass.
 
 **REFACTOR**: None needed.
 
@@ -216,9 +199,7 @@ static void test_string_hash(void) {
 
 ### Cycle 3: String Take (Ownership Transfer)
 
-**RED** — Write failing test:
-
-Add `test_string_take` to `test_object_string.c`:
+**RED** — Add to `test_object_string.c`:
 
 ```c
 static void test_string_take(void) {
@@ -232,8 +213,6 @@ static void test_string_take(void) {
     assert(s->length == 5);
     assert(strcmp(s->chars, "hello") == 0);
     assert(s->hash == ms_string_hash("hello", 5));
-
-    /* Verify it's the same pointer (took ownership, not copied) */
     assert(s->chars == buffer);
 
     ms_object_free((MsObject*)s);
@@ -241,11 +220,9 @@ static void test_string_take(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_string_take` undefined.
+`ms_string_take` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/object.c`:
+**GREEN** — Add to `src/object.c`:
 
 ```c
 MsString* ms_string_take(char* chars, int length) {
@@ -258,9 +235,9 @@ MsString* ms_string_take(char* chars, int length) {
 }
 ```
 
-Takes ownership of existing char buffer, computes hash, wraps in MsString. Does NOT copy — the `chars` pointer is used directly.
+Takes ownership of `chars` pointer — no copy.
 
-**Verify GREEN**: Build and run — all three tests pass.
+**Verify GREEN**: build + run → all three tests pass.
 
 **REFACTOR**: None needed.
 
@@ -268,9 +245,7 @@ Takes ownership of existing char buffer, computes hash, wraps in MsString. Does 
 
 ### Cycle 4: String Concatenation
 
-**RED** — Write failing test:
-
-Add `test_string_concat` to `test_object_string.c`:
+**RED** — Add to `test_object_string.c`:
 
 ```c
 static void test_string_concat(void) {
@@ -290,11 +265,9 @@ static void test_string_concat(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_string_concat` undefined.
+`ms_string_concat` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/object.c`:
+**GREEN** — Add to `src/object.c`:
 
 ```c
 MsString* ms_string_concat(MsString* a, MsString* b) {
@@ -307,9 +280,9 @@ MsString* ms_string_concat(MsString* a, MsString* b) {
 }
 ```
 
-Allocates new buffer, copies a then b, takes ownership of new buffer.
+Alloc new buffer, copy a then b, take ownership.
 
-**Verify GREEN**: Build and run — all four tests pass.
+**Verify GREEN**: build + run → all four tests pass.
 
 **REFACTOR**: None needed.
 
@@ -317,16 +290,13 @@ Allocates new buffer, copies a then b, takes ownership of new buffer.
 
 ### Cycle 5: Object Print (String)
 
-**RED** — Write failing test:
-
-Add `test_object_print` to `test_object_string.c`:
+**RED** — Add to `test_object_string.c`:
 
 ```c
 static void test_object_print(void) {
     MsString* s = ms_string_copy("hello world", 11);
     MsValue val = ms_obj_val((MsObject*)s);
 
-    /* Visual check — print should output the string chars */
     printf("  Expect 'hello world': ");
     ms_object_print(val);
     printf("\n");
@@ -336,11 +306,9 @@ static void test_object_print(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_object_print` undefined.
+`ms_object_print` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/object.c`:
+**GREEN** — Add to `src/object.c`:
 
 ```c
 #include <stdio.h>
@@ -360,23 +328,18 @@ void ms_object_print(MsValue value) {
 }
 ```
 
-For strings, print `chars`. For others, print type name placeholder.
-
-**Verify GREEN**: Build and run — all five tests pass.
+**Verify GREEN**: build + run → all five tests pass.
 
 **REFACTOR**: None needed.
 
 ---
 
-### Cycle 6: Object Free and Hash Consistency
+### Cycle 6: Object Free + Hash Consistency
 
-**RED** — Write failing test:
-
-Add `test_object_free_and_consistency` to `test_object_string.c`:
+**RED** — Add to `test_object_string.c`:
 
 ```c
 static void test_object_free_and_consistency(void) {
-    /* Create and free multiple strings — no crash, no double-free */
     for (int i = 0; i < 10; i++) {
         char buf[16];
         int len = snprintf(buf, sizeof(buf), "str_%d", i);
@@ -385,7 +348,6 @@ static void test_object_free_and_consistency(void) {
         ms_object_free((MsObject*)s);
     }
 
-    /* Hash consistency: different strings with same prefix */
     MsString* s1 = ms_string_copy("abc", 3);
     MsString* s2 = ms_string_copy("abcd", 4);
     assert(s1->hash != s2->hash);
@@ -396,26 +358,24 @@ static void test_object_free_and_consistency(void) {
 }
 ```
 
-**Verify RED**: Should already compile and pass since all functions are implemented. This is a verification/stress cycle.
+Verification/stress cycle — should already compile and pass.
 
-**Verify GREEN**: `gcc -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c && ./build/test_object_string` → all tests pass.
-
-**REFACTOR**: Run with address sanitizer to verify no leaks:
+**Verify GREEN**: build + run → all tests pass. Verify no leaks with ASan:
 `gcc -fsanitize=address -I src -o build/test_object_string tests/unit/test_object_string.c src/object.c src/value.c && ./build/test_object_string`
 
 ## Acceptance Criteria
 
-- [x] `ms_string_copy("hello", 5)` creates a valid MsString with correct hash
-- [x] `ms_string_take(buffer, len)` takes ownership without copying
-- [x] `ms_string_hash("", 0)` returns the FNV-1a offset basis
-- [x] `ms_string_concat(a, b)` produces a string with contents "ab"
-- [x] `ms_object_free()` frees string without crash or leak
-- [x] `ms_object_print(ms_obj_val(str))` prints the string chars
-- [x] `MS_IS_STRING` macro works correctly
-- [x] Hash is deterministic: same input always produces same hash
+- [x] `ms_string_copy("hello", 5)` → valid `MsString` with correct hash
+- [x] `ms_string_take(buffer, len)` → ownership transfer, no copy
+- [x] `ms_string_hash("", 0)` → FNV-1a offset basis
+- [x] `ms_string_concat(a, b)` → `"ab"` contents
+- [x] `ms_object_free()` → no crash, no leak
+- [x] `ms_object_print(ms_obj_val(str))` → prints string chars
+- [x] `MS_IS_STRING` macro works
+- [x] Hash deterministic
 
 ## Notes
 
-- `ms_alloc_object()` (from memory.h) requires a `MsVM*` for GC tracking. Since the VM doesn't exist yet, use `MS_ALLOCATE` directly for now and refactor in T15.
-- All object type structs are defined now (with `_placeholder` fields for unimplemented ones) to avoid circular dependency issues in later tasks. Only string operations are implemented here.
-- The `ms_object_free` switch handles `MS_OBJ_STRING` and has a `default: break` for all other types (handled in later tasks).
+- `ms_alloc_object()` (memory.h) requires `MsVM*` for GC. VM doesn't exist yet → use `MS_ALLOCATE` directly, refactor in T15.
+- All object structs defined now (placeholder fields) → avoid circular deps later. Only string ops implemented here.
+- `ms_object_free` switch: `MS_OBJ_STRING` handled, `default: break` for others (later tasks).

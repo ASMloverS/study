@@ -1,27 +1,26 @@
 # T05: Debug Logger
 
-**Phase**: 1 - Foundation
-**Dependencies**: T03 (Memory Subsystem), T04 (Platform Layer)
-**Estimated Complexity**: Medium
+**Phase**: 1 — Foundation
+**Deps**: T03 (Memory), T04 (Platform)
+**Complexity**: Medium
 
 ## Goal
 
-Implement a configurable logging system with colored output, multiple levels, source location tracking, and compile-time filtering. Used throughout the codebase for debugging and diagnostics.
+Configurable logger: colored output, multi-level, source-location tracking, compile-time filtering. Cross-cutting debug/diag utility.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/logger.h` | Logger API, level enum, convenience macros |
-| `src/logger.c` | Logger implementation |
-| `tests/unit/test_logger.c` | Unit tests for logger |
+| `src/logger.h` | API, `MsLogLevel` enum, convenience macros |
+| `src/logger.c` | Impl |
+| `tests/unit/test_logger.c` | Unit tests |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: MsLogLevel Enum and Basic Log Function
+### Cycle 1: `MsLogLevel` Enum + Basic Log Fn
 
-**RED** — Write failing test:
-- Create `tests/unit/test_logger.c` that verifies the logger can output a message:
+**RED** — Create `tests/unit/test_logger.c`:
 
 ```c
 #include "logger.h"
@@ -75,7 +74,7 @@ int main(void) {
 }
 ```
 
-- Add to `tests/CMakeLists.txt`:
+Add to `tests/CMakeLists.txt`:
 ```cmake
 add_executable(test_logger tests/unit/test_logger.c)
 target_include_directories(test_logger PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -83,16 +82,11 @@ target_link_libraries(test_logger PRIVATE maple)
 add_test(NAME test_logger COMMAND test_logger)
 ```
 
-- `logger.h` and `logger.c` do not exist yet — compile error.
+`logger.h`/`logger.c` don't exist → compile error.
 
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `logger.h` not found
+**Verify RED**: `cmake --build build` → `logger.h` not found
 
-**GREEN** — Minimal implementation:
-- Create `src/logger.h`:
+**GREEN** — Create `src/logger.h`:
 
 ```c
 #ifndef MS_LOGGER_H
@@ -116,7 +110,7 @@ void ms_logger_log(MsLogLevel level, const char* file, int line,
 #endif
 ```
 
-- Create `src/logger.c`:
+Create `src/logger.c`:
 
 ```c
 #include "logger.h"
@@ -182,19 +176,13 @@ void ms_logger_log(MsLogLevel level, const char* file, int line,
 }
 ```
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: compiles and test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_logger`
 
-**REFACTOR**: Logger uses static (file-scoped) globals for state. This is the one exception to the "no globals" rule since the logger is a cross-cutting concern.
+**REFACTOR**: Static file-scoped globals — accepted exception to "no globals" rule (cross-cutting concern).
 
 ### Cycle 2: Level Filtering
 
-**RED** — Write failing test:
-- Add a test that verifies level filtering suppresses lower-priority messages:
+**RED** — Add test:
 
 ```c
 static void test_level_filtering(void) {
@@ -240,28 +228,17 @@ static void test_level_filtering(void) {
 }
 ```
 
-**Verify RED**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: should already pass — the level filtering logic from Cycle 1 (`if (level < current_level) return;`) handles this.
+**Verify RED**: `cmake --build build && ctest --test-dir build -R test_logger` — already passes (Cycle 1 `level < current_level` guard handles it).
 
-**GREEN** — No changes needed. The implementation from Cycle 1 already supports level filtering.
+**GREEN** — No changes. Cycle 1 impl covers this.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_logger`
 
-**REFACTOR**: No changes needed. The enum ordering (`TRACE=0 < DEBUG=1 < INFO=2 < WARN=3 < ERROR=4 < FATAL=5 < OFF=6`) ensures numeric comparison works for filtering.
+**REFACTOR**: Enum ordering `TRACE=0 < DEBUG=1 < … < OFF=6` → numeric cmp works.
 
 ### Cycle 3: Convenience Macros
 
-**RED** — Write failing test:
-- Add a test that verifies convenience macros expand correctly and produce output:
+**RED** — Add test:
 
 ```c
 static void test_convenience_macros(void) {
@@ -312,16 +289,11 @@ static void test_convenience_macros(void) {
 }
 ```
 
-- `ms_logger_trace`, `ms_logger_debug`, etc. are not defined yet — compile error.
+`ms_logger_trace` etc. undefined → compile error.
 
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `ms_logger_trace` undeclared (and others)
+**Verify RED**: `cmake --build build` → `ms_logger_trace` undeclared
 
-**GREEN** — Minimal implementation:
-- Add convenience macros to `src/logger.h`:
+**GREEN** — Add to `src/logger.h`:
 
 ```c
 #define ms_logger_trace(...) ms_logger_log(MS_LOG_TRACE, __FILE__, __LINE__, __func__, __VA_ARGS__)
@@ -332,19 +304,13 @@ Expected: compile error — `ms_logger_trace` undeclared (and others)
 #define ms_logger_fatal(...) ms_logger_log(MS_LOG_FATAL, __FILE__, __LINE__, __func__, __VA_ARGS__)
 ```
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: compiles and test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_logger`
 
-**REFACTOR**: No changes needed.
+**REFACTOR**: None needed.
 
 ### Cycle 4: Colored Output
 
-**RED** — Write failing test:
-- Add a test that verifies colored output includes ANSI codes when enabled:
+**RED** — Add test:
 
 ```c
 static void test_colored_output(void) {
@@ -376,17 +342,11 @@ static void test_colored_output(void) {
 }
 ```
 
-- The current implementation does not emit ANSI codes — test will fail because `strstr(buf, "\033[")` returns NULL.
+Current impl doesn't emit ANSI codes → `strstr(buf, "\033[")` returns NULL → fails.
 
-**Verify RED**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: test fails — no ANSI escape codes in output
+**Verify RED**: `cmake --build build && ctest --test-dir build -R test_logger` → fails
 
-**GREEN** — Minimal implementation:
-- Add color support to `src/logger.c`. Add a helper and update `ms_logger_log`:
+**GREEN** — Add to `src/logger.c`:
 
 ```c
 static const char* level_ansi(MsLogLevel level) {
@@ -403,7 +363,7 @@ static const char* level_ansi(MsLogLevel level) {
 }
 ```
 
-- Update `ms_logger_log` to emit color codes:
+Update `ms_logger_log`:
 
 ```c
 void ms_logger_log(MsLogLevel level, const char* file, int line,
@@ -437,21 +397,15 @@ void ms_logger_log(MsLogLevel level, const char* file, int line,
 }
 ```
 
-ANSI color codes for levels: TRACE=90(gray), DEBUG=34(blue), INFO=32(green), WARN=33(yellow), ERROR=31(red), FATAL=35(magenta).
+ANSI codes: TRACE→90(gray), DEBUG→34(blue), INFO→32(green), WARN→33(yellow), ERROR→31(red), FATAL→35(magenta).
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: compiles and test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_logger`
 
-**REFACTOR**: On Windows, `ms_platform_enable_console_colors()` must be called before color output works in terminal. For file output (tmpfile), ANSI codes are written raw.
+**REFACTOR**: Windows → call `ms_platform_enable_console_colors()` before terminal color output. File output (tmpfile) → ANSI written raw.
 
-### Cycle 5: Compile-Time Log Level Filtering
+### Cycle 5: Compile-Time Level Filtering
 
-**RED** — Write failing test:
-- This cycle verifies the compile-time `MS_LOG_LEVEL_*` macros exist and have correct values. Add a test:
+**RED** — Add test:
 
 ```c
 static void test_compile_time_level(void) {
@@ -462,16 +416,11 @@ static void test_compile_time_level(void) {
 }
 ```
 
-- `MS_LOG_LEVEL` is not defined yet — compile error.
+`MS_LOG_LEVEL` undefined → compile error.
 
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `MS_LOG_LEVEL` undeclared
+**Verify RED**: `cmake --build build` → `MS_LOG_LEVEL` undeclared
 
-**GREEN** — Minimal implementation:
-- Add compile-time level filtering to `src/logger.h`:
+**GREEN** — Add to `src/logger.h`:
 
 ```c
 #ifdef MS_LOG_LEVEL_TRACE
@@ -489,31 +438,26 @@ Expected: compile error — `MS_LOG_LEVEL` undeclared
 #endif
 ```
 
-Default level is INFO (2). When `MS_LOG_LEVEL_TRACE` is defined via compiler flag, `MS_LOG_LEVEL` becomes 0, etc.
+Default INFO (2). `MS_LOG_LEVEL_TRACE` via compiler flag → `MS_LOG_LEVEL=0`, etc.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_logger
-```
-Expected: compiles and test passes (default MS_LOG_LEVEL is 2)
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_logger`
 
-**REFACTOR**: No changes needed. The compile-time filter can be used in future for `#if MS_LOG_LEVEL <= MS_LOG_DEBUG` guards around expensive debug code.
+**REFACTOR**: None. Future: `#if MS_LOG_LEVEL <= MS_LOG_DEBUG` guards around expensive debug code.
 
 ## Acceptance Criteria
 
-- [x] Logger compiles and links with platform layer
-- [x] `ms_logger_info("test")` outputs `[INFO] test` to stdout
-- [x] Setting level to `MS_LOG_WARN` suppresses TRACE/DEBUG/INFO messages
-- [x] Colored output works on Windows and POSIX terminals
-- [x] Timestamps can be toggled on/off
-- [x] Output can be redirected to a FILE* stream
-- [x] Compile-time `MS_LOG_LEVEL_*` filtering works
+- [x] Logger compiles + links with platform layer
+- [x] `ms_logger_info("test")` → `[INFO] test` to stdout
+- [x] `MS_LOG_WARN` suppresses TRACE/DEBUG/INFO
+- [x] Colored output on Windows + POSIX terminals
+- [x] Timestamps toggleable
+- [x] Output redirectable to `FILE*`
+- [x] Compile-time `MS_LOG_LEVEL_*` filtering
 - [x] All convenience macros expand correctly
 
 ## Notes
 
-- Logger uses file-scoped static globals for state. This is the one accepted exception to the "no globals" rule.
-- Log format: `[LEVEL] file:line@func - message\n` (with optional timestamp prefix `[HH:MM:SS]`).
-- Uses `<stdarg.h>` for variadic args, `vsnprintf`/`vfprintf` for formatting.
-- Timestamps via `time()` + `localtime()`. Millisecond precision can be added later.
+- Static file-scoped globals — sole exception to "no globals" rule.
+- Format: `[LEVEL] file:line@func - message\n` (optional `[HH:MM:SS]` prefix).
+- `<stdarg.h>` variadic args, `vsnprintf`/`vfprintf` formatting.
+- Timestamps via `time()` + `localtime()`. ms precision → future.

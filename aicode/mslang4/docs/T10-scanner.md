@@ -1,34 +1,28 @@
 # T10: Scanner (Lexer)
 
-**Phase**: 3 - Scanner
-**Dependencies**: T06 (Token Types)
-**Estimated Complexity**: High
+**Phase**: 3 — Scanner
+**Deps**: T06 (Token Types)
+**Complexity**: High
 **Status**: ✅ Done
 
 ## Goal
 
-Implement the lexical analyzer that converts source code text into a stream of tokens. Handles whitespace, comments, string/number literals, identifiers, keywords, and all operators.
+Lexical analyzer: source text → token stream. Whitespace, comments, string/number literals, identifiers, keywords, operators.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/scanner.h` | Scanner struct and API |
-| `src/scanner.c` | Full lexer implementation |
+| `src/scanner.h` | Scanner struct + API |
+| `src/scanner.c` | Full lexer impl |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Scanner Init and EOF Token
+### Cycle 1: Scanner Init + EOF Token
 
-**RED** — Write failing test:
-
-Create `tests/unit/test_scanner.c`. Write a test function `test_empty_input` that:
-- Initializes a scanner with an empty string `""`
-- Scans a token and verifies it is `MS_TOKEN_EOF`
-- Verifies `line == 1` and `column == 1`
+**RED** — Create `tests/unit/test_scanner.c`:
 
 ```c
-// tests/unit/test_scanner.c (initial skeleton)
 #include "scanner.h"
 #include "token.h"
 #include <stdio.h>
@@ -59,11 +53,11 @@ int main(void) {
 }
 ```
 
-**Verify RED**: `gcc -I src -o build/test_scanner tests/unit/test_scanner.c src/scanner.c` → compilation error: `scanner.h: No such file or directory`
+`scanner.h` doesn't exist → compile error.
 
-**GREEN** — Minimal implementation:
+**Verify RED**: `gcc -I src -o build/test_scanner tests/unit/test_scanner.c src/scanner.c` → `scanner.h` not found
 
-Create `src/scanner.h`:
+**GREEN** — Create `src/scanner.h`:
 
 ```c
 #ifndef MS_SCANNER_H
@@ -84,7 +78,7 @@ MsToken ms_scanner_scan_token(MsScanner* scanner);
 #endif
 ```
 
-Create `src/scanner.c` with init and scan_token returning EOF:
+Create `src/scanner.c`:
 
 ```c
 #include "scanner.h"
@@ -113,19 +107,13 @@ MsToken ms_scanner_scan_token(MsScanner* scanner) {
 }
 ```
 
-`ms_scanner_init()`: Set start=current=source, line=1, column=1.
-
-**Verify GREEN**: `gcc -I src -o build/test_scanner tests/unit/test_scanner.c src/scanner.c && ./build/test_scanner` → test passes
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → test passes.
 
 ---
 
 ### Cycle 2: Single-Character Tokens
 
-**RED** — Write failing test:
-
-Add `test_single_char_tokens` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_single_char_tokens(void) {
@@ -161,11 +149,9 @@ static void test_single_char_tokens(void) {
 }
 ```
 
-**Verify RED**: Build and run — tests fail because `ms_scanner_scan_token` always returns EOF.
+`ms_scanner_scan_token` always returns EOF → tests fail.
 
-**GREEN** — Minimal implementation:
-
-Update `src/scanner.c` to dispatch on first character:
+**GREEN** — Add helpers + dispatch in `src/scanner.c`:
 
 ```c
 static char ms_scanner_advance(MsScanner* scanner) {
@@ -207,19 +193,17 @@ static MsToken ms_scanner_scan_token(MsScanner* scanner) {
 }
 ```
 
-Note: Adjust `ms_make_token` to use `scanner->start` before advance, or restructure so start points to the beginning of the token. Refactor: set `scanner->start = scanner->current` before advancing.
+Set `scanner->start = scanner->current` before advancing in final version.
 
-**Verify GREEN**: Build and run — both tests pass.
+**Verify GREEN**: build + run → both tests pass.
 
-**REFACTOR**: Ensure `ms_make_token` uses the correct `start` pointer. Update `ms_scanner_scan_token` to set `scanner->start = scanner->current` at the beginning before advancing.
+**REFACTOR**: Ensure `ms_make_token` uses correct `start`. Update `ms_scanner_scan_token` to set `scanner->start = scanner->current` at top before advancing.
 
 ---
 
-### Cycle 3: Two-Character Tokens (==, !=, <=, >=)
+### Cycle 3: Two-Character Tokens (`==`, `!=`, `<=`, `>=`)
 
-**RED** — Write failing test:
-
-Add `test_two_char_tokens` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_two_char_tokens(void) {
@@ -240,11 +224,9 @@ static void test_two_char_tokens(void) {
 }
 ```
 
-**Verify RED**: Build and run — `==` scans as EQUAL followed by EQUAL, not as EQUAL_EQUAL. Tests fail.
+`==` scans as EQUAL + EQUAL, not EQUAL_EQUAL → fails.
 
-**GREEN** — Minimal implementation:
-
-Add `match` helper and update the switch cases:
+**GREEN** — Add `match` helper:
 
 ```c
 static bool ms_scanner_match(MsScanner* scanner, char expected) {
@@ -256,7 +238,7 @@ static bool ms_scanner_match(MsScanner* scanner, char expected) {
 }
 ```
 
-Update the switch in `ms_scanner_scan_token` for `!`, `=`, `<`, `>`:
+Update switch for `!`, `=`, `<`, `>`:
 
 ```c
         case '!': return ms_make_token(scanner,
@@ -269,17 +251,13 @@ Update the switch in `ms_scanner_scan_token` for `!`, `=`, `<`, `>`:
             ms_scanner_match(scanner, '=') ? MS_TOKEN_GREATER_EQUAL : MS_TOKEN_GREATER);
 ```
 
-**Verify GREEN**: Build and run — all three tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all three tests pass.
 
 ---
 
 ### Cycle 4: Number Literals
 
-**RED** — Write failing test:
-
-Add `test_number_literals` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_number_literals(void) {
@@ -300,11 +278,9 @@ static void test_number_literals(void) {
 }
 ```
 
-**Verify RED**: Build and run — `1` is not recognized, returns ERROR. Tests fail.
+Digits not recognized → ERROR.
 
-**GREEN** — Minimal implementation:
-
-Add `scanNumber` helper to `src/scanner.c`:
+**GREEN** — Add to `src/scanner.c`:
 
 ```c
 static bool ms_is_digit(char c) { return c >= '0' && c <= '9'; }
@@ -319,19 +295,15 @@ static MsToken ms_scan_number(MsScanner* scanner) {
 }
 ```
 
-Add to the switch: `default: if (ms_is_digit(c)) return ms_scan_number(scanner);`
+Switch default: `if (ms_is_digit(c)) return ms_scan_number(scanner);`
 
-**Verify GREEN**: Build and run — all four tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all four tests pass.
 
 ---
 
-### Cycle 5: String Literals with Escapes
+### Cycle 5: String Literals + Escapes
 
-**RED** — Write failing test:
-
-Add `test_string_literals` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_string_literals(void) {
@@ -339,14 +311,12 @@ static void test_string_literals(void) {
     ms_scanner_init(&scanner, "\"hello\"");
     MsToken tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_STRING);
-    assert(tok.length == 7); /* includes quotes in lexeme */
+    assert(tok.length == 7);
 
-    /* Escaped quote */
     ms_scanner_init(&scanner, "\"a\\\"b\"");
     tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_STRING);
 
-    /* Escape sequences: \\ \n \t \" */
     ms_scanner_init(&scanner, "\"\\n\\t\\\\\"");
     tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_STRING);
@@ -355,11 +325,9 @@ static void test_string_literals(void) {
 }
 ```
 
-**Verify RED**: Build and run — `"` is not recognized as string start. Tests fail.
+`"` not recognized → fails.
 
-**GREEN** — Minimal implementation:
-
-Add `scanString` helper to `src/scanner.c`:
+**GREEN** — Add to `src/scanner.c`:
 
 ```c
 static MsToken ms_scan_string(MsScanner* scanner) {
@@ -372,26 +340,22 @@ static MsToken ms_scan_string(MsScanner* scanner) {
         ms_scanner_advance(scanner);
     }
     if (ms_scanner_at_end(scanner)) return ms_error_token(scanner, "Unterminated string.");
-    ms_scanner_advance(scanner); /* closing " */
+    ms_scanner_advance(scanner);
     return ms_make_token(scanner, MS_TOKEN_STRING);
 }
 ```
 
-Add to the switch: `case '"': return ms_scan_string(scanner);`
+Switch: `case '"': return ms_scan_string(scanner);`
 
-Handle `\n`, `\t`, `\\`, `\"` escapes. Return `MS_TOKEN_STRING` with lexeme pointing into source (including quotes).
+Escapes: `\n`, `\t`, `\\`, `\"`. Lexeme includes quotes.
 
-**Verify GREEN**: Build and run — all five tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all five tests pass.
 
 ---
 
 ### Cycle 6: Identifiers
 
-**RED** — Write failing test:
-
-Add `test_identifiers` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_identifiers(void) {
@@ -411,11 +375,9 @@ static void test_identifiers(void) {
 }
 ```
 
-**Verify RED**: Build and run — identifiers not recognized, return ERROR.
+Identifiers not recognized → ERROR.
 
-**GREEN** — Minimal implementation:
-
-Add helpers to `src/scanner.c`:
+**GREEN** — Add to `src/scanner.c`:
 
 ```c
 static bool ms_is_alpha(char c) {
@@ -432,7 +394,7 @@ static MsToken ms_scan_identifier(MsScanner* scanner) {
 }
 ```
 
-Update the switch default:
+Switch default:
 ```c
     default:
         if (ms_is_digit(c)) return ms_scan_number(scanner);
@@ -440,19 +402,13 @@ Update the switch default:
         return ms_error_token(scanner, "Unexpected character.");
 ```
 
-Collect alphanumeric + underscore chars. Return `MS_TOKEN_IDENTIFIER`.
-
-**Verify GREEN**: Build and run — all six tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all six tests pass.
 
 ---
 
 ### Cycle 7: Keywords
 
-**RED** — Write failing test:
-
-Add `test_keywords` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_keywords(void) {
@@ -476,11 +432,9 @@ static void test_keywords(void) {
 }
 ```
 
-**Verify RED**: Build and run — all keywords scan as IDENTIFIER, not their keyword type. Tests fail.
+All keywords scan as IDENTIFIER → fails.
 
-**GREEN** — Minimal implementation:
-
-Add `identifierType` and `checkKeyword` helpers to `src/scanner.c`:
+**GREEN** — Add trie-based keyword matching to `src/scanner.c`:
 
 ```c
 static MsTokenType ms_check_keyword(MsScanner* scanner, int start, int length,
@@ -555,8 +509,7 @@ static MsTokenType ms_identifier_type(MsScanner* scanner) {
 }
 ```
 
-Update `ms_scan_identifier` to call `ms_identifier_type`:
-
+Update `ms_scan_identifier`:
 ```c
 static MsToken ms_scan_identifier(MsScanner* scanner) {
     while (ms_is_alphanumeric(ms_scanner_peek(scanner))) ms_scanner_advance(scanner);
@@ -564,35 +517,26 @@ static MsToken ms_scan_identifier(MsScanner* scanner) {
 }
 ```
 
-Use `checkKeyword` trie approach for efficient keyword matching. Keywords: and, class, else, false, fn, for, if, nil, or, print, return, super, this, true, var, while, break, continue, import, from, as.
-
-**Verify GREEN**: Build and run — all seven tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all seven tests pass.
 
 ---
 
-### Cycle 8: Whitespace and Comments
+### Cycle 8: Whitespace + Comments
 
-**RED** — Write failing test:
-
-Add `test_whitespace_comments` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_whitespace_comments(void) {
-    /* Line comment */
     MsScanner scanner;
     ms_scanner_init(&scanner, "// comment\n42");
     MsToken tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_NUMBER);
     assert(tok.line == 2);
 
-    /* Block comment */
     ms_scanner_init(&scanner, "/* block */ 42");
     tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_NUMBER);
 
-    /* Whitespace skipping */
     ms_scanner_init(&scanner, "   \t\r\n  42");
     tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_NUMBER);
@@ -602,11 +546,9 @@ static void test_whitespace_comments(void) {
 }
 ```
 
-**Verify RED**: Build and run — `//` scans as SLASH SLASH (not a comment). Tests fail.
+`//` scans as SLASH SLASH → fails.
 
-**GREEN** — Minimal implementation:
-
-Add `skipWhitespace` to `src/scanner.c`:
+**GREEN** — Add `ms_skip_whitespace` to `src/scanner.c`:
 
 ```c
 static void ms_skip_whitespace(MsScanner* scanner) {
@@ -652,8 +594,7 @@ static void ms_skip_whitespace(MsScanner* scanner) {
 }
 ```
 
-Update `ms_scanner_scan_token` to call `ms_skip_whitespace` first and update `scanner->start`:
-
+Update `ms_scanner_scan_token`:
 ```c
 MsToken ms_scanner_scan_token(MsScanner* scanner) {
     ms_skip_whitespace(scanner);
@@ -663,41 +604,33 @@ MsToken ms_scanner_scan_token(MsScanner* scanner) {
 }
 ```
 
-Handle `//` line comments (skip to end of line) and `/* */` block comments. Handle newlines (increment line, reset column).
+Handles `//` line comments, `/* */` block comments, `\n` line tracking.
 
-**Verify GREEN**: Build and run — all eight tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all eight tests pass.
 
 ---
 
-### Cycle 9: Multi-Token Programs and Line/Column Tracking
+### Cycle 9: Multi-Token Programs + Line/Column Tracking
 
-**RED** — Write failing test:
-
-Add `test_multi_token` and `test_line_column` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
-static MsToken scan_next(MsScanner* scanner) {
-    return ms_scanner_scan_token(scanner);
-}
-
 static void test_multi_token(void) {
     MsScanner scanner;
     ms_scanner_init(&scanner, "var x = 42");
     MsToken tok;
 
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_VAR);
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_IDENTIFIER);
     assert(strncmp(tok.start, "x", 1) == 0);
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_EQUAL);
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_NUMBER);
     assert(strncmp(tok.start, "42", 2) == 0);
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.type == MS_TOKEN_EOF);
 
     printf("  test_multi_token PASSED\n");
@@ -708,24 +641,23 @@ static void test_line_column(void) {
     ms_scanner_init(&scanner, "1\n+\n2");
     MsToken tok;
 
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.line == 1);
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.line == 2);
     assert(tok.type == MS_TOKEN_PLUS);
-    tok = scan_next(&scanner);
+    tok = ms_scanner_scan_token(&scanner);
     assert(tok.line == 3);
 
     printf("  test_line_column PASSED\n");
 }
 ```
 
-**Verify RED**: Build and run — should pass if previous cycles are correct. This is a verification cycle for multi-token scanning and line tracking.
+Verification cycle — passes if previous cycles correct.
 
-**Verify GREEN**: Build and run — all ten tests pass.
+**Verify GREEN**: build + run → all ten tests pass.
 
-**REFACTOR**: Clean up helper functions, ensure `ms_scanner_at_end` helper exists:
-
+**REFACTOR**: Ensure `ms_scanner_at_end` helper exists:
 ```c
 static bool ms_scanner_at_end(MsScanner* scanner) {
     return *scanner->current == '\0';
@@ -736,9 +668,7 @@ static bool ms_scanner_at_end(MsScanner* scanner) {
 
 ### Cycle 10: Error Tokens
 
-**RED** — Write failing test:
-
-Add `test_error_tokens` to `test_scanner.c`:
+**RED** — Add to `test_scanner.c`:
 
 ```c
 static void test_error_tokens(void) {
@@ -755,12 +685,11 @@ static void test_error_tokens(void) {
 }
 ```
 
-**Verify RED**: Build and run — `@` should already return ERROR from the default case. This verifies error handling.
+`@`, `#` → default case → ERROR.
 
-**Verify GREEN**: Build and run — all eleven tests pass.
+**Verify GREEN**: build + run → all eleven tests pass.
 
-**REFACTOR**: Ensure `ms_error_token` helper exists:
-
+**REFACTOR**: Ensure `ms_error_token` helper:
 ```c
 static MsToken ms_error_token(MsScanner* scanner, const char* message) {
     MsToken tok;
@@ -775,21 +704,21 @@ static MsToken ms_error_token(MsScanner* scanner, const char* message) {
 
 ## Acceptance Criteria
 
-- [x] `ms_scanner_init` + `ms_scanner_scan_token` until EOF for `"123"` produces: NUMBER(123), EOF
-- [x] `"var x = 42"` produces: VAR, IDENTIFIER("x"), EQUAL, NUMBER(42), EOF
-- [x] `"1 + 2 * 3"` produces: NUMBER(1), PLUS, NUMBER(2), STAR, NUMBER(3), EOF
-- [x] `"\"hello\""` produces: STRING("hello"), EOF
-- [x] All keywords are recognized (and, class, else, false, fn, for, if, nil, or, print, return, super, this, true, var, while, break, continue, import, from, as)
-- [x] `==`, `!=`, `<=`, `>=` produce two-char tokens
-- [x] `// comment\n42` skips comment, produces NUMBER(42)
-- [x] `/* block */ 42` skips block comment
-- [x] Unrecognized character produces MS_TOKEN_ERROR
-- [x] Multi-line tracking: line numbers increment on newlines
-- [x] Column numbers track position on each line
+- [x] `"123"` → NUMBER(123), EOF
+- [x] `"var x = 42"` → VAR, IDENTIFIER("x"), EQUAL, NUMBER(42), EOF
+- [x] `"1 + 2 * 3"` → NUMBER(1), PLUS, NUMBER(2), STAR, NUMBER(3), EOF
+- [x] `"\"hello\""` → STRING("hello"), EOF
+- [x] All 21 keywords recognized
+- [x] `==`, `!=`, `<=`, `>=` → two-char tokens
+- [x] `"// comment\n42"` → skips comment, NUMBER(42)
+- [x] `"/* block */ 42"` → skips block comment
+- [x] Unrecognized char → `MS_TOKEN_ERROR`
+- [x] Multi-line: line numbers increment on `\n`
+- [x] Column numbers track position per line
 
 ## Notes
 
-- Token creation: Set `start` to start of lexeme, `length` = current-start, `line` and `column` from scanner state.
-- All internal helpers (`advance`, `peek`, `peekNext`, `match`, `skipWhitespace`, `scanString`, `scanNumber`, `scanIdentifier`, `identifierType`, `checkKeyword`) are `static` in `scanner.c`.
-- The scanner does not allocate memory — all lexemes point into the source string.
-- Column tracking is approximate for multi-byte characters; exact column tracking is not required.
+- Token: `start` → lexeme begin; `length` = `current - start`; `line`/`column` from scanner state
+- All helpers (`advance`, `peek`, `match`, `skipWhitespace`, `scanString`, `scanNumber`, `scanIdentifier`, `identifierType`, `checkKeyword`) → `static` in `scanner.c`
+- Scanner allocates nothing — lexemes point into source string
+- Column tracking approximate for multi-byte chars

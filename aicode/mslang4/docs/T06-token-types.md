@@ -1,26 +1,25 @@
 # T06: Token Types
 
-**Phase**: 1 - Foundation
-**Dependencies**: T02 (Common Definitions)
-**Estimated Complexity**: Low
+**Phase**: 1 — Foundation
+**Deps**: T02 (Common Definitions)
+**Complexity**: Low
 
 ## Goal
 
-Define the complete token type enumeration and token data structure used by the scanner, parser, and compiler. This is a header-only module (no `.c` file needed).
+Complete token type enum + token struct. Header-only module (no `.c`). Used by scanner, parser, compiler.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/token.h` | Token type enum and token struct |
-| `tests/unit/test_token.c` | Unit tests for token types |
+| `src/token.h` | `MsTokenType` enum + `MsToken` struct |
+| `tests/unit/test_token.c` | Unit tests |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: MsTokenType Enum — Compiles and Contains All Tokens
+### Cycle 1: `MsTokenType` Enum
 
-**RED** — Write failing test:
-- Create `tests/unit/test_token.c` that verifies the enum exists and has the expected token count:
+**RED** — Create `tests/unit/test_token.c`:
 
 ```c
 #include "token.h"
@@ -41,23 +40,18 @@ int main(void) {
 }
 ```
 
-- Add to `tests/CMakeLists.txt`:
+Add to `tests/CMakeLists.txt`:
 ```cmake
 add_executable(test_token tests/unit/test_token.c)
 target_include_directories(test_token PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME test_token COMMAND test_token)
 ```
 
-- `token.h` does not exist yet — compile error.
+`token.h` doesn't exist → compile error.
 
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `token.h` not found
+**Verify RED**: `cmake --build build` → `token.h` not found
 
-**GREEN** — Minimal implementation:
-- Create `src/token.h` with the full `MsTokenType` enum:
+**GREEN** — Create `src/token.h`:
 
 ```c
 #ifndef MS_TOKEN_H
@@ -86,25 +80,15 @@ typedef enum {
 #endif
 ```
 
-Design notes:
-- Single-character tokens first, then compound operators, then literals, then keywords, then special tokens at end
-- Enum values start at 0 and are sequential (C default)
-- `MS_TOKEN_ERROR` carries error messages as the lexeme
-- `MS_TOKEN_EOF` marks end of input
+Ordering: single-char → compound ops → literals → keywords → special (`ERROR`, `EOF`). Values sequential from 0. `MS_TOKEN_ERROR` carries error msg as lexeme. `MS_TOKEN_EOF` marks end of input.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_token
-```
-Expected: compiles and test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_token`
 
-**REFACTOR**: No changes needed.
+**REFACTOR**: None needed.
 
-### Cycle 2: MsToken Struct — All Fields Accessible
+### Cycle 2: `MsToken` Struct
 
-**RED** — Write failing test:
-- Add a test that creates an `MsToken` instance and verifies all fields:
+**RED** — Add test:
 
 ```c
 static void test_token_struct(void) {
@@ -138,16 +122,11 @@ static void test_token_struct(void) {
 }
 ```
 
-- `MsToken` struct is not defined yet — compile error.
+`MsToken` undefined → compile error.
 
-**Verify RED**: 
-```
-cmake --build build
-```
-Expected: compile error — `MsToken` undeclared (the struct doesn't exist yet)
+**Verify RED**: `cmake --build build` → `MsToken` undeclared
 
-**GREEN** — Minimal implementation:
-- Add `MsToken` struct to `src/token.h`:
+**GREEN** — Add to `src/token.h`:
 
 ```c
 typedef struct {
@@ -159,24 +138,15 @@ typedef struct {
 } MsToken;
 ```
 
-Design notes:
-- `MsToken` stores a pointer + length into the original source string (no allocation)
-- `line` and `column` track position for error messages
-- `start` is a non-owning pointer — points into source code buffer
+`start` = non-owning ptr into source buffer (no alloc). `line`/`column` for error reporting.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_token
-```
-Expected: compiles and test passes
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_token`
 
-**REFACTOR**: No changes needed.
+**REFACTOR**: None needed.
 
-### Cycle 3: Enum Value Ordering and Sizeof Checks
+### Cycle 3: Enum Ordering + Sizeof Checks
 
-**RED** — Write failing test:
-- Add tests that verify enum ordering assumptions and struct size:
+**RED** — Add tests:
 
 ```c
 static void test_enum_ordering(void) {
@@ -210,34 +180,25 @@ static void test_token_size(void) {
 }
 ```
 
-**Verify RED**: 
-```
-cmake --build build
-ctest --test-dir build -R test_token
-```
-Expected: should already pass — the enum from Cycle 1 already has correct ordering.
+**Verify RED**: `cmake --build build && ctest --test-dir build -R test_token` — already passes (Cycle 1 ordering correct).
 
-**GREEN** — No changes needed. The implementation from Cycles 1-2 already satisfies these checks.
+**GREEN** — No changes. Cycles 1-2 already satisfy these.
 
-**Verify GREEN**: 
-```
-cmake --build build
-ctest --test-dir build -R test_token
-```
-Expected: all tests pass. `sizeof(MsToken)` is typically 24 bytes on 64-bit (1 enum + 1 pointer + 3 ints, with padding).
+**Verify GREEN**: `cmake --build build && ctest --test-dir build -R test_token`
+`sizeof(MsToken)` typically 24 bytes on 64-bit (enum=4 + ptr=8 + int×3=12 + padding).
 
-**REFACTOR**: Verify `sizeof(MsToken)` is 24 bytes on 64-bit systems (enum=4, pointer=8, int*3=12, with padding to 24). This is reasonable and no packing pragmas are needed.
+**REFACTOR**: 24 bytes on 64-bit is reasonable. No packing pragmas needed.
 
 ## Acceptance Criteria
 
-- [x] `token.h` compiles when included from a `.c` file
-- [x] `MsTokenType` enum contains all 49 token types from the design
-- [x] `MsToken` struct has fields: `type`, `start`, `length`, `line`, `column`
-- [x] `sizeof(MsToken)` is reasonable (typically 24-32 bytes on 64-bit)
-- [x] Enum values start at 0 and are sequential (C default)
+- [x] `token.h` compiles from `.c`
+- [x] `MsTokenType` has all 49 types
+- [x] `MsToken` fields: `type`, `start`, `length`, `line`, `column`
+- [x] `sizeof(MsToken)` reasonable (24-32 bytes on 64-bit)
+- [x] Enum sequential from 0
 
 ## Notes
 
-- This is a header-only module — no `.c` file needed.
-- Token types follow a deliberate ordering: single-char → compound operators → literals → keywords → special (`ERROR`, `EOF`).
-- `MsToken.start` is a non-owning pointer into the source string. The scanner creates tokens without allocating memory for the lexeme.
+- Header-only — no `.c`.
+- Ordering: single-char → compound → literals → keywords → special (`ERROR`, `EOF`).
+- `MsToken.start` non-owning ptr into source. Scanner creates tokens without lexeme alloc.

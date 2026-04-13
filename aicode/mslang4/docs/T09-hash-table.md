@@ -1,33 +1,27 @@
 # T09: Hash Table
 
-**Phase**: 2 - Core Data Types
-**Dependencies**: T07 (Value System), T08 (Object System - Strings)
-**Estimated Complexity**: High
+**Phase**: 2 — Core Data Types
+**Deps**: T07 (Value System), T08 (Object System — Strings)
+**Complexity**: High
 
 ## Goal
 
-Implement the hash table data structure used for globals, string interning, class methods, instance fields, and module exports. Open addressing with linear probing, using tombstones for deletion.
+Hash table for globals, string interning, class methods, instance fields, module exports. Open addressing, linear probing, tombstones for deletion.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/table.h` | Table types and API |
-| `src/table.c` | Table implementation |
+| `src/table.h` | Table types + API |
+| `src/table.c` | Table impl |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Table Init and Free
+### Cycle 1: Table Init + Free
 
-**RED** — Write failing test:
-
-Create `tests/unit/test_table.c`. Write a test function `test_table_init_free` that:
-- Initializes a `MsTable`
-- Verifies `entries == NULL`, `count == 0`, `capacity == 0`
-- Frees the table and verifies no crash
+**RED** — Create `tests/unit/test_table.c`:
 
 ```c
-// tests/unit/test_table.c (initial skeleton)
 #include "table.h"
 #include "object.h"
 #include "value.h"
@@ -56,11 +50,11 @@ int main(void) {
 }
 ```
 
-**Verify RED**: `gcc -I src -o build/test_table tests/unit/test_table.c src/table.c src/object.c src/value.c` → compilation error: `table.h: No such file or directory`
+`table.h` doesn't exist → compile error.
 
-**GREEN** — Minimal implementation:
+**Verify RED**: `gcc -I src -o build/test_table tests/unit/test_table.c src/table.c src/object.c src/value.c` → `table.h` not found
 
-Create `src/table.h`:
+**GREEN** — Create `src/table.h`:
 
 ```c
 #ifndef MS_TABLE_H
@@ -87,7 +81,7 @@ void ms_table_mark(MsTable* table);
 #endif
 ```
 
-Create `src/table.c` with init and free:
+Create `src/table.c`:
 
 ```c
 #include "table.h"
@@ -106,17 +100,15 @@ void ms_table_free(MsTable* table) {
 }
 ```
 
-**Verify GREEN**: `gcc -I src -o build/test_table tests/unit/test_table.c src/table.c src/object.c src/value.c && ./build/test_table` → test passes
+**Verify GREEN**: build + run → test passes.
 
 **REFACTOR**: None needed.
 
 ---
 
-### Cycle 2: Table Set and Get (Single Entry)
+### Cycle 2: Table Set + Get (Single Entry)
 
-**RED** — Write failing test:
-
-Add `test_table_set_get` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_table_set_get(void) {
@@ -141,11 +133,9 @@ static void test_table_set_get(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_table_set` and `ms_table_get` undefined.
+`ms_table_set`/`ms_table_get` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/table.c`:
+**GREEN** — Add to `src/table.c`:
 
 ```c
 static MsTableEntry* ms_table_find_entry(MsTableEntry* entries, int capacity, MsString* key) {
@@ -167,9 +157,7 @@ static MsTableEntry* ms_table_find_entry(MsTableEntry* entries, int capacity, Ms
 }
 ```
 
-Note: Use a sentinel check for tombstones. The tombstone sentinel is `key == NULL && value is not nil`. We need a way to detect this. Use `MS_IS_NIL` to distinguish empty from tombstone.
-
-Implement `ms_table_set` and `ms_table_get`:
+Tombstone sentinel: `key == NULL && value` non-nil. `MS_IS_NIL` distinguishes empty from tombstone.
 
 ```c
 static void ms_table_adjust_capacity(MsTable* table, int new_capacity) {
@@ -214,25 +202,21 @@ bool ms_table_get(MsTable* table, MsString* key, MsValue* outValue) {
 }
 ```
 
-Key logic:
-1. If load factor `count+1 > capacity * MS_TABLE_MAX_LOAD`, grow to `MS_GROW_CAPACITY(capacity)`
-2. When growing, rehash all entries (skip NULL keys and tombstones)
-3. Find bucket: `index = key->hash % capacity`, linear probe
-4. If found existing key → update value, return false (not new)
-5. If empty or tombstone → insert, increment count, return true
-6. For get: probe using hash. If key matches → set outValue, return true. If empty entry → return false.
+Logic:
+1. Load factor > 75% → grow via `MS_GROW_CAPACITY`, rehash all entries (skip NULL keys + tombstones)
+2. Probe: `index = key->hash % capacity`, linear probe
+3. Existing key → update value, return false. Empty/tombstone → insert, count++, return true
+4. Get: probe by hash. Key match → set outValue, return true. Empty → return false
 
-**Verify GREEN**: `gcc -I src -o build/test_table tests/unit/test_table.c src/table.c src/object.c src/value.c && ./build/test_table` → both tests pass
+**Verify GREEN**: build + run → both tests pass.
 
 **REFACTOR**: None needed.
 
 ---
 
-### Cycle 3: Table Set Overwrite (Existing Key)
+### Cycle 3: Table Set Overwrite
 
-**RED** — Write failing test:
-
-Add `test_table_overwrite` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_table_overwrite(void) {
@@ -259,19 +243,17 @@ static void test_table_overwrite(void) {
 }
 ```
 
-**Verify RED**: Should compile — `ms_table_set` already returns false for existing keys. If the implementation from Cycle 2 is correct, this test will pass immediately.
+**Verify RED**: Should compile — Cycle 2 already returns false for existing keys. Passes immediately.
 
-**Verify GREEN**: Build and run — all three tests pass.
+**Verify GREEN**: build + run → all three tests pass.
 
 **REFACTOR**: None needed.
 
 ---
 
-### Cycle 4: Table Remove and Tombstones
+### Cycle 4: Table Remove + Tombstones
 
-**RED** — Write failing test:
-
-Add `test_table_remove_tombstone` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_table_remove_tombstone(void) {
@@ -286,21 +268,16 @@ static void test_table_remove_tombstone(void) {
     ms_table_set(&table, keyB, ms_number_val(2.0));
     ms_table_set(&table, keyC, ms_number_val(3.0));
 
-    /* Remove B (creates tombstone) */
     bool removed = ms_table_remove(&table, keyB);
     assert(removed);
 
-    /* Get B should fail */
     MsValue out;
     assert(!ms_table_get(&table, keyB, &out));
-
-    /* Get A and C should still work (tombstones don't break lookups) */
     assert(ms_table_get(&table, keyA, &out));
     assert(ms_as_number(out) == 1.0);
     assert(ms_table_get(&table, keyC, &out));
     assert(ms_as_number(out) == 3.0);
 
-    /* Remove non-existent key */
     MsString* keyD = ms_string_copy("d", 1);
     assert(!ms_table_remove(&table, keyD));
 
@@ -313,27 +290,24 @@ static void test_table_remove_tombstone(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_table_remove` undefined.
+`ms_table_remove` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/table.c`:
+**GREEN** — Add to `src/table.c`:
 
 ```c
 bool ms_table_remove(MsTable* table, MsString* key) {
     if (table->count == 0) return false;
     MsTableEntry* entry = ms_table_find_entry(table->entries, table->capacity, key);
     if (entry->key == NULL) return false;
-    /* Tombstone: key=NULL, value=non-nil (e.g., ms_bool_val(true)) */
     entry->key = NULL;
     entry->value = ms_bool_val(true);
     return true;
 }
 ```
 
-Replace with tombstone: `key=NULL`, `value=ms_bool_val(true)` (non-nil sentinel). Return true if found, false otherwise.
+Tombstone: `key=NULL`, `value=ms_bool_val(true)` (non-nil sentinel).
 
-**Verify GREEN**: Build and run — all four tests pass.
+**Verify GREEN**: build + run → all four tests pass.
 
 **REFACTOR**: None needed.
 
@@ -341,9 +315,7 @@ Replace with tombstone: `key=NULL`, `value=ms_bool_val(true)` (non-nil sentinel)
 
 ### Cycle 5: Table Growth (Dynamic Resizing)
 
-**RED** — Write failing test:
-
-Add `test_table_growth` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_table_growth(void) {
@@ -375,19 +347,15 @@ static void test_table_growth(void) {
 }
 ```
 
-**Verify RED**: Should compile — growth was implemented in Cycle 2's `ms_table_adjust_capacity`. This is a stress/verification test. If growth is broken, it will fail at runtime.
+Stress/verification — growth from Cycle 2 `ms_table_adjust_capacity` handles it.
 
-**Verify GREEN**: `gcc -I src -o build/test_table tests/unit/test_table.c src/table.c src/object.c src/value.c && ./build/test_table` → all five tests pass.
-
-**REFACTOR**: Run with address sanitizer to verify no leaks.
+**Verify GREEN**: build + run → all five tests pass. Verify no leaks with ASan.
 
 ---
 
-### Cycle 6: find_string
+### Cycle 6: `find_string`
 
-**RED** — Write failing test:
-
-Add `test_find_string` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_find_string(void) {
@@ -399,12 +367,10 @@ static void test_find_string(void) {
     ms_table_set(&table, s1, ms_number_val(1.0));
     ms_table_set(&table, s2, ms_number_val(2.0));
 
-    /* Find by raw chars+length+hash */
     uint32_t hash = ms_string_hash("hello", 5);
     MsString* found = ms_table_find_string(&table, "hello", 5, hash);
     assert(found == s1);
 
-    /* Not found */
     MsString* not_found = ms_table_find_string(&table, "nope", 4, ms_string_hash("nope", 4));
     assert(not_found == NULL);
 
@@ -415,11 +381,9 @@ static void test_find_string(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_table_find_string` undefined.
+`ms_table_find_string` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/table.c`:
+**GREEN** — Add to `src/table.c`:
 
 ```c
 MsString* ms_table_find_string(MsTable* table, const char* chars, int length, uint32_t hash) {
@@ -439,19 +403,15 @@ MsString* ms_table_find_string(MsTable* table, const char* chars, int length, ui
 }
 ```
 
-Iterate from `hash % capacity`, compare length → hash → chars. Return matching string or NULL. Skip tombstones (key=NULL, value non-nil).
+Probe from `hash % capacity`, compare length → hash → chars. Skip tombstones.
 
-**Verify GREEN**: Build and run — all six tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all six tests pass.
 
 ---
 
-### Cycle 7: add_all
+### Cycle 7: `add_all`
 
-**RED** — Write failing test:
-
-Add `test_add_all` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_add_all(void) {
@@ -481,11 +441,9 @@ static void test_add_all(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_table_add_all` undefined.
+`ms_table_add_all` undefined → linker error.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/table.c`:
+**GREEN** — Add to `src/table.c`:
 
 ```c
 void ms_table_add_all(MsTable* from, MsTable* to) {
@@ -498,19 +456,15 @@ void ms_table_add_all(MsTable* from, MsTable* to) {
 }
 ```
 
-Iterate source entries, skip NULL keys and tombstones, `ms_table_set` into destination.
+Iterate src, skip NULL keys + tombstones, `ms_table_set` into dst.
 
-**Verify GREEN**: Build and run — all seven tests pass.
-
-**REFACTOR**: None needed.
+**Verify GREEN**: build + run → all seven tests pass.
 
 ---
 
-### Cycle 8: GC Helpers (remove_white and mark)
+### Cycle 8: GC Helpers (`remove_white`, `mark`)
 
-**RED** — Write failing test:
-
-Add `test_gc_helpers` to `test_table.c`:
+**RED** — Add to `test_table.c`:
 
 ```c
 static void test_gc_helpers(void) {
@@ -525,7 +479,6 @@ static void test_gc_helpers(void) {
     ms_table_set(&table, k1, ms_number_val(1.0));
     ms_table_set(&table, k2, ms_number_val(2.0));
 
-    /* remove_white should delete entries with unmarked keys */
     ms_table_remove_white(&table);
     assert(table.count == 1);
 
@@ -533,7 +486,6 @@ static void test_gc_helpers(void) {
     assert(ms_table_get(&table, k1, &out));
     assert(!ms_table_get(&table, k2, &out));
 
-    /* mark should mark all keys (just verifying no crash for now) */
     ms_table_mark(&table);
 
     ms_table_free(&table);
@@ -543,13 +495,9 @@ static void test_gc_helpers(void) {
 }
 ```
 
-Note: `ms_table_mark` requires a VM parameter for GC marking in the real implementation. For now, test that it doesn't crash. The actual GC integration is in T17.
+`ms_table_remove_white`/`ms_table_mark` undefined → linker error.
 
-**Verify RED**: Build fails — `ms_table_remove_white` and `ms_table_mark` undefined.
-
-**GREEN** — Minimal implementation:
-
-Add to `src/table.c`:
+**GREEN** — Add to `src/table.c`:
 
 ```c
 void ms_table_remove_white(MsTable* table) {
@@ -566,36 +514,35 @@ void ms_table_mark(MsTable* table) {
         MsTableEntry* entry = &table->entries[i];
         if (entry->key != NULL) {
             entry->key->base.isMarked = true;
-            /* In full implementation: ms_mark_value(entry->value) */
         }
     }
 }
 ```
 
-`remove_white`: iterate entries, delete entries where `key->isMarked` is false.
-`mark`: iterate entries, mark each key and value. Note: the real implementation calls GC mark functions; this is a simplified version that just sets `isMarked`.
+`remove_white`: delete entries where `key->isMarked == false`.
+`mark`: simplified — sets `isMarked` directly. Real impl in T17 uses GC mark calls.
 
-**Verify GREEN**: Build and run — all eight tests pass.
+**Verify GREEN**: build + run → all eight tests pass.
 
-**REFACTOR**: `ms_table_mark` will be updated in T17 to use actual GC marking calls instead of directly setting `isMarked`.
+**REFACTOR**: `ms_table_mark` updated in T17 to use actual GC marking.
 
 ## Acceptance Criteria
 
-- [x] Init/free cycle completes without leak
-- [x] Set then get returns the correct value
-- [x] Set with existing key updates value (returns false)
-- [x] Remove then get returns false
-- [x] Tombstones don't break lookups (set A, set B, remove A, get B)
-- [x] Table grows correctly (insert 100+ entries, all retrievable)
+- [x] Init/free cycle, no leak
+- [x] Set → get returns correct value
+- [x] Set existing key updates value (returns false)
+- [x] Remove → get returns false
+- [x] Tombstones don't break lookups
+- [x] Table grows correctly (200 entries, all retrievable)
 - [x] `find_string` finds by chars+length+hash
-- [x] `add_all` copies all entries from one table to another
-- [x] `remove_white` removes entries with unmarked keys
-- [x] `mark` marks all keys and values
+- [x] `add_all` copies all entries src → dst
+- [x] `remove_white` removes unmarked-key entries
+- [x] `mark` marks all keys
 - [x] No memory leaks
 
 ## Notes
 
-- **Tombstone**: Use a sentinel where `key == NULL` and `value` is non-nil (e.g., `ms_bool_val(true)`). Empty entries have `key == NULL` and `value == ms_nil_val()`.
-- **Load factor**: Max 75% (`MS_TABLE_MAX_LOAD`). Grow when exceeded.
-- `ms_table_mark` is a simplified placeholder. The real implementation will receive a `MsVM*` or GC context and call proper mark functions (T17).
-- All internal helper functions (`ms_table_find_entry`, `ms_table_adjust_capacity`) are `static` in `table.c`.
+- **Tombstone**: `key == NULL` + `value` non-nil (`ms_bool_val(true)`). Empty: `key == NULL` + `value == ms_nil_val()`.
+- **Load factor**: 75% (`MS_TABLE_MAX_LOAD`). Grow when exceeded.
+- `ms_table_mark` is placeholder. Real impl receives `MsVM*`/GC context → proper mark calls (T17).
+- Internal helpers (`ms_table_find_entry`, `ms_table_adjust_capacity`) are `static` in `table.c`.

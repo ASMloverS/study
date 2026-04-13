@@ -1,34 +1,30 @@
 # T11: AST Nodes
 
-**Phase**: 4 - AST & Parser
-**Dependencies**: T06 (Token Types)
-**Estimated Complexity**: Medium
+**Phase**: 4 — AST & Parser
+**Deps**: T06 (Token Types)
+**Complexity**: Medium
 
 ## Goal
 
-Define all AST node types for expressions and statements, plus create/free functions. This is the output of the parser and the input to the compiler.
+AST node types for expressions + statements. Create/free fns. Parser output → compiler input.
 
-## Files to Create
+## Files
 
 | File | Purpose |
 |------|---------|
-| `src/ast.h` | AST type enums, node structs, create/free declarations |
-| `src/ast.c` | Node creation and recursive free |
+| `src/ast.h` | AST enums, node structs, create/free decls |
+| `src/ast.c` | Node creation + recursive free |
 
-## TDD Implementation Cycles
+## TDD Cycles
 
-### Cycle 1: Expression Create/Free (Literal)
+### Cycle 1: Expr Create/Free (Literal)
 
-**RED** — Write failing test:
-
-Create `tests/unit/test_ast.c`. Write a test function `test_expr_literal` that:
-- Creates a literal expression via `ms_expr_create(MS_EXPR_LITERAL)`
-- Verifies it is non-NULL and has the correct type
-- Sets literal type and value
-- Frees it without crash
+**RED** — `tests/unit/test_ast.c` → `test_expr_literal`:
+- `ms_expr_create(MS_EXPR_LITERAL)` → non-NULL, correct type
+- Set literal type + value
+- Free → no crash
 
 ```c
-// tests/unit/test_ast.c (initial skeleton)
 #include "ast.h"
 #include <stdio.h>
 #include <assert.h>
@@ -38,7 +34,6 @@ static void test_expr_literal(void) {
     MsExpr* expr = ms_expr_create(MS_EXPR_LITERAL);
     assert(expr != NULL);
     assert(expr->type == MS_EXPR_LITERAL);
-
     expr->literal.type = MS_LITERAL_NUMBER;
     expr->literal.value.number = 42.0;
 
@@ -65,11 +60,9 @@ int main(void) {
 }
 ```
 
-**Verify RED**: `gcc -I src -o build/test_ast tests/unit/test_ast.c src/ast.c` → compilation error: `ast.h: No such file or directory`
+**Verify RED**: `gcc -I src -o build/test_ast tests/unit/test_ast.c src/ast.c` → `ast.h: No such file or directory`
 
-**GREEN** — Minimal implementation:
-
-Create `src/ast.h` with expression types and literal support:
+**GREEN** → `src/ast.h`:
 
 ```c
 #ifndef MS_AST_H
@@ -115,7 +108,6 @@ typedef struct MsExpr {
 MsExpr* ms_expr_create(MsExprType type);
 void ms_expr_free(MsExpr* expr);
 
-/* Forward declare statement types (Cycle 3) */
 typedef struct MsStmt MsStmt;
 typedef struct { MsToken name; MsToken alias; } MsImportItem;
 
@@ -125,7 +117,7 @@ void ms_stmt_list_free(MsStmt** stmts, int count);
 #endif
 ```
 
-Create `src/ast.c`:
+`src/ast.c`:
 
 ```c
 #include "ast.h"
@@ -142,38 +134,20 @@ MsExpr* ms_expr_create(MsExprType type) {
 void ms_expr_free(MsExpr* expr) {
     if (expr == NULL) return;
     switch (expr->type) {
-        case MS_EXPR_ASSIGN:
-            ms_expr_free(expr->assign.target);
-            ms_expr_free(expr->assign.value);
-            break;
-        case MS_EXPR_BINARY:
-            ms_expr_free(expr->binary.left);
-            ms_expr_free(expr->binary.right);
-            break;
+        case MS_EXPR_ASSIGN: ms_expr_free(expr->assign.target); ms_expr_free(expr->assign.value); break;
+        case MS_EXPR_BINARY: ms_expr_free(expr->binary.left); ms_expr_free(expr->binary.right); break;
         case MS_EXPR_CALL:
             ms_expr_free(expr->call.callee);
             if (expr->call.args) MS_FREE(MsExpr*, expr->call.args, expr->call.arg_count);
             break;
-        case MS_EXPR_GET:
-            ms_expr_free(expr->get.object);
-            break;
-        case MS_EXPR_GROUPING:
-            ms_expr_free(expr->grouping.expression);
-            break;
+        case MS_EXPR_GET: ms_expr_free(expr->get.object); break;
+        case MS_EXPR_GROUPING: ms_expr_free(expr->grouping.expression); break;
         case MS_EXPR_LITERAL: break;
-        case MS_EXPR_LOGICAL:
-            ms_expr_free(expr->logical.left);
-            ms_expr_free(expr->logical.right);
-            break;
-        case MS_EXPR_SET:
-            ms_expr_free(expr->set.object);
-            ms_expr_free(expr->set.value);
-            break;
+        case MS_EXPR_LOGICAL: ms_expr_free(expr->logical.left); ms_expr_free(expr->logical.right); break;
+        case MS_EXPR_SET: ms_expr_free(expr->set.object); ms_expr_free(expr->set.value); break;
         case MS_EXPR_SUPER: break;
         case MS_EXPR_THIS: break;
-        case MS_EXPR_UNARY:
-            ms_expr_free(expr->unary.operand);
-            break;
+        case MS_EXPR_UNARY: ms_expr_free(expr->unary.operand); break;
         case MS_EXPR_VARIABLE: break;
         case MS_EXPR_LIST:
             if (expr->list.elements) {
@@ -181,65 +155,50 @@ void ms_expr_free(MsExpr* expr) {
                 MS_FREE(MsExpr*, expr->list.elements, expr->list.count);
             }
             break;
-        case MS_EXPR_SUBSCRIPT:
-            ms_expr_free(expr->subscript.object);
-            ms_expr_free(expr->subscript.index);
-            break;
+        case MS_EXPR_SUBSCRIPT: ms_expr_free(expr->subscript.object); ms_expr_free(expr->subscript.index); break;
     }
     MS_FREE(MsExpr, expr, 1);
 }
 ```
 
-`ms_expr_create(type)`: `MS_ALLOCATE(MsExpr, 1)`, zero-initialize with `memset`, set type.
-`ms_expr_free(expr)`: Recursively free child expressions based on type, then `MS_FREE(MsExpr, expr, 1)`.
+**Verify GREEN**: build + run → pass
 
-**Verify GREEN**: `gcc -I src -o build/test_ast tests/unit/test_ast.c src/ast.c && ./build/test_ast` → test passes
-
-**REFACTOR**: None needed.
+**REFACTOR**: none
 
 ---
 
-### Cycle 2: All Expression Types (Binary, Unary, Grouping, Variable)
+### Cycle 2: All Expr Types (Binary, Unary, Grouping, Variable)
 
-**RED** — Write failing test:
-
-Add `test_expr_types` to `test_ast.c`:
+**RED** → `test_expr_types`:
 
 ```c
 static void test_expr_types(void) {
-    /* Binary: 1 + 2 */
     MsExpr* left = ms_expr_create(MS_EXPR_LITERAL);
     left->literal.type = MS_LITERAL_NUMBER;
     left->literal.value.number = 1.0;
-
     MsExpr* right = ms_expr_create(MS_EXPR_LITERAL);
     right->literal.type = MS_LITERAL_NUMBER;
     right->literal.value.number = 2.0;
-
     MsExpr* binary = ms_expr_create(MS_EXPR_BINARY);
     binary->binary.left = left;
     binary->binary.right = right;
     assert(binary->type == MS_EXPR_BINARY);
 
-    /* Unary: -expr */
     MsExpr* operand = ms_expr_create(MS_EXPR_LITERAL);
     operand->literal.type = MS_LITERAL_NUMBER;
     operand->literal.value.number = 3.0;
     MsExpr* unary = ms_expr_create(MS_EXPR_UNARY);
     unary->unary.operand = operand;
 
-    /* Grouping */
     MsExpr* inner = ms_expr_create(MS_EXPR_LITERAL);
     inner->literal.type = MS_LITERAL_NUMBER;
     inner->literal.value.number = 4.0;
     MsExpr* grouping = ms_expr_create(MS_EXPR_GROUPING);
     grouping->grouping.expression = inner;
 
-    /* Variable */
     MsExpr* var = ms_expr_create(MS_EXPR_VARIABLE);
     assert(var->type == MS_EXPR_VARIABLE);
 
-    /* Free all (recursive) */
     ms_expr_free(binary);
     ms_expr_free(unary);
     ms_expr_free(grouping);
@@ -248,33 +207,26 @@ static void test_expr_types(void) {
 }
 ```
 
-**Verify RED**: Should compile and pass since expression types and free were implemented in Cycle 1. This is a verification cycle.
+**Verify GREEN**: builds + passes (types + free from Cycle 1). Verification cycle.
 
-**Verify GREEN**: Build and run — both tests pass.
-
-**REFACTOR**: None needed.
+**REFACTOR**: none
 
 ---
 
-### Cycle 3: Statement Create/Free (Expression and Var)
+### Cycle 3: Stmt Create/Free (Expression + Var)
 
-**RED** — Write failing test:
-
-Add `test_stmt_basic` to `test_ast.c`:
+**RED** → `test_stmt_basic`:
 
 ```c
 static void test_stmt_basic(void) {
-    /* Expression statement */
     MsStmt* expr_stmt = ms_stmt_create(MS_STMT_EXPRESSION);
     assert(expr_stmt != NULL);
     assert(expr_stmt->type == MS_STMT_EXPRESSION);
-
     MsExpr* lit = ms_expr_create(MS_EXPR_LITERAL);
     lit->literal.type = MS_LITERAL_NUMBER;
     lit->literal.value.number = 1.0;
     expr_stmt->expression = lit;
 
-    /* Var statement */
     MsStmt* var_stmt = ms_stmt_create(MS_STMT_VAR);
     assert(var_stmt != NULL);
     assert(var_stmt->type == MS_STMT_VAR);
@@ -285,11 +237,9 @@ static void test_stmt_basic(void) {
 }
 ```
 
-**Verify RED**: Build fails — `MsStmt`, `ms_stmt_create` undeclared.
+**Verify RED**: `MsStmt`, `ms_stmt_create` undeclared.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/ast.h`:
+**GREEN** → add to `src/ast.h`:
 
 ```c
 typedef enum {
@@ -317,10 +267,7 @@ struct MsStmt {
 };
 ```
 
-Add declaration:
-```c
-MsStmt* ms_stmt_create(MsStmtType type);
-```
+Add decl: `MsStmt* ms_stmt_create(MsStmtType type);`
 
 Add to `src/ast.c`:
 
@@ -333,40 +280,32 @@ MsStmt* ms_stmt_create(MsStmtType type) {
 }
 ```
 
-Implement `ms_stmt_free` (at minimum handle EXPRESSION and VAR):
+Initial `ms_stmt_free` (EXPRESSION + VAR only):
 
 ```c
 void ms_stmt_free(MsStmt* stmt) {
     if (stmt == NULL) return;
     switch (stmt->type) {
-        case MS_STMT_EXPRESSION:
-            ms_expr_free(stmt->expression);
-            break;
-        case MS_STMT_VAR:
-            ms_expr_free(stmt->var.initializer);
-            break;
-        /* Other types handled in Cycle 4 */
+        case MS_STMT_EXPRESSION: ms_expr_free(stmt->expression); break;
+        case MS_STMT_VAR: ms_expr_free(stmt->var.initializer); break;
         default: break;
     }
     MS_FREE(MsStmt, stmt, 1);
 }
 ```
 
-**Verify GREEN**: Build and run — all three tests pass.
+**Verify GREEN**: all 3 tests pass.
 
-**REFACTOR**: None needed.
+**REFACTOR**: none
 
 ---
 
-### Cycle 4: All Statement Types (Block, Function, Class, If, While, For, Import)
+### Cycle 4: All Stmt Types (Block, Function, Class, If, While, For, Import)
 
-**RED** — Write failing test:
-
-Add `test_stmt_types` to `test_ast.c`:
+**RED** → `test_stmt_types`:
 
 ```c
 static void test_stmt_types(void) {
-    /* Block with 3 child statements */
     MsStmt* block = ms_stmt_create(MS_STMT_BLOCK);
     block->block.stmts = MS_ALLOCATE(MsStmt*, 3);
     block->block.count = 3;
@@ -379,7 +318,6 @@ static void test_stmt_types(void) {
     }
     assert(block->type == MS_STMT_BLOCK);
 
-    /* Function with params and body */
     MsStmt* func = ms_stmt_create(MS_STMT_FUNCTION);
     func->function.param_count = 2;
     func->function.params = MS_ALLOCATE(MsToken, 2);
@@ -388,19 +326,13 @@ static void test_stmt_types(void) {
     func->function.body[0] = ms_stmt_create(MS_STMT_EXPRESSION);
     assert(func->type == MS_STMT_FUNCTION);
 
-    /* If statement */
     MsStmt* if_stmt = ms_stmt_create(MS_STMT_IF);
     assert(if_stmt->type == MS_STMT_IF);
-
-    /* While statement */
     MsStmt* while_stmt = ms_stmt_create(MS_STMT_WHILE);
     assert(while_stmt->type == MS_STMT_WHILE);
-
-    /* Import statement */
     MsStmt* import = ms_stmt_create(MS_STMT_IMPORT);
     assert(import->type == MS_STMT_IMPORT);
 
-    /* Free all recursively */
     ms_stmt_free(block);
     ms_stmt_free(func);
     ms_stmt_free(if_stmt);
@@ -410,9 +342,7 @@ static void test_stmt_types(void) {
 }
 ```
 
-**Verify RED**: Build and run — should compile but may leak memory or crash if `ms_stmt_free` doesn't handle BLOCK and FUNCTION properly.
-
-**GREEN** — Update `ms_stmt_free` to handle all statement types:
+**GREEN** → full `ms_stmt_free`:
 
 ```c
 void ms_stmt_free(MsStmt* stmt) {
@@ -432,9 +362,7 @@ void ms_stmt_free(MsStmt* stmt) {
                 MS_FREE(MsStmt*, stmt->class_stmt.methods, stmt->class_stmt.method_count);
             }
             break;
-        case MS_STMT_EXPRESSION:
-            ms_expr_free(stmt->expression);
-            break;
+        case MS_STMT_EXPRESSION: ms_expr_free(stmt->expression); break;
         case MS_STMT_FUNCTION:
             if (stmt->function.params) MS_FREE(MsToken, stmt->function.params, stmt->function.param_count);
             if (stmt->function.body) {
@@ -450,12 +378,8 @@ void ms_stmt_free(MsStmt* stmt) {
         case MS_STMT_IMPORT:
             if (stmt->import.items) MS_FREE(MsImportItem, stmt->import.items, stmt->import.item_count);
             break;
-        case MS_STMT_RETURN:
-            ms_expr_free(stmt->return_stmt.value);
-            break;
-        case MS_STMT_VAR:
-            ms_expr_free(stmt->var.initializer);
-            break;
+        case MS_STMT_RETURN: ms_expr_free(stmt->return_stmt.value); break;
+        case MS_STMT_VAR: ms_expr_free(stmt->var.initializer); break;
         case MS_STMT_WHILE:
             ms_expr_free(stmt->while_stmt.condition);
             ms_stmt_free(stmt->while_stmt.body);
@@ -472,72 +396,54 @@ void ms_stmt_free(MsStmt* stmt) {
 }
 ```
 
-For BLOCK: free statement array. For FUNCTION: free params array, free body statements. For CLASS: free methods array.
+**Verify GREEN**: all 4 tests pass.
 
-**Verify GREEN**: Build and run — all four tests pass.
-
-**REFACTOR**: Run with address sanitizer to verify no leaks.
+**REFACTOR**: run w/ ASAN → no leaks.
 
 ---
 
-### Cycle 5: Complex Nested AST Tree Free
+### Cycle 5: Nested AST Tree Free
 
-**RED** — Write failing test:
-
-Add `test_nested_ast` to `test_ast.c`:
+**RED** → `test_nested_ast`:
 
 ```c
 static void test_nested_ast(void) {
-    /* Build: 1 + 2 * 3 → Binary(PLUS, Literal(1), Binary(STAR, Literal(2), Literal(3))) */
     MsExpr* lit1 = ms_expr_create(MS_EXPR_LITERAL);
     lit1->literal.type = MS_LITERAL_NUMBER;
     lit1->literal.value.number = 1.0;
-
     MsExpr* lit2 = ms_expr_create(MS_EXPR_LITERAL);
     lit2->literal.type = MS_LITERAL_NUMBER;
     lit2->literal.value.number = 2.0;
-
     MsExpr* lit3 = ms_expr_create(MS_EXPR_LITERAL);
     lit3->literal.type = MS_LITERAL_NUMBER;
     lit3->literal.value.number = 3.0;
-
     MsExpr* mul = ms_expr_create(MS_EXPR_BINARY);
     mul->binary.left = lit2;
     mul->binary.right = lit3;
-
     MsExpr* add = ms_expr_create(MS_EXPR_BINARY);
     add->binary.left = lit1;
     add->binary.right = mul;
 
-    /* Wrap in expression statement */
     MsStmt* stmt = ms_stmt_create(MS_STMT_EXPRESSION);
     stmt->expression = add;
-
     ms_stmt_free(stmt);
     printf("  test_nested_ast PASSED\n");
 }
 ```
 
-**Verify RED**: Should compile and pass. This is a verification cycle for recursive free of complex trees.
+**Verify GREEN**: all 5 tests pass. Verification cycle for recursive free.
 
-**Verify GREEN**: Build and run — all five tests pass.
-
-**REFACTOR**: None needed.
+**REFACTOR**: none
 
 ---
 
-### Cycle 6: Statement List Free
+### Cycle 6: Stmt List Free
 
-**RED** — Write failing test:
-
-Add `test_stmt_list_free` to `test_ast.c`:
+**RED** → `test_stmt_list_free`:
 
 ```c
 static void test_stmt_list_free(void) {
-    /* Empty list */
     ms_stmt_list_free(NULL, 0);
-
-    /* List with statements */
     MsStmt** stmts = MS_ALLOCATE(MsStmt*, 3);
     for (int i = 0; i < 3; i++) {
         stmts[i] = ms_stmt_create(MS_STMT_EXPRESSION);
@@ -551,11 +457,9 @@ static void test_stmt_list_free(void) {
 }
 ```
 
-**Verify RED**: Build fails — `ms_stmt_list_free` not yet implemented (declared but not defined).
+**Verify RED**: `ms_stmt_list_free` declared but not defined.
 
-**GREEN** — Minimal implementation:
-
-Add to `src/ast.c`:
+**GREEN** → add to `src/ast.c`:
 
 ```c
 void ms_stmt_list_free(MsStmt** stmts, int count) {
@@ -565,25 +469,23 @@ void ms_stmt_list_free(MsStmt** stmts, int count) {
 }
 ```
 
-Loop and call `ms_stmt_free` on each, then free the array.
+**Verify GREEN**: all 6 tests pass.
 
-**Verify GREEN**: Build and run — all six tests pass.
+**REFACTOR**: ASAN → complete cleanup.
 
-**REFACTOR**: Run with address sanitizer to verify complete cleanup.
+## Acceptance
 
-## Acceptance Criteria
-
-- [x] `ms_expr_create(MS_EXPR_LITERAL)` returns non-NULL with correct type
-- [x] `ms_stmt_create(MS_STMT_VAR)` returns non-NULL with correct type
-- [x] `ms_expr_free()` on a literal expression doesn't crash
-- [x] `ms_stmt_free()` on a block with 3 child statements frees all recursively
-- [x] `ms_stmt_list_free()` handles empty list (count=0, stmts=NULL)
-- [x] Complex AST tree (nested binary expressions) frees completely without leak
-- [x] All expression types and statement types can be created
+- [x] `ms_expr_create(MS_EXPR_LITERAL)` → non-NULL, correct type
+- [x] `ms_stmt_create(MS_STMT_VAR)` → non-NULL, correct type
+- [x] `ms_expr_free()` on literal → no crash
+- [x] `ms_stmt_free()` on block w/ 3 children → all freed recursively
+- [x] `ms_stmt_list_free()` handles NULL + count=0
+- [x] Nested binary expr tree → complete free, no leak
+- [x] All expr + stmt types creatable
 
 ## Notes
 
-- Child arrays (e.g., `call.args`, `function.body`) are allocated with `MS_ALLOCATE` and freed with `MS_FREE`.
-- The `MsLiteralValue.string_view` field stores a pointer into the source code (start + length), not an owned string. No deallocation needed for string literals in the AST.
-- The `MsStmt.function.docstring` field references an `MsString*` from the object system; it is not freed by `ms_stmt_free` since it's owned by the string intern table.
-- All structs use tagged unions for polymorphism, consistent with the VM's overall design.
+- Child arrays (`call.args`, `function.body`) → `MS_ALLOCATE` / `MS_FREE`.
+- `MsLiteralValue.string_view` → pointer into source (start + length), not owned. No free needed.
+- `MsStmt.function.docstring` → `MsString*` from object system, not freed by `ms_stmt_free` (owned by intern table).
+- Tagged unions for polymorphism, consistent w/ VM design.
