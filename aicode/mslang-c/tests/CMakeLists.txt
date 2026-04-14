@@ -10,3 +10,6 @@ target_link_libraries(test_table PRIVATE ms_table)
 
 ms_add_test(test_object_string unit/test_object_string.c)
 target_link_libraries(test_object_string PRIVATE ms_vm)
+
+ms_add_test(test_base_objects unit/test_base_objects.c)
+target_link_libraries(test_base_objects PRIVATE ms_vm)

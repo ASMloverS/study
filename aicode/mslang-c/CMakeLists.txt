@@ -30,10 +30,15 @@ target_include_directories(ms_memory PUBLIC include)
 target_compile_options(ms_memory PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_memory PUBLIC ms_support)
 
+add_library(ms_chunk STATIC src/chunk.c)
+target_include_directories(ms_chunk PUBLIC include)
+target_compile_options(ms_chunk PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(ms_chunk PUBLIC ms_memory)
+
 add_library(ms_object STATIC src/object.c)
 target_include_directories(ms_object PUBLIC include)
 target_compile_options(ms_object PRIVATE ${MSLANG_COMPILE_OPTIONS})
-target_link_libraries(ms_object PUBLIC ms_table ms_memory)
+target_link_libraries(ms_object PUBLIC ms_table ms_memory ms_chunk)
 
 add_library(ms_vm STATIC src/vm.c)
 target_include_directories(ms_vm PUBLIC include)

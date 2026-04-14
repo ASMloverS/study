@@ -1,6 +1,7 @@
 #pragma once
 #include "ms/common.h"
 #include "ms/value.h"
+#include "ms/chunk.h"
 
 typedef enum {
     MS_OBJ_STRING,
@@ -43,6 +44,55 @@ typedef struct MsObjString {
 #define MS_AS_STRING(v)      ((MsObjString*)MS_AS_OBJECT(v))
 #define MS_AS_CSTRING(v)     (MS_AS_STRING(v)->data)
 
+// Forward declarations
+typedef struct MsObjUpvalue  MsObjUpvalue;
+typedef struct MsObjClosure  MsObjClosure;
+typedef struct MsInlineCache MsInlineCache;
+
+typedef MsValue (*MsNativeFn)(struct MsVM* vm, int argc, MsValue* argv);
+
+typedef struct {
+    MsObject      obj;
+    int           arity;
+    int           min_arity;
+    int           upvalue_count;
+    int           max_stack_size;
+    bool          is_generator;
+    MsChunk       chunk;
+    MsObjString*  name;
+    MsInlineCache* ic;
+    int           ic_count;
+} MsObjFunction;
+
+typedef struct {
+    MsObject     obj;
+    MsNativeFn   function;
+    MsObjString* name;
+    int          arity;
+} MsObjNative;
+
+struct MsObjUpvalue {
+    MsObject       obj;
+    MsValue*       location;
+    MsValue        closed;
+    MsObjUpvalue*  next;
+};
+
+struct MsObjClosure {
+    MsObject      obj;
+    MsObjFunction* function;
+    int            upvalue_count;
+    MsObjUpvalue*  upvalues[];
+};
+
+#define MS_IS_FUNCTION(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_FUNCTION)
+#define MS_AS_FUNCTION(v)  ((MsObjFunction*)MS_AS_OBJECT(v))
+#define MS_IS_NATIVE(v)    MS_IS_OBJ_TYPE(v, MS_OBJ_NATIVE)
+#define MS_AS_NATIVE(v)    ((MsObjNative*)MS_AS_OBJECT(v))
+#define MS_IS_CLOSURE(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_CLOSURE)
+#define MS_AS_CLOSURE(v)   ((MsObjClosure*)MS_AS_OBJECT(v))
+#define MS_IS_UPVALUE(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_UPVALUE)
+
 struct MsVM;
 
 MsObject* ms_alloc_object(struct MsVM* vm, size_t size, MsObjectType type);
@@ -57,3 +107,9 @@ MsObjString* ms_obj_string_concat(struct MsVM* vm, MsObjString* a, MsObjString* 
 
 void ms_object_print(MsObject* obj);
 void ms_object_free(struct MsVM* vm, MsObject* obj);
+
+MsObjFunction* ms_obj_function_new(struct MsVM* vm);
+MsObjNative*   ms_obj_native_new(struct MsVM* vm, MsNativeFn fn,
+                                  const char* name, int arity);
+MsObjUpvalue*  ms_obj_upvalue_new(struct MsVM* vm, MsValue* slot);
+MsObjClosure*  ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn);

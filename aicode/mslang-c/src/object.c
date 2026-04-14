@@ -78,10 +78,70 @@ MsObjString* ms_obj_string_concat(struct MsVM* vm, MsObjString* a, MsObjString* 
     return s;
 }
 
+MsObjFunction* ms_obj_function_new(struct MsVM* vm) {
+    MsObjFunction* fn = MS_ALLOC_OBJ(vm, MS_OBJ_FUNCTION, MsObjFunction, 0);
+    fn->arity = 0;
+    fn->min_arity = -1;
+    fn->upvalue_count = 0;
+    fn->max_stack_size = 0;
+    fn->is_generator = false;
+    fn->name = NULL;
+    fn->ic = NULL;
+    fn->ic_count = 0;
+    ms_chunk_init(&fn->chunk);
+    return fn;
+}
+
+MsObjNative* ms_obj_native_new(struct MsVM* vm, MsNativeFn fn,
+                                const char* name, int arity) {
+    MsObjNative* n = MS_ALLOC_OBJ(vm, MS_OBJ_NATIVE, MsObjNative, 0);
+    n->function = fn;
+    n->name = ms_obj_string_copy(vm, name, (int)strlen(name));
+    n->arity = arity;
+    return n;
+}
+
+MsObjUpvalue* ms_obj_upvalue_new(struct MsVM* vm, MsValue* slot) {
+    MsObjUpvalue* uv = MS_ALLOC_OBJ(vm, MS_OBJ_UPVALUE, MsObjUpvalue, 0);
+    uv->location = slot;
+    uv->closed = MS_NIL_VAL();
+    uv->next = NULL;
+    return uv;
+}
+
+MsObjClosure* ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn) {
+    size_t extra = sizeof(MsObjUpvalue*) * (size_t)fn->upvalue_count;
+    MsObjClosure* cl = MS_ALLOC_OBJ(vm, MS_OBJ_CLOSURE, MsObjClosure, extra);
+    cl->function = fn;
+    cl->upvalue_count = fn->upvalue_count;
+    memset(cl->upvalues, 0, extra);
+    return cl;
+}
+
+static void print_fn_name(MsObjFunction* fn) {
+    if (fn->name) printf("<fn %s>", fn->name->data);
+    else          printf("<fn>");
+}
+
 void ms_object_print(MsObject* obj) {
     switch (obj->type) {
         case MS_OBJ_STRING:
             printf("%s", ((MsObjString*)obj)->data);
+            break;
+        case MS_OBJ_FUNCTION:
+            print_fn_name((MsObjFunction*)obj);
+            break;
+        case MS_OBJ_NATIVE: {
+            MsObjNative* n = (MsObjNative*)obj;
+            if (n->name) printf("<native %s>", n->name->data);
+            else         printf("<native>");
+            break;
+        }
+        case MS_OBJ_CLOSURE:
+            print_fn_name(((MsObjClosure*)obj)->function);
+            break;
+        case MS_OBJ_UPVALUE:
+            printf("<upvalue>");
             break;
         default:
             printf("<object %d>", (int)obj->type);
@@ -96,8 +156,28 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sizeof(MsObjString) + (size_t)s->length + 1, 0);
             break;
         }
+        case MS_OBJ_FUNCTION: {
+            MsObjFunction* fn = (MsObjFunction*)obj;
+            ms_chunk_free(vm, &fn->chunk);
+            ms_reallocate(vm, obj, sizeof(MsObjFunction), 0);
+            break;
+        }
+        case MS_OBJ_NATIVE:
+            ms_reallocate(vm, obj, sizeof(MsObjNative), 0);
+            break;
+        case MS_OBJ_UPVALUE:
+            ms_reallocate(vm, obj, sizeof(MsObjUpvalue), 0);
+            break;
+        case MS_OBJ_CLOSURE: {
+            MsObjClosure* cl = (MsObjClosure*)obj;
+            size_t sz = sizeof(MsObjClosure) +
+                        sizeof(MsObjUpvalue*) * (size_t)cl->upvalue_count;
+            ms_reallocate(vm, obj, sz, 0);
+            break;
+        }
         default:
-            ms_reallocate(vm, obj, 0, 0);
+            /* Unhandled object type: abort to catch missing free cases early. */
+            abort();
             break;
     }
 }
