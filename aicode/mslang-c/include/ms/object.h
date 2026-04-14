@@ -45,6 +45,7 @@ typedef struct MsObjString {
 #define MS_AS_CSTRING(v)     (MS_AS_STRING(v)->data)
 
 // Forward declarations
+struct MsVM;
 typedef struct MsObjUpvalue  MsObjUpvalue;
 typedef struct MsObjClosure  MsObjClosure;
 typedef struct MsInlineCache MsInlineCache;
@@ -92,8 +93,6 @@ struct MsObjClosure {
 #define MS_IS_CLOSURE(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_CLOSURE)
 #define MS_AS_CLOSURE(v)   ((MsObjClosure*)MS_AS_OBJECT(v))
 #define MS_IS_UPVALUE(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_UPVALUE)
-
-struct MsVM;
 
 MsObject* ms_alloc_object(struct MsVM* vm, size_t size, MsObjectType type);
 

@@ -13,3 +13,6 @@ target_link_libraries(test_object_string PRIVATE ms_vm)
 
 ms_add_test(test_base_objects unit/test_base_objects.c)
 target_link_libraries(test_base_objects PRIVATE ms_vm)
+
+ms_add_test(test_chunk unit/test_chunk.c)
+target_link_libraries(test_chunk PRIVATE ms_chunk)

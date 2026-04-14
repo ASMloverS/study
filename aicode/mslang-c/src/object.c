@@ -158,7 +158,7 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
         }
         case MS_OBJ_FUNCTION: {
             MsObjFunction* fn = (MsObjFunction*)obj;
-            ms_chunk_free(vm, &fn->chunk);
+            ms_chunk_free(&fn->chunk);
             ms_reallocate(vm, obj, sizeof(MsObjFunction), 0);
             break;
         }
