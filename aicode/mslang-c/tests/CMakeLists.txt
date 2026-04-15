@@ -16,3 +16,6 @@ target_link_libraries(test_base_objects PRIVATE ms_vm)
 
 ms_add_test(test_chunk unit/test_chunk.c)
 target_link_libraries(test_chunk PRIVATE ms_chunk)
+
+ms_add_test(test_debug unit/test_debug.c)
+target_link_libraries(test_debug PRIVATE ms_debug)

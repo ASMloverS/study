@@ -35,6 +35,11 @@ target_include_directories(ms_chunk PUBLIC include)
 target_compile_options(ms_chunk PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_chunk PUBLIC ms_memory)
 
+add_library(ms_debug STATIC src/debug.c)
+target_include_directories(ms_debug PUBLIC include)
+target_compile_options(ms_debug PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(ms_debug PUBLIC ms_chunk)
+
 add_library(ms_object STATIC src/object.c)
 target_include_directories(ms_object PUBLIC include)
 target_compile_options(ms_object PRIVATE ${MSLANG_COMPILE_OPTIONS})

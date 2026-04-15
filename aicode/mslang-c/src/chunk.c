@@ -49,7 +49,7 @@ int ms_chunk_add_constant(MsChunk* c, MsValue val) {
     return c->constants.count - 1;
 }
 
-int ms_chunk_get_line(MsChunk* c, int offset) {
+int ms_chunk_get_line(const MsChunk* c, int offset) {
     int accum = 0;
     for (int i = 0; i < c->line_count; i++) {
         accum += c->lines[i].count;

@@ -22,4 +22,4 @@ void ms_chunk_init(MsChunk* c);
 void ms_chunk_free(MsChunk* c);
 void ms_chunk_write(MsChunk* c, MsInstruction instr, int line, int col);
 int  ms_chunk_add_constant(MsChunk* c, MsValue val);
-int  ms_chunk_get_line(MsChunk* c, int offset);
+int  ms_chunk_get_line(const MsChunk* c, int offset);
