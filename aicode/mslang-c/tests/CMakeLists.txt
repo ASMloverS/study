@@ -19,3 +19,6 @@ target_link_libraries(test_chunk PRIVATE ms_chunk)
 
 ms_add_test(test_debug unit/test_debug.c)
 target_link_libraries(test_debug PRIVATE ms_debug)
+
+ms_add_test(test_scanner unit/test_scanner.c)
+target_link_libraries(test_scanner PRIVATE ms_scanner)

@@ -50,6 +50,10 @@ target_include_directories(ms_vm PUBLIC include)
 target_compile_options(ms_vm PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_vm PUBLIC ms_object)
 
+add_library(ms_scanner STATIC src/scanner.c)
+target_include_directories(ms_scanner PUBLIC include)
+target_compile_options(ms_scanner PRIVATE ${MSLANG_COMPILE_OPTIONS})
+
 add_executable(mslang-c src/main.c)
 target_include_directories(mslang-c PRIVATE include)
 target_compile_options(mslang-c PRIVATE ${MSLANG_COMPILE_OPTIONS})

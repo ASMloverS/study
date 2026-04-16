@@ -9,7 +9,7 @@
 | ✅ | [T05](T05-base-objects.md) | Object System — Base Objects |
 | ✅ | [T06](T06-chunk-instructions.md) | Chunk & Instruction Encoding |
 | ✅ | [T07](T07-disassembler.md) | Disassembler |
-| ⬜ | [T08](T08-scanner-basics.md) | Scanner — Basics |
+| ✅ | [T08](T08-scanner-basics.md) | Scanner — Basics |
 | ⬜ | [T09](T09-scanner-advanced.md) | Scanner — Advanced (ASI, interp, save/restore) |
 | ⬜ | [T10](T10-compiler-expressions.md) | Compiler — Expressions |
 | ⬜ | [T11](T11-compiler-variables.md) | Compiler — Variables |
