@@ -22,3 +22,6 @@ target_link_libraries(test_debug PRIVATE ms_debug)
 
 ms_add_test(test_scanner unit/test_scanner.c)
 target_link_libraries(test_scanner PRIVATE ms_scanner)
+
+ms_add_test(test_scanner_interp unit/test_scanner_interp.c)
+target_link_libraries(test_scanner_interp PRIVATE ms_scanner)

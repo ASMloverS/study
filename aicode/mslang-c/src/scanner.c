@@ -234,8 +234,15 @@ static MsToken scan_number(MsScanner* s) {
     return make_token(s, is_float ? MS_TK_NUMBER_FLOAT : MS_TK_NUMBER_INT);
 }
 
-static MsToken scan_string(MsScanner* s) {
+/* Scan string body. continuation=true when resuming after a } closed
+   an interpolation expression - the closing " emits STRING_INTERP_END. */
+static MsToken scan_string_body(MsScanner* s, bool continuation) {
     while (!is_at_end(s) && peek(s) != '"') {
+        if (peek(s) == '$' && peek2(s) == '{') {
+            advance(s); advance(s);
+            s->interp_depth++;
+            return make_token(s, MS_TK_STRING_INTERP);
+        }
         if (peek(s) == '\n') { advance(s); continue; }
         if (peek(s) == '\\') {
             advance(s);
@@ -251,7 +258,12 @@ static MsToken scan_string(MsScanner* s) {
     }
     if (is_at_end(s)) return error_token(s, "Unterminated string.");
     advance(s);
-    return make_token(s, MS_TK_STRING);
+    MsTokenType type = continuation ? MS_TK_STRING_INTERP_END : MS_TK_STRING;
+    return make_token(s, type);
+}
+
+static MsToken scan_string(MsScanner* s) {
+    return scan_string_body(s, false);
 }
 
 static MsToken scan_identifier(MsScanner* s) {
@@ -292,11 +304,15 @@ static void skip_line_comment(MsScanner* s) {
 }
 
 static void skip_block_comment(MsScanner* s) {
-    while (!is_at_end(s)) {
-        if (peek(s) == '*' && peek2(s) == '/') {
-            advance(s); advance(s); return;
+    int depth = 1;
+    while (depth > 0 && !is_at_end(s)) {
+        if (peek(s) == '/' && peek2(s) == '*') {
+            advance(s); advance(s); depth++;
+        } else if (peek(s) == '*' && peek2(s) == '/') {
+            advance(s); advance(s); depth--;
+        } else {
+            advance(s);
         }
-        advance(s);
     }
 }
 
@@ -370,8 +386,17 @@ MsToken ms_scanner_next(MsScanner* s) {
     case '[': s->bracket_depth++; return make_token(s, MS_TK_LEFT_BRACKET);
     case ']': s->bracket_depth--; return make_token(s, MS_TK_RIGHT_BRACKET);
     case '{': s->brace_depth++;   return make_token(s, MS_TK_LEFT_BRACE);
-    case '}': if (s->brace_depth > 0) s->brace_depth--;
-              return make_token(s, MS_TK_RIGHT_BRACE);
+    case '}':
+        if (s->interp_depth > 0) {
+            s->interp_depth--;
+            /* resume scanning the remainder of the interpolated string */
+            s->start        = s->current;
+            s->start_line   = s->line;
+            s->start_column = s->column;
+            return scan_string_body(s, true);
+        }
+        if (s->brace_depth > 0) s->brace_depth--;
+        return make_token(s, MS_TK_RIGHT_BRACE);
     case ',': return make_token(s, MS_TK_COMMA);
     case ';': return make_token(s, MS_TK_SEMICOLON);
     case ':': return make_token(s, MS_TK_COLON);
