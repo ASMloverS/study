@@ -31,3 +31,6 @@ target_link_libraries(test_compiler_expr PRIVATE ms_frontend)
 
 ms_add_test(test_compiler_vars unit/test_compiler_vars.c)
 target_link_libraries(test_compiler_vars PRIVATE ms_frontend)
+
+ms_add_test(test_compiler_stmts unit/test_compiler_stmts.c)
+target_link_libraries(test_compiler_stmts PRIVATE ms_frontend)

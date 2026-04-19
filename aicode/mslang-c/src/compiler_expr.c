@@ -285,10 +285,43 @@ static int resolve_local(MsCompiler* c, const char* name, int len) {
     return -1;
 }
 
+/* Add an upvalue to this compiler's upvalue table. Returns index. */
+static int add_upvalue(MsCompiler* c, bool is_local, int index) {
+    int count = c->function->upvalue_count;
+    for (int i = 0; i < count; i++) {
+        MsUpvalueDesc* uv = &c->upvalues[i];
+        if (uv->index == index && uv->is_local == is_local) return i;
+    }
+    if (count >= MS_MAX_UPVALUES) {
+        error_current(c, "Too many upvalues in function.");
+        return 0;
+    }
+    c->upvalues[count].is_local = is_local;
+    c->upvalues[count].index    = index;
+    return c->function->upvalue_count++;
+}
+
+/* Climb enclosing chain to resolve an upvalue. Returns upvalue index or -1. */
+int resolve_upvalue(MsCompiler* c, const char* name, int len) {
+    if (c->enclosing == NULL) return -1;
+    int local = resolve_local(c->enclosing, name, len);
+    if (local >= 0) {
+        c->enclosing->locals[local].is_captured = true;
+        return add_upvalue(c, true, local);
+    }
+    int uv = resolve_upvalue(c->enclosing, name, len);
+    if (uv >= 0) return add_upvalue(c, false, uv);
+    return -1;
+}
+
 /* Emit a SET for local or global. local_slot >= 0 means local. */
-static void emit_assign(MsCompiler* c, int local_slot, int name_k, int val_reg) {
+static void emit_assign(MsCompiler* c, int local_slot, int upval_idx,
+                        int name_k, int val_reg) {
     if (local_slot >= 0) {
         emit(c, ms_enc_ABC(MS_OP_MOVE, local_slot, val_reg, 0));
+        free_reg(c, val_reg);
+    } else if (upval_idx >= 0) {
+        emit(c, ms_enc_ABx(MS_OP_SETUPVAL, val_reg, upval_idx));
         free_reg(c, val_reg);
     } else {
         emit(c, ms_enc_ABx(MS_OP_SETGLOBAL, val_reg, name_k));
@@ -297,10 +330,12 @@ static void emit_assign(MsCompiler* c, int local_slot, int name_k, int val_reg) 
 }
 
 static void parse_identifier(MsCompiler* c, bool can_assign) {
-    const char* name = c->previous.start;
-    int         nlen = c->previous.length;
-    int local_slot   = resolve_local(c, name, nlen);
-    int name_k       = (local_slot < 0) ? add_string_constant(c, name, nlen) : -1;
+    const char* name  = c->previous.start;
+    int         nlen  = c->previous.length;
+    int local_slot    = resolve_local(c, name, nlen);
+    int upval_idx     = (local_slot < 0) ? resolve_upvalue(c, name, nlen) : -1;
+    int name_k        = (local_slot < 0 && upval_idx < 0)
+                        ? add_string_constant(c, name, nlen) : -1;
 
     /* Compound assignment: read current value first */
     MsTokenType compound = MS_TK_COUNT;
@@ -313,23 +348,19 @@ static void parse_identifier(MsCompiler* c, bool can_assign) {
     }
 
     if (can_assign && match_tok(c, MS_TK_EQUAL)) {
-        /* Simple assignment */
         expression(c);
         int val_reg = c->next_reg - 1;
-        emit_assign(c, local_slot, name_k, val_reg);
-        if (local_slot >= 0) {
-            /* result is in local_slot; adjust next_reg */
-            c->next_reg = local_slot + 1;
-        }
+        emit_assign(c, local_slot, upval_idx, name_k, val_reg);
+        if (local_slot >= 0) c->next_reg = local_slot + 1;
     } else if (can_assign && compound != MS_TK_COUNT) {
-        advance(c); /* consume the compound-assign token */
-        /* load current value */
+        advance(c);
         int cur = alloc_reg(c);
         if (local_slot >= 0)
             emit(c, ms_enc_ABC(MS_OP_MOVE, cur, local_slot, 0));
+        else if (upval_idx >= 0)
+            emit(c, ms_enc_ABx(MS_OP_GETUPVAL, cur, upval_idx));
         else
             emit(c, ms_enc_ABx(MS_OP_GETGLOBAL, cur, name_k));
-        /* compile RHS */
         expression(c);
         int rhs = c->next_reg - 1;
         MsOpCode opc;
@@ -342,13 +373,14 @@ static void parse_identifier(MsCompiler* c, bool can_assign) {
         }
         emit(c, ms_enc_ABC(opc, cur, cur, rhs));
         free_reg(c, rhs);
-        emit_assign(c, local_slot, name_k, cur);
+        emit_assign(c, local_slot, upval_idx, name_k, cur);
         if (local_slot >= 0) c->next_reg = local_slot + 1;
     } else {
-        /* Read */
         int r = alloc_reg(c);
         if (local_slot >= 0)
             emit(c, ms_enc_ABC(MS_OP_MOVE, r, local_slot, 0));
+        else if (upval_idx >= 0)
+            emit(c, ms_enc_ABx(MS_OP_GETUPVAL, r, upval_idx));
         else
             emit(c, ms_enc_ABx(MS_OP_GETGLOBAL, r, name_k));
     }
