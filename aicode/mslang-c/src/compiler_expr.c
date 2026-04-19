@@ -404,6 +404,8 @@ static void parse_call(MsCompiler* c, bool can_assign) {
     int first_arg = c->next_reg;
     int argc = parse_args(c);
     emit(c, ms_enc_ABC(MS_OP_CALL, fn_reg, argc, first_arg));
+    /* After call, result is in fn_reg; arg registers are freed. */
+    c->next_reg = fn_reg + 1;
 }
 
 /* ---- statement helpers ---- */

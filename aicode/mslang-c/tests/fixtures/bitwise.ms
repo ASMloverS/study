@@ -1,0 +1,6 @@
+print(3 & 5)
+print(3 | 5)
+print(3 ^ 5)
+print(~0)
+print(1 << 3)
+print(16 >> 2)

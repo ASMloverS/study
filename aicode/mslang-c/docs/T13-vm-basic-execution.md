@@ -269,3 +269,5 @@ print(0xA0 | 0x0B)
 print(~0)
 // expect: -1
 ```
+
+Status: ✅ 已完成
