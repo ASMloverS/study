@@ -54,6 +54,11 @@ add_library(ms_scanner STATIC src/scanner.c)
 target_include_directories(ms_scanner PUBLIC include)
 target_compile_options(ms_scanner PRIVATE ${MSLANG_COMPILE_OPTIONS})
 
+add_library(ms_frontend STATIC src/compiler.c src/compiler_expr.c)
+target_include_directories(ms_frontend PUBLIC include PRIVATE src)
+target_compile_options(ms_frontend PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(ms_frontend PUBLIC ms_vm ms_scanner ms_debug)
+
 add_executable(mslang-c src/main.c)
 target_include_directories(mslang-c PRIVATE include)
 target_compile_options(mslang-c PRIVATE ${MSLANG_COMPILE_OPTIONS})

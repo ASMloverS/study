@@ -1,5 +1,7 @@
 # Task 10: Compiler — Expressions
 
+**Status:** DONE
+
 > **For agentic workers:** Use superpowers:executing-plans to implement this task.
 
 **Goal:** Implement single-pass Pratt parser for expressions: literals, arithmetic, comparisons, logical and/or, unary, bitwise, grouping. Uses ExprDesc to minimize register moves.

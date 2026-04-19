@@ -25,3 +25,6 @@ target_link_libraries(test_scanner PRIVATE ms_scanner)
 
 ms_add_test(test_scanner_interp unit/test_scanner_interp.c)
 target_link_libraries(test_scanner_interp PRIVATE ms_scanner)
+
+ms_add_test(test_compiler_expr unit/test_compiler_expr.c)
+target_link_libraries(test_compiler_expr PRIVATE ms_frontend)
