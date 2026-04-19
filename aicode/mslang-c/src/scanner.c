@@ -1,6 +1,7 @@
 #include "ms/scanner.h"
 #include "ms/common.h"
 #include <string.h>
+#include <stddef.h>
 
 /* --- token type name table --- */
 
@@ -29,6 +30,7 @@ void ms_scanner_init(MsScanner* s, const char* source) {
     s->bracket_depth = 0;
     s->brace_depth   = 0;
     s->interp_depth  = 0;
+    memset(s->interp_brace_stack, 0, sizeof(s->interp_brace_stack));
     s->prev_type     = MS_TK_EOF_TOKEN;
 }
 
@@ -41,6 +43,8 @@ MsScannerState ms_scanner_save(const MsScanner* s) {
     st.bracket_depth = s->bracket_depth;
     st.brace_depth   = s->brace_depth;
     st.interp_depth  = s->interp_depth;
+    memcpy(st.interp_brace_stack, s->interp_brace_stack,
+           sizeof(s->interp_brace_stack));
     st.prev_type     = s->prev_type;
     return st;
 }
@@ -53,6 +57,8 @@ void ms_scanner_restore(MsScanner* s, MsScannerState st) {
     s->bracket_depth = st.bracket_depth;
     s->brace_depth   = st.brace_depth;
     s->interp_depth  = st.interp_depth;
+    memcpy(s->interp_brace_stack, st.interp_brace_stack,
+           sizeof(s->interp_brace_stack));
     s->prev_type     = st.prev_type;
     s->start         = st.current;
 }
@@ -239,9 +245,14 @@ static MsToken scan_number(MsScanner* s) {
 static MsToken scan_string_body(MsScanner* s, bool continuation) {
     while (!is_at_end(s) && peek(s) != '"') {
         if (peek(s) == '$' && peek2(s) == '{') {
-            advance(s); advance(s);
+            /* Token covers source up to (not including) '$' */
+            MsToken t = make_token(s, MS_TK_STRING_INTERP);
+            advance(s); advance(s); /* consume '${' */
+            if (s->interp_depth >= MS_MAX_INTERP_DEPTH)
+                return error_token(s, "String interpolation nested too deeply.");
+            s->interp_brace_stack[s->interp_depth] = 0;
             s->interp_depth++;
-            return make_token(s, MS_TK_STRING_INTERP);
+            return t;
         }
         if (peek(s) == '\n') { advance(s); continue; }
         if (peek(s) == '\\') {
@@ -303,7 +314,8 @@ static void skip_line_comment(MsScanner* s) {
     while (!is_at_end(s) && peek(s) != '\n') advance(s);
 }
 
-static void skip_block_comment(MsScanner* s) {
+/* Returns true if comment was properly terminated, false on EOF. */
+static bool skip_block_comment(MsScanner* s) {
     int depth = 1;
     while (depth > 0 && !is_at_end(s)) {
         if (peek(s) == '/' && peek2(s) == '*') {
@@ -314,9 +326,11 @@ static void skip_block_comment(MsScanner* s) {
             advance(s);
         }
     }
+    return depth == 0;
 }
 
-static bool skip_whitespace_check_asi(MsScanner* s) {
+/* Returns: 1 = emit ASI, 0 = no ASI, -1 = unterminated block comment. */
+static int skip_whitespace_check_asi(MsScanner* s) {
     for (;;) {
         char c = peek(s);
         switch (c) {
@@ -325,8 +339,9 @@ static bool skip_whitespace_check_asi(MsScanner* s) {
             break;
         case '\n':
             if (s->paren_depth == 0 && s->bracket_depth == 0
+                    && s->interp_depth == 0
                     && asi_prev_triggers(s->prev_type)) {
-                return true;
+                return 1;
             }
             /* consume newline without ASI */
             advance(s);
@@ -336,13 +351,13 @@ static bool skip_whitespace_check_asi(MsScanner* s) {
                 skip_line_comment(s);
             } else if (peek2(s) == '*') {
                 advance(s); advance(s);
-                skip_block_comment(s);
+                if (!skip_block_comment(s)) return -1;
             } else {
-                return false;
+                return 0;
             }
             break;
         default:
-            return false;
+            return 0;
         }
     }
 }
@@ -350,12 +365,16 @@ static bool skip_whitespace_check_asi(MsScanner* s) {
 /* --- main scanner entry point --- */
 
 MsToken ms_scanner_next(MsScanner* s) {
-    bool emit_asi = skip_whitespace_check_asi(s);
+    int asi_result = skip_whitespace_check_asi(s);
     s->start        = s->current;
     s->start_line   = s->line;
     s->start_column = s->column;
 
-    if (emit_asi) {
+    if (asi_result == -1) {
+        return error_token(s, "Unterminated block comment.");
+    }
+
+    if (asi_result == 1) {
         MsToken t;
         t.type   = MS_TK_NEWLINE;
         t.start  = s->current;
@@ -385,9 +404,15 @@ MsToken ms_scanner_next(MsScanner* s) {
     case ')': s->paren_depth--;   return make_token(s, MS_TK_RIGHT_PAREN);
     case '[': s->bracket_depth++; return make_token(s, MS_TK_LEFT_BRACKET);
     case ']': s->bracket_depth--; return make_token(s, MS_TK_RIGHT_BRACKET);
-    case '{': s->brace_depth++;   return make_token(s, MS_TK_LEFT_BRACE);
+    case '{':
+        if (s->interp_depth > 0)
+            s->interp_brace_stack[s->interp_depth - 1]++;
+        else
+            s->brace_depth++;
+        return make_token(s, MS_TK_LEFT_BRACE);
     case '}':
-        if (s->interp_depth > 0) {
+        if (s->interp_depth > 0
+                && s->interp_brace_stack[s->interp_depth - 1] == 0) {
             s->interp_depth--;
             /* resume scanning the remainder of the interpolated string */
             s->start        = s->current;
@@ -395,7 +420,10 @@ MsToken ms_scanner_next(MsScanner* s) {
             s->start_column = s->column;
             return scan_string_body(s, true);
         }
-        if (s->brace_depth > 0) s->brace_depth--;
+        if (s->interp_depth > 0)
+            s->interp_brace_stack[s->interp_depth - 1]--;
+        else if (s->brace_depth > 0)
+            s->brace_depth--;
         return make_token(s, MS_TK_RIGHT_BRACE);
     case ',': return make_token(s, MS_TK_COMMA);
     case ';': return make_token(s, MS_TK_SEMICOLON);

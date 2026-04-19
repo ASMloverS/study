@@ -1,5 +1,6 @@
 #pragma once
 #include "ms/token.h"
+#include "ms/consts.h"
 
 typedef struct {
     const char* source;
@@ -13,6 +14,7 @@ typedef struct {
     int         bracket_depth; /* bracket depth, suppresses ASI */
     int         brace_depth;   /* brace depth, suppresses ASI inside map literals */
     int         interp_depth;  /* string interpolation nesting */
+    int         interp_brace_stack[MS_MAX_INTERP_DEPTH]; /* brace balance per interp level */
     MsTokenType prev_type;     /* for ASI determination */
 } MsScanner;
 
@@ -27,6 +29,7 @@ typedef struct {
     int         bracket_depth;
     int         brace_depth;
     int         interp_depth;
+    int         interp_brace_stack[MS_MAX_INTERP_DEPTH];
     MsTokenType prev_type;
 } MsScannerState;
 
