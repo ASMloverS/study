@@ -275,14 +275,83 @@ static void parse_or(MsCompiler* c, bool can_assign) {
     patch_jmp(c, jmp);
 }
 
+/* Resolve local variable: scan backward. Returns slot or -1. */
+static int resolve_local(MsCompiler* c, const char* name, int len) {
+    for (int i = c->local_count - 1; i >= 0; i--) {
+        MsLocal* l = &c->locals[i];
+        if (l->name.length == len && memcmp(l->name.start, name, (size_t)len) == 0)
+            return l->slot;
+    }
+    return -1;
+}
+
+/* Emit a SET for local or global. local_slot >= 0 means local. */
+static void emit_assign(MsCompiler* c, int local_slot, int name_k, int val_reg) {
+    if (local_slot >= 0) {
+        emit(c, ms_enc_ABC(MS_OP_MOVE, local_slot, val_reg, 0));
+        free_reg(c, val_reg);
+    } else {
+        emit(c, ms_enc_ABx(MS_OP_SETGLOBAL, val_reg, name_k));
+        free_reg(c, val_reg);
+    }
+}
+
 static void parse_identifier(MsCompiler* c, bool can_assign) {
-    MS_UNUSED(can_assign);
     const char* name = c->previous.start;
     int         nlen = c->previous.length;
-    MsObjString* s   = ms_obj_string_copy(c->vm, name, nlen);
-    int k = add_constant(c, MS_OBJ_VAL(s));
-    int r = alloc_reg(c);
-    emit(c, ms_enc_ABx(MS_OP_GETGLOBAL, r, k));
+    int local_slot   = resolve_local(c, name, nlen);
+    int name_k       = (local_slot < 0) ? add_string_constant(c, name, nlen) : -1;
+
+    /* Compound assignment: read current value first */
+    MsTokenType compound = MS_TK_COUNT;
+    if (can_assign) {
+        if      (check(c, MS_TK_PLUS_EQUAL))    compound = MS_TK_PLUS_EQUAL;
+        else if (check(c, MS_TK_MINUS_EQUAL))   compound = MS_TK_MINUS_EQUAL;
+        else if (check(c, MS_TK_STAR_EQUAL))    compound = MS_TK_STAR_EQUAL;
+        else if (check(c, MS_TK_SLASH_EQUAL))   compound = MS_TK_SLASH_EQUAL;
+        else if (check(c, MS_TK_PERCENT_EQUAL)) compound = MS_TK_PERCENT_EQUAL;
+    }
+
+    if (can_assign && match_tok(c, MS_TK_EQUAL)) {
+        /* Simple assignment */
+        expression(c);
+        int val_reg = c->next_reg - 1;
+        emit_assign(c, local_slot, name_k, val_reg);
+        if (local_slot >= 0) {
+            /* result is in local_slot; adjust next_reg */
+            c->next_reg = local_slot + 1;
+        }
+    } else if (can_assign && compound != MS_TK_COUNT) {
+        advance(c); /* consume the compound-assign token */
+        /* load current value */
+        int cur = alloc_reg(c);
+        if (local_slot >= 0)
+            emit(c, ms_enc_ABC(MS_OP_MOVE, cur, local_slot, 0));
+        else
+            emit(c, ms_enc_ABx(MS_OP_GETGLOBAL, cur, name_k));
+        /* compile RHS */
+        expression(c);
+        int rhs = c->next_reg - 1;
+        MsOpCode opc;
+        switch (compound) {
+        case MS_TK_PLUS_EQUAL:    opc = MS_OP_ADD; break;
+        case MS_TK_MINUS_EQUAL:   opc = MS_OP_SUB; break;
+        case MS_TK_STAR_EQUAL:    opc = MS_OP_MUL; break;
+        case MS_TK_SLASH_EQUAL:   opc = MS_OP_DIV; break;
+        default:                  opc = MS_OP_MOD; break;
+        }
+        emit(c, ms_enc_ABC(opc, cur, cur, rhs));
+        free_reg(c, rhs);
+        emit_assign(c, local_slot, name_k, cur);
+        if (local_slot >= 0) c->next_reg = local_slot + 1;
+    } else {
+        /* Read */
+        int r = alloc_reg(c);
+        if (local_slot >= 0)
+            emit(c, ms_enc_ABC(MS_OP_MOVE, r, local_slot, 0));
+        else
+            emit(c, ms_enc_ABx(MS_OP_GETGLOBAL, r, name_k));
+    }
 }
 
 static int parse_args(MsCompiler* c) {
@@ -324,7 +393,7 @@ static void parse_print_stmt(MsCompiler* c, bool can_assign) {
     }
     consume(c, MS_TK_RIGHT_PAREN, "Expected ')' after print args.");
     emit(c, ms_enc_ABC(MS_OP_CALL, print_reg, argc, first_arg));
-    c->next_reg = 0;
+    stmt_reg_reset(c);
 }
 
 void compile_expression_stmt(MsCompiler* c) {
@@ -333,7 +402,7 @@ void compile_expression_stmt(MsCompiler* c) {
         parse_print_stmt(c, false);
     } else {
         expression(c);
-        c->next_reg = 0;
+        stmt_reg_reset(c);
     }
     match_tok(c, MS_TK_NEWLINE);
     match_tok(c, MS_TK_SEMICOLON);

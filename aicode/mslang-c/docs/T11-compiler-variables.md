@@ -177,3 +177,5 @@ var s = "outer"
 print(s)
 // expect: outer
 ```
+
+Status: ✅ 已完成

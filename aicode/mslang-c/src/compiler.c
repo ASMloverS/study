@@ -81,10 +81,46 @@ void free_reg(MsCompiler* c, int reg) {
     if (reg == c->next_reg - 1) c->next_reg--;
 }
 
+/* Reset next_reg to the first free slot above all active locals. */
+void stmt_reg_reset(MsCompiler* c) {
+    int base = 0;
+    for (int i = 0; i < c->local_count; i++) {
+        if (c->locals[i].slot >= base) base = c->locals[i].slot + 1;
+    }
+    c->next_reg = base;
+}
+
 /* ---- constants ---- */
 
 int add_constant(MsCompiler* c, MsValue val) {
     return ms_chunk_add_constant(&c->function->chunk, val);
+}
+
+int add_string_constant(MsCompiler* c, const char* chars, int len) {
+    MsObjString* s = ms_obj_string_copy(c->vm, chars, len);
+    MsValue existing;
+    if (ms_table_get(&c->string_cache, s, &existing)) {
+        return (int)MS_AS_INT(existing);
+    }
+    int idx = ms_chunk_add_constant(&c->function->chunk, MS_OBJ_VAL(s));
+    ms_table_set(&c->string_cache, s, MS_INT_VAL(idx));
+    return idx;
+}
+
+/* ---- scope management ---- */
+
+static void begin_scope(MsCompiler* c) { c->scope_depth++; }
+
+static void end_scope(MsCompiler* c) {
+    c->scope_depth--;
+    while (c->local_count > 0 &&
+           c->locals[c->local_count - 1].depth > c->scope_depth) {
+        MsLocal* local = &c->locals[c->local_count - 1];
+        if (local->is_captured)
+            emit(c, ms_enc_ABC(MS_OP_CLOSE, local->slot, 0, 0));
+        c->local_count--;
+        free_reg(c, local->slot);
+    }
 }
 
 /* ---- materialise ExprDesc into a register ---- */
@@ -164,8 +200,70 @@ static void compiler_init(MsCompiler* c, MsVM* vm, const char* source,
     advance(c);
 }
 
-/* ---- forward declaration for compiler_expr.c ---- */
+/* ---- forward declarations for compiler_expr.c ---- */
 void compile_expression_stmt(MsCompiler* c);
+
+/* ---- var declaration ---- */
+
+static void parse_var_decl(MsCompiler* c) {
+    consume(c, MS_TK_IDENTIFIER, "Expected variable name.");
+    MsToken name = c->previous;
+
+    int rhs_reg = c->next_reg;
+    if (match_tok(c, MS_TK_EQUAL)) {
+        expression(c);
+        rhs_reg = c->next_reg - 1;
+    } else {
+        int r = alloc_reg(c);
+        emit(c, ms_enc_ABC(MS_OP_LOADNIL, r, 0, 0));
+        rhs_reg = r;
+    }
+
+    if (c->scope_depth == 0) {
+        int k = add_string_constant(c, name.start, name.length);
+        emit(c, ms_enc_ABx(MS_OP_DEFGLOBAL, rhs_reg, k));
+        free_reg(c, rhs_reg);
+    } else {
+        if (c->local_count >= 256) {
+            error_at(c, &name, "Too many local variables.");
+            return;
+        }
+        MsLocal* local = &c->locals[c->local_count++];
+        local->name        = name;
+        local->depth       = c->scope_depth;
+        local->is_captured = false;
+        local->slot        = rhs_reg;
+    }
+}
+
+/* ---- block statement ---- */
+
+static void compile_statement(MsCompiler* c);
+
+static void parse_block(MsCompiler* c) {
+    begin_scope(c);
+    while (!check(c, MS_TK_RIGHT_BRACE) && !check(c, MS_TK_EOF_TOKEN)) {
+        if (match_tok(c, MS_TK_NEWLINE) || match_tok(c, MS_TK_SEMICOLON))
+            continue;
+        compile_statement(c);
+    }
+    consume(c, MS_TK_RIGHT_BRACE, "Expected '}' after block.");
+    end_scope(c);
+}
+
+static void compile_statement(MsCompiler* c) {
+    if (match_tok(c, MS_TK_VAR)) {
+        parse_var_decl(c);
+    } else if (match_tok(c, MS_TK_LEFT_BRACE)) {
+        parse_block(c);
+        return;
+    } else {
+        compile_expression_stmt(c);
+        return;
+    }
+    match_tok(c, MS_TK_NEWLINE);
+    match_tok(c, MS_TK_SEMICOLON);
+}
 
 MsObjFunction* ms_compile(MsVM* vm, const char* source, const char* path,
                            MsDiagnostic* diags, int* diag_count, int max_diags) {
@@ -176,7 +274,7 @@ MsObjFunction* ms_compile(MsVM* vm, const char* source, const char* path,
     while (!check(&c, MS_TK_EOF_TOKEN)) {
         if (match_tok(&c, MS_TK_NEWLINE) || match_tok(&c, MS_TK_SEMICOLON))
             continue;
-        compile_expression_stmt(&c);
+        compile_statement(&c);
     }
 
     emit(&c, ms_enc_ABC(MS_OP_RETURN, 0, 0, 0));

@@ -12,7 +12,7 @@
 | ✅ | [T08](T08-scanner-basics.md) | Scanner — Basics |
 | ✅ | [T09](T09-scanner-advanced.md) | Scanner — Advanced (ASI, interp, save/restore) |
 | ✅ | [T10](T10-compiler-expressions.md) | Compiler — Expressions |
-| ⬜ | [T11](T11-compiler-variables.md) | Compiler — Variables |
+| ✅ | [T11](T11-compiler-variables.md) | Compiler — Variables |
 | ⬜ | [T12](T12-compiler-statements.md) | Compiler — Statements |
 | ⬜ | [T13](T13-vm-basic-execution.md) | VM — Basic Execution |
 | ⬜ | [T14](T14-vm-closures-upvalues.md) | VM — Closures & Upvalues |

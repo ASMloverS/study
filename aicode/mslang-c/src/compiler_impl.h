@@ -95,6 +95,8 @@ void          free_reg(MsCompiler* c, int reg);
 int           expr_to_reg(MsCompiler* c, MsExprDesc* e);
 int           expr_to_any_reg(MsCompiler* c, MsExprDesc* e);
 int           add_constant(MsCompiler* c, MsValue val);
+void          stmt_reg_reset(MsCompiler* c);
+int           add_string_constant(MsCompiler* c, const char* chars, int len);
 MsExprDesc    parse_precedence(MsCompiler* c, MsPrecedence min);
 MsExprDesc    expression(MsCompiler* c);
 bool          check(const MsCompiler* c, MsTokenType t);
