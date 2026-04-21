@@ -288,6 +288,15 @@ mslangc_add_e2e_named_test(modules.namespace_isolation
   "e2e/modules/namespace_isolation.ms"
   "e2e/modules/namespace_isolation.ms.out"
   "modules")
+mslangc_add_cli_test(modules.missing_module
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_module.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5001;missing_module.ms:1:"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.missing_module PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"

@@ -385,10 +385,11 @@ static int ms_vm_peek(const MsVM* vm, size_t distance, MsValue* out_value) {
   return 1;
 }
 
-static int ms_vm_append_runtime_error(MsVM* vm,
-                                      size_t instruction_offset,
-                                      const char* code,
-                                      const char* message) {
+static int ms_vm_append_error(MsVM* vm,
+                              size_t instruction_offset,
+                              const char* phase,
+                              const char* code,
+                              const char* message) {
   MsDiagnostic diagnostic;
   MsCallFrame* frame;
   MsModule* module;
@@ -413,7 +414,7 @@ static int ms_vm_append_runtime_error(MsVM* vm,
     file = module->name;
   }
 
-  diagnostic.phase = "runtime";
+  diagnostic.phase = phase;
   diagnostic.code = code;
   diagnostic.message = message;
   diagnostic.span.file = file;
@@ -427,7 +428,20 @@ static MsVmResult ms_vm_runtime_error(MsVM* vm,
                                       size_t instruction_offset,
                                       const char* code,
                                       const char* message) {
-  ms_vm_append_runtime_error(vm, instruction_offset, code, message);
+  ms_vm_append_error(vm, instruction_offset, "runtime", code, message);
+  if (vm != NULL) {
+    vm->stack_count = 0;
+    vm->frame_count = 0;
+    vm->open_upvalues = NULL;
+  }
+  return MS_VM_RESULT_RUNTIME_ERROR;
+}
+
+static MsVmResult ms_vm_module_error(MsVM* vm,
+                                     size_t instruction_offset,
+                                     const char* code,
+                                     const char* message) {
+  ms_vm_append_error(vm, instruction_offset, "module", code, message);
   if (vm != NULL) {
     vm->stack_count = 0;
     vm->frame_count = 0;
@@ -1982,10 +1996,10 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
   if (!ms_vm_resolve_module_path(vm, module_name->bytes, &resolved_path)) {
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4004",
-                               "module not found");
+    return ms_vm_module_error(vm,
+                              instruction_offset,
+                              "MS5001",
+                              "module not found");
   }
 
   module = ms_vm_get_or_create_module(vm, resolved_path, &inserted_new);
