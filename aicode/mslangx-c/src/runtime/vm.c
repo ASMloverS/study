@@ -2131,10 +2131,10 @@ static MsVmResult ms_vm_import_symbol(MsVM* vm,
                                "invalid opcode stream");
   }
   if (!found) {
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4004",
-                               "module export not found");
+    return ms_vm_module_error(vm,
+                              instruction_offset,
+                              "MS5002",
+                              "module export not found");
   }
   if (!ms_vm_push(vm, value)) {
     return ms_vm_runtime_error(vm,

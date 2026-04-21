@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress. Subtasks 13.1 through 13.6 are `DONE`; subtasks 13.7 through 13.8 are `TODO`.
+In progress. Subtasks 13.1 through 13.7 are `DONE`; subtask 13.8 is `TODO`.
 
 ## Goal
 
@@ -101,7 +101,7 @@ Use the following status markers consistently in this document:
 | 13.4 | `DONE` | 13.3 | End-to-end `from a import b as c` and snapshot bindings |
 | 13.5 | `DONE` | 13.4 | Cache reuse and namespace isolation |
 | 13.6 | `DONE` | 13.3 | `MS5001` missing-module diagnostics |
-| 13.7 | `TODO` | 13.4 | `MS5002` missing-export diagnostics |
+| 13.7 | `DONE` | 13.4 | `MS5002` missing-export diagnostics |
 | 13.8 | `TODO` | 13.5, 13.6, 13.7 | `MS5003` and `MS5004` failures plus full module regression |
 
 ### Subtask 13.1 - Module loader state, search roots, and canonical cache keys

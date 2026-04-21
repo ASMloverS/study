@@ -276,6 +276,15 @@ mslangc_add_e2e_named_test(modules.from_import_snapshot
   "e2e/modules/from_import_snapshot.ms"
   "e2e/modules/from_import_snapshot.ms.out"
   "modules")
+mslangc_add_cli_test(modules.missing_export
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_export.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_export.ms.out"
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5002;missing_export.ms:3:"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.missing_export PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
 mslangc_add_e2e_named_test(modules.cache_once
   "e2e/modules/cache_once.ms"
   "e2e/modules/cache_once.ms.out"
