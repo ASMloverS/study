@@ -385,31 +385,58 @@ static int ms_vm_peek(const MsVM* vm, size_t distance, MsValue* out_value) {
   return 1;
 }
 
+static int ms_vm_append_error_at(MsVM* vm,
+                                 const MsChunk* chunk,
+                                 MsModule* module,
+                                 size_t instruction_offset,
+                                 const char* phase,
+                                 const char* code,
+                                 const char* message);
+
 static int ms_vm_append_error(MsVM* vm,
                               size_t instruction_offset,
                               const char* phase,
                               const char* code,
                               const char* message) {
-  MsDiagnostic diagnostic;
   MsCallFrame* frame;
-  MsModule* module;
-  int line = 0;
-  const char* file = "<chunk>";
 
   if (vm == NULL) {
     return 0;
   }
 
   frame = ms_vm_current_frame(vm);
-  if (frame == NULL || frame->chunk == NULL) {
+  if (frame == NULL) {
     return 0;
   }
 
-  if (!ms_chunk_get_line(frame->chunk, instruction_offset, &line) &&
-      instruction_offset > 0) {
-    ms_chunk_get_line(frame->chunk, instruction_offset - 1, &line);
+  return ms_vm_append_error_at(vm,
+                               frame->chunk,
+                               ms_vm_active_module(vm),
+                               instruction_offset,
+                               phase,
+                               code,
+                               message);
+}
+
+static int ms_vm_append_error_at(MsVM* vm,
+                                 const MsChunk* chunk,
+                                 MsModule* module,
+                                 size_t instruction_offset,
+                                 const char* phase,
+                                 const char* code,
+                                 const char* message) {
+  MsDiagnostic diagnostic;
+  int line = 0;
+  const char* file = "<chunk>";
+
+  if (vm == NULL || chunk == NULL) {
+    return 0;
   }
-  module = ms_vm_active_module(vm);
+
+  if (!ms_chunk_get_line(chunk, instruction_offset, &line) &&
+      instruction_offset > 0) {
+    ms_chunk_get_line(chunk, instruction_offset - 1, &line);
+  }
   if (module != NULL && module->name != NULL) {
     file = module->name;
   }
@@ -1947,6 +1974,26 @@ static int ms_vm_append_diagnostics(MsDiagnosticList* destination,
   return 1;
 }
 
+static void ms_vm_append_import_failure(MsVM* vm,
+                                        MsModule* caller_module,
+                                        const MsChunk* caller_chunk,
+                                        MsModule* module,
+                                        int missing_module,
+                                        size_t instruction_offset) {
+  if (vm == NULL || missing_module || caller_module == NULL ||
+      caller_chunk == NULL || caller_module == module) {
+    return;
+  }
+
+  ms_vm_append_error_at(vm,
+                        caller_chunk,
+                        caller_module,
+                        instruction_offset,
+                        "module",
+                        "MS5004",
+                        "module initialization failed");
+}
+
 static int ms_vm_push_entry_frame(MsVM* vm,
                                   const MsChunk* chunk,
                                   MsClosure* closure,
@@ -1976,7 +2023,8 @@ static int ms_vm_push_entry_frame(MsVM* vm,
 static MsVmResult ms_vm_load_module(MsVM* vm,
                                     MsString* module_name,
                                     size_t instruction_offset,
-                                    MsModule** out_module) {
+                                    MsModule** out_module,
+                                    int* out_missing_module) {
   char* resolved_path = NULL;
   char* source = NULL;
   MsChunk chunk;
@@ -1984,6 +2032,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
   MsCompileResult compile_result;
   MsModule* module = NULL;
   MsModule* caller_module;
+  const MsChunk* caller_chunk;
   size_t caller_frame_count;
   size_t caller_stack_count;
   int inserted_new = 0;
@@ -1992,10 +2041,18 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
   if (out_module != NULL) {
     *out_module = NULL;
   }
+  if (out_missing_module != NULL) {
+    *out_missing_module = 0;
+  }
   if (vm == NULL || module_name == NULL || out_module == NULL) {
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
+  caller_module = vm->current_module;
+  caller_chunk = ms_vm_current_frame(vm) != NULL ? ms_vm_current_frame(vm)->chunk : NULL;
   if (!ms_vm_resolve_module_path(vm, module_name->bytes, &resolved_path)) {
+    if (out_missing_module != NULL) {
+      *out_missing_module = 1;
+    }
     return ms_vm_module_error(vm,
                               instruction_offset,
                               "MS5001",
@@ -2014,21 +2071,49 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
     *out_module = module;
     return MS_VM_RESULT_OK;
   }
+  if (module->state == MS_MODULE_STATE_INITIALIZING) {
+    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
+    result = ms_vm_module_error(vm,
+                                instruction_offset,
+                                "MS5003",
+                                "cyclic dependency");
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
+    return result;
+  }
   if (module->state != MS_MODULE_STATE_UNSEEN ||
       !ms_module_transition_state(module, MS_MODULE_STATE_INITIALIZING)) {
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4004",
-                               "module is not ready");
+    result = ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4004",
+                                 "module is not ready");
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
+    return result;
   }
 
   source = ms_vm_read_file(module->canonical_path);
   if (source == NULL) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4004",
-                               "failed to read module");
+    result = ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4004",
+                                 "failed to read module");
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
+    return result;
   }
 
   ms_chunk_init(&chunk);
@@ -2042,10 +2127,14 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
     ms_vm_append_diagnostics(&vm->diagnostics, &diagnostics);
     ms_diag_list_destroy(&diagnostics);
     ms_chunk_destroy(&chunk);
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
-
-  caller_module = vm->current_module;
   caller_frame_count = vm->frame_count;
   caller_stack_count = vm->stack_count;
   if (!ms_vm_push_entry_frame(
@@ -2054,10 +2143,17 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
     vm->current_module = caller_module;
     ms_diag_list_destroy(&diagnostics);
     ms_chunk_destroy(&chunk);
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4001",
-                               "invalid opcode stream");
+    result = ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
+    return result;
   }
 
   result = ms_vm_execute(vm, caller_frame_count);
@@ -2066,25 +2162,45 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     ms_diag_list_destroy(&diagnostics);
     ms_chunk_destroy(&chunk);
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
     return result;
   }
   if (vm->stack_count > caller_stack_count && !ms_vm_pop(vm, NULL)) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     ms_diag_list_destroy(&diagnostics);
     ms_chunk_destroy(&chunk);
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4002",
-                               "stack underflow");
+    result = ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4002",
+                                 "stack underflow");
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
+    return result;
   }
   if (!ms_module_transition_state(module, MS_MODULE_STATE_INITIALIZED)) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     ms_diag_list_destroy(&diagnostics);
     ms_chunk_destroy(&chunk);
-    return ms_vm_runtime_error(vm,
-                               instruction_offset,
-                               "MS4001",
-                               "invalid opcode stream");
+    result = ms_vm_runtime_error(vm,
+                                 instruction_offset,
+                                 "MS4001",
+                                 "invalid opcode stream");
+    ms_vm_append_import_failure(vm,
+                                caller_module,
+                                caller_chunk,
+                                module,
+                                0,
+                                instruction_offset);
+    return result;
   }
 
   *out_module = module;
@@ -2098,8 +2214,11 @@ static MsVmResult ms_vm_import_module(MsVM* vm,
                                       size_t instruction_offset) {
   MsModule* module = NULL;
 
-  if (ms_vm_load_module(vm, module_name, instruction_offset, &module) !=
-      MS_VM_RESULT_OK) {
+  if (ms_vm_load_module(vm,
+                        module_name,
+                        instruction_offset,
+                        &module,
+                        NULL) != MS_VM_RESULT_OK) {
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
   if (!ms_vm_push(vm, ms_value_object((MsObject*) module))) {
@@ -2120,8 +2239,11 @@ static MsVmResult ms_vm_import_symbol(MsVM* vm,
   MsValue value = ms_value_nil();
   int found = 0;
 
-  if (ms_vm_load_module(vm, module_name, instruction_offset, &module) !=
-      MS_VM_RESULT_OK) {
+  if (ms_vm_load_module(vm,
+                        module_name,
+                        instruction_offset,
+                        &module,
+                        NULL) != MS_VM_RESULT_OK) {
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
   if (!ms_table_get(&module->globals, symbol_name, &value, &found)) {

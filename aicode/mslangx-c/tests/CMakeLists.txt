@@ -306,6 +306,46 @@ mslangc_add_cli_test(modules.missing_module
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(modules.missing_module PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
+mslangc_add_cli_test(modules.cyclic_dependency
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/cyclic_dependency.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5003;cyclic_dependency.ms:1:1;phase=module;code=MS5004;cyclic_dependency.ms:1:1"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.cyclic_dependency PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
+mslangc_add_cli_test(modules.import_parse_failure
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/import_parse_failure.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;import_parse_failure.ms:1:1;phase=parse;code=MS2001;parse_fail.ms:2:1"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.import_parse_failure PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
+mslangc_add_cli_test(modules.import_resolve_failure
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/import_resolve_failure.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;import_resolve_failure.ms:1:1;phase=resolve;code=MS3003;resolve_fail.ms:1:1"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.import_resolve_failure PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
+mslangc_add_cli_test(modules.import_runtime_failure
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/import_runtime_failure.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;import_runtime_failure.ms:1:1;phase=runtime;code=MS4004;runtime_fail.ms:1:1"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.import_runtime_failure PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
+mslangc_add_e2e_named_test(modules.regression_chain
+  "e2e/modules/regression_chain.ms"
+  "e2e/modules/regression_chain.ms.out"
+  "modules")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"
