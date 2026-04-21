@@ -35,10 +35,41 @@ class RunAllMsScriptsTest(unittest.TestCase):
 
       actual = module.find_ms_files(root)
 
-    self.assertEqual(
+      self.assertEqual(
       [path.as_posix() for path in actual],
       ["alpha.ms", "nested/gamma.ms"],
     )
+
+  def test_find_ms_files_skips_fixture_directories(self):
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+      root = pathlib.Path(temp_dir)
+      (root / "runner.ms").write_text("print 1\n", encoding="utf-8", newline="\n")
+      fixture_dir = root / "parser_expr"
+      fixture_dir.mkdir()
+      (fixture_dir / "function_and_super.ms").write_text(
+        "fn(left, right) { return {self: self, base: super.run} }\n",
+        encoding="utf-8",
+        newline="\n",
+      )
+      (fixture_dir / "function_and_super.ms.ast").write_text(
+        "fixture\n",
+        encoding="utf-8",
+        newline="\n",
+      )
+
+      fixtures_root = root / "fixtures" / "modules" / "basic"
+      fixtures_root.mkdir(parents=True)
+      (fixtures_root / "exports.ms").write_text(
+        "var value = 1\n",
+        encoding="utf-8",
+        newline="\n",
+      )
+
+      actual = module.find_ms_files(root)
+
+    self.assertEqual([path.as_posix() for path in actual], ["runner.ms"])
 
   def test_main_runs_all_scripts_and_reports_failures(self):
     module = load_module()

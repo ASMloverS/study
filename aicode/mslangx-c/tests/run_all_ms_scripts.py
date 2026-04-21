@@ -39,7 +39,13 @@ def resolve_runner(runner_arg):
 
 def find_ms_files(root):
   root = pathlib.Path(root)
-  files = [path.relative_to(root) for path in root.rglob("*.ms") if path.is_file()]
+  files = []
+  for path in root.rglob("*.ms"):
+    if not path.is_file():
+      continue
+    if any(part in {"fixtures", "lexer", "parser_expr", "parser_decl_stmt"} for part in path.parts):
+      continue
+    files.append(path.relative_to(root))
   return sorted(files, key=lambda path: path.as_posix())
 
 

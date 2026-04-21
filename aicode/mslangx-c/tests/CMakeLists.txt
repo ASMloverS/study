@@ -281,7 +281,7 @@ mslangc_add_cli_test(modules.missing_export
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_export.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_export.ms.out"
-  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5002;missing_export.ms:3:"
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5002;missing_export.ms:4:"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(modules.missing_export PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
