@@ -37,3 +37,6 @@ target_link_libraries(test_compiler_stmts PRIVATE ms_frontend)
 
 ms_add_test(test_vm_basic unit/test_vm_basic.c)
 target_link_libraries(test_vm_basic PRIVATE ms_frontend)
+
+ms_add_test(test_vm_closures unit/test_vm_closures.c)
+target_link_libraries(test_vm_closures PRIVATE ms_frontend)

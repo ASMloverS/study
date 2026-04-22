@@ -14,6 +14,34 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
 static MsInterpretResult vm_run_inner(MsVM* vm);
 void ms_vm_register_natives(MsVM* vm);
 
+/* ---- upvalue helpers ---- */
+
+static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
+    MsObjUpvalue* prev = NULL;
+    MsObjUpvalue* uv   = vm->open_upvalues;
+    while (uv != NULL && uv->location > local) {
+        prev = uv;
+        uv   = uv->next;
+    }
+    if (uv != NULL && uv->location == local) return uv;
+    MsObjUpvalue* created = ms_obj_upvalue_new(vm, local);
+    created->next = uv;
+    if (prev) prev->next = created;
+    else      vm->open_upvalues = created;
+    return created;
+}
+
+static void close_upvalues(MsVM* vm, MsValue* last) {
+    if (vm->open_upvalues == NULL) return;
+    while (vm->open_upvalues->location >= last) {
+        MsObjUpvalue* uv = vm->open_upvalues;
+        uv->closed   = *uv->location;
+        uv->location = &uv->closed;
+        vm->open_upvalues = uv->next;
+        if (vm->open_upvalues == NULL) break;
+    }
+}
+
 /* ---- init / free ---- */
 
 void ms_vm_init(MsVM* vm) {
@@ -256,11 +284,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         }
 
         case MS_OP_GETUPVAL:
-            R(A) = *frame->closure->upvalues[B]->location;
+            R(A) = *frame->closure->upvalues[MS_GET_Bx(instr)]->location;
             break;
 
         case MS_OP_SETUPVAL:
-            *frame->closure->upvalues[B]->location = R(A);
+            *frame->closure->upvalues[MS_GET_Bx(instr)]->location = R(A);
             break;
 
         case MS_OP_ADD: case MS_OP_SUB: case MS_OP_MUL:
@@ -437,7 +465,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 int is_local = MS_GET_A(ea);
                 int idx      = MS_GET_Bx(ea);
                 if (is_local) {
-                    cl->upvalues[i] = ms_obj_upvalue_new(vm, &frame->slots[idx]);
+                    cl->upvalues[i] = capture_upvalue(vm, &frame->slots[idx]);
                 } else {
                     cl->upvalues[i] = frame->closure->upvalues[idx];
                 }
@@ -445,20 +473,14 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_CLOSE: {
-            MsObjUpvalue* uv = vm->open_upvalues;
-            while (uv && uv->location >= &frame->slots[A]) {
-                uv->closed   = *uv->location;
-                uv->location = &uv->closed;
-                uv = uv->next;
-            }
-            vm->open_upvalues = uv;
+        case MS_OP_CLOSE:
+            close_upvalues(vm, &frame->slots[A]);
             break;
-        }
 
         case MS_OP_RETURN: {
             /* B=0: implicit nil, B=1: nil, B>=2: return R(A) */
             MsValue ret = (B >= 2) ? R(A) : MS_NIL_VAL();
+            close_upvalues(vm, frame->slots);
             vm->frame_count--;
             if (vm->frame_count == 0) return MS_INTERPRET_OK;
 

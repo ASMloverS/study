@@ -493,7 +493,7 @@ static void parse_return_stmt(MsCompiler* c) {
 
 /* ---- function declaration ---- */
 
-static void compile_function(MsCompiler* outer, const char* fname, int flen) {
+void compile_function(MsCompiler* outer, const char* fname, int flen) {
     MsCompiler inner;
     ms_scanner_init(&inner.scanner, outer->scanner.source);
     inner.scanner    = outer->scanner;

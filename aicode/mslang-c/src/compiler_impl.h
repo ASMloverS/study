@@ -107,3 +107,4 @@ void          error_at(MsCompiler* c, const MsToken* tok, const char* msg);
 void          error_current(MsCompiler* c, const char* msg);
 const MsParseRule* get_rule(MsTokenType t);   /* alias for rule_at, external use */
 int           resolve_upvalue(MsCompiler* c, const char* name, int len);
+void          compile_function(MsCompiler* outer, const char* fname, int flen);

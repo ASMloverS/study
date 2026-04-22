@@ -16,6 +16,7 @@ static void parse_or(MsCompiler* c, bool can_assign);
 static void parse_identifier(MsCompiler* c, bool can_assign);
 static void parse_call(MsCompiler* c, bool can_assign);
 static void parse_print_stmt(MsCompiler* c, bool can_assign);
+static void parse_fun_expr(MsCompiler* c, bool can_assign);
 
 /* get_rule defined after k_rules table at the bottom of this file */
 static const MsParseRule* rule_at(MsTokenType t);
@@ -408,6 +409,11 @@ static void parse_call(MsCompiler* c, bool can_assign) {
     c->next_reg = fn_reg + 1;
 }
 
+static void parse_fun_expr(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    compile_function(c, NULL, 0);
+}
+
 /* ---- statement helpers ---- */
 
 static void parse_print_stmt(MsCompiler* c, bool can_assign) {
@@ -502,7 +508,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* CONTINUE */        RULE(NO, NO, PREC_NONE),
     /* RETURN */          RULE(NO, NO, PREC_NONE),
     /* VAR */             RULE(NO, NO, PREC_NONE),
-    /* FUN */             RULE(NO, NO, PREC_NONE),
+    /* FUN */             RULE(parse_fun_expr, NO, PREC_NONE),
     /* CLASS */           RULE(NO, NO, PREC_NONE),
     /* THIS */            RULE(NO, NO, PREC_NONE),
     /* SUPER */           RULE(NO, NO, PREC_NONE),

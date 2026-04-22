@@ -14,8 +14,8 @@
 | ✅ | [T10](T10-compiler-expressions.md) | Compiler — Expressions |
 | ✅ | [T11](T11-compiler-variables.md) | Compiler — Variables |
 | ✅ | [T12](T12-compiler-statements.md) | Compiler — Statements |
-| ⬜ | [T13](T13-vm-basic-execution.md) | VM — Basic Execution |
-| ⬜ | [T14](T14-vm-closures-upvalues.md) | VM — Closures & Upvalues |
+| ✅ | [T13](T13-vm-basic-execution.md) | VM — Basic Execution |
+| ✅ | [T14](T14-vm-closures-upvalues.md) | VM — Closures & Upvalues |
 | ⬜ | [T15](T15-vm-control-flow.md) | VM — Control Flow |
 | ⬜ | [T16](T16-gc-mark-sweep.md) | GC — Mark-Sweep |
 | ⬜ | [T17](T17-gc-generational.md) | GC — Generational |
