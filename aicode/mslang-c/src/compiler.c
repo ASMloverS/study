@@ -285,6 +285,15 @@ static void parse_block(MsCompiler* c) {
 
 /* ---- if / else ---- */
 
+/* Parse either a braced block or a single statement (braceless body). */
+static void parse_body(MsCompiler* c) {
+    match_tok(c, MS_TK_NEWLINE);
+    if (match_tok(c, MS_TK_LEFT_BRACE))
+        parse_block(c);
+    else
+        compile_statement(c);
+}
+
 static void parse_if_stmt(MsCompiler* c) {
     consume(c, MS_TK_LEFT_PAREN, "Expected '(' after 'if'.");
     expression(c);
@@ -296,8 +305,7 @@ static void parse_if_stmt(MsCompiler* c) {
     free_reg(c, cond_reg);
     stmt_reg_reset(c);
 
-    consume(c, MS_TK_LEFT_BRACE, "Expected '{' after if condition.");
-    parse_block(c);
+    parse_body(c);
 
     int jmp_else = NO_JUMP;
     if (check(c, MS_TK_ELSE)) {
@@ -308,12 +316,10 @@ static void parse_if_stmt(MsCompiler* c) {
 
     if (jmp_else != NO_JUMP) {
         match_tok(c, MS_TK_NEWLINE);
-        if (match_tok(c, MS_TK_LEFT_BRACE)) {
-            parse_block(c);
-        } else if (match_tok(c, MS_TK_IF)) {
+        if (match_tok(c, MS_TK_IF)) {
             parse_if_stmt(c);
         } else {
-            error_current(c, "Expected '{' or 'if' after 'else'.");
+            parse_body(c);
         }
         patch_jmp(c, jmp_else);
     }
@@ -442,14 +448,25 @@ static void parse_switch_stmt(MsCompiler* c) {
     consume(c, MS_TK_RIGHT_PAREN, "Expected ')' after switch expr.");
     consume(c, MS_TK_LEFT_BRACE, "Expected '{' after switch.");
 
-    int exit_list = NO_JUMP;
+    /* Shim loop context so 'break' inside a case body exits the switch,
+       not any enclosing loop. 'continue' is not valid inside switch and
+       falls through to the outer loop context naturally via enclosing. */
+    MsLoopCtx sw_shim;
+    sw_shim.start      = NO_JUMP;   /* no continue target */
+    sw_shim.break_list = NO_JUMP;
+    sw_shim.depth      = c->scope_depth;
+    sw_shim.enclosing  = c->loop;
+    c->loop = &sw_shim;
 
     while (!check(c, MS_TK_RIGHT_BRACE) && !check(c, MS_TK_EOF_TOKEN)) {
         if (match_tok(c, MS_TK_NEWLINE) || match_tok(c, MS_TK_SEMICOLON)) continue;
         if (match_tok(c, MS_TK_CASE)) {
             expression(c);
             int val_reg = c->next_reg - 1;
-            emit(c, ms_enc_ABC(MS_OP_EQ, sw_reg, sw_reg, val_reg));
+            int cmp_reg = alloc_reg(c);
+            emit(c, ms_enc_ABC(MS_OP_EQ, cmp_reg, sw_reg, val_reg));
+            emit(c, ms_enc_ABC(MS_OP_TEST, cmp_reg, 0, 0));
+            free_reg(c, cmp_reg);
             free_reg(c, val_reg);
             int jmp_next = emit_jmp(c);
             consume(c, MS_TK_COLON, "Expected ':' after case value.");
@@ -458,8 +475,8 @@ static void parse_switch_stmt(MsCompiler* c) {
                 if (match_tok(c, MS_TK_NEWLINE) || match_tok(c, MS_TK_SEMICOLON)) continue;
                 compile_statement(c);
             }
-            int prev_exit = exit_list;
-            exit_list = emit_break_jmp(c, prev_exit);
+            int prev_exit = sw_shim.break_list;
+            sw_shim.break_list = emit_break_jmp(c, prev_exit);
             patch_jmp(c, jmp_next);
         } else if (match_tok(c, MS_TK_DEFAULT)) {
             consume(c, MS_TK_COLON, "Expected ':' after 'default'.");
@@ -472,10 +489,12 @@ static void parse_switch_stmt(MsCompiler* c) {
             break;
         }
     }
+
+    c->loop = sw_shim.enclosing;
     consume(c, MS_TK_RIGHT_BRACE, "Expected '}' after switch body.");
     free_reg(c, sw_reg);
     stmt_reg_reset(c);
-    patch_list(c, exit_list, c->function->chunk.code_count);
+    patch_list(c, sw_shim.break_list, c->function->chunk.code_count);
 }
 
 /* ---- return ---- */
