@@ -112,3 +112,41 @@ MsObjNative*   ms_obj_native_new(struct MsVM* vm, MsNativeFn fn,
                                   const char* name, int arity);
 MsObjUpvalue*  ms_obj_upvalue_new(struct MsVM* vm, MsValue* slot);
 MsObjClosure*  ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn);
+
+/* ---- OOP: Class, Instance, BoundMethod ---- */
+#include "ms/table_types.h"
+
+typedef struct MsObjClass {
+    MsObject obj;
+    MsObjString* name;
+    MsTable methods;
+    MsTable* static_methods;
+    MsTable* getters;
+    MsTable* setters;
+    MsTable* abstract_methods;
+    struct MsObjClass* superclass;
+} MsObjClass;
+
+typedef struct {
+    MsObject obj;
+    MsObjClass* klass;
+    MsTable fields;
+} MsObjInstance;
+
+typedef struct {
+    MsObject obj;
+    MsValue receiver;
+    MsObjClosure* method;
+} MsObjBoundMethod;
+
+#define MS_IS_CLASS(v)         MS_IS_OBJ_TYPE(v, MS_OBJ_CLASS)
+#define MS_AS_CLASS(v)         ((MsObjClass*)MS_AS_OBJECT(v))
+#define MS_IS_INSTANCE(v)      MS_IS_OBJ_TYPE(v, MS_OBJ_INSTANCE)
+#define MS_AS_INSTANCE(v)      ((MsObjInstance*)MS_AS_OBJECT(v))
+#define MS_IS_BOUND_METHOD(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_BOUND_METHOD)
+#define MS_AS_BOUND_METHOD(v)  ((MsObjBoundMethod*)MS_AS_OBJECT(v))
+
+MsObjClass*       ms_obj_class_new(struct MsVM* vm, MsObjString* name);
+MsObjInstance*    ms_obj_instance_new(struct MsVM* vm, MsObjClass* klass);
+MsObjBoundMethod* ms_obj_bound_method_new(struct MsVM* vm, MsValue receiver,
+                                           MsObjClosure* method);

@@ -1,4 +1,5 @@
 #include "ms/object.h"
+#include "ms/table.h"
 #include "ms/vm.h"
 #include "ms/memory.h"
 #include "ms/consts.h"
@@ -123,6 +124,33 @@ MsObjClosure* ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn) {
     return cl;
 }
 
+MsObjClass* ms_obj_class_new(struct MsVM* vm, MsObjString* name) {
+    MsObjClass* klass = MS_ALLOC_OBJ(vm, MS_OBJ_CLASS, MsObjClass, 0);
+    klass->name = name;
+    ms_table_init(&klass->methods);
+    klass->static_methods   = NULL;
+    klass->getters          = NULL;
+    klass->setters          = NULL;
+    klass->abstract_methods = NULL;
+    klass->superclass       = NULL;
+    return klass;
+}
+
+MsObjInstance* ms_obj_instance_new(struct MsVM* vm, MsObjClass* klass) {
+    MsObjInstance* inst = MS_ALLOC_OBJ(vm, MS_OBJ_INSTANCE, MsObjInstance, 0);
+    inst->klass = klass;
+    ms_table_init(&inst->fields);
+    return inst;
+}
+
+MsObjBoundMethod* ms_obj_bound_method_new(struct MsVM* vm, MsValue receiver,
+                                           MsObjClosure* method) {
+    MsObjBoundMethod* bm = MS_ALLOC_OBJ(vm, MS_OBJ_BOUND_METHOD, MsObjBoundMethod, 0);
+    bm->receiver = receiver;
+    bm->method   = method;
+    return bm;
+}
+
 static void print_fn_name(MsObjFunction* fn) {
     if (fn->name) printf("<fn %s>", fn->name->data);
     else          printf("<fn>");
@@ -148,6 +176,25 @@ void ms_object_print(MsObject* obj) {
         case MS_OBJ_UPVALUE:
             printf("<upvalue>");
             break;
+        case MS_OBJ_CLASS: {
+            MsObjClass* klass = (MsObjClass*)obj;
+            if (klass->name) printf("<class %s>", klass->name->data);
+            else             printf("<class>");
+            break;
+        }
+        case MS_OBJ_INSTANCE: {
+            MsObjInstance* inst = (MsObjInstance*)obj;
+            if (inst->klass && inst->klass->name)
+                printf("<%s instance>", inst->klass->name->data);
+            else
+                printf("<instance>");
+            break;
+        }
+        case MS_OBJ_BOUND_METHOD: {
+            MsObjBoundMethod* bm = (MsObjBoundMethod*)obj;
+            print_fn_name(bm->method->function);
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -180,6 +227,25 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sz, 0);
             break;
         }
+        case MS_OBJ_CLASS: {
+            MsObjClass* klass = (MsObjClass*)obj;
+            ms_table_free(&klass->methods);
+            if (klass->static_methods)   { ms_table_free(klass->static_methods);   free(klass->static_methods); }
+            if (klass->getters)          { ms_table_free(klass->getters);           free(klass->getters); }
+            if (klass->setters)          { ms_table_free(klass->setters);           free(klass->setters); }
+            if (klass->abstract_methods) { ms_table_free(klass->abstract_methods);  free(klass->abstract_methods); }
+            ms_reallocate(vm, obj, sizeof(MsObjClass), 0);
+            break;
+        }
+        case MS_OBJ_INSTANCE: {
+            MsObjInstance* inst = (MsObjInstance*)obj;
+            ms_table_free(&inst->fields);
+            ms_reallocate(vm, obj, sizeof(MsObjInstance), 0);
+            break;
+        }
+        case MS_OBJ_BOUND_METHOD:
+            ms_reallocate(vm, obj, sizeof(MsObjBoundMethod), 0);
+            break;
         default:
             /* Unhandled object type: abort to catch missing free cases early. */
             abort();

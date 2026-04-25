@@ -2,6 +2,7 @@
 #include "ms/compiler.h"
 #include "ms/opcode.h"
 #include "ms/object.h"
+#include "ms/table.h"
 #include "ms/value.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -67,6 +68,7 @@ void ms_vm_init(MsVM* vm) {
     ms_pool_init(&vm->bound_pool,   sizeof(void*) * 4); /* ObjBoundMethod size est.; resized in T18 */
     ms_table_init(&vm->globals);
     ms_table_init(&vm->strings);
+    vm->init_string = ms_obj_string_copy(vm, "init", 4);
     ms_vm_register_natives(vm);
 }
 
@@ -240,6 +242,56 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
         MsValue* argv = vm->frames[vm->frame_count - 1].slots + ret_dst + 1;
         MsValue result = nat->function(vm, arg_count, argv);
         vm->frames[vm->frame_count - 1].slots[ret_dst] = result;
+        return MS_INTERPRET_OK;
+    }
+    if (MS_IS_CLASS(callee)) {
+        MsObjClass* klass = MS_AS_CLASS(callee);
+        MsObjInstance* inst = ms_obj_instance_new(vm, klass);
+        /* store instance in ret_dst */
+        vm->frames[vm->frame_count - 1].slots[ret_dst] = MS_OBJ_VAL(inst);
+        /* call init if it exists */
+        MsValue init_val;
+        if (vm->init_string &&
+            ms_table_get(&klass->methods, vm->init_string, &init_val)) {
+            MsObjClosure* init_cl = MS_AS_CLOSURE(init_val);
+            if (vm->frame_count >= MS_FRAMES_MAX) {
+                ms_vm_runtime_error(vm, "Stack overflow.");
+                return MS_INTERPRET_RUNTIME_ERROR;
+            }
+            MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+            new_frame->closure = init_cl;
+            new_frame->ip      = init_cl->function->chunk.code;
+            /* slot 0 = this (instance), then args */
+            new_frame->slots = vm->frames[vm->frame_count - 2].slots + ret_dst;
+            MsValue* new_top = new_frame->slots + init_cl->function->max_stack_size + 1;
+            if (new_top > vm->stack_top) vm->stack_top = new_top;
+        } else if (arg_count != 0) {
+            ms_vm_runtime_error(vm, "Expected 0 arguments but got %d.", arg_count);
+            return MS_INTERPRET_RUNTIME_ERROR;
+        }
+        return MS_INTERPRET_OK;
+    }
+    if (MS_IS_BOUND_METHOD(callee)) {
+        MsObjBoundMethod* bm = MS_AS_BOUND_METHOD(callee);
+        MsObjFunction* fn = bm->method->function;
+        if (fn->min_arity != -1 &&
+            (arg_count < fn->min_arity || arg_count > fn->arity)) {
+            ms_vm_runtime_error(vm, "Expected %d args but got %d.",
+                                fn->arity, arg_count);
+            return MS_INTERPRET_RUNTIME_ERROR;
+        }
+        if (vm->frame_count >= MS_FRAMES_MAX) {
+            ms_vm_runtime_error(vm, "Stack overflow.");
+            return MS_INTERPRET_RUNTIME_ERROR;
+        }
+        MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+        new_frame->closure = bm->method;
+        new_frame->ip      = fn->chunk.code;
+        new_frame->slots   = vm->frames[vm->frame_count - 2].slots + ret_dst;
+        /* slot 0 = receiver */
+        new_frame->slots[0] = bm->receiver;
+        MsValue* new_top = new_frame->slots + fn->max_stack_size + 1;
+        if (new_top > vm->stack_top) vm->stack_top = new_top;
         return MS_INTERPRET_OK;
     }
     ms_vm_runtime_error(vm, "Can only call functions.");
@@ -499,6 +551,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         case MS_OP_RETURN: {
             /* B=0: implicit nil, B=1: nil, B>=2: return R(A) */
             MsValue ret = (B >= 2) ? R(A) : MS_NIL_VAL();
+            /* init() must return the instance (slot 0), not nil */
+            MsObjFunction* retfn = frame->closure->function;
+            if (retfn->name == vm->init_string && MS_IS_NIL(ret)) {
+                ret = frame->slots[0];
+            }
             close_upvalues(vm, frame->slots);
             vm->frame_count--;
             if (vm->frame_count == 0) return MS_INTERPRET_OK;
@@ -515,6 +572,89 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         case MS_OP_EXTRAARG:
             /* consumed inline by CLOSURE; standalone is a no-op */
             break;
+
+        case MS_OP_CLASS: {
+            MsObjString* name = MS_AS_STRING(K(MS_GET_Bx(instr)));
+            R(A) = MS_OBJ_VAL(ms_obj_class_new(vm, name));
+            break;
+        }
+
+        case MS_OP_METHOD: {
+            /* A=class_reg, B=closure_reg, C=name_k */
+            MsObjClass* klass = MS_AS_CLASS(R(A));
+            MsObjString* name = MS_AS_STRING(K(C));
+            ms_table_set(&klass->methods, name, R(B));
+            break;
+        }
+
+        case MS_OP_GETPROP: {
+            MsValue obj = R(B);
+            if (!MS_IS_INSTANCE(obj)) {
+                RUNTIME_ERROR(vm, "Only instances have properties.");
+            }
+            MsObjInstance* inst = MS_AS_INSTANCE(obj);
+            MsObjString* name = MS_AS_STRING(K(MS_RK_TO_K(C)));
+            MsValue val;
+            if (ms_table_get(&inst->fields, name, &val)) {
+                R(A) = val;
+            } else if (ms_table_get(&inst->klass->methods, name, &val)) {
+                MsObjBoundMethod* bm = ms_obj_bound_method_new(
+                    vm, obj, MS_AS_CLOSURE(val));
+                R(A) = MS_OBJ_VAL(bm);
+            } else {
+                RUNTIME_ERROR(vm, "Undefined property '%s'.", name->data);
+            }
+            break;
+        }
+
+        case MS_OP_SETPROP: {
+            /* A=val_reg, B=obj_reg, C=name_rk */
+            MsValue obj = R(B);
+            if (!MS_IS_INSTANCE(obj)) {
+                RUNTIME_ERROR(vm, "Only instances have properties.");
+            }
+            MsObjInstance* inst = MS_AS_INSTANCE(obj);
+            MsObjString* name = MS_AS_STRING(K(MS_RK_TO_K(C)));
+            ms_table_set(&inst->fields, name, R(A));
+            ms_write_barrier(vm, (MsObject*)inst, R(A));
+            break;
+        }
+
+        case MS_OP_INVOKE: {
+            /* A=obj_reg, B=name_k, C=argc */
+            MsValue obj = R(A);
+            if (!MS_IS_INSTANCE(obj)) {
+                RUNTIME_ERROR(vm, "Only instances have methods.");
+            }
+            MsObjInstance* inst = MS_AS_INSTANCE(obj);
+            MsObjString* name = MS_AS_STRING(K(B));
+            MsValue method;
+            /* Check field first (stored closure) */
+            if (ms_table_get(&inst->fields, name, &method) &&
+                MS_IS_CLOSURE(method)) {
+                /* direct call: result in R(A), args follow */
+                MsInterpretResult cr = call_value(vm, method, C, A);
+                if (cr != MS_INTERPRET_OK) return cr;
+                frame = &vm->frames[vm->frame_count - 1];
+            } else if (ms_table_get(&inst->klass->methods, name, &method)) {
+                MsObjClosure* cl = MS_AS_CLOSURE(method);
+                MsObjFunction* fn = cl->function;
+                if (vm->frame_count >= MS_FRAMES_MAX) {
+                    RUNTIME_ERROR(vm, "Stack overflow.");
+                }
+                MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                nf->closure = cl;
+                nf->ip      = fn->chunk.code;
+                /* slot 0 = this (obj), args in slots 1..argc */
+                nf->slots   = frame->slots + A;
+                MsValue* ntop = nf->slots + fn->max_stack_size + 1;
+                if (ntop > vm->stack_top) vm->stack_top = ntop;
+                frame = &vm->frames[vm->frame_count - 1];
+            } else {
+                RUNTIME_ERROR(vm, "Undefined method '%s'.", name->data);
+            }
+            break;
+        }
 
         default:
             /* unimplemented opcode: store nil and continue */

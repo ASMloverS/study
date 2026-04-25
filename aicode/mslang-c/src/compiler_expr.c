@@ -15,8 +15,10 @@ static void parse_and(MsCompiler* c, bool can_assign);
 static void parse_or(MsCompiler* c, bool can_assign);
 static void parse_identifier(MsCompiler* c, bool can_assign);
 static void parse_call(MsCompiler* c, bool can_assign);
+static void parse_dot(MsCompiler* c, bool can_assign);
 static void parse_print_stmt(MsCompiler* c, bool can_assign);
 static void parse_fun_expr(MsCompiler* c, bool can_assign);
+static void parse_this(MsCompiler* c, bool can_assign);
 
 /* get_rule defined after k_rules table at the bottom of this file */
 static const MsParseRule* rule_at(MsTokenType t);
@@ -399,6 +401,42 @@ static int parse_args(MsCompiler* c) {
     return argc;
 }
 
+/* ---- this ---- */
+
+static void parse_this(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    if (!c->klass) {
+        error_at(c, &c->previous, "'this' outside class.");
+        return;
+    }
+    int r = alloc_reg(c);
+    emit(c, ms_enc_ABC(MS_OP_MOVE, r, 0, 0));
+}
+
+/* ---- dot (property access / method call) ---- */
+
+static void parse_dot(MsCompiler* c, bool can_assign) {
+    consume(c, MS_TK_IDENTIFIER, "Expected property name after '.'.");
+    int name_k = add_string_constant(c, c->previous.start, c->previous.length);
+    int obj_reg = c->next_reg - 1;
+
+    if (can_assign && match_tok(c, MS_TK_EQUAL)) {
+        /* SETPROP: obj_reg.name_k = rhs */
+        expression(c);
+        int val_reg = c->next_reg - 1;
+        emit(c, ms_enc_ABC(MS_OP_SETPROP, val_reg, obj_reg, MS_K_TO_RK(name_k)));
+        emit(c, ms_enc_ABC(MS_OP_MOVE, obj_reg, val_reg, 0));
+        c->next_reg = obj_reg + 1;
+    } else if (check(c, MS_TK_LEFT_PAREN)) {
+        advance(c);
+        int argc = parse_args(c);
+        emit(c, ms_enc_ABC(MS_OP_INVOKE, obj_reg, name_k, argc));
+        c->next_reg = obj_reg + 1;
+    } else {
+        emit(c, ms_enc_ABC(MS_OP_GETPROP, obj_reg, obj_reg, MS_K_TO_RK(name_k)));
+    }
+}
+
 static void parse_call(MsCompiler* c, bool can_assign) {
     MS_UNUSED(can_assign);
     int fn_reg = c->next_reg - 1;
@@ -461,7 +499,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* LEFT_BRACKET */    RULE(NO, NO, PREC_NONE),
     /* RIGHT_BRACKET */   RULE(NO, NO, PREC_NONE),
     /* COMMA */           RULE(NO, NO, PREC_NONE),
-    /* DOT */             RULE(NO, NO, PREC_NONE),
+    /* DOT */             RULE(NO, parse_dot, PREC_CALL),
     /* SEMICOLON */       RULE(NO, NO, PREC_NONE),
     /* COLON */           RULE(NO, NO, PREC_NONE),
     /* QUESTION */        RULE(NO, NO, PREC_NONE),
@@ -510,7 +548,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* VAR */             RULE(NO, NO, PREC_NONE),
     /* FUN */             RULE(parse_fun_expr, NO, PREC_NONE),
     /* CLASS */           RULE(NO, NO, PREC_NONE),
-    /* THIS */            RULE(NO, NO, PREC_NONE),
+    /* THIS */            RULE(parse_this, NO, PREC_NONE),
     /* SUPER */           RULE(NO, NO, PREC_NONE),
     /* STATIC */          RULE(NO, NO, PREC_NONE),
     /* TRUE */            RULE(parse_literal, NO, PREC_NONE),

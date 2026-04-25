@@ -74,6 +74,25 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
         ms_mark_value(vm, uv->closed);
         break;
     }
+    case MS_OBJ_CLASS: {
+        MsObjClass* klass = (MsObjClass*)obj;
+        ms_mark_object(vm, (MsObject*)klass->name);
+        ms_mark_table(vm, &klass->methods);
+        if (klass->superclass) ms_mark_object(vm, (MsObject*)klass->superclass);
+        break;
+    }
+    case MS_OBJ_INSTANCE: {
+        MsObjInstance* inst = (MsObjInstance*)obj;
+        ms_mark_object(vm, (MsObject*)inst->klass);
+        ms_mark_table(vm, &inst->fields);
+        break;
+    }
+    case MS_OBJ_BOUND_METHOD: {
+        MsObjBoundMethod* bm = (MsObjBoundMethod*)obj;
+        ms_mark_value(vm, bm->receiver);
+        ms_mark_object(vm, (MsObject*)bm->method);
+        break;
+    }
     default:
         break;
     }

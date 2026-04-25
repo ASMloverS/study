@@ -49,3 +49,6 @@ target_link_libraries(test_gc PRIVATE ms_frontend)
 
 ms_add_test(test_gc_gen unit/test_gc_gen.c)
 target_link_libraries(test_gc_gen PRIVATE ms_frontend)
+
+ms_add_test(test_oop unit/test_oop.c)
+target_link_libraries(test_oop PRIVATE ms_frontend)

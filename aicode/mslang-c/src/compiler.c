@@ -537,6 +537,24 @@ void compile_function(MsCompiler* outer, const char* fname, int flen) {
     if (flen > 0)
         inner.function->name = ms_obj_string_copy(outer->vm, fname, flen);
 
+    /* If compiling a method, reserve slot 0 for 'this' */
+    if (outer->klass != NULL) {
+        static const char kThis[] = "this";
+        MsToken this_tok;
+        this_tok.type   = MS_TK_THIS;
+        this_tok.start  = kThis;
+        this_tok.length = 4;
+        this_tok.line   = 0;
+        this_tok.column = 0;
+        int slot = inner.next_reg++;
+        if (slot > inner.max_reg) inner.max_reg = slot;
+        MsLocal* loc = &inner.locals[inner.local_count++];
+        loc->name        = this_tok;
+        loc->depth       = 1;
+        loc->is_captured = false;
+        loc->slot        = slot;
+    }
+
     consume(&inner, MS_TK_LEFT_PAREN, "Expected '(' after function name.");
     inner.function->arity = 0;
     if (!check(&inner, MS_TK_RIGHT_PAREN)) {
@@ -611,6 +629,57 @@ static void parse_fun_decl(MsCompiler* c) {
     }
 }
 
+/* ---- class declaration ---- */
+
+static void parse_class_decl(MsCompiler* c) {
+    consume(c, MS_TK_IDENTIFIER, "Expected class name.");
+    MsToken class_name = c->previous;
+    int name_k = add_string_constant(c, class_name.start, class_name.length);
+
+    /* Emit CLASS A, Bx: creates ObjClass from constant name, stores in R(A) */
+    int class_reg = alloc_reg(c);
+    emit(c, ms_enc_ABx(MS_OP_CLASS, class_reg, name_k));
+
+    /* Bind class to global/local before compiling methods
+       so recursive references work */
+    if (c->scope_depth == 0) {
+        emit(c, ms_enc_ABx(MS_OP_DEFGLOBAL, class_reg, name_k));
+    } else {
+        if (c->local_count >= 256) { error_at(c, &class_name, "Too many locals."); return; }
+        MsLocal* loc = &c->locals[c->local_count++];
+        loc->name        = class_name;
+        loc->depth       = c->scope_depth;
+        loc->is_captured = false;
+        loc->slot        = class_reg;
+    }
+
+    /* Push class compiler context */
+    MsClassCompiler klass_ctx;
+    klass_ctx.enclosing       = c->klass;
+    klass_ctx.has_superclass  = false;
+    c->klass = &klass_ctx;
+
+    match_tok(c, MS_TK_NEWLINE);
+    consume(c, MS_TK_LEFT_BRACE, "Expected '{' before class body.");
+
+    while (!check(c, MS_TK_RIGHT_BRACE) && !check(c, MS_TK_EOF_TOKEN)) {
+        if (match_tok(c, MS_TK_NEWLINE) || match_tok(c, MS_TK_SEMICOLON)) continue;
+        /* method: identifier '(' ... ')' '{' ... '}' */
+        consume(c, MS_TK_IDENTIFIER, "Expected method name.");
+        MsToken meth_name = c->previous;
+        int meth_name_k = add_string_constant(c, meth_name.start, meth_name.length);
+
+        compile_function(c, meth_name.start, meth_name.length);
+        int closure_reg = c->next_reg - 1;
+
+        emit(c, ms_enc_ABC(MS_OP_METHOD, class_reg, closure_reg, meth_name_k));
+        free_reg(c, closure_reg);
+    }
+    consume(c, MS_TK_RIGHT_BRACE, "Expected '}' after class body.");
+
+    c->klass = klass_ctx.enclosing;
+}
+
 static void compile_statement(MsCompiler* c) {
     if (match_tok(c, MS_TK_VAR)) {
         parse_var_decl(c);
@@ -634,6 +703,9 @@ static void compile_statement(MsCompiler* c) {
         return;
     } else if (match_tok(c, MS_TK_FUN)) {
         parse_fun_decl(c);
+        return;
+    } else if (match_tok(c, MS_TK_CLASS)) {
+        parse_class_decl(c);
         return;
     } else if (match_tok(c, MS_TK_LEFT_BRACE)) {
         parse_block(c);

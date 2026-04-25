@@ -1,21 +1,9 @@
 #pragma once
-#include "ms/value.h"
+#include "ms/table_types.h"
 #include "ms/object.h"
 
 // Sentinel for deleted slots: non-NULL, never a valid string ptr.
 #define MS_TABLE_TOMBSTONE ((MsObjString*)(uintptr_t)1)
-
-typedef struct {
-    MsObjString* key;
-    MsValue value;
-} MsEntry;
-
-typedef struct {
-    MsEntry* entries;
-    int count;       // live + tombstones (used for load-factor)
-    int live_count;  // live entries only
-    int capacity;    // always a power of 2
-} MsTable;
 
 void         ms_table_init(MsTable* t);
 void         ms_table_free(MsTable* t);
