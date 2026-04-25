@@ -19,6 +19,7 @@ static void parse_dot(MsCompiler* c, bool can_assign);
 static void parse_print_stmt(MsCompiler* c, bool can_assign);
 static void parse_fun_expr(MsCompiler* c, bool can_assign);
 static void parse_this(MsCompiler* c, bool can_assign);
+static void parse_super(MsCompiler* c, bool can_assign);
 
 /* get_rule defined after k_rules table at the bottom of this file */
 static const MsParseRule* rule_at(MsTokenType t);
@@ -413,6 +414,39 @@ static void parse_this(MsCompiler* c, bool can_assign) {
     emit(c, ms_enc_ABC(MS_OP_MOVE, r, 0, 0));
 }
 
+/* ---- super ---- */
+
+static void parse_super(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    if (!c->klass || !c->klass->has_superclass) {
+        error_at(c, &c->previous, "'super' outside subclass.");
+        return;
+    }
+    consume(c, MS_TK_DOT, "Expected '.' after 'super'.");
+    consume(c, MS_TK_IDENTIFIER, "Expected method name after 'super.'.");
+    int name_k = add_string_constant(c, c->previous.start, c->previous.length);
+
+    int super_uv = resolve_upvalue(c, "super", 5);
+    if (super_uv < 0) {
+        error_at(c, &c->previous, "Cannot resolve 'super' upvalue.");
+        return;
+    }
+
+    /* GETSUPER A=result_reg, B=super_uv, C=name_k
+       VM creates BoundMethod(receiver=slot0, method=super.name_k) */
+    int result_reg = alloc_reg(c);
+    emit(c, ms_enc_ABC(MS_OP_GETSUPER, result_reg, super_uv, name_k));
+
+    if (check(c, MS_TK_LEFT_PAREN)) {
+        /* Call the bound method immediately */
+        advance(c); /* consume '(' */
+        int argc = parse_args(c);
+        emit(c, ms_enc_ABC(MS_OP_CALL, result_reg, argc, result_reg + 1));
+        c->next_reg = result_reg + 1;
+    }
+    /* else: result_reg holds BoundMethod for deferred call */
+}
+
 /* ---- dot (property access / method call) ---- */
 
 static void parse_dot(MsCompiler* c, bool can_assign) {
@@ -424,7 +458,10 @@ static void parse_dot(MsCompiler* c, bool can_assign) {
         /* SETPROP: obj_reg.name_k = rhs */
         expression(c);
         int val_reg = c->next_reg - 1;
+        int ic_slot = c->function->ic_count++;
         emit(c, ms_enc_ABC(MS_OP_SETPROP, val_reg, obj_reg, MS_K_TO_RK(name_k)));
+        /* EXTRAARG: A=val_reg (RETURN target), Bx=ic_slot */
+        emit(c, ms_enc_ABx(MS_OP_EXTRAARG, val_reg, ic_slot));
         emit(c, ms_enc_ABC(MS_OP_MOVE, obj_reg, val_reg, 0));
         c->next_reg = obj_reg + 1;
     } else if (check(c, MS_TK_LEFT_PAREN)) {
@@ -433,7 +470,10 @@ static void parse_dot(MsCompiler* c, bool can_assign) {
         emit(c, ms_enc_ABC(MS_OP_INVOKE, obj_reg, name_k, argc));
         c->next_reg = obj_reg + 1;
     } else {
+        int ic_slot = c->function->ic_count++;
         emit(c, ms_enc_ABC(MS_OP_GETPROP, obj_reg, obj_reg, MS_K_TO_RK(name_k)));
+        /* EXTRAARG: A=obj_reg (RETURN target = destination reg), Bx=ic_slot */
+        emit(c, ms_enc_ABx(MS_OP_EXTRAARG, obj_reg, ic_slot));
     }
 }
 
@@ -549,7 +589,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* FUN */             RULE(parse_fun_expr, NO, PREC_NONE),
     /* CLASS */           RULE(NO, NO, PREC_NONE),
     /* THIS */            RULE(parse_this, NO, PREC_NONE),
-    /* SUPER */           RULE(NO, NO, PREC_NONE),
+    /* SUPER */           RULE(parse_super, NO, PREC_NONE),
     /* STATIC */          RULE(NO, NO, PREC_NONE),
     /* TRUE */            RULE(parse_literal, NO, PREC_NONE),
     /* FALSE */           RULE(parse_literal, NO, PREC_NONE),

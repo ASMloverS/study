@@ -52,3 +52,9 @@ target_link_libraries(test_gc_gen PRIVATE ms_frontend)
 
 ms_add_test(test_oop unit/test_oop.c)
 target_link_libraries(test_oop PRIVATE ms_frontend)
+
+ms_add_test(test_oop_inherit unit/test_oop_inherit.c)
+target_link_libraries(test_oop_inherit PRIVATE ms_frontend)
+
+ms_add_test(test_shapes unit/test_shapes.c)
+target_link_libraries(test_shapes PRIVATE ms_frontend)

@@ -4,10 +4,91 @@
 #include "ms/object.h"
 #include "ms/table.h"
 #include "ms/value.h"
+#include "ms/shape.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* ---- Instance field helpers (Shape + SBO) ---- */
+
+static MsValue* inst_field_ptr(MsObjInstance* inst, int slot) {
+    return ms_shape_field_ptr(inst->inline_fields, inst->overflow_fields, slot);
+}
+
+/* Get a field value by slot index. */
+static MsValue inst_get_by_slot(MsObjInstance* inst, int slot) {
+    return *inst_field_ptr(inst, slot);
+}
+
+/* Set a field value by slot; grows overflow array if needed. */
+static void inst_set_by_slot(struct MsVM* vm, MsObjInstance* inst,
+                              int slot, MsValue val) {
+    if (slot >= MS_SBO_FIELDS) {
+        int ov_idx = slot - MS_SBO_FIELDS;
+        int cur_ov = (inst->field_count > MS_SBO_FIELDS)
+                     ? inst->field_count - MS_SBO_FIELDS : 0;
+        if (ov_idx >= cur_ov) {
+            /* Grow overflow array */
+            int new_ov = ov_idx + 1;
+            inst->overflow_fields = (MsValue*)ms_reallocate(
+                vm, inst->overflow_fields,
+                sizeof(MsValue) * (size_t)cur_ov,
+                sizeof(MsValue) * (size_t)new_ov);
+            for (int i = cur_ov; i < new_ov; i++)
+                inst->overflow_fields[i] = MS_NIL_VAL();
+        }
+    }
+    *inst_field_ptr(inst, slot) = val;
+    if (slot >= inst->field_count)
+        inst->field_count = slot + 1;
+}
+
+/* ---- IC helpers ---- */
+
+/* Ensure fn->ic is allocated (lazily). */
+static MsInlineCache* ensure_ic(MsVM* vm, MsObjFunction* fn, int idx) {
+    if (!fn->ic) {
+        int n = fn->ic_count > 0 ? fn->ic_count : 1;
+        fn->ic = (MsInlineCache*)ms_reallocate(vm, NULL, 0,
+                     sizeof(MsInlineCache) * (size_t)n);
+        for (int i = 0; i < n; i++) {
+            fn->ic[i].count       = 0;
+            fn->ic[i].megamorphic = false;
+        }
+    }
+    return &fn->ic[idx];
+}
+
+/* Try IC hit for GETPROP; returns slot index or -1 on miss. */
+static int ic_get_field_slot(MsInlineCache* ic, MsObjInstance* inst) {
+    if (ic->megamorphic) return -1;
+    for (int i = 0; i < ic->count; i++) {
+        if (ic->entries[i].kind == MS_IC_FIELD &&
+            ic->entries[i].shape_id == inst->shape->id) {
+            return (int)ic->entries[i].slot_index;
+        }
+    }
+    return -1;
+}
+
+/* Update IC with a new field hit. */
+static void ic_update_field(MsInlineCache* ic, MsObjInstance* inst, int slot) {
+    if (ic->megamorphic) return;
+    /* Check if shape_id already recorded */
+    for (int i = 0; i < ic->count; i++) {
+        if (ic->entries[i].shape_id == inst->shape->id) return;
+    }
+    if (ic->count >= MS_IC_PIC_SIZE) {
+        ic->megamorphic = true;
+        return;
+    }
+    MsICEntry* e = &ic->entries[ic->count++];
+    e->shape_id   = inst->shape->id;
+    e->slot_index = (uint32_t)slot;
+    e->kind       = MS_IC_FIELD;
+    e->cached     = MS_NIL_VAL();
+}
 
 /* ---- forward decls ---- */
 static MsInterpretResult call_value(MsVM* vm, MsValue callee,
@@ -588,15 +669,63 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         }
 
         case MS_OP_GETPROP: {
+            /* Read the EXTRAARG that follows (IC slot index) */
+            MsInstruction ea = READ_INSTR();
+            int ic_idx = MS_GET_Bx(ea);
             MsValue obj = R(B);
+            /* Handle class.staticMethod access */
+            if (MS_IS_CLASS(obj)) {
+                MsObjClass* klass = MS_AS_CLASS(obj);
+                MsObjString* name = MS_AS_STRING(K(MS_RK_TO_K(C)));
+                MsValue val;
+                if (klass->static_methods &&
+                    ms_table_get(klass->static_methods, name, &val)) {
+                    R(A) = val;
+                } else {
+                    RUNTIME_ERROR(vm, "Undefined static method '%s'.", name->data);
+                }
+                break;
+            }
             if (!MS_IS_INSTANCE(obj)) {
                 RUNTIME_ERROR(vm, "Only instances have properties.");
             }
             MsObjInstance* inst = MS_AS_INSTANCE(obj);
             MsObjString* name = MS_AS_STRING(K(MS_RK_TO_K(C)));
+            /* Try IC hit for field access */
+            MsInlineCache* getprop_ic =
+                ensure_ic(vm, frame->closure->function, ic_idx);
+            {
+                int slot = ic_get_field_slot(getprop_ic, inst);
+                if (slot >= 0) {
+                    R(A) = inst_get_by_slot(inst, slot);
+                    break;
+                }
+            }
+            /* IC miss: slow path */
+            {
+                int slot = ms_shape_find_slot(inst->shape, name);
+                if (slot >= 0) {
+                    R(A) = inst_get_by_slot(inst, slot);
+                    ic_update_field(getprop_ic, inst, slot);
+                    break;
+                }
+            }
             MsValue val;
-            if (ms_table_get(&inst->fields, name, &val)) {
-                R(A) = val;
+            if (inst->klass->getters &&
+                       ms_table_get(inst->klass->getters, name, &val)) {
+                /* Call getter: 0 args, receiver = inst */
+                MsObjClosure* cl = MS_AS_CLOSURE(val);
+                if (vm->frame_count >= MS_FRAMES_MAX) {
+                    RUNTIME_ERROR(vm, "Stack overflow.");
+                }
+                MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                nf->closure = cl;
+                nf->ip      = cl->function->chunk.code;
+                nf->slots   = frame->slots + A;
+                nf->slots[0] = obj;
+                MsValue* ntop = nf->slots + cl->function->max_stack_size + 1;
+                if (ntop > vm->stack_top) vm->stack_top = ntop;
+                frame = &vm->frames[vm->frame_count - 1];
             } else if (ms_table_get(&inst->klass->methods, name, &val)) {
                 MsObjBoundMethod* bm = ms_obj_bound_method_new(
                     vm, obj, MS_AS_CLOSURE(val));
@@ -608,35 +737,112 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         }
 
         case MS_OP_SETPROP: {
-            /* A=val_reg, B=obj_reg, C=name_rk */
+            /* A=val_reg, B=obj_reg, C=name_rk; followed by EXTRAARG ic_slot */
+            MsInstruction setprop_ea = READ_INSTR();
+            int setprop_ic_idx = MS_GET_Bx(setprop_ea);
             MsValue obj = R(B);
             if (!MS_IS_INSTANCE(obj)) {
                 RUNTIME_ERROR(vm, "Only instances have properties.");
             }
             MsObjInstance* inst = MS_AS_INSTANCE(obj);
             MsObjString* name = MS_AS_STRING(K(MS_RK_TO_K(C)));
-            ms_table_set(&inst->fields, name, R(A));
-            ms_write_barrier(vm, (MsObject*)inst, R(A));
+            MsValue setter_fn;
+            if (inst->klass->setters &&
+                ms_table_get(inst->klass->setters, name, &setter_fn)) {
+                /* Call setter with val as arg */
+                MsObjClosure* cl = MS_AS_CLOSURE(setter_fn);
+                if (vm->frame_count >= MS_FRAMES_MAX) {
+                    RUNTIME_ERROR(vm, "Stack overflow.");
+                }
+                MsValue val = R(A);
+                MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                nf->closure = cl;
+                nf->ip      = cl->function->chunk.code;
+                nf->slots   = frame->slots + B;
+                nf->slots[0] = obj;
+                nf->slots[1] = val;
+                MsValue* ntop = nf->slots + cl->function->max_stack_size + 1;
+                if (ntop > vm->stack_top) vm->stack_top = ntop;
+                frame = &vm->frames[vm->frame_count - 1];
+            } else {
+                /* IC-aware field set with shape transition */
+                MsInlineCache* setprop_ic =
+                    ensure_ic(vm, frame->closure->function, setprop_ic_idx);
+                int slot = -1;
+                /* Check IC hit (existing field with known shape) */
+                if (!setprop_ic->megamorphic) {
+                    for (int i = 0; i < setprop_ic->count; i++) {
+                        if (setprop_ic->entries[i].kind == MS_IC_FIELD &&
+                            setprop_ic->entries[i].shape_id == inst->shape->id) {
+                            slot = (int)setprop_ic->entries[i].slot_index;
+                            break;
+                        }
+                    }
+                }
+                if (slot < 0) {
+                    /* Slow path: find existing slot or create via transition */
+                    slot = ms_shape_find_slot(inst->shape, name);
+                    if (slot < 0) {
+                        /* New property: transition the shape */
+                        inst->shape = ms_shape_transition(vm, inst->shape, name);
+                        slot = (int)(inst->shape->slot_count - 1);
+                    }
+                    ic_update_field(setprop_ic, inst, slot);
+                }
+                inst_set_by_slot(vm, inst, slot, R(A));
+                ms_write_barrier(vm, (MsObject*)inst, R(A));
+            }
             break;
         }
 
         case MS_OP_INVOKE: {
             /* A=obj_reg, B=name_k, C=argc */
             MsValue obj = R(A);
+            /* Handle class.staticMethod() calls */
+            if (MS_IS_CLASS(obj)) {
+                MsObjClass* klass = MS_AS_CLASS(obj);
+                MsObjString* name = MS_AS_STRING(K(B));
+                MsValue smethod;
+                if (klass->static_methods &&
+                    ms_table_get(klass->static_methods, name, &smethod)) {
+                    MsObjClosure* cl = MS_AS_CLOSURE(smethod);
+                    MsObjFunction* fn = cl->function;
+                    if (vm->frame_count >= MS_FRAMES_MAX) {
+                        RUNTIME_ERROR(vm, "Stack overflow.");
+                    }
+                    MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                    nf->closure = cl;
+                    nf->ip      = fn->chunk.code;
+                    /* slot 0 = class (this), args in slots 1..argc */
+                    nf->slots   = frame->slots + A;
+                    MsValue* ntop = nf->slots + fn->max_stack_size + 1;
+                    if (ntop > vm->stack_top) vm->stack_top = ntop;
+                    frame = &vm->frames[vm->frame_count - 1];
+                } else {
+                    RUNTIME_ERROR(vm, "Undefined static method '%s'.", name->data);
+                }
+                break;
+            }
             if (!MS_IS_INSTANCE(obj)) {
                 RUNTIME_ERROR(vm, "Only instances have methods.");
             }
             MsObjInstance* inst = MS_AS_INSTANCE(obj);
             MsObjString* name = MS_AS_STRING(K(B));
             MsValue method;
-            /* Check field first (stored closure) */
-            if (ms_table_get(&inst->fields, name, &method) &&
-                MS_IS_CLOSURE(method)) {
-                /* direct call: result in R(A), args follow */
-                MsInterpretResult cr = call_value(vm, method, C, A);
-                if (cr != MS_INTERPRET_OK) return cr;
-                frame = &vm->frames[vm->frame_count - 1];
-            } else if (ms_table_get(&inst->klass->methods, name, &method)) {
+            /* Check field first (stored closure) via shape */
+            {
+                int fslot = ms_shape_find_slot(inst->shape, name);
+                if (fslot >= 0) {
+                    method = inst_get_by_slot(inst, fslot);
+                    if (MS_IS_CLOSURE(method)) {
+                        MsInterpretResult cr = call_value(vm, method, C, A);
+                        if (cr != MS_INTERPRET_OK) return cr;
+                        frame = &vm->frames[vm->frame_count - 1];
+                        break;
+                    }
+                }
+            }
+            if (ms_table_get(&inst->klass->methods, name, &method)) {
                 MsObjClosure* cl = MS_AS_CLOSURE(method);
                 MsObjFunction* fn = cl->function;
                 if (vm->frame_count >= MS_FRAMES_MAX) {
@@ -653,6 +859,117 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             } else {
                 RUNTIME_ERROR(vm, "Undefined method '%s'.", name->data);
             }
+            break;
+        }
+
+        case MS_OP_INHERIT: {
+            /* A=subclass_reg, B=superclass_reg */
+            MsValue super_val = R(B);
+            if (!MS_IS_CLASS(super_val)) {
+                RUNTIME_ERROR(vm, "Superclass must be a class.");
+            }
+            MsObjClass* sub   = MS_AS_CLASS(R(A));
+            MsObjClass* super = MS_AS_CLASS(super_val);
+            ms_table_add_all(&sub->methods, &super->methods);
+            sub->superclass = super;
+            break;
+        }
+
+        case MS_OP_GETSUPER: {
+            /* A=result_reg, B=super_upval_idx, C=name_k */
+            MsValue super_val = *frame->closure->upvalues[B]->location;
+            if (!MS_IS_CLASS(super_val)) {
+                RUNTIME_ERROR(vm, "Superclass is not a class.");
+            }
+            MsObjClass* super = MS_AS_CLASS(super_val);
+            MsObjString* name = MS_AS_STRING(K(C));
+            MsValue method;
+            if (!ms_table_get(&super->methods, name, &method)) {
+                RUNTIME_ERROR(vm, "Undefined super method '%s'.", name->data);
+            }
+            /* Bind to 'this' (slot 0) */
+            MsObjBoundMethod* bm = ms_obj_bound_method_new(
+                vm, frame->slots[0], MS_AS_CLOSURE(method));
+            R(A) = MS_OBJ_VAL(bm);
+            break;
+        }
+
+        case MS_OP_SUPERINV: {
+            /* A=this_reg, B=super_upval_idx, C=name_k; argc in EXTRAARG */
+            MsInstruction ea = READ_INSTR();
+            int argc = MS_GET_A(ea);
+            MsValue super_val = *frame->closure->upvalues[B]->location;
+            if (!MS_IS_CLASS(super_val)) {
+                RUNTIME_ERROR(vm, "Superclass is not a class.");
+            }
+            MsObjClass* super = MS_AS_CLASS(super_val);
+            MsObjString* name = MS_AS_STRING(K(C));
+            MsValue method;
+            if (!ms_table_get(&super->methods, name, &method)) {
+                RUNTIME_ERROR(vm, "Undefined super method '%s'.", name->data);
+            }
+            MsObjClosure* cl = MS_AS_CLOSURE(method);
+            MsObjFunction* fn = cl->function;
+            if (vm->frame_count >= MS_FRAMES_MAX) {
+                RUNTIME_ERROR(vm, "Stack overflow.");
+            }
+            MsCallFrame* nf = &vm->frames[vm->frame_count++];
+            nf->closure = cl;
+            nf->ip      = fn->chunk.code;
+            nf->slots   = frame->slots + A;
+            /* slot 0 is already 'this' (R(A)) */
+            MsValue* ntop = nf->slots + fn->max_stack_size + 1;
+            if (ntop > vm->stack_top) vm->stack_top = ntop;
+            (void)argc;
+            frame = &vm->frames[vm->frame_count - 1];
+            break;
+        }
+
+        case MS_OP_STATICMETH: {
+            /* A=class_reg, B=closure_reg, C=name_k */
+            MsObjClass* klass = MS_AS_CLASS(R(A));
+            MsObjString* name = MS_AS_STRING(K(C));
+            if (!klass->static_methods) {
+                klass->static_methods = (MsTable*)malloc(sizeof(MsTable));
+                ms_table_init(klass->static_methods);
+            }
+            ms_table_set(klass->static_methods, name, R(B));
+            break;
+        }
+
+        case MS_OP_GETTER: {
+            /* A=class_reg, B=closure_reg, C=name_k */
+            MsObjClass* klass = MS_AS_CLASS(R(A));
+            MsObjString* name = MS_AS_STRING(K(C));
+            if (!klass->getters) {
+                klass->getters = (MsTable*)malloc(sizeof(MsTable));
+                ms_table_init(klass->getters);
+            }
+            ms_table_set(klass->getters, name, R(B));
+            break;
+        }
+
+        case MS_OP_SETTER: {
+            /* A=class_reg, B=closure_reg, C=name_k */
+            MsObjClass* klass = MS_AS_CLASS(R(A));
+            MsObjString* name = MS_AS_STRING(K(C));
+            if (!klass->setters) {
+                klass->setters = (MsTable*)malloc(sizeof(MsTable));
+                ms_table_init(klass->setters);
+            }
+            ms_table_set(klass->setters, name, R(B));
+            break;
+        }
+
+        case MS_OP_ABSTMETH: {
+            /* A=class_reg, C=name_k: store nil sentinel in abstract_methods */
+            MsObjClass* klass = MS_AS_CLASS(R(A));
+            MsObjString* name = MS_AS_STRING(K(C));
+            if (!klass->abstract_methods) {
+                klass->abstract_methods = (MsTable*)malloc(sizeof(MsTable));
+                ms_table_init(klass->abstract_methods);
+            }
+            ms_table_set(klass->abstract_methods, name, MS_NIL_VAL());
             break;
         }
 

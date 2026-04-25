@@ -555,28 +555,30 @@ void compile_function(MsCompiler* outer, const char* fname, int flen) {
         loc->slot        = slot;
     }
 
-    consume(&inner, MS_TK_LEFT_PAREN, "Expected '(' after function name.");
     inner.function->arity = 0;
-    if (!check(&inner, MS_TK_RIGHT_PAREN)) {
-        do {
-            consume(&inner, MS_TK_IDENTIFIER, "Expected parameter name.");
-            MsToken pname = inner.previous;
-            if (inner.local_count >= 256) {
-                error_at(&inner, &pname, "Too many parameters.");
-                break;
-            }
-            int slot = inner.next_reg++;
-            if (slot > inner.max_reg) inner.max_reg = slot;
-            MsLocal* loc = &inner.locals[inner.local_count++];
-            loc->name        = pname;
-            loc->depth       = 1;
-            loc->is_captured = false;
-            loc->slot        = slot;
-            inner.function->arity++;
-            inner.function->min_arity = inner.function->arity;
-        } while (match_tok(&inner, MS_TK_COMMA));
+    /* Getter syntax has no parens: `get name { body }` */
+    if (match_tok(&inner, MS_TK_LEFT_PAREN)) {
+        if (!check(&inner, MS_TK_RIGHT_PAREN)) {
+            do {
+                consume(&inner, MS_TK_IDENTIFIER, "Expected parameter name.");
+                MsToken pname = inner.previous;
+                if (inner.local_count >= 256) {
+                    error_at(&inner, &pname, "Too many parameters.");
+                    break;
+                }
+                int slot = inner.next_reg++;
+                if (slot > inner.max_reg) inner.max_reg = slot;
+                MsLocal* loc = &inner.locals[inner.local_count++];
+                loc->name        = pname;
+                loc->depth       = 1;
+                loc->is_captured = false;
+                loc->slot        = slot;
+                inner.function->arity++;
+                inner.function->min_arity = inner.function->arity;
+            } while (match_tok(&inner, MS_TK_COMMA));
+        }
+        consume(&inner, MS_TK_RIGHT_PAREN, "Expected ')' after parameters.");
     }
-    consume(&inner, MS_TK_RIGHT_PAREN, "Expected ')' after parameters.");
     consume(&inner, MS_TK_LEFT_BRACE, "Expected '{' before function body.");
 
     while (!check(&inner, MS_TK_RIGHT_BRACE) && !check(&inner, MS_TK_EOF_TOKEN)) {
@@ -631,17 +633,31 @@ static void parse_fun_decl(MsCompiler* c) {
 
 /* ---- class declaration ---- */
 
+/* helper: push synthetic local named 'super' at current scope */
+static void push_super_local(MsCompiler* c, int class_reg) {
+    if (c->local_count >= 256) return;
+    /* super local lives in the same slot as class_reg (just an alias) */
+    MsToken super_tok;
+    super_tok.type   = MS_TK_SUPER;
+    super_tok.start  = "super";
+    super_tok.length = 5;
+    super_tok.line   = 0;
+    super_tok.column = 0;
+    MsLocal* loc = &c->locals[c->local_count++];
+    loc->name        = super_tok;
+    loc->depth       = c->scope_depth;
+    loc->is_captured = false;
+    loc->slot        = class_reg;
+}
+
 static void parse_class_decl(MsCompiler* c) {
     consume(c, MS_TK_IDENTIFIER, "Expected class name.");
     MsToken class_name = c->previous;
     int name_k = add_string_constant(c, class_name.start, class_name.length);
 
-    /* Emit CLASS A, Bx: creates ObjClass from constant name, stores in R(A) */
     int class_reg = alloc_reg(c);
     emit(c, ms_enc_ABx(MS_OP_CLASS, class_reg, name_k));
 
-    /* Bind class to global/local before compiling methods
-       so recursive references work */
     if (c->scope_depth == 0) {
         emit(c, ms_enc_ABx(MS_OP_DEFGLOBAL, class_reg, name_k));
     } else {
@@ -653,25 +669,107 @@ static void parse_class_decl(MsCompiler* c) {
         loc->slot        = class_reg;
     }
 
-    /* Push class compiler context */
     MsClassCompiler klass_ctx;
     klass_ctx.enclosing       = c->klass;
     klass_ctx.has_superclass  = false;
     c->klass = &klass_ctx;
+
+    /* Inheritance: class Sub : Super */
+    if (match_tok(c, MS_TK_COLON)) {
+        consume(c, MS_TK_IDENTIFIER, "Expected superclass name.");
+        MsToken super_name = c->previous;
+        /* Load superclass value */
+        int super_reg = alloc_reg(c);
+        int super_local = -1;
+        for (int i = c->local_count - 1; i >= 0; i--) {
+            MsLocal* l = &c->locals[i];
+            if (l->name.length == super_name.length &&
+                memcmp(l->name.start, super_name.start, (size_t)super_name.length) == 0) {
+                super_local = l->slot; break;
+            }
+        }
+        if (super_local >= 0) {
+            emit(c, ms_enc_ABC(MS_OP_MOVE, super_reg, super_local, 0));
+        } else {
+            int sk = add_string_constant(c, super_name.start, super_name.length);
+            emit(c, ms_enc_ABx(MS_OP_GETGLOBAL, super_reg, sk));
+        }
+        emit(c, ms_enc_ABC(MS_OP_INHERIT, class_reg, super_reg, 0));
+        klass_ctx.has_superclass = true;
+        /* Store super as local so methods can capture it */
+        push_super_local(c, super_reg);
+    }
 
     match_tok(c, MS_TK_NEWLINE);
     consume(c, MS_TK_LEFT_BRACE, "Expected '{' before class body.");
 
     while (!check(c, MS_TK_RIGHT_BRACE) && !check(c, MS_TK_EOF_TOKEN)) {
         if (match_tok(c, MS_TK_NEWLINE) || match_tok(c, MS_TK_SEMICOLON)) continue;
-        /* method: identifier '(' ... ')' '{' ... '}' */
+
+        if (match_tok(c, MS_TK_STATIC)) {
+            /* static method */
+            consume(c, MS_TK_IDENTIFIER, "Expected static method name.");
+            MsToken meth_name = c->previous;
+            int meth_name_k = add_string_constant(c, meth_name.start, meth_name.length);
+            compile_function(c, meth_name.start, meth_name.length);
+            int closure_reg = c->next_reg - 1;
+            emit(c, ms_enc_ABC(MS_OP_STATICMETH, class_reg, closure_reg, meth_name_k));
+            free_reg(c, closure_reg);
+            continue;
+        }
+
+        /* Contextual keywords: get, set, abstract
+           Only treated as getter/setter if followed by IDENTIFIER (not '(') */
+        if (check(c, MS_TK_IDENTIFIER)) {
+            const char* w = c->current.start;
+            int wl = c->current.length;
+            bool is_get      = (wl == 3 && memcmp(w, "get", 3) == 0);
+            bool is_set      = (wl == 3 && memcmp(w, "set", 3) == 0);
+            bool is_abstract = (wl == 8 && memcmp(w, "abstract", 8) == 0);
+
+            /* Peek: scan one more token to decide */
+            bool followed_by_ident = false;
+            if (is_get || is_set || is_abstract) {
+                MsScannerState saved = ms_scanner_save(&c->scanner);
+                MsToken peek = ms_scanner_next(&c->scanner);
+                followed_by_ident = (peek.type == MS_TK_IDENTIFIER);
+                ms_scanner_restore(&c->scanner, saved);
+            }
+
+            if ((is_get || is_set) && followed_by_ident) {
+                advance(c); /* consume 'get' or 'set' */
+                bool is_setter = is_set;
+                consume(c, MS_TK_IDENTIFIER, "Expected getter/setter name.");
+                MsToken meth_name = c->previous;
+                int meth_name_k = add_string_constant(c, meth_name.start, meth_name.length);
+                compile_function(c, meth_name.start, meth_name.length);
+                int closure_reg = c->next_reg - 1;
+                int op = is_setter ? MS_OP_SETTER : MS_OP_GETTER;
+                emit(c, ms_enc_ABC(op, class_reg, closure_reg, meth_name_k));
+                free_reg(c, closure_reg);
+                continue;
+            }
+            if (is_abstract && followed_by_ident) {
+                advance(c); /* consume 'abstract' */
+                consume(c, MS_TK_IDENTIFIER, "Expected abstract method name.");
+                MsToken meth_name = c->previous;
+                int meth_name_k = add_string_constant(c, meth_name.start, meth_name.length);
+                /* consume optional () */
+                if (match_tok(c, MS_TK_LEFT_PAREN)) {
+                    while (!check(c, MS_TK_RIGHT_PAREN) && !check(c, MS_TK_EOF_TOKEN))
+                        advance(c);
+                    consume(c, MS_TK_RIGHT_PAREN, "Expected ')' after abstract params.");
+                }
+                emit(c, ms_enc_ABC(MS_OP_ABSTMETH, class_reg, 0, meth_name_k));
+                continue;
+            }
+        }
+
         consume(c, MS_TK_IDENTIFIER, "Expected method name.");
         MsToken meth_name = c->previous;
         int meth_name_k = add_string_constant(c, meth_name.start, meth_name.length);
-
         compile_function(c, meth_name.start, meth_name.length);
         int closure_reg = c->next_reg - 1;
-
         emit(c, ms_enc_ABC(MS_OP_METHOD, class_reg, closure_reg, meth_name_k));
         free_reg(c, closure_reg);
     }

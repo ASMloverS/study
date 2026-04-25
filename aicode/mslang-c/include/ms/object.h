@@ -1,5 +1,6 @@
 #pragma once
 #include "ms/common.h"
+#include "ms/consts.h"
 #include "ms/value.h"
 #include "ms/chunk.h"
 
@@ -115,6 +116,7 @@ MsObjClosure*  ms_obj_closure_new(struct MsVM* vm, MsObjFunction* fn);
 
 /* ---- OOP: Class, Instance, BoundMethod ---- */
 #include "ms/table_types.h"
+#include "ms/shape.h"
 
 typedef struct MsObjClass {
     MsObject obj;
@@ -125,12 +127,16 @@ typedef struct MsObjClass {
     MsTable* setters;
     MsTable* abstract_methods;
     struct MsObjClass* superclass;
+    MsShape* root_shape; /* shared root shape for all instances of this class */
 } MsObjClass;
 
 typedef struct {
-    MsObject obj;
-    MsObjClass* klass;
-    MsTable fields;
+    MsObject      obj;
+    MsObjClass*   klass;
+    MsShape*      shape;                         /* current hidden class */
+    MsValue       inline_fields[MS_SBO_FIELDS];  /* SBO: first 8 fields inline */
+    MsValue*      overflow_fields;               /* NULL until > MS_SBO_FIELDS fields */
+    int           field_count;
 } MsObjInstance;
 
 typedef struct {

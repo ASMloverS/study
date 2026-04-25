@@ -133,13 +133,19 @@ MsObjClass* ms_obj_class_new(struct MsVM* vm, MsObjString* name) {
     klass->setters          = NULL;
     klass->abstract_methods = NULL;
     klass->superclass       = NULL;
+    klass->root_shape       = ms_shape_new(vm);
     return klass;
 }
 
 MsObjInstance* ms_obj_instance_new(struct MsVM* vm, MsObjClass* klass) {
     MsObjInstance* inst = MS_ALLOC_OBJ(vm, MS_OBJ_INSTANCE, MsObjInstance, 0);
-    inst->klass = klass;
-    ms_table_init(&inst->fields);
+    inst->klass           = klass;
+    inst->shape           = klass->root_shape;
+    inst->overflow_fields = NULL;
+    inst->field_count     = 0;
+    /* Initialise inline fields to nil */
+    for (int i = 0; i < MS_SBO_FIELDS; i++)
+        inst->inline_fields[i] = MS_NIL_VAL();
     return inst;
 }
 
@@ -239,7 +245,13 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
         }
         case MS_OBJ_INSTANCE: {
             MsObjInstance* inst = (MsObjInstance*)obj;
-            ms_table_free(&inst->fields);
+            if (inst->overflow_fields) {
+                int overflow_count = inst->field_count - MS_SBO_FIELDS;
+                if (overflow_count > 0)
+                    MS_FREE_ARRAY(vm, MsValue, inst->overflow_fields,
+                                  overflow_count);
+                inst->overflow_fields = NULL;
+            }
             ms_reallocate(vm, obj, sizeof(MsObjInstance), 0);
             break;
         }

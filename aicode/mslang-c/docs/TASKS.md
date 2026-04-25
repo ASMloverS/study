@@ -19,9 +19,9 @@
 | ✅ | [T15](T15-vm-control-flow.md) | VM — Control Flow |
 | ✅ | [T16](T16-gc-mark-sweep.md) | GC — Mark-Sweep |
 | ✅ | [T17](T17-gc-generational.md) | GC — Generational |
-| ⬜ | [T18](T18-oop-classes-instances.md) | OOP — Classes & Instances |
-| ⬜ | [T19](T19-oop-inheritance.md) | OOP — Inheritance |
-| ⬜ | [T20](T20-oop-shapes-ic.md) | OOP — Shapes & Inline Cache |
+| ✅ | [T18](T18-oop-classes-instances.md) | OOP — Classes & Instances |
+| ✅ | [T19](T19-oop-inheritance.md) | OOP — Inheritance |
+| ✅ | [T20](T20-oop-shapes-ic.md) | OOP — Shapes & Inline Cache |
 | ⬜ | [T21](T21-collections-list-map-tuple.md) | Collections — List, Map, Tuple |
 | ⬜ | [T22](T22-builtin-methods.md) | Built-in Methods |
 | ⬜ | [T23](T23-string-interpolation-exec.md) | String Interpolation Execution |

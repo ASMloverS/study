@@ -84,7 +84,16 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
     case MS_OBJ_INSTANCE: {
         MsObjInstance* inst = (MsObjInstance*)obj;
         ms_mark_object(vm, (MsObject*)inst->klass);
-        ms_mark_table(vm, &inst->fields);
+        /* Mark all inline and overflow fields */
+        int fc = inst->field_count;
+        int inline_c = fc < MS_SBO_FIELDS ? fc : MS_SBO_FIELDS;
+        for (int i = 0; i < inline_c; i++)
+            ms_mark_value(vm, inst->inline_fields[i]);
+        if (inst->overflow_fields) {
+            int ov_c = fc - MS_SBO_FIELDS;
+            for (int i = 0; i < ov_c; i++)
+                ms_mark_value(vm, inst->overflow_fields[i]);
+        }
         break;
     }
     case MS_OBJ_BOUND_METHOD: {
