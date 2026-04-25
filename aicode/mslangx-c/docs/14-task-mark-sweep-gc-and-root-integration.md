@@ -69,7 +69,7 @@ Use these status markers consistently in this document:
 | Subtask | Status | Depends on | Summary |
 | --- | --- | --- | --- |
 | 14.1 | `DONE` | Task 03 | GC state, object list, mark bits, and allocation counters |
-| 14.2 | `TODO` | 14.1 | Root traversal for stack values, call frames, and open upvalues |
+| 14.2 | `DONE` | 14.1 | Root traversal for stack values, call frames, and open upvalues |
 | 14.3 | `TODO` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
 | 14.4 | `TODO` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
 | 14.5 | `TODO` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
@@ -122,7 +122,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|runtime_core"
 
 ### Subtask 14.2 - Root traversal for stack values, call frames, and open upvalues
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 14.1.
 
@@ -154,6 +154,16 @@ ctest --test-dir build -C Debug --output-on-failure -R "runtime_core|closures|gc
 1. Values on the stack survive collection.
 2. Frame-reachable closures survive collection.
 3. Open upvalues keep captured values alive until the closure is closed.
+
+**Implementation summary**
+
+1. `ms_vm_gc_mark_roots()` now walks stack values, the current module, active
+   call frames, and the open-upvalue list.
+2. Recursive GC marking covers functions, closures, upvalues, receivers, chunk
+   constants, module references, and the other runtime object relationships
+   needed by the current root set.
+3. Runtime and closure unit coverage now verifies stack, frame, closure,
+   open-upvalue, and runtime-error cleanup behavior.
 
 ### Subtask 14.3 - Root traversal for modules, interned strings, and builtin/native registries
 

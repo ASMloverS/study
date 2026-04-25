@@ -1,7 +1,9 @@
 #include <string.h>
+#include <stdlib.h>
 
 #include "ms/buffer.h"
 #include "ms/diag.h"
+#include "ms/frontend/lowering.h"
 #include "ms/runtime/chunk.h"
 #include "ms/runtime/opcode.h"
 #include "ms/runtime/vm.h"
@@ -179,6 +181,136 @@ static int test_globals_and_jumps(void) {
   return 0;
 }
 
+static int test_gc_marks_stack_frames_and_closures(void) {
+  MsVM vm;
+  MsModule module;
+  MsFunction* function;
+  MsClosure* closure;
+  MsString* stack_string;
+  MsString* receiver_string;
+  MsString* constant_string;
+  MsValue* stack_slots;
+  MsCallFrame* frame;
+  uint8_t constant_index = 0;
+
+  ms_vm_init(&vm);
+  ms_module_init(&module, "unit");
+
+  stack_string = ms_string_from_cstr("stack");
+  receiver_string = ms_string_from_cstr("receiver");
+  constant_string = ms_string_from_cstr("constant");
+  function = ms_function_new("root", strlen("root"), 0);
+
+  TEST_ASSERT(stack_string != NULL);
+  TEST_ASSERT(receiver_string != NULL);
+  TEST_ASSERT(constant_string != NULL);
+  TEST_ASSERT(function != NULL);
+  stack_slots = (MsValue*) calloc(1, sizeof(*stack_slots));
+  frame = (MsCallFrame*) calloc(1, sizeof(*frame));
+  TEST_ASSERT(stack_slots != NULL);
+  TEST_ASSERT(frame != NULL);
+
+  TEST_ASSERT(ms_chunk_add_constant(&function->chunk,
+                                    ms_value_object((MsObject*) constant_string),
+                                    &constant_index));
+  closure = ms_closure_new(function);
+  TEST_ASSERT(closure != NULL);
+
+  stack_slots[0] = ms_value_object((MsObject*) stack_string);
+  frame->chunk = &function->chunk;
+  frame->closure = closure;
+  frame->module = &module;
+  frame->ip = 0;
+  frame->stack_base = 0;
+  frame->receiver = ms_value_object((MsObject*) receiver_string);
+  frame->has_receiver = 1;
+
+  vm.stack = stack_slots;
+  vm.stack_count = 1;
+  vm.stack_capacity = 1;
+  vm.frames = frame;
+  vm.frame_count = 1;
+  vm.frame_capacity = 1;
+  vm.open_upvalues = NULL;
+  vm.current_module = &module;
+
+  ms_vm_gc_mark_roots(&vm);
+
+  TEST_ASSERT(stack_string->object.marked == 1);
+  TEST_ASSERT(receiver_string->object.marked == 1);
+  TEST_ASSERT(constant_string->object.marked == 1);
+  TEST_ASSERT(function->object.marked == 1);
+  TEST_ASSERT(function->name->object.marked == 1);
+  TEST_ASSERT(closure->object.marked == 1);
+  TEST_ASSERT(module.object.marked == 1);
+
+  ms_closure_free(closure);
+  ms_function_free(function);
+  ms_string_free(constant_string);
+  ms_string_free(receiver_string);
+  ms_string_free(stack_string);
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  return 0;
+}
+
+static int test_runtime_error_closes_open_upvalues(void) {
+  static const char kSource[] =
+      "var saved = nil\n"
+      "fn outer() {\n"
+      "  var value = \"captured\"\n"
+      "  saved = fn() {\n"
+      "    return value\n"
+      "  }\n"
+      "  1()\n"
+      "}\n"
+      "outer()\n";
+  MsChunk chunk;
+  MsDiagnosticList diagnostics;
+  MsVM vm;
+  MsModule module;
+  MsString* saved_key;
+  MsValue saved_value = ms_value_nil();
+  MsClosure* saved_closure = NULL;
+  MsUpvalue* saved_upvalue = NULL;
+  MsString* captured_string = NULL;
+  int found = 0;
+
+  ms_chunk_init(&chunk);
+  ms_diag_list_init(&diagnostics);
+  ms_vm_init(&vm);
+  ms_module_init(&module, "unit");
+
+  TEST_ASSERT(ms_compile_source("<unit>", kSource, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  ms_vm_set_current_module(&vm, &module);
+  TEST_ASSERT(ms_vm_run_chunk(&vm, &chunk) == MS_VM_RESULT_RUNTIME_ERROR);
+  TEST_ASSERT(vm.open_upvalues == NULL);
+
+  saved_key = ms_string_from_cstr("saved");
+  TEST_ASSERT(saved_key != NULL);
+  TEST_ASSERT(ms_table_get(&module.globals, saved_key, &saved_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_closure(saved_value, &saved_closure));
+  TEST_ASSERT(saved_closure != NULL);
+  TEST_ASSERT(saved_closure->upvalues != NULL);
+  TEST_ASSERT(saved_closure->upvalues[0] != NULL);
+  saved_upvalue = saved_closure->upvalues[0];
+  TEST_ASSERT(saved_upvalue->location == &saved_upvalue->closed);
+  TEST_ASSERT(ms_value_get_string(saved_upvalue->closed, &captured_string));
+  TEST_ASSERT(captured_string != NULL);
+  TEST_ASSERT(strcmp(captured_string->bytes, "captured") == 0);
+
+  ms_string_free(saved_key);
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  ms_diag_list_destroy(&diagnostics);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
 static int expect_runtime_error(const MsChunk *chunk,
                                 const char *code,
                                 const char *message,
@@ -292,6 +424,8 @@ static int test_runtime_errors(void) {
 int main(void) {
   TEST_ASSERT(test_arithmetic_and_comparison() == 0);
   TEST_ASSERT(test_globals_and_jumps() == 0);
+  TEST_ASSERT(test_gc_marks_stack_frames_and_closures() == 0);
+  TEST_ASSERT(test_runtime_error_closes_open_upvalues() == 0);
   TEST_ASSERT(test_runtime_errors() == 0);
   return 0;
 }

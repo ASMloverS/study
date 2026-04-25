@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "ms/buffer.h"
@@ -160,6 +161,80 @@ static int test_nested_closure_shadowing(void) {
   return 0;
 }
 
+static int test_open_upvalue_is_marked_by_gc_roots(void) {
+  MsVM vm;
+  MsModule module;
+  MsFunction* function;
+  MsClosure* closure;
+  MsUpvalue* upvalue;
+  MsString* captured_string;
+  MsString* constant_string;
+  MsValue* stack_slots;
+  MsCallFrame* frame;
+  uint8_t constant_index = 0;
+
+  ms_vm_init(&vm);
+  ms_module_init(&module, "<unit>");
+
+  captured_string = ms_string_from_cstr("captured");
+  constant_string = ms_string_from_cstr("constant");
+  function = ms_function_new("make", strlen("make"), 0);
+  stack_slots = (MsValue*) calloc(1, sizeof(*stack_slots));
+  frame = (MsCallFrame*) calloc(1, sizeof(*frame));
+
+  TEST_ASSERT(captured_string != NULL);
+  TEST_ASSERT(constant_string != NULL);
+  TEST_ASSERT(function != NULL);
+  TEST_ASSERT(stack_slots != NULL);
+  TEST_ASSERT(frame != NULL);
+
+  function->upvalue_count = 1;
+  TEST_ASSERT(ms_chunk_add_constant(&function->chunk,
+                                    ms_value_object((MsObject*) constant_string),
+                                    &constant_index));
+  closure = ms_closure_new(function);
+  TEST_ASSERT(closure != NULL);
+
+  stack_slots[0] = ms_value_object((MsObject*) captured_string);
+  upvalue = ms_upvalue_new(&stack_slots[0]);
+  TEST_ASSERT(upvalue != NULL);
+  closure->upvalues[0] = upvalue;
+
+  frame->chunk = &function->chunk;
+  frame->closure = closure;
+  frame->module = &module;
+  frame->ip = 0;
+  frame->stack_base = 0;
+  frame->receiver = ms_value_nil();
+  frame->has_receiver = 0;
+
+  vm.stack = stack_slots;
+  vm.stack_count = 0;
+  vm.stack_capacity = 1;
+  vm.frames = frame;
+  vm.frame_count = 1;
+  vm.frame_capacity = 1;
+  vm.open_upvalues = upvalue;
+
+  ms_vm_gc_mark_roots(&vm);
+
+  TEST_ASSERT(captured_string->object.marked == 1);
+  TEST_ASSERT(constant_string->object.marked == 1);
+  TEST_ASSERT(function->object.marked == 1);
+  TEST_ASSERT(function->name->object.marked == 1);
+  TEST_ASSERT(closure->object.marked == 1);
+  TEST_ASSERT(upvalue->object.marked == 1);
+
+  ms_closure_free(closure);
+  ms_upvalue_free(upvalue);
+  ms_function_free(function);
+  ms_string_free(constant_string);
+  ms_string_free(captured_string);
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  return 0;
+}
+
 static int test_native_function_abi(void) {
   static const char kSource[] =
       "print native_add(20, 22)\n";
@@ -200,6 +275,7 @@ int main(void) {
   TEST_ASSERT(test_recursive_function_returns_value() == 0);
   TEST_ASSERT(test_function_expression_and_closure_capture() == 0);
   TEST_ASSERT(test_nested_closure_shadowing() == 0);
+  TEST_ASSERT(test_open_upvalue_is_marked_by_gc_roots() == 0);
   TEST_ASSERT(test_native_function_abi() == 0);
   TEST_ASSERT(test_reports_non_callable_runtime_error() == 0);
   TEST_ASSERT(test_reports_wrong_arity_runtime_error() == 0);

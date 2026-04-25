@@ -362,6 +362,216 @@ void ms_vm_gc_track_object(MsVM* vm, MsObject* object) {
   vm->gc.allocation_count += 1;
 }
 
+static void ms_vm_gc_mark_value(MsVM* vm, MsValue value);
+static void ms_vm_gc_mark_object(MsVM* vm, MsObject* object);
+static void ms_vm_gc_mark_chunk(MsVM* vm, const MsChunk* chunk);
+
+static void ms_vm_gc_mark_table(MsVM* vm, const MsTable* table) {
+  size_t i;
+
+  if (vm == NULL || table == NULL || table->entries == NULL) {
+    return;
+  }
+
+  for (i = 0; i < table->capacity; ++i) {
+    const MsTableEntry* entry = &table->entries[i];
+
+    if (entry->key != NULL) {
+      ms_vm_gc_mark_object(vm, (MsObject*) entry->key);
+    }
+    ms_vm_gc_mark_value(vm, entry->value);
+  }
+}
+
+static void ms_vm_gc_mark_object(MsVM* vm, MsObject* object) {
+  if (vm == NULL || object == NULL || object->marked) {
+    return;
+  }
+
+  object->marked = 1;
+
+  switch (object->type) {
+    case MS_OBJ_STRING:
+      return;
+    case MS_OBJ_FUNCTION: {
+      MsFunction* function = (MsFunction*) object;
+      size_t i;
+
+      ms_vm_gc_mark_object(vm,
+                           function->name != NULL
+                               ? (MsObject*) function->name
+                               : NULL);
+      for (i = 0; i < function->chunk.constants_count; ++i) {
+        ms_vm_gc_mark_value(vm, function->chunk.constants[i]);
+      }
+      return;
+    }
+    case MS_OBJ_CLOSURE: {
+      MsClosure* closure = (MsClosure*) object;
+      size_t i;
+
+      ms_vm_gc_mark_object(vm,
+                           closure->function != NULL
+                               ? (MsObject*) closure->function
+                               : NULL);
+      ms_vm_gc_mark_object(vm,
+                           closure->module != NULL
+                               ? (MsObject*) closure->module
+                               : NULL);
+      ms_vm_gc_mark_object(vm,
+                           closure->owner_class != NULL
+                               ? (MsObject*) closure->owner_class
+                               : NULL);
+      if (closure->upvalues != NULL) {
+        for (i = 0; i < closure->upvalue_count; ++i) {
+          ms_vm_gc_mark_object(vm,
+                               closure->upvalues[i] != NULL
+                                   ? (MsObject*) closure->upvalues[i]
+                                   : NULL);
+        }
+      }
+      return;
+    }
+    case MS_OBJ_UPVALUE: {
+      MsUpvalue* upvalue = (MsUpvalue*) object;
+
+      if (upvalue->location == &upvalue->closed) {
+        ms_vm_gc_mark_value(vm, upvalue->closed);
+      } else if (upvalue->location != NULL) {
+        ms_vm_gc_mark_value(vm, *upvalue->location);
+      }
+      return;
+    }
+    case MS_OBJ_CLASS: {
+      MsClass* klass = (MsClass*) object;
+
+      ms_vm_gc_mark_object(vm,
+                           klass->name != NULL ? (MsObject*) klass->name : NULL);
+      ms_vm_gc_mark_object(vm,
+                           klass->superclass != NULL
+                               ? (MsObject*) klass->superclass
+                               : NULL);
+      ms_vm_gc_mark_table(vm, &klass->methods);
+      return;
+    }
+    case MS_OBJ_INSTANCE: {
+      MsInstance* instance = (MsInstance*) object;
+
+      ms_vm_gc_mark_object(vm,
+                           instance->klass != NULL
+                               ? (MsObject*) instance->klass
+                               : NULL);
+      ms_vm_gc_mark_table(vm, &instance->fields);
+      return;
+    }
+    case MS_OBJ_BOUND_METHOD: {
+      MsBoundMethod* bound_method = (MsBoundMethod*) object;
+
+      ms_vm_gc_mark_value(vm, bound_method->receiver);
+      ms_vm_gc_mark_object(vm,
+                           bound_method->method != NULL
+                               ? (MsObject*) bound_method->method
+                               : NULL);
+      return;
+    }
+    case MS_OBJ_NATIVE_FN: {
+      MsNativeFunction* native_function = (MsNativeFunction*) object;
+
+      ms_vm_gc_mark_object(vm,
+                           native_function->name != NULL
+                               ? (MsObject*) native_function->name
+                               : NULL);
+      return;
+    }
+    case MS_OBJ_LIST: {
+      MsList* list = (MsList*) object;
+      size_t i;
+
+      for (i = 0; i < list->elements.count; ++i) {
+        ms_vm_gc_mark_value(vm, list->elements.items[i]);
+      }
+      return;
+    }
+    case MS_OBJ_TUPLE: {
+      MsTuple* tuple = (MsTuple*) object;
+      size_t i;
+
+      for (i = 0; i < tuple->elements.count; ++i) {
+        ms_vm_gc_mark_value(vm, tuple->elements.items[i]);
+      }
+      return;
+    }
+    case MS_OBJ_MAP: {
+      MsMap* map = (MsMap*) object;
+
+      ms_vm_gc_mark_table(vm, map->entries);
+      return;
+    }
+    case MS_OBJ_MODULE: {
+      MsModule* module = (MsModule*) object;
+
+      ms_vm_gc_mark_table(vm, &module->globals);
+      return;
+    }
+  }
+}
+
+static void ms_vm_gc_mark_value(MsVM* vm, MsValue value) {
+  MsObject* object = NULL;
+
+  if (!ms_value_get_object(value, &object)) {
+    return;
+  }
+
+  ms_vm_gc_mark_object(vm, object);
+}
+
+static void ms_vm_gc_mark_chunk(MsVM* vm, const MsChunk* chunk) {
+  size_t i;
+
+  if (vm == NULL || chunk == NULL) {
+    return;
+  }
+
+  for (i = 0; i < chunk->constants_count; ++i) {
+    ms_vm_gc_mark_value(vm, chunk->constants[i]);
+  }
+}
+
+void ms_vm_gc_mark_roots(MsVM* vm) {
+  size_t i;
+
+  if (vm == NULL) {
+    return;
+  }
+
+  for (i = 0; i < vm->stack_count; ++i) {
+    ms_vm_gc_mark_value(vm, vm->stack[i]);
+  }
+  ms_vm_gc_mark_object(vm,
+                       vm->current_module != NULL
+                           ? (MsObject*) vm->current_module
+                           : NULL);
+  for (i = 0; i < vm->frame_count; ++i) {
+    MsCallFrame* frame = &vm->frames[i];
+
+    ms_vm_gc_mark_object(vm,
+                         frame->module != NULL ? (MsObject*) frame->module : NULL);
+    ms_vm_gc_mark_object(vm,
+                         frame->closure != NULL
+                             ? (MsObject*) frame->closure
+                             : NULL);
+    ms_vm_gc_mark_chunk(vm, frame->chunk);
+    if (frame->has_receiver) {
+      ms_vm_gc_mark_value(vm, frame->receiver);
+    }
+  }
+  for (MsUpvalue* upvalue = vm->open_upvalues; upvalue != NULL;
+       upvalue = upvalue->next) {
+    ms_vm_gc_mark_object(vm, (MsObject*) upvalue);
+  }
+}
+
 static int ms_vm_push(MsVM* vm, MsValue value) {
   if (vm == NULL || !ms_vm_ensure_stack(vm, vm->stack_count + 1)) {
     return 0;
@@ -403,6 +613,7 @@ static int ms_vm_append_error_at(MsVM* vm,
                                  const char* phase,
                                  const char* code,
                                  const char* message);
+static void ms_vm_close_upvalues(MsVM* vm, MsValue* last);
 
 static int ms_vm_append_error(MsVM* vm,
                               size_t instruction_offset,
@@ -468,6 +679,9 @@ static MsVmResult ms_vm_runtime_error(MsVM* vm,
                                       const char* message) {
   ms_vm_append_error(vm, instruction_offset, "runtime", code, message);
   if (vm != NULL) {
+    if (vm->stack != NULL && vm->stack_count > 0) {
+      ms_vm_close_upvalues(vm, vm->stack);
+    }
     vm->stack_count = 0;
     vm->frame_count = 0;
     vm->open_upvalues = NULL;
@@ -481,6 +695,9 @@ static MsVmResult ms_vm_module_error(MsVM* vm,
                                      const char* message) {
   ms_vm_append_error(vm, instruction_offset, "module", code, message);
   if (vm != NULL) {
+    if (vm->stack != NULL && vm->stack_count > 0) {
+      ms_vm_close_upvalues(vm, vm->stack);
+    }
     vm->stack_count = 0;
     vm->frame_count = 0;
     vm->open_upvalues = NULL;
