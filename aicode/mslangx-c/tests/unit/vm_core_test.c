@@ -26,6 +26,14 @@ static int expect_output_equals(const MsBuffer *buffer, const char *expected) {
   return 0;
 }
 
+static MsCallResult test_native_noop(MsVM* vm, int argc, const MsValue* argv) {
+  (void) vm;
+  (void) argc;
+  (void) argv;
+
+  return ms_call_result_ok(ms_value_nil());
+}
+
 static int test_arithmetic_and_comparison(void) {
   MsVM vm;
   MsModule module;
@@ -311,6 +319,53 @@ static int test_runtime_error_closes_open_upvalues(void) {
   return 0;
 }
 
+static int test_module_cache_marks_native_registry_entries(void) {
+  MsVM vm;
+  MsModule* module;
+  MsString* lookup_key;
+  MsValue stored_value = ms_value_nil();
+  MsNativeFunction* native_function = NULL;
+  MsString* tracked_key = NULL;
+  int found = 0;
+  int inserted_new = 0;
+  size_t i;
+
+  ms_vm_init(&vm);
+  module = ms_vm_get_or_create_module(&vm, "vm_core_test_tmp/native.ms", &inserted_new);
+  TEST_ASSERT(module != NULL);
+  TEST_ASSERT(inserted_new);
+  TEST_ASSERT(ms_vm_define_native(&vm, module, "noop", 0, test_native_noop) != 0);
+
+  lookup_key = ms_string_from_cstr("noop");
+  TEST_ASSERT(lookup_key != NULL);
+  TEST_ASSERT(ms_table_get(&module->globals, lookup_key, &stored_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_native_function(stored_value, &native_function));
+  TEST_ASSERT(native_function != NULL);
+  for (i = 0; i < module->globals.capacity; ++i) {
+    if (module->globals.entries[i].key != NULL) {
+      tracked_key = module->globals.entries[i].key;
+      break;
+    }
+  }
+  TEST_ASSERT(tracked_key != NULL);
+
+  ms_vm_gc_collect(&vm);
+
+  TEST_ASSERT(vm.module_cache.count == 1);
+  TEST_ASSERT(ms_table_get(&module->globals, tracked_key, &stored_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_native_function(stored_value, &native_function));
+  TEST_ASSERT(vm.gc.collection_count == 1);
+  TEST_ASSERT(vm.gc.free_count == 0);
+
+  ms_vm_destroy(&vm);
+  ms_native_function_free(native_function);
+  ms_string_free(tracked_key);
+  ms_string_free(lookup_key);
+  return 0;
+}
+
 static int expect_runtime_error(const MsChunk *chunk,
                                 const char *code,
                                 const char *message,
@@ -426,6 +481,7 @@ int main(void) {
   TEST_ASSERT(test_globals_and_jumps() == 0);
   TEST_ASSERT(test_gc_marks_stack_frames_and_closures() == 0);
   TEST_ASSERT(test_runtime_error_closes_open_upvalues() == 0);
+  TEST_ASSERT(test_module_cache_marks_native_registry_entries() == 0);
   TEST_ASSERT(test_runtime_errors() == 0);
   return 0;
 }

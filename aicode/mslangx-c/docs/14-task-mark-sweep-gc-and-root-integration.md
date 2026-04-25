@@ -70,7 +70,7 @@ Use these status markers consistently in this document:
 | --- | --- | --- | --- |
 | 14.1 | `DONE` | Task 03 | GC state, object list, mark bits, and allocation counters |
 | 14.2 | `DONE` | 14.1 | Root traversal for stack values, call frames, and open upvalues |
-| 14.3 | `TODO` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
+| 14.3 | `DONE` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
 | 14.4 | `TODO` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
 | 14.5 | `TODO` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
 | 14.6 | `TODO` | 14.5 | GC stress coverage, observability checks, and full regression gate |
@@ -167,7 +167,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "runtime_core|closures|gc
 
 ### Subtask 14.3 - Root traversal for modules, interned strings, and builtin/native registries
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtasks 14.2 and Task 13.
 
@@ -193,7 +193,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "runtime_core|closures|gc
 **Verification**
 
 ```powershell
-ctest --test-dir build -C Debug --output-on-failure -R "modules\.|runtime_core|gc\.unit"
+ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|modules\.unit|runtime_core\.string|runtime_core\.vm_core"
 ```
 
 **Done when**
@@ -202,6 +202,19 @@ ctest --test-dir build -C Debug --output-on-failure -R "modules\.|runtime_core|g
    references.
 2. Interned strings survive collection.
 3. Builtin/native registry entries survive collection.
+
+**Implementation summary**
+
+1. `ms_vm_gc_mark_roots()` now walks the module cache in addition to the
+   current module and active frames.
+2. `ms_vm_gc_collect()` now performs a minimal mark-sweep pass so the tests can
+   verify survival across a real collection cycle.
+3. CLI test runs expose a private `__gc_collect__()` native so the module e2e
+   cache cases can force collection between imports.
+4. Module globals keep their string keys and runtime values reachable, so
+   cached module state and native registrations stay alive through GC roots.
+5. Unit coverage now exercises cached module globals, interned string survival,
+   and native registry entries after collection.
 
 ### Subtask 14.4 - Temporary roots for compile-to-runtime and module-loading transitions
 

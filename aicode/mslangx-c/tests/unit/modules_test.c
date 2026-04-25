@@ -174,6 +174,50 @@ static int test_module_cache_uses_canonical_keys(void) {
   return 0;
 }
 
+static int test_module_cache_entries_are_gc_roots(void) {
+  MsVM vm;
+  char module_path[320];
+  MsModule* module;
+  MsString* key;
+  MsString* value;
+  int inserted_new = 0;
+
+  ms_vm_init(&vm);
+
+  snprintf(module_path,
+           sizeof(module_path),
+           "modules_test_tmp%ccache_root%cimports%ccached.ms",
+           MS_TEST_PATH_SEP,
+           MS_TEST_PATH_SEP,
+           MS_TEST_PATH_SEP);
+  TEST_ASSERT(write_file(module_path, "print 4\n") == 0);
+
+  module = ms_vm_get_or_create_module(&vm, module_path, &inserted_new);
+  TEST_ASSERT(module != NULL);
+  TEST_ASSERT(inserted_new);
+
+  key = ms_string_from_cstr("cached");
+  value = ms_string_from_cstr("value");
+  TEST_ASSERT(key != NULL);
+  TEST_ASSERT(value != NULL);
+  TEST_ASSERT(ms_table_set(&module->globals,
+                           key,
+                           ms_value_object((MsObject*) value),
+                           NULL));
+
+  ms_vm_gc_collect(&vm);
+
+  TEST_ASSERT(vm.module_cache.count == 1);
+  TEST_ASSERT(ms_table_get(&module->globals, key, NULL, NULL));
+  TEST_ASSERT(vm.gc.collection_count == 1);
+  TEST_ASSERT(vm.gc.free_count == 0);
+
+  ms_vm_destroy(&vm);
+  ms_string_free(value);
+  ms_string_free(key);
+  return 0;
+}
+
 static int test_module_state_transitions(void) {
   MsModule module;
 
@@ -195,6 +239,7 @@ static int test_module_state_transitions(void) {
 int main(void) {
   TEST_ASSERT(test_module_name_mapping_and_search_root_precedence() == 0);
   TEST_ASSERT(test_module_cache_uses_canonical_keys() == 0);
+  TEST_ASSERT(test_module_cache_entries_are_gc_roots() == 0);
   TEST_ASSERT(test_module_state_transitions() == 0);
   return 0;
 }

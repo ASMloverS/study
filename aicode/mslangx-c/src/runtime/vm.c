@@ -538,6 +538,76 @@ static void ms_vm_gc_mark_chunk(MsVM* vm, const MsChunk* chunk) {
   }
 }
 
+static void ms_vm_gc_free_object(MsObject* object) {
+  if (object == NULL) {
+    return;
+  }
+
+  switch (object->type) {
+    case MS_OBJ_STRING:
+      ms_string_free((MsString*) object);
+      return;
+    case MS_OBJ_FUNCTION:
+      ms_function_free((MsFunction*) object);
+      return;
+    case MS_OBJ_CLOSURE:
+      ms_closure_free((MsClosure*) object);
+      return;
+    case MS_OBJ_UPVALUE:
+      ms_upvalue_free((MsUpvalue*) object);
+      return;
+    case MS_OBJ_CLASS:
+      ms_class_free((MsClass*) object);
+      return;
+    case MS_OBJ_INSTANCE:
+      ms_instance_free((MsInstance*) object);
+      return;
+    case MS_OBJ_BOUND_METHOD:
+      ms_bound_method_free((MsBoundMethod*) object);
+      return;
+    case MS_OBJ_NATIVE_FN:
+      ms_native_function_free((MsNativeFunction*) object);
+      return;
+    case MS_OBJ_LIST:
+      ms_list_free((MsList*) object);
+      return;
+    case MS_OBJ_TUPLE:
+      ms_tuple_free((MsTuple*) object);
+      return;
+    case MS_OBJ_MAP:
+      ms_map_free((MsMap*) object);
+      return;
+    case MS_OBJ_MODULE: {
+      MsModule* module = (MsModule*) object;
+
+      ms_module_destroy(module);
+      free(module);
+      return;
+    }
+  }
+}
+
+static void ms_vm_gc_remove_module_cache_entry(MsVM* vm, MsModule* module) {
+  size_t write_index = 0;
+  size_t i;
+
+  if (vm == NULL || module == NULL) {
+    return;
+  }
+
+  for (i = 0; i < vm->module_cache.count; ++i) {
+    if (vm->module_cache.modules[i] == module) {
+      continue;
+    }
+    vm->module_cache.modules[write_index] = vm->module_cache.modules[i];
+    write_index += 1;
+  }
+  vm->module_cache.count = write_index;
+  if (vm->current_module == module) {
+    vm->current_module = NULL;
+  }
+}
+
 void ms_vm_gc_mark_roots(MsVM* vm) {
   size_t i;
 
@@ -566,10 +636,51 @@ void ms_vm_gc_mark_roots(MsVM* vm) {
       ms_vm_gc_mark_value(vm, frame->receiver);
     }
   }
+  for (i = 0; i < vm->module_cache.count; ++i) {
+    ms_vm_gc_mark_object(vm,
+                         vm->module_cache.modules[i] != NULL
+                             ? (MsObject*) vm->module_cache.modules[i]
+                             : NULL);
+  }
   for (MsUpvalue* upvalue = vm->open_upvalues; upvalue != NULL;
        upvalue = upvalue->next) {
     ms_vm_gc_mark_object(vm, (MsObject*) upvalue);
   }
+}
+
+void ms_vm_gc_collect(MsVM* vm) {
+  MsObject* previous = NULL;
+  MsObject* object = NULL;
+
+  if (vm == NULL) {
+    return;
+  }
+
+  ms_vm_gc_mark_roots(vm);
+
+  object = vm->gc.objects;
+  while (object != NULL) {
+    MsObject* next = object->next;
+
+    if (!object->marked) {
+      if (previous != NULL) {
+        previous->next = next;
+      } else {
+        vm->gc.objects = next;
+      }
+      if (object->type == MS_OBJ_MODULE) {
+        ms_vm_gc_remove_module_cache_entry(vm, (MsModule*) object);
+      }
+      ms_vm_gc_free_object(object);
+      vm->gc.free_count += 1;
+    } else {
+      object->marked = 0;
+      previous = object;
+    }
+    object = next;
+  }
+
+  vm->gc.collection_count += 1;
 }
 
 static int ms_vm_push(MsVM* vm, MsValue value) {
@@ -2150,6 +2261,7 @@ MsModule* ms_vm_get_or_create_module(MsVM* vm,
 
   vm->module_cache.modules[vm->module_cache.count] = module;
   vm->module_cache.count += 1;
+  ms_vm_gc_track_object(vm, (MsObject*) module);
   if (out_inserted_new != NULL) {
     *out_inserted_new = 1;
   }

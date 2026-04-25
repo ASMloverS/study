@@ -1,4 +1,7 @@
-import cache.counter
+import cache.counter as counter
+
+__gc_collect__()
+
 import cache.counter as counter_again
 
 print counter == counter_again

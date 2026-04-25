@@ -14,6 +14,16 @@ static const int kExitResolve = 66;
 static const int kExitRuntime = 70;
 static const int kExitIo = 74;
 
+static MsCallResult mslangc_native_gc_collect(MsVM* vm,
+                                              int argc,
+                                              const MsValue* argv) {
+  (void) argc;
+  (void) argv;
+
+  ms_vm_gc_collect(vm);
+  return ms_call_result_ok(ms_value_nil());
+}
+
 static void mslangc_print_help(FILE *stream) {
   fprintf(stream,
           "usage: mslangc [--help] [-e code] [script]\n"
@@ -272,6 +282,7 @@ static int mslangc_run_source(const char *file,
   mslangc_add_module_search_roots(&vm, file);
   ms_module_init(&module, file);
   ms_vm_set_current_module(&vm, &module);
+  ms_vm_define_native(&vm, &module, "__gc_collect__", 0, mslangc_native_gc_collect);
   if (ms_vm_run_chunk(&vm, &chunk) != MS_VM_RESULT_OK) {
     mslangc_print_diagnostics(error_stream, &vm.diagnostics);
     exit_code = kExitRuntime;
