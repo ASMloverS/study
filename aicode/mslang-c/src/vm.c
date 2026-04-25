@@ -45,17 +45,26 @@ static void close_upvalues(MsVM* vm, MsValue* last) {
 /* ---- init / free ---- */
 
 void ms_vm_init(MsVM* vm) {
-    vm->stack_top       = vm->stack;
-    vm->frame_count     = 0;
-    vm->objects         = NULL;
-    vm->bytes_allocated = 0;
-    vm->next_gc         = 1024 * 1024;
-    vm->open_upvalues   = NULL;
-    vm->init_string     = NULL;
-    vm->compiler        = NULL;
-    vm->gray_stack      = NULL;
-    vm->gray_count      = 0;
-    vm->gray_capacity   = 0;
+    vm->stack_top            = vm->stack;
+    vm->frame_count          = 0;
+    vm->objects              = NULL;
+    vm->young_objects        = NULL;
+    vm->old_objects          = NULL;
+    vm->remembered_set       = NULL;
+    vm->remembered_count     = 0;
+    vm->remembered_capacity  = 0;
+    vm->young_bytes          = 0;
+    vm->bytes_allocated      = 0;
+    vm->next_gc              = 1024 * 1024;
+    vm->minor_count          = 0;
+    vm->open_upvalues        = NULL;
+    vm->init_string          = NULL;
+    vm->compiler             = NULL;
+    vm->gray_stack           = NULL;
+    vm->gray_count           = 0;
+    vm->gray_capacity        = 0;
+    ms_pool_init(&vm->upvalue_pool, sizeof(MsObjUpvalue));
+    ms_pool_init(&vm->bound_pool,   sizeof(void*) * 4); /* ObjBoundMethod size est.; resized in T18 */
     ms_table_init(&vm->globals);
     ms_table_init(&vm->strings);
     ms_vm_register_natives(vm);
@@ -68,13 +77,22 @@ void ms_vm_free(MsVM* vm) {
     vm->gray_stack    = NULL;
     vm->gray_count    = 0;
     vm->gray_capacity = 0;
-    MsObject* obj = vm->objects;
-    while (obj) {
-        MsObject* next = obj->next;
-        ms_object_free(vm, obj);
-        obj = next;
-    }
+    free(vm->remembered_set);
+    vm->remembered_set      = NULL;
+    vm->remembered_count    = 0;
+    vm->remembered_capacity = 0;
+    /* Free all objects across all generations */
+    MsObject* obj = vm->young_objects;
+    while (obj) { MsObject* n = obj->next; ms_object_free(vm, obj); obj = n; }
+    vm->young_objects = NULL;
+    obj = vm->old_objects;
+    while (obj) { MsObject* n = obj->next; ms_object_free(vm, obj); obj = n; }
+    vm->old_objects = NULL;
+    obj = vm->objects;
+    while (obj) { MsObject* n = obj->next; ms_object_free(vm, obj); obj = n; }
     vm->objects = NULL;
+    ms_pool_destroy(&vm->upvalue_pool);
+    ms_pool_destroy(&vm->bound_pool);
 }
 
 /* ---- runtime error ---- */
@@ -289,6 +307,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
 
         case MS_OP_SETUPVAL:
             *frame->closure->upvalues[MS_GET_Bx(instr)]->location = R(A);
+            ms_write_barrier(vm, (MsObject*)frame->closure, R(A));
             break;
 
         case MS_OP_ADD: case MS_OP_SUB: case MS_OP_MUL:

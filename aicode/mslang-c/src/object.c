@@ -1,20 +1,25 @@
 #include "ms/object.h"
 #include "ms/vm.h"
 #include "ms/memory.h"
+#include "ms/consts.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 MsObject* ms_alloc_object(struct MsVM* vm, size_t size, MsObjectType type) {
+    /* Trigger minor GC before allocation so the new object doesn't exist during sweep */
+    if (vm->young_bytes > MS_GC_NURSERY_SIZE)
+        ms_gc_collect_minor(vm);
     MsObject* obj = (MsObject*)ms_reallocate(vm, NULL, 0, size);
     obj->type = type;
     obj->is_marked = false;
     obj->in_remembered_set = false;
     obj->generation = 0;
     obj->age = 0;
-    obj->next = vm->objects;
-    vm->objects = obj;
+    obj->next = vm->young_objects;
+    vm->young_objects = obj;
+    vm->young_bytes += size;
     return obj;
 }
 

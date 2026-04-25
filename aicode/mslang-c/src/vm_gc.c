@@ -4,6 +4,7 @@
 #include "ms/table.h"
 #include "ms/value.h"
 #include "ms/chunk.h"
+#include "ms/consts.h"
 #include <stdlib.h>
 
 /* compiler_impl.h is a src-private header */
@@ -49,7 +50,6 @@ static void mark_chunk_constants(MsVM* vm, MsChunk* chunk) {
 static void blacken_object(MsVM* vm, MsObject* obj) {
     switch (obj->type) {
     case MS_OBJ_STRING:
-        /* no children */
         break;
     case MS_OBJ_FUNCTION: {
         MsObjFunction* fn = (MsObjFunction*)obj;
@@ -79,7 +79,7 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
     }
 }
 
-/* ---- mark compiler roots (GC-safe during compilation) ---- */
+/* ---- mark compiler roots ---- */
 
 static void mark_compiler_roots(MsVM* vm) {
     MsCompiler* c = (MsCompiler*)vm->compiler;
@@ -112,30 +112,85 @@ static void trace_references(MsVM* vm) {
     }
 }
 
-/* ---- Phase 3: sweep ---- */
+/* ---- Minor GC sweep: young generation only ---- */
 
-static void sweep(MsVM* vm) {
-    MsObject** obj = &vm->objects;
+static void sweep_young(MsVM* vm) {
+    MsObject** obj = &vm->young_objects;
     while (*obj) {
-        if ((*obj)->is_marked) {
-            (*obj)->is_marked = false;
-            obj = &(*obj)->next;
+        MsObject* cur = *obj;
+        if (!cur->is_marked) {
+            *obj = cur->next;
+            ms_object_free(vm, cur);
         } else {
-            MsObject* dead = *obj;
-            *obj = dead->next;
+            cur->is_marked = false;
+            cur->age++;
+            if (cur->age >= MS_GC_PROMOTE_AGE) {
+                /* promote to old generation */
+                *obj = cur->next;
+                cur->generation = 1;
+                cur->next = vm->old_objects;
+                vm->old_objects = cur;
+            } else {
+                obj = &cur->next;
+            }
+        }
+    }
+}
+
+/* ---- Phase 3: sweep one object list ---- */
+
+static void sweep_list(MsVM* vm, MsObject** head) {
+    while (*head) {
+        if ((*head)->is_marked) {
+            (*head)->is_marked = false;
+            head = &(*head)->next;
+        } else {
+            MsObject* dead = *head;
+            *head = dead->next;
             ms_object_free(vm, dead);
         }
     }
 }
 
-/* ---- collect ---- */
+static void sweep_all(MsVM* vm) {
+    sweep_list(vm, &vm->young_objects);
+    sweep_list(vm, &vm->old_objects);
+    sweep_list(vm, &vm->objects); /* legacy list from pre-generational allocs */
+}
+
+/* ---- Minor GC ---- */
+
+void ms_gc_collect_minor(MsVM* vm) {
+    mark_roots(vm);
+    /* mark all objects in remembered_set */
+    for (int i = 0; i < vm->remembered_count; i++)
+        ms_mark_object(vm, vm->remembered_set[i]);
+    trace_references(vm);
+    sweep_young(vm);
+    /* clear remembered set */
+    for (int i = 0; i < vm->remembered_count; i++)
+        vm->remembered_set[i]->in_remembered_set = false;
+    vm->remembered_count = 0;
+    vm->young_bytes = 0;
+    vm->minor_count++;
+}
+
+/* ---- Major GC ---- */
 
 void ms_gc_collect(MsVM* vm) {
     mark_roots(vm);
+    /* also mark remembered set roots */
+    for (int i = 0; i < vm->remembered_count; i++)
+        ms_mark_object(vm, vm->remembered_set[i]);
     trace_references(vm);
-    /* remove white (unmarked) interned strings before sweep */
     ms_table_remove_white(&vm->strings);
-    sweep(vm);
+    sweep_all(vm);
+    /* clear remembered set */
+    for (int i = 0; i < vm->remembered_count; i++)
+        vm->remembered_set[i]->in_remembered_set = false;
+    vm->remembered_count = 0;
+    vm->young_bytes = 0;
+    vm->minor_count = 0;
     vm->next_gc = vm->bytes_allocated < 512 * 1024
                   ? 1024 * 1024
                   : vm->bytes_allocated * 2;

@@ -2,6 +2,7 @@
 #include "ms/object.h"
 #include "ms/table.h"
 #include "ms/consts.h"
+#include "ms/memory.h"
 
 #define MS_STACK_SIZE (MS_FRAMES_MAX * MS_STACK_MAX)
 
@@ -24,15 +25,24 @@ typedef struct MsVM {
     int             frame_count;
     MsTable         globals;
     MsTable         strings;
-    MsObject*       objects;
+    MsObject*       objects;      /* legacy: unified list (used by major GC) */
+    MsObject*       young_objects;
+    MsObject*       old_objects;
+    MsObject**      remembered_set;
+    int             remembered_count;
+    int             remembered_capacity;
+    size_t          young_bytes;
     size_t          bytes_allocated;
     size_t          next_gc;
+    int             minor_count;  /* minor GCs since last major */
     MsObjUpvalue*   open_upvalues;
     MsObjString*    init_string;
     struct MsCompiler* compiler;
     MsObject**      gray_stack;
     int             gray_count;
     int             gray_capacity;
+    MsObjectPool    upvalue_pool;
+    MsObjectPool    bound_pool;
 } MsVM;
 
 void              ms_vm_init(MsVM* vm);
