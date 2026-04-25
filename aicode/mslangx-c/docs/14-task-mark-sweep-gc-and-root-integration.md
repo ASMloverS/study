@@ -2,11 +2,13 @@
 
 ## Goal
 
-Replace ad-hoc heap lifetime management with one non-moving mark-sweep GC that covers the full runtime root set.
+Replace ad-hoc heap lifetime management with one non-moving mark-sweep GC that
+covers the full runtime root set.
 
 ## Design Links
 
-- GC roots, runtime heap boundaries, and memory model: [../mslangc-design.md](../mslangc-design.md)
+- GC roots, runtime heap boundaries, and memory model:
+  [../mslangc-design.md](../mslangc-design.md)
 - Repository rules: [../AGENTS.md](../AGENTS.md)
 
 ## Dependencies
@@ -32,11 +34,13 @@ Replace ad-hoc heap lifetime management with one non-moving mark-sweep GC that c
 1. This task owns GC correctness, not GC performance tuning.
 2. Compile-time arena memory must stay outside the GC domain.
 3. Existing runtime semantics must remain unchanged when GC is enabled.
-4. Any optional stress mode should improve determinism for tests rather than act as a production feature.
+4. Any optional stress mode should improve determinism for tests rather than act
+   as a production feature.
 
 ## File Ownership
 
-1. GC code under `include/ms/runtime/` and `src/runtime/`
+1. GC state, object list, and collector code under `include/ms/runtime/` and
+   `src/runtime/`
 2. GC root registration touchpoints in VM and allocators
 3. GC unit tests under `tests/unit/`
 4. GC stress `.ms` scripts under `tests/stress/gc/`
@@ -44,31 +48,282 @@ Replace ad-hoc heap lifetime management with one non-moving mark-sweep GC that c
 ## Diagnostics and Observability Contract
 
 1. Runtime allocation failures remain `phase=runtime` with `MS4xxx`.
-2. Module-init failures triggered during import continue to surface as `MS5004`.
-3. Expose minimal GC counters such as allocation count, free count, and collection count for tests.
-4. If a `--gc-stress` or equivalent mode is added, keep it deterministic and test-only.
+2. Module-init failures triggered during import continue to surface as
+   `MS5004`.
+3. Expose minimal GC counters such as allocation count, free count, and
+   collection count for tests.
+4. If a `--gc-stress` mode is added, keep it deterministic and test-only.
 
-## TDD Plan
+## Execution Breakdown
 
-1. Start with root-survival tests for stack values, closures, class graphs,
-   interned strings, builtin/native registries, and cached modules.
-2. Add tests for reclaiming unreachable objects.
-3. Add `.ms` churn scripts that allocate heavily under repeated collections.
-4. Re-run existing suites with GC enabled as part of the task, not only isolated GC tests.
+Every subtask must start with failing tests, then the minimal implementation,
+then the focused verification command listed for that subtask.
+
+Use these status markers consistently in this document:
+
+- `TODO`: not started
+- `DOING`: in progress
+- `BLOCKED`: waiting on another subtask or prerequisite fix
+- `DONE`: completed and verified
+
+| Subtask | Status | Depends on | Summary |
+| --- | --- | --- | --- |
+| 14.1 | `DONE` | Task 03 | GC state, object list, mark bits, and allocation counters |
+| 14.2 | `TODO` | 14.1 | Root traversal for stack values, call frames, and open upvalues |
+| 14.3 | `TODO` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
+| 14.4 | `TODO` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
+| 14.5 | `TODO` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
+| 14.6 | `TODO` | 14.5 | GC stress coverage, observability checks, and full regression gate |
+
+### Subtask 14.1 - GC state, object list, mark bits, and allocation counters
+
+**Status:** `DONE`
+
+**Depends on:** Task 03 runtime object and allocator support.
+
+**Deliverables**
+
+1. Add explicit GC state to the runtime so the collector can own the object
+   list, mark phase bookkeeping, and collection counters.
+2. Attach mark bits and collector-owned reachability metadata to every
+   GC-managed runtime object.
+3. Make allocations register new objects with the collector before they become
+   visible to the rest of the runtime.
+4. Keep the compile-time arena outside the GC-managed heap.
+
+**Tests to add or update**
+
+1. Create `tests/unit/gc_test.c` for object-registration and counter
+   assertions.
+2. Add a unit test that allocates a small object graph and checks that the
+   object list and counters reflect the expected state before collection.
+3. Register the new unit target as `gc.unit` in `tests/unit/CMakeLists.txt`.
+
+**Verification**
+
+```powershell
+ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|runtime_core"
+```
+
+**Done when**
+
+1. The runtime can track allocated objects in a collector-owned list.
+2. Allocation and collection counters are observable in tests.
+3. GC metadata exists without changing user-visible language behavior.
+
+**Implementation summary**
+
+1. `MsVM` now carries explicit `MsGCState` storage for the collector-owned list
+   and allocation / free / collection counters.
+2. `ms_vm_gc_track_object()` links GC-managed runtime objects into the
+   collector list before they are exposed through runtime state.
+3. `tests/unit/gc_test.c` verifies object-list ordering, counter updates, and
+   that compile-time arena allocation does not affect GC bookkeeping.
+
+### Subtask 14.2 - Root traversal for stack values, call frames, and open upvalues
+
+**Status:** `TODO`
+
+**Depends on:** Subtask 14.1.
+
+**Deliverables**
+
+1. Mark objects reachable from the value stack.
+2. Mark closures reachable from active call frames.
+3. Mark objects held by open upvalues so captured locals survive until the
+   closure no longer needs them.
+4. Keep the traversal order deterministic so tests can exercise it reliably.
+
+**Tests to add or update**
+
+1. Extend `tests/unit/vm_core_test.c` with live stack-value coverage across a
+   forced GC.
+2. Extend `tests/unit/functions_closures_test.c` with a closure-capture
+   regression that forces collection while a captured local is still open.
+3. Reuse existing runtime coverage only where needed to exercise stack, frame,
+   and upvalue survival together.
+
+**Verification**
+
+```powershell
+ctest --test-dir build -C Debug --output-on-failure -R "runtime_core|closures|gc\.unit"
+```
+
+**Done when**
+
+1. Values on the stack survive collection.
+2. Frame-reachable closures survive collection.
+3. Open upvalues keep captured values alive until the closure is closed.
+
+### Subtask 14.3 - Root traversal for modules, interned strings, and builtin/native registries
+
+**Status:** `TODO`
+
+**Depends on:** Subtasks 14.2 and Task 13.
+
+**Deliverables**
+
+1. Mark the current module and any frame-associated module references.
+2. Mark the module cache so imported modules stay alive while still reachable
+   from runtime state.
+3. Mark interned strings so identifier storage stays stable.
+4. Mark builtin/native registries so host-provided functions and classes remain
+   callable after collection.
+
+**Tests to add or update**
+
+1. Extend `tests/unit/modules_test.c` and `tests/unit/string_test.c` for
+   module-cache and interned-string survival.
+2. Extend `tests/e2e/modules/cache_once.ms` and
+   `tests/e2e/modules/shared_dependency_once.ms` so they force a GC cycle
+   before reused imports.
+3. Add a registry survival assertion in `tests/unit/vm_core_test.c` for
+   builtin/native entries that are accessed after a collection cycle.
+
+**Verification**
+
+```powershell
+ctest --test-dir build -C Debug --output-on-failure -R "modules\.|runtime_core|gc\.unit"
+```
+
+**Done when**
+
+1. Imported modules remain reachable through the runtime cache and module
+   references.
+2. Interned strings survive collection.
+3. Builtin/native registry entries survive collection.
+
+### Subtask 14.4 - Temporary roots for compile-to-runtime and module-loading transitions
+
+**Status:** `TODO`
+
+**Depends on:** Subtasks 14.2 and 14.3.
+
+**Deliverables**
+
+1. Add a temporary-root mechanism for objects that are created during
+   compilation, import resolution, or module loading but are not yet anchored in
+   a permanent runtime root.
+2. Make temporary roots explicit and short-lived so they cannot mask leaks in
+   the permanent root set.
+3. Ensure temporary-root cleanup happens even when module loading or execution
+   fails.
+
+**Tests to add or update**
+
+1. Extend `tests/unit/gc_test.c` with a temporary-root lifetime test that
+   allocates an object, anchors it temporarily, forces GC, and verifies that it
+   survives until the temporary root is released.
+2. Add an import or module-loading regression under `tests/e2e/modules/` that
+   exercises temporary rooting across a successful load and a failing load.
+3. Extend compile-to-runtime transition helpers only if they need to expose the
+   temporary-root lifecycle directly.
+
+**Verification**
+
+```powershell
+ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|modules\.|runtime_core"
+```
+
+**Done when**
+
+1. Temporary roots keep transitional objects alive only for the duration of the
+   transition.
+2. Temporary roots do not leak into the permanent root set.
+3. Cleanup runs on both success and failure paths.
+
+### Subtask 14.5 - Sweep/reclaim integration and unreachable-object tests
+
+**Status:** `TODO`
+
+**Depends on:** Subtasks 14.2, 14.3, and 14.4.
+
+**Deliverables**
+
+1. Add the sweep phase that reclaims unreachable GC-managed objects.
+2. Update allocator and runtime ownership paths so freed objects are not
+   reused unsafely after collection.
+3. Keep collection behavior non-moving so surviving pointers remain valid.
+4. Re-run GC at controlled points that make object-liveness tests deterministic.
+
+**Tests to add or update**
+
+1. Extend `tests/unit/gc_test.c` with an unreachable-object test that allocates
+   a dead object graph, forces GC, and verifies that the objects are reclaimed.
+2. Add a regression test that checks a live object and a dead object in the
+   same heap cycle to confirm only the live object survives.
+3. Extend the counter assertions in `tests/unit/gc_test.c` so tests can confirm
+   that free counts advance when unreachable objects are reclaimed.
+
+**Verification**
+
+```powershell
+ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|runtime_core"
+```
+
+**Done when**
+
+1. Unreachable objects are reclaimed.
+2. Reachable objects remain valid after repeated collections.
+3. GC frees are observable through the counters exposed in
+   `tests/unit/gc_test.c`.
+
+### Subtask 14.6 - GC stress coverage, observability checks, and full regression gate
+
+**Status:** `TODO`
+
+**Depends on:** Subtask 14.5.
+
+**Deliverables**
+
+1. Add GC stress scripts that allocate heavily under repeated collections.
+2. Keep any stress mode deterministic so it can run reliably in CI and local
+   test runs.
+3. Re-run the existing runtime and module suites with GC enabled, not just the
+   isolated GC tests.
+4. Lock the GC observability contract in tests so allocation, free, and
+   collection counts stay meaningful.
+
+**Tests to add or update**
+
+1. Add `.ms` churn scripts under `tests/stress/gc/`.
+2. Add a deterministic GC stress harness entry for GC-heavy workloads.
+3. Include a regression that runs the module suite with GC enabled so the
+   collector is exercised through real import and closure paths.
+
+**Verification**
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --config Debug
+ctest --test-dir build -C Debug --output-on-failure -R "gc|stress|modules\."
+```
+
+**Done when**
+
+1. GC stress tests complete without use-after-free behavior or obvious leak
+   growth in fixed workloads.
+2. The normal runtime and module suites still pass with GC enabled.
+3. Collection metrics remain stable enough for tests to assert on them.
 
 ## Acceptance
 
-1. Existing scripts keep working with GC enabled.
+1. All subtasks above are complete in order.
 2. Reachable objects survive and unreachable objects are reclaimed.
-3. Stress tests do not show use-after-free behavior or monotonic leaks in a fixed workload.
-4. The task is not complete until build passes, tests pass, stress scripts run end to end, and all edited files are UTF-8 with LF and no trailing whitespace.
+3. Module, string, and native registries stay alive through GC cycles.
+4. Temporary roots protect transitional objects without leaking permanence.
+5. Stress tests do not show use-after-free behavior or monotonic leaks in a
+   fixed workload.
+6. The task is not complete until build passes, tests pass, stress scripts run
+   end to end, and all edited files are UTF-8 with LF and no trailing
+   whitespace.
 
 ## Acceptance Commands
 
 ```powershell
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --config Debug
-ctest --test-dir build -C Debug --output-on-failure -R "gc|stress"
+ctest --test-dir build -C Debug --output-on-failure -R "gc|stress|modules\."
 ```
 
 ## Out of Scope

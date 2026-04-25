@@ -29,6 +29,13 @@ typedef struct MsModuleCache {
   MsModule** modules;
 } MsModuleCache;
 
+typedef struct MsGCState {
+  MsObject* objects;
+  size_t allocation_count;
+  size_t free_count;
+  size_t collection_count;
+} MsGCState;
+
 typedef int (*MsVmWriteFn)(void* user_data, const char* text, size_t length);
 
 typedef enum MsVmResult {
@@ -59,6 +66,7 @@ typedef struct MsVM {
   size_t module_search_root_count;
   size_t module_search_root_capacity;
   MsModuleCache module_cache;
+  MsGCState gc;
   MsDiagnosticList diagnostics;
   MsVmWriteFn write_fn;
   void* write_user_data;
@@ -70,6 +78,7 @@ int ms_module_transition_state(MsModule* module, MsModuleState new_state);
 
 void ms_vm_init(MsVM* vm);
 void ms_vm_destroy(MsVM* vm);
+void ms_vm_gc_track_object(MsVM* vm, MsObject* object);
 void ms_vm_set_current_module(MsVM* vm, MsModule* module);
 int ms_module_build_file_path(const char* module_name, char** out_relative_path);
 int ms_vm_add_search_root(MsVM* vm, const char* root_path);

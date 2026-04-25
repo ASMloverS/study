@@ -351,6 +351,17 @@ static void ms_vm_reset(MsVM* vm) {
   ms_diag_list_clear(&vm->diagnostics);
 }
 
+void ms_vm_gc_track_object(MsVM* vm, MsObject* object) {
+  if (vm == NULL || object == NULL) {
+    return;
+  }
+
+  object->marked = 0;
+  object->next = vm->gc.objects;
+  vm->gc.objects = object;
+  vm->gc.allocation_count += 1;
+}
+
 static int ms_vm_push(MsVM* vm, MsValue value) {
   if (vm == NULL || !ms_vm_ensure_stack(vm, vm->stack_count + 1)) {
     return 0;
@@ -714,6 +725,7 @@ static MsUpvalue* ms_vm_capture_upvalue(MsVM* vm, MsValue* location) {
   if (created == NULL) {
     return NULL;
   }
+  ms_vm_gc_track_object(vm, (MsObject*) created);
   created->next = current;
 
   if (previous == NULL) {
@@ -893,6 +905,7 @@ static MsVmResult ms_vm_call_class(MsVM* vm,
                                "MS4001",
                                "invalid opcode stream");
   }
+  ms_vm_gc_track_object(vm, (MsObject*) instance);
   vm->stack[callee_index] = ms_value_object((MsObject*) instance);
 
   init_name = ms_string_from_cstr("init");
@@ -1025,6 +1038,7 @@ static MsVmResult ms_vm_push_class(MsVM* vm,
                                "MS4001",
                                "invalid opcode stream");
   }
+  ms_vm_gc_track_object(vm, (MsObject*) klass);
 
   return MS_VM_RESULT_OK;
 }
@@ -1161,14 +1175,15 @@ static MsVmResult ms_vm_get_super(MsVM* vm,
                                "MS4001",
                                "invalid opcode stream");
   }
-
   vm->stack_count -= 1;
   if (!ms_vm_push(vm, ms_value_object((MsObject*) bound_method))) {
+    ms_bound_method_free(bound_method);
     return ms_vm_runtime_error(vm,
                                instruction_offset,
                                "MS4001",
                                "invalid opcode stream");
   }
+  ms_vm_gc_track_object(vm, (MsObject*) bound_method);
 
   return MS_VM_RESULT_OK;
 }
@@ -1249,6 +1264,7 @@ static MsVmResult ms_vm_get_property(MsVM* vm,
                                    "MS4001",
                                    "invalid opcode stream");
       }
+      ms_vm_gc_track_object(vm, (MsObject*) bound_method);
       value = ms_value_object((MsObject*) bound_method);
     }
   }
@@ -1348,6 +1364,7 @@ static MsVmResult ms_vm_build_list(MsVM* vm,
   }
 
   vm->stack_count = start;
+  ms_vm_gc_track_object(vm, (MsObject*) list);
   if (!ms_vm_push(vm, ms_value_object((MsObject*) list))) {
     ms_list_free(list);
     return ms_vm_runtime_error(vm,
@@ -1396,6 +1413,7 @@ static MsVmResult ms_vm_build_tuple(MsVM* vm,
   }
 
   vm->stack_count = start;
+  ms_vm_gc_track_object(vm, (MsObject*) tuple);
   if (!ms_vm_push(vm, ms_value_object((MsObject*) tuple))) {
     ms_tuple_free(tuple);
     return ms_vm_runtime_error(vm,
@@ -1458,6 +1476,7 @@ static MsVmResult ms_vm_build_map(MsVM* vm,
   }
 
   vm->stack_count = start;
+  ms_vm_gc_track_object(vm, (MsObject*) map);
   if (!ms_vm_push(vm, ms_value_object((MsObject*) map))) {
     ms_map_free(map);
     return ms_vm_runtime_error(vm,
@@ -1733,6 +1752,10 @@ void ms_vm_init(MsVM* vm) {
   vm->module_cache.count = 0;
   vm->module_cache.capacity = 0;
   vm->module_cache.modules = NULL;
+  vm->gc.objects = NULL;
+  vm->gc.allocation_count = 0;
+  vm->gc.free_count = 0;
+  vm->gc.collection_count = 0;
   ms_diag_list_init(&vm->diagnostics);
   vm->write_fn = NULL;
   vm->write_user_data = NULL;
@@ -1760,6 +1783,10 @@ void ms_vm_destroy(MsVM* vm) {
   vm->module_cache.modules = NULL;
   vm->module_cache.count = 0;
   vm->module_cache.capacity = 0;
+  vm->gc.objects = NULL;
+  vm->gc.allocation_count = 0;
+  vm->gc.free_count = 0;
+  vm->gc.collection_count = 0;
   vm->module_search_roots = NULL;
   vm->module_search_root_count = 0;
   vm->module_search_root_capacity = 0;
@@ -1949,10 +1976,22 @@ int ms_vm_define_native(MsVM* vm,
     return 0;
   }
 
-  return ms_table_set(&target_module->globals,
-                      key,
-                      ms_value_object((MsObject*) native_function),
-                      &inserted_new);
+  if (!ms_table_set(&target_module->globals,
+                    key,
+                    ms_value_object((MsObject*) native_function),
+                    &inserted_new)) {
+    ms_string_free(key);
+    ms_native_function_free(native_function);
+    return 0;
+  }
+  if (inserted_new) {
+    ms_vm_gc_track_object(vm, (MsObject*) key);
+  } else {
+    ms_string_free(key);
+  }
+  ms_vm_gc_track_object(vm, (MsObject*) native_function);
+
+  return 1;
 }
 
 static int ms_vm_append_diagnostics(MsDiagnosticList* destination,
@@ -2789,6 +2828,7 @@ static MsVmResult ms_vm_execute(MsVM* vm, size_t stop_frame_count) {
                                        "invalid opcode stream");
           }
         }
+        ms_vm_gc_track_object(vm, (MsObject*) closure);
         if (!ms_vm_push(vm, ms_value_object((MsObject*) closure))) {
           ms_closure_free(closure);
           return ms_vm_runtime_error(vm,
