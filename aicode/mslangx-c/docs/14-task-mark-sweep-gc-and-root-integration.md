@@ -71,7 +71,7 @@ Use these status markers consistently in this document:
 | 14.1 | `DONE` | Task 03 | GC state, object list, mark bits, and allocation counters |
 | 14.2 | `DONE` | 14.1 | Root traversal for stack values, call frames, and open upvalues |
 | 14.3 | `DONE` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
-| 14.4 | `TODO` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
+| 14.4 | `DONE` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
 | 14.5 | `TODO` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
 | 14.6 | `TODO` | 14.5 | GC stress coverage, observability checks, and full regression gate |
 
