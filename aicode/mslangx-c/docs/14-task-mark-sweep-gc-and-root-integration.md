@@ -73,7 +73,7 @@ Use these status markers consistently in this document:
 | 14.3 | `DONE` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
 | 14.4 | `DONE` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
 | 14.5 | `DONE` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
-| 14.6 | `TODO` | 14.5 | GC stress coverage, observability checks, and full regression gate |
+| 14.6 | `DONE` | 14.5 | GC stress coverage, observability checks, and full regression gate |
 
 ### Subtask 14.1 - GC state, object list, mark bits, and allocation counters
 
@@ -323,7 +323,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|runtime_core"
 
 ### Subtask 14.6 - GC stress coverage, observability checks, and full regression gate
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtask 14.5.
 
@@ -358,6 +358,17 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc|stress|modules\."
    growth in fixed workloads.
 2. The normal runtime and module suites still pass with GC enabled.
 3. Collection metrics remain stable enough for tests to assert on them.
+
+**Implementation summary**
+
+1. `tests/stress/gc/alloc_churn.ms` and `tests/stress/gc/modules/module_gc.ms`
+   now provide deterministic allocation churn and module-import coverage under
+   repeated stress passes.
+2. `tests/CMakeLists.txt` wires `gc.stress` through `tests/run_gc_stress.ps1`
+   and `gc.modules` through `tests/run_gc_modules.ps1`, so the stress subset
+   and the existing runtime/module suite both run under the GC-enabled runner.
+3. `ctest --test-dir build -C Debug --output-on-failure -R "gc\\.modules|gc\\.stress|gc\\.unit|runtime_core|modules\\."`
+   passed after the change.
 
 ## Acceptance
 

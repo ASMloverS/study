@@ -473,3 +473,27 @@ mslangc_add_cli_test(class.invalid_property_receiver
   -DEXPECT_STDOUT=""
   -DEXPECT_STDERR_CONTAINS="code=MS4009"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+
+add_test(NAME gc.stress
+  COMMAND "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+    -NoLogo
+    -NoProfile
+    -ExecutionPolicy
+    Bypass
+    -File "${CMAKE_CURRENT_SOURCE_DIR}/run_gc_stress.ps1"
+    -Runner "$<TARGET_FILE:mslangc>"
+    -Root "${CMAKE_CURRENT_SOURCE_DIR}/stress/gc")
+set_tests_properties(gc.stress PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};gc;stress")
+
+add_test(NAME gc.modules
+  COMMAND "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+    -NoLogo
+    -NoProfile
+    -ExecutionPolicy
+    Bypass
+    -File "${CMAKE_CURRENT_SOURCE_DIR}/run_gc_modules.ps1"
+    -CTest "${CMAKE_CTEST_COMMAND}"
+    -BuildDir "${CMAKE_BINARY_DIR}")
+set_tests_properties(gc.modules PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};gc;modules")
