@@ -184,10 +184,177 @@ static int test_temporary_roots_control_gc_lifetime(void) {
   return 0;
 }
 
+static int test_gc_reclaims_unreachable_object_graph(void) {
+  MsVM vm;
+  MsList* outer_list;
+  MsList* inner_list;
+
+  ms_vm_init(&vm);
+
+  outer_list = ms_list_new();
+  inner_list = ms_list_new();
+  TEST_ASSERT(outer_list != NULL);
+  TEST_ASSERT(inner_list != NULL);
+  TEST_ASSERT(ms_value_array_append(&outer_list->elements,
+                                    ms_value_object((MsObject*) inner_list)));
+
+  ms_vm_gc_track_object(&vm, &outer_list->object);
+  ms_vm_gc_track_object(&vm, &inner_list->object);
+  TEST_ASSERT(count_tracked_objects(&vm.gc) == 2);
+
+  ms_vm_gc_collect(&vm);
+  TEST_ASSERT(vm.gc.collection_count == 1);
+  TEST_ASSERT(vm.gc.free_count == 2);
+  TEST_ASSERT(vm.gc.objects == NULL);
+  TEST_ASSERT(count_tracked_objects(&vm.gc) == 0);
+
+  ms_vm_destroy(&vm);
+  return 0;
+}
+
+static int test_gc_keeps_live_object_while_reclaiming_dead_peer(void) {
+  MsVM vm;
+  MsList* live_outer;
+  MsList* live_inner;
+  MsList* dead_outer;
+  MsList* dead_inner;
+  MsObject* rooted_child = NULL;
+
+  ms_vm_init(&vm);
+
+  live_outer = ms_list_new();
+  live_inner = ms_list_new();
+  dead_outer = ms_list_new();
+  dead_inner = ms_list_new();
+  TEST_ASSERT(live_outer != NULL);
+  TEST_ASSERT(live_inner != NULL);
+  TEST_ASSERT(dead_outer != NULL);
+  TEST_ASSERT(dead_inner != NULL);
+  TEST_ASSERT(ms_value_array_append(&live_outer->elements,
+                                    ms_value_object((MsObject*) live_inner)));
+  TEST_ASSERT(ms_value_array_append(&dead_outer->elements,
+                                    ms_value_object((MsObject*) dead_inner)));
+
+  ms_vm_gc_track_object(&vm, &live_outer->object);
+  ms_vm_gc_track_object(&vm, &live_inner->object);
+  ms_vm_gc_track_object(&vm, &dead_outer->object);
+  ms_vm_gc_track_object(&vm, &dead_inner->object);
+  TEST_ASSERT(count_tracked_objects(&vm.gc) == 4);
+  TEST_ASSERT(ms_vm_gc_push_temporary_root(&vm, &live_outer->object));
+  TEST_ASSERT(vm.temporary_root_count == 1);
+
+  ms_vm_gc_collect(&vm);
+  TEST_ASSERT(vm.gc.collection_count == 1);
+  TEST_ASSERT(vm.gc.free_count == 2);
+  TEST_ASSERT(count_tracked_objects(&vm.gc) == 2);
+  TEST_ASSERT(vm.gc.objects != NULL);
+  TEST_ASSERT(live_outer->object.marked == 0);
+  TEST_ASSERT(live_inner->object.marked == 0);
+  TEST_ASSERT(live_outer->elements.count == 1);
+  TEST_ASSERT(live_outer->elements.items[0].type == MS_VAL_OBJECT);
+  TEST_ASSERT(ms_value_get_object(live_outer->elements.items[0], &rooted_child));
+  TEST_ASSERT(rooted_child == (MsObject*) live_inner);
+
+  ms_vm_gc_pop_temporary_root(&vm, &live_outer->object);
+  TEST_ASSERT(vm.temporary_root_count == 0);
+
+  ms_vm_gc_collect(&vm);
+  TEST_ASSERT(vm.gc.collection_count == 2);
+  TEST_ASSERT(vm.gc.free_count == 4);
+  TEST_ASSERT(vm.gc.objects == NULL);
+
+  ms_vm_destroy(&vm);
+  return 0;
+}
+
+static int test_gc_keeps_module_class_and_native_alive_while_reclaiming_dead_peer(void) {
+  MsVM vm;
+  MsModule module;
+  MsString* class_key;
+  MsString* native_lookup_key;
+  MsString* tracked_native_key = NULL;
+  MsClass* live_class = NULL;
+  MsNativeFunction* live_native_function = NULL;
+  MsList* dead_outer;
+  MsList* dead_inner;
+  MsValue stored_value = ms_value_nil();
+  int found = 0;
+  int inserted_new = 0;
+  size_t i;
+
+  ms_vm_init(&vm);
+  ms_module_init(&module, "unit");
+  ms_vm_set_current_module(&vm, &module);
+
+  class_key = ms_string_from_cstr("alive_class");
+  native_lookup_key = ms_string_from_cstr("alive_native");
+  live_class = ms_class_new("AliveClass", strlen("AliveClass"), NULL);
+  TEST_ASSERT(class_key != NULL);
+  TEST_ASSERT(native_lookup_key != NULL);
+  TEST_ASSERT(live_class != NULL);
+  TEST_ASSERT(ms_vm_define_native(&vm, &module, "alive_native", 0, test_native_noop));
+
+  TEST_ASSERT(ms_table_set(&module.globals,
+                           class_key,
+                           ms_value_object((MsObject*) live_class),
+                           &inserted_new));
+  TEST_ASSERT(inserted_new);
+  ms_vm_gc_track_object(&vm, &class_key->object);
+  ms_vm_gc_track_object(&vm, &live_class->object);
+
+  for (i = 0; i < module.globals.capacity; ++i) {
+    if (module.globals.entries[i].key != NULL &&
+        strcmp(module.globals.entries[i].key->bytes, "alive_native") == 0) {
+      tracked_native_key = module.globals.entries[i].key;
+      break;
+    }
+  }
+  TEST_ASSERT(tracked_native_key != NULL);
+
+  dead_outer = ms_list_new();
+  dead_inner = ms_list_new();
+  TEST_ASSERT(dead_outer != NULL);
+  TEST_ASSERT(dead_inner != NULL);
+  TEST_ASSERT(ms_value_array_append(&dead_outer->elements,
+                                    ms_value_object((MsObject*) dead_inner)));
+  ms_vm_gc_track_object(&vm, &dead_outer->object);
+  ms_vm_gc_track_object(&vm, &dead_inner->object);
+  TEST_ASSERT(count_tracked_objects(&vm.gc) == 6);
+
+  ms_vm_gc_collect(&vm);
+  TEST_ASSERT(vm.gc.collection_count == 1);
+  TEST_ASSERT(vm.gc.free_count == 2);
+  TEST_ASSERT(count_tracked_objects(&vm.gc) == 4);
+  TEST_ASSERT(ms_table_get(&module.globals, class_key, &stored_value, &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_class(stored_value, &live_class));
+  TEST_ASSERT(live_class != NULL);
+  TEST_ASSERT(ms_table_get(&module.globals,
+                           native_lookup_key,
+                           &stored_value,
+                           &found));
+  TEST_ASSERT(found);
+  TEST_ASSERT(ms_value_get_native_function(stored_value,
+                                           &live_native_function));
+  TEST_ASSERT(live_native_function != NULL);
+
+  ms_vm_destroy(&vm);
+  ms_module_destroy(&module);
+  ms_native_function_free(live_native_function);
+  ms_class_free(live_class);
+  ms_string_free(tracked_native_key);
+  ms_string_free(class_key);
+  ms_string_free(native_lookup_key);
+  return 0;
+}
+
 int main(void) {
   TEST_ASSERT(test_gc_tracks_registered_objects() == 0);
   TEST_ASSERT(test_gc_tracks_native_registration_objects() == 0);
   TEST_ASSERT(test_compile_time_arena_does_not_touch_gc_state() == 0);
   TEST_ASSERT(test_temporary_roots_control_gc_lifetime() == 0);
+  TEST_ASSERT(test_gc_reclaims_unreachable_object_graph() == 0);
+  TEST_ASSERT(test_gc_keeps_live_object_while_reclaiming_dead_peer() == 0);
+  TEST_ASSERT(test_gc_keeps_module_class_and_native_alive_while_reclaiming_dead_peer() == 0);
   return 0;
 }

@@ -72,7 +72,7 @@ Use these status markers consistently in this document:
 | 14.2 | `DONE` | 14.1 | Root traversal for stack values, call frames, and open upvalues |
 | 14.3 | `DONE` | 14.2, Task 13 | Root traversal for current module, module cache, interned strings, and builtin/native registries |
 | 14.4 | `DONE` | 14.2, 14.3 | Temporary roots for compile-to-runtime and module-loading transitions |
-| 14.5 | `TODO` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
+| 14.5 | `DONE` | 14.2, 14.3, 14.4 | Sweep/reclaim integration and unreachable-object tests |
 | 14.6 | `TODO` | 14.5 | GC stress coverage, observability checks, and full regression gate |
 
 ### Subtask 14.1 - GC state, object list, mark bits, and allocation counters
@@ -274,7 +274,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|modules\.|runti
 
 ### Subtask 14.5 - Sweep/reclaim integration and unreachable-object tests
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtasks 14.2, 14.3, and 14.4.
 
@@ -307,6 +307,19 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|runtime_core"
 2. Reachable objects remain valid after repeated collections.
 3. GC frees are observable through the counters exposed in
    `tests/unit/gc_test.c`.
+
+**Implementation summary**
+
+1. `tests/unit/gc_test.c` now covers a fully unreachable list graph, a mixed
+   live/dead heap cycle, and a rooted module with class/native registrations,
+   verifying that `ms_vm_gc_collect()` reclaims unreachable objects while
+   preserving rooted ones.
+2. The new assertions check `gc.free_count`, `gc.collection_count`, and the
+   tracked-object list after each collection so sweep behavior stays
+   deterministic.
+3. `cmake --build build --config Debug` and
+   `ctest --test-dir build -C Debug --output-on-failure -R "gc\\.unit|runtime_core"`
+   both passed after the change.
 
 ### Subtask 14.6 - GC stress coverage, observability checks, and full regression gate
 
