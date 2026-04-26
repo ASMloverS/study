@@ -156,3 +156,34 @@ MsObjClass*       ms_obj_class_new(struct MsVM* vm, MsObjString* name);
 MsObjInstance*    ms_obj_instance_new(struct MsVM* vm, MsObjClass* klass);
 MsObjBoundMethod* ms_obj_bound_method_new(struct MsVM* vm, MsValue receiver,
                                            MsObjClosure* method);
+
+/* ---- Collections: List, Map, Tuple ---- */
+#include "ms/vtable.h"
+
+typedef struct {
+    MsObject obj;
+    MsValueArray items;
+} MsObjList;
+
+typedef struct {
+    MsObject obj;
+    MsValueTable table;
+} MsObjMap;
+
+typedef struct {
+    MsObject obj;
+    uint32_t hash;
+    int count;
+    MsValue items[];  /* flexible array member */
+} MsObjTuple;
+
+#define MS_IS_LIST(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_LIST)
+#define MS_AS_LIST(v)   ((MsObjList*)MS_AS_OBJECT(v))
+#define MS_IS_MAP(v)    MS_IS_OBJ_TYPE(v, MS_OBJ_MAP)
+#define MS_AS_MAP(v)    ((MsObjMap*)MS_AS_OBJECT(v))
+#define MS_IS_TUPLE(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_TUPLE)
+#define MS_AS_TUPLE(v)  ((MsObjTuple*)MS_AS_OBJECT(v))
+
+MsObjList*  ms_obj_list_new(struct MsVM* vm);
+MsObjMap*   ms_obj_map_new(struct MsVM* vm);
+MsObjTuple* ms_obj_tuple_new(struct MsVM* vm, MsValue* items, int count);

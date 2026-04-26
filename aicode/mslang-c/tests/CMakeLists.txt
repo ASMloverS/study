@@ -58,3 +58,6 @@ target_link_libraries(test_oop_inherit PRIVATE ms_frontend)
 
 ms_add_test(test_shapes unit/test_shapes.c)
 target_link_libraries(test_shapes PRIVATE ms_frontend)
+
+ms_add_test(test_collections unit/test_collections.c)
+target_link_libraries(test_collections PRIVATE ms_frontend)

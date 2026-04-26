@@ -1,0 +1,43 @@
+2026-02-06 02:46:54,954 [INFO] Config file: config.json
+2026-02-06 02:46:54,954 [INFO] Upload dir: uploads
+2026-02-06 02:46:54,955 [INFO] Static dir: static
+2026-02-06 02:46:54,955 [INFO] Retention: max_files_per_mode=20
+2026-02-06 02:46:54,955 [INFO] Delete allow: 127.0.0.1, ::1
+2026-02-06 02:46:54,955 [INFO] Log file: run\hotfix_server.log
+2026-02-06 02:47:16,338 [INFO] Config file: config.json
+2026-02-06 02:47:16,339 [INFO] Upload dir: uploads
+2026-02-06 02:47:16,339 [INFO] Static dir: static
+2026-02-06 02:47:16,339 [INFO] Retention: max_files_per_mode=20
+2026-02-06 02:47:16,340 [INFO] Delete allow: 127.0.0.1, ::1
+2026-02-06 02:47:16,340 [INFO] Log file: run\hotfix_server.log
+2026-02-06 02:47:16,340 [INFO] HotfixServer running on http://('0.0.0.0', 8000)
+2026-02-06 02:47:23,587 [INFO] GET / ip=127.0.0.1 -> 200
+2026-02-06 02:47:23,600 [INFO] GET /static/styles.css ip=127.0.0.1 -> 200
+2026-02-06 02:47:23,661 [INFO] GET /static/app.js ip=127.0.0.1 -> 200
+2026-02-06 02:47:23,970 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:23,970 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:23,987 [INFO] GET /favicon.ico ip=127.0.0.1 -> 404
+2026-02-06 02:47:26,961 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:26,961 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:27,998 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:27,998 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:28,520 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:28,521 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:29,236 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:29,238 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:29,487 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:29,487 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:29,792 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:29,792 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:30,517 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:30,518 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:31,329 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:31,329 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:37,495 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:37,495 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:37,868 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:37,868 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:38,631 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:38,631 [INFO] GET /api/files ip=127.0.0.1 -> 200
+2026-02-06 02:47:38,887 [INFO] LIST ip=127.0.0.1 modes=4 removed=0
+2026-02-06 02:47:38,887 [INFO] GET /api/files ip=127.0.0.1 -> 200

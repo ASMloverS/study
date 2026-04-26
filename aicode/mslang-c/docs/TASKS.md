@@ -22,7 +22,7 @@
 | ✅ | [T18](T18-oop-classes-instances.md) | OOP — Classes & Instances |
 | ✅ | [T19](T19-oop-inheritance.md) | OOP — Inheritance |
 | ✅ | [T20](T20-oop-shapes-ic.md) | OOP — Shapes & Inline Cache |
-| ⬜ | [T21](T21-collections-list-map-tuple.md) | Collections — List, Map, Tuple |
+| ✅ | [T21](T21-collections-list-map-tuple.md) | Collections — List, Map, Tuple |
 | ⬜ | [T22](T22-builtin-methods.md) | Built-in Methods |
 | ⬜ | [T23](T23-string-interpolation-exec.md) | String Interpolation Execution |
 | ⬜ | [T24](T24-exceptions-defer.md) | Exceptions & Defer |

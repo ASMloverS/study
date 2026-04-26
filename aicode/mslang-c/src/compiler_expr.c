@@ -8,7 +8,6 @@
 static void parse_number(MsCompiler* c, bool can_assign);
 static void parse_string(MsCompiler* c, bool can_assign);
 static void parse_literal(MsCompiler* c, bool can_assign);
-static void parse_grouping(MsCompiler* c, bool can_assign);
 static void parse_unary(MsCompiler* c, bool can_assign);
 static void parse_binary(MsCompiler* c, bool can_assign);
 static void parse_and(MsCompiler* c, bool can_assign);
@@ -20,6 +19,9 @@ static void parse_print_stmt(MsCompiler* c, bool can_assign);
 static void parse_fun_expr(MsCompiler* c, bool can_assign);
 static void parse_this(MsCompiler* c, bool can_assign);
 static void parse_super(MsCompiler* c, bool can_assign);
+static void parse_list(MsCompiler* c, bool can_assign);
+static void parse_map(MsCompiler* c, bool can_assign);
+static void parse_subscript(MsCompiler* c, bool can_assign);
 
 /* get_rule defined after k_rules table at the bottom of this file */
 static const MsParseRule* rule_at(MsTokenType t);
@@ -127,11 +129,6 @@ static void parse_literal(MsCompiler* c, bool can_assign) {
     }
 }
 
-static void parse_grouping(MsCompiler* c, bool can_assign) {
-    MS_UNUSED(can_assign);
-    expression(c);
-    consume(c, MS_TK_RIGHT_PAREN, "Expected ')' after expression.");
-}
 
 static void parse_unary(MsCompiler* c, bool can_assign) {
     MS_UNUSED(can_assign);
@@ -492,6 +489,96 @@ static void parse_fun_expr(MsCompiler* c, bool can_assign) {
     compile_function(c, NULL, 0);
 }
 
+/* ---- collection literals ---- */
+
+static void parse_list(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    int dest = alloc_reg(c);  /* destination for NEWLIST result */
+    int count = 0;
+    if (!check(c, MS_TK_RIGHT_BRACKET)) {
+        do {
+            expression(c);
+            count++;
+        } while (match_tok(c, MS_TK_COMMA) && !check(c, MS_TK_RIGHT_BRACKET));
+    }
+    consume(c, MS_TK_RIGHT_BRACKET, "Expected ']' after list elements.");
+    /* elements are in dest+1 .. dest+count; emit NEWLIST A=dest B=count */
+    emit(c, ms_enc_ABC(MS_OP_NEWLIST, dest, count, 0));
+    c->next_reg = dest + 1;
+}
+
+static void parse_map(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    int dest = alloc_reg(c);
+    int pairs = 0;
+    if (!check(c, MS_TK_RIGHT_BRACE)) {
+        do {
+            expression(c);  /* key */
+            consume(c, MS_TK_COLON, "Expected ':' after map key.");
+            expression(c);  /* value */
+            pairs++;
+        } while (match_tok(c, MS_TK_COMMA) && !check(c, MS_TK_RIGHT_BRACE));
+    }
+    consume(c, MS_TK_RIGHT_BRACE, "Expected '}' after map entries.");
+    emit(c, ms_enc_ABC(MS_OP_NEWMAP, dest, pairs, 0));
+    c->next_reg = dest + 1;
+}
+
+/* parse_grouping already handles (expr). Override to detect tuple:
+   (expr,) or (expr, expr, ...) */
+static void parse_tuple_or_grouping(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    /* peek: empty parens () = grouping / no tuple */
+    if (check(c, MS_TK_RIGHT_PAREN)) {
+        consume(c, MS_TK_RIGHT_PAREN, "Expected ')'.");
+        /* emit nil as placeholder */
+        int r = alloc_reg(c);
+        emit(c, ms_enc_ABC(MS_OP_LOADNIL, r, 0, 0));
+        return;
+    }
+    int dest = alloc_reg(c);
+    expression(c);  /* first element, in dest+1 */
+    int count = 1;
+    bool is_tuple = false;
+    while (match_tok(c, MS_TK_COMMA)) {
+        is_tuple = true;
+        if (check(c, MS_TK_RIGHT_PAREN)) break;  /* trailing comma */
+        expression(c);
+        count++;
+    }
+    consume(c, MS_TK_RIGHT_PAREN, "Expected ')' after expression.");
+    if (is_tuple) {
+        emit(c, ms_enc_ABC(MS_OP_NEWTUPLE, dest, count, 0));
+        c->next_reg = dest + 1;
+    } else {
+        /* grouping: result is already in dest+1, move down */
+        emit(c, ms_enc_ABC(MS_OP_MOVE, dest, dest + 1, 0));
+        c->next_reg = dest + 1;
+    }
+}
+
+/* ---- subscript (infix: expr[idx]) ---- */
+
+static void parse_subscript(MsCompiler* c, bool can_assign) {
+    int obj_reg = c->next_reg - 1;
+    expression(c);
+    int idx_reg = c->next_reg - 1;
+    consume(c, MS_TK_RIGHT_BRACKET, "Expected ']' after index.");
+
+    if (can_assign && match_tok(c, MS_TK_EQUAL)) {
+        /* SETIDX A=obj_reg, B=idx_reg, C=val_reg */
+        expression(c);
+        int val_reg = c->next_reg - 1;
+        emit(c, ms_enc_ABC(MS_OP_SETIDX, obj_reg, idx_reg, val_reg));
+        /* free idx and val registers; result stays in obj_reg */
+        c->next_reg = obj_reg + 1;
+    } else {
+        /* GETIDX A=obj_reg, B=obj_reg, C=idx_reg */
+        emit(c, ms_enc_ABC(MS_OP_GETIDX, obj_reg, obj_reg, idx_reg));
+        c->next_reg = obj_reg + 1;
+    }
+}
+
 /* ---- statement helpers ---- */
 
 static void parse_print_stmt(MsCompiler* c, bool can_assign) {
@@ -532,11 +619,11 @@ void compile_expression_stmt(MsCompiler* c) {
 #define NO NULL
 
 static const MsParseRule k_rules[MS_TK_COUNT] = {
-    /* LEFT_PAREN */      RULE(parse_grouping, parse_call, PREC_CALL),
+    /* LEFT_PAREN */      RULE(parse_tuple_or_grouping, parse_call, PREC_CALL),
     /* RIGHT_PAREN */     RULE(NO, NO, PREC_NONE),
-    /* LEFT_BRACE */      RULE(NO, NO, PREC_NONE),
+    /* LEFT_BRACE */      RULE(parse_map, NO, PREC_NONE),
     /* RIGHT_BRACE */     RULE(NO, NO, PREC_NONE),
-    /* LEFT_BRACKET */    RULE(NO, NO, PREC_NONE),
+    /* LEFT_BRACKET */    RULE(parse_list, parse_subscript, PREC_CALL),
     /* RIGHT_BRACKET */   RULE(NO, NO, PREC_NONE),
     /* COMMA */           RULE(NO, NO, PREC_NONE),
     /* DOT */             RULE(NO, parse_dot, PREC_CALL),

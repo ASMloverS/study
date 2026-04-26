@@ -1,5 +1,6 @@
 #include "ms/object.h"
 #include "ms/table.h"
+#include "ms/vtable.h"
 #include "ms/vm.h"
 #include "ms/memory.h"
 #include "ms/consts.h"
@@ -157,6 +158,39 @@ MsObjBoundMethod* ms_obj_bound_method_new(struct MsVM* vm, MsValue receiver,
     return bm;
 }
 
+MsObjList* ms_obj_list_new(struct MsVM* vm) {
+    MsObjList* list = MS_ALLOC_OBJ(vm, MS_OBJ_LIST, MsObjList, 0);
+    ms_value_array_init(&list->items);
+    return list;
+}
+
+MsObjMap* ms_obj_map_new(struct MsVM* vm) {
+    MsObjMap* map = MS_ALLOC_OBJ(vm, MS_OBJ_MAP, MsObjMap, 0);
+    ms_vtable_init(&map->table);
+    return map;
+}
+
+MsObjTuple* ms_obj_tuple_new(struct MsVM* vm, MsValue* items, int count) {
+    size_t extra = sizeof(MsValue) * (size_t)count;
+    MsObjTuple* t = MS_ALLOC_OBJ(vm, MS_OBJ_TUPLE, MsObjTuple, extra);
+    t->count = count;
+    /* compute hash by folding item hashes */
+    uint32_t h = 2166136261u;
+    for (int i = 0; i < count; i++) {
+        t->items[i] = items[i];
+        /* mix in type + raw bits */
+        h ^= (uint32_t)items[i].type;
+        h *= 16777619u;
+        if (MS_IS_INT(items[i]))    h ^= (uint32_t)(ms_u64)MS_AS_INT(items[i]);
+        else if (MS_IS_NUMBER(items[i])) { union { double d; uint64_t u; } cv;
+            cv.d = MS_AS_NUMBER(items[i]); h ^= (uint32_t)cv.u; }
+        else if (MS_IS_STRING(items[i])) h ^= MS_AS_STRING(items[i])->hash;
+        h *= 16777619u;
+    }
+    t->hash = h;
+    return t;
+}
+
 static void print_fn_name(MsObjFunction* fn) {
     if (fn->name) printf("<fn %s>", fn->name->data);
     else          printf("<fn>");
@@ -199,6 +233,30 @@ void ms_object_print(MsObject* obj) {
         case MS_OBJ_BOUND_METHOD: {
             MsObjBoundMethod* bm = (MsObjBoundMethod*)obj;
             print_fn_name(bm->method->function);
+            break;
+        }
+        case MS_OBJ_LIST: {
+            MsObjList* list = (MsObjList*)obj;
+            printf("[");
+            for (int i = 0; i < list->items.count; i++) {
+                if (i > 0) printf(", ");
+                ms_value_print(list->items.data[i]);
+            }
+            printf("]");
+            break;
+        }
+        case MS_OBJ_MAP: {
+            printf("<map>");
+            break;
+        }
+        case MS_OBJ_TUPLE: {
+            MsObjTuple* tup = (MsObjTuple*)obj;
+            printf("(");
+            for (int i = 0; i < tup->count; i++) {
+                if (i > 0) printf(", ");
+                ms_value_print(tup->items[i]);
+            }
+            printf(")");
             break;
         }
         default:
@@ -258,6 +316,24 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
         case MS_OBJ_BOUND_METHOD:
             ms_reallocate(vm, obj, sizeof(MsObjBoundMethod), 0);
             break;
+        case MS_OBJ_LIST: {
+            MsObjList* list = (MsObjList*)obj;
+            ms_value_array_free(&list->items);
+            ms_reallocate(vm, obj, sizeof(MsObjList), 0);
+            break;
+        }
+        case MS_OBJ_MAP: {
+            MsObjMap* map = (MsObjMap*)obj;
+            ms_vtable_free(&map->table);
+            ms_reallocate(vm, obj, sizeof(MsObjMap), 0);
+            break;
+        }
+        case MS_OBJ_TUPLE: {
+            MsObjTuple* tup = (MsObjTuple*)obj;
+            size_t sz = sizeof(MsObjTuple) + sizeof(MsValue) * (size_t)tup->count;
+            ms_reallocate(vm, obj, sz, 0);
+            break;
+        }
         default:
             /* Unhandled object type: abort to catch missing free cases early. */
             abort();

@@ -3,6 +3,7 @@
 #include "ms/opcode.h"
 #include "ms/object.h"
 #include "ms/table.h"
+#include "ms/vtable.h"
 #include "ms/value.h"
 #include "ms/shape.h"
 #include <stdarg.h>
@@ -970,6 +971,96 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 ms_table_init(klass->abstract_methods);
             }
             ms_table_set(klass->abstract_methods, name, MS_NIL_VAL());
+            break;
+        }
+
+        case MS_OP_NEWLIST: {
+            /* A=dest_reg, B=count; elements in R(A)..R(A+B-1) */
+            int count = MS_GET_B(instr);
+            MsObjList* list = ms_obj_list_new(vm);
+            /* push list to stack so GC can find it while we build */
+            R(A) = MS_OBJ_VAL(list);
+            for (int i = 0; i < count; i++)
+                ms_value_array_push(&list->items, R(A + i + 1));
+            /* shift: if elements were after A, they stay; result is in R(A) */
+            break;
+        }
+
+        case MS_OP_NEWMAP: {
+            /* A=dest_reg, B=pair_count; pairs in R(A+1),R(A+2),R(A+3),R(A+4)... */
+            int pairs = MS_GET_B(instr);
+            MsObjMap* map = ms_obj_map_new(vm);
+            R(A) = MS_OBJ_VAL(map);
+            for (int i = 0; i < pairs; i++) {
+                MsValue key = R(A + 1 + i * 2);
+                MsValue val = R(A + 2 + i * 2);
+                ms_vtable_set(&map->table, key, val);
+            }
+            break;
+        }
+
+        case MS_OP_NEWTUPLE: {
+            /* A=dest_reg, B=count; elements in R(A+1)..R(A+B) */
+            int count = MS_GET_B(instr);
+            MsValue* items = &frame->slots[A + 1];
+            MsObjTuple* tup = ms_obj_tuple_new(vm, items, count);
+            R(A) = MS_OBJ_VAL(tup);
+            break;
+        }
+
+        case MS_OP_GETIDX: {
+            /* A=dest, B=obj_reg, C=idx_reg_or_k */
+            MsValue obj = R(B);
+            MsValue idx = RK(C);
+            if (MS_IS_LIST(obj)) {
+                if (!MS_IS_INT(idx)) { RUNTIME_ERROR(vm, "List index must be integer."); }
+                MsObjList* list = MS_AS_LIST(obj);
+                int i = (int)MS_AS_INT(idx);
+                if (i < 0) i += list->items.count;
+                if (i < 0 || i >= list->items.count) { RUNTIME_ERROR(vm, "List index out of range."); }
+                R(A) = list->items.data[i];
+            } else if (MS_IS_TUPLE(obj)) {
+                if (!MS_IS_INT(idx)) { RUNTIME_ERROR(vm, "Tuple index must be integer."); }
+                MsObjTuple* tup = MS_AS_TUPLE(obj);
+                int i = (int)MS_AS_INT(idx);
+                if (i < 0) i += tup->count;
+                if (i < 0 || i >= tup->count) { RUNTIME_ERROR(vm, "Tuple index out of range."); }
+                R(A) = tup->items[i];
+            } else if (MS_IS_MAP(obj)) {
+                MsObjMap* map = MS_AS_MAP(obj);
+                MsValue val = MS_NIL_VAL();
+                ms_vtable_get(&map->table, idx, &val);
+                R(A) = val;
+            } else if (MS_IS_STRING(obj)) {
+                if (!MS_IS_INT(idx)) { RUNTIME_ERROR(vm, "String index must be integer."); }
+                MsObjString* s = MS_AS_STRING(obj);
+                int i = (int)MS_AS_INT(idx);
+                if (i < 0) i += s->length;
+                if (i < 0 || i >= s->length) { RUNTIME_ERROR(vm, "String index out of range."); }
+                R(A) = MS_OBJ_VAL(ms_obj_string_copy(vm, &s->data[i], 1));
+            } else {
+                RUNTIME_ERROR(vm, "Value is not indexable.");
+            }
+            break;
+        }
+
+        case MS_OP_SETIDX: {
+            /* A=obj_reg, B=idx_reg_or_k, C=val_reg */
+            MsValue obj = R(A);
+            MsValue idx = RK(B);
+            MsValue val = R(C);
+            if (MS_IS_LIST(obj)) {
+                if (!MS_IS_INT(idx)) { RUNTIME_ERROR(vm, "List index must be integer."); }
+                MsObjList* list = MS_AS_LIST(obj);
+                int i = (int)MS_AS_INT(idx);
+                if (i < 0) i += list->items.count;
+                if (i < 0 || i >= list->items.count) { RUNTIME_ERROR(vm, "List index out of range."); }
+                list->items.data[i] = val;
+            } else if (MS_IS_MAP(obj)) {
+                ms_vtable_set(&MS_AS_MAP(obj)->table, idx, val);
+            } else {
+                RUNTIME_ERROR(vm, "Value is not subscript-assignable.");
+            }
             break;
         }
 

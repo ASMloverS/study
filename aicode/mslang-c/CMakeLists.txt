@@ -40,10 +40,15 @@ target_include_directories(ms_debug PUBLIC include)
 target_compile_options(ms_debug PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_debug PUBLIC ms_chunk)
 
+add_library(ms_vtable STATIC src/vtable.c)
+target_include_directories(ms_vtable PUBLIC include)
+target_compile_options(ms_vtable PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(ms_vtable PUBLIC ms_support)
+
 add_library(ms_object STATIC src/object.c)
 target_include_directories(ms_object PUBLIC include)
 target_compile_options(ms_object PRIVATE ${MSLANG_COMPILE_OPTIONS})
-target_link_libraries(ms_object PUBLIC ms_table ms_memory ms_chunk)
+target_link_libraries(ms_object PUBLIC ms_table ms_vtable ms_memory ms_chunk)
 
 add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c)
 target_include_directories(ms_vm PUBLIC include)

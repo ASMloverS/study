@@ -2,6 +2,7 @@
 #include "ms/vm.h"
 #include "ms/object.h"
 #include "ms/table.h"
+#include "ms/vtable.h"
 #include "ms/value.h"
 #include "ms/chunk.h"
 #include "ms/consts.h"
@@ -100,6 +101,28 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
         MsObjBoundMethod* bm = (MsObjBoundMethod*)obj;
         ms_mark_value(vm, bm->receiver);
         ms_mark_object(vm, (MsObject*)bm->method);
+        break;
+    }
+    case MS_OBJ_LIST: {
+        MsObjList* list = (MsObjList*)obj;
+        for (int i = 0; i < list->items.count; i++)
+            ms_mark_value(vm, list->items.data[i]);
+        break;
+    }
+    case MS_OBJ_MAP: {
+        MsObjMap* map = (MsObjMap*)obj;
+        for (int i = 0; i < map->table.capacity; i++) {
+            MsVEntry* e = &map->table.entries[i];
+            if (!e->used) continue;
+            ms_mark_value(vm, e->key);
+            ms_mark_value(vm, e->value);
+        }
+        break;
+    }
+    case MS_OBJ_TUPLE: {
+        MsObjTuple* tup = (MsObjTuple*)obj;
+        for (int i = 0; i < tup->count; i++)
+            ms_mark_value(vm, tup->items[i]);
         break;
     }
     default:
