@@ -36,6 +36,11 @@ typedef struct MsGCState {
   size_t collection_count;
 } MsGCState;
 
+typedef struct MsGCTemporaryRoot {
+  MsObject* object;
+  struct MsGCTemporaryRoot* next;
+} MsGCTemporaryRoot;
+
 typedef int (*MsVmWriteFn)(void* user_data, const char* text, size_t length);
 
 typedef enum MsVmResult {
@@ -67,6 +72,8 @@ typedef struct MsVM {
   size_t module_search_root_capacity;
   MsModuleCache module_cache;
   MsGCState gc;
+  MsGCTemporaryRoot* temporary_roots;
+  size_t temporary_root_count;
   MsDiagnosticList diagnostics;
   MsVmWriteFn write_fn;
   void* write_user_data;
@@ -79,6 +86,8 @@ int ms_module_transition_state(MsModule* module, MsModuleState new_state);
 void ms_vm_init(MsVM* vm);
 void ms_vm_destroy(MsVM* vm);
 void ms_vm_gc_track_object(MsVM* vm, MsObject* object);
+int ms_vm_gc_push_temporary_root(MsVM* vm, MsObject* object);
+void ms_vm_gc_pop_temporary_root(MsVM* vm, MsObject* object);
 void ms_vm_gc_mark_roots(MsVM* vm);
 void ms_vm_gc_collect(MsVM* vm);
 void ms_vm_set_current_module(MsVM* vm, MsModule* module);

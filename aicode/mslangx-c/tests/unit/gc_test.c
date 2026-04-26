@@ -154,9 +154,40 @@ static int test_compile_time_arena_does_not_touch_gc_state(void) {
   return 0;
 }
 
+static int test_temporary_roots_control_gc_lifetime(void) {
+  MsVM vm;
+  MsString* temporary_string;
+
+  ms_vm_init(&vm);
+
+  temporary_string = ms_string_from_cstr("temporary-root");
+  TEST_ASSERT(temporary_string != NULL);
+  ms_vm_gc_track_object(&vm, &temporary_string->object);
+  TEST_ASSERT(ms_vm_gc_push_temporary_root(&vm, &temporary_string->object));
+  TEST_ASSERT(vm.temporary_root_count == 1);
+
+  ms_vm_gc_collect(&vm);
+  TEST_ASSERT(vm.gc.collection_count == 1);
+  TEST_ASSERT(vm.gc.free_count == 0);
+  TEST_ASSERT(vm.gc.objects == &temporary_string->object);
+  TEST_ASSERT(vm.temporary_root_count == 1);
+
+  ms_vm_gc_pop_temporary_root(&vm, &temporary_string->object);
+  TEST_ASSERT(vm.temporary_root_count == 0);
+
+  ms_vm_gc_collect(&vm);
+  TEST_ASSERT(vm.gc.collection_count == 2);
+  TEST_ASSERT(vm.gc.free_count == 1);
+  TEST_ASSERT(vm.gc.objects == NULL);
+
+  ms_vm_destroy(&vm);
+  return 0;
+}
+
 int main(void) {
   TEST_ASSERT(test_gc_tracks_registered_objects() == 0);
   TEST_ASSERT(test_gc_tracks_native_registration_objects() == 0);
   TEST_ASSERT(test_compile_time_arena_does_not_touch_gc_state() == 0);
+  TEST_ASSERT(test_temporary_roots_control_gc_lifetime() == 0);
   return 0;
 }

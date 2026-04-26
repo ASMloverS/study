@@ -218,7 +218,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|modules\.unit|r
 
 ### Subtask 14.4 - Temporary roots for compile-to-runtime and module-loading transitions
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtasks 14.2 and 14.3.
 
@@ -254,6 +254,23 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|modules\.|runti
    transition.
 2. Temporary roots do not leak into the permanent root set.
 3. Cleanup runs on both success and failure paths.
+
+**Implementation summary**
+
+1. `MsVM` now carries an explicit temporary-root list and count alongside the
+   collector-owned object list.
+2. `ms_vm_gc_push_temporary_root()` and `ms_vm_gc_pop_temporary_root()` make
+   transitional GC roots explicit, and `ms_vm_gc_mark_roots()` now marks them
+   during collection.
+3. `ms_vm_load_module()` roots the in-progress module object only after the
+   temp-root registration succeeds, keeps it rooted until module initialization
+   completes or fails, and GC cleanup removes any remaining temp root if the
+   object is reclaimed.
+4. `tests/unit/gc_test.c` now covers temporary-root lifetime directly, and the
+   new `tests/e2e/modules/temp_root_success.ms` and
+   `tests/e2e/modules/temp_root_failure.ms` regressions exercise the success
+   and failure module-loading paths.
+5. `ctest --test-dir build -C Debug --output-on-failure -R "gc\.unit|modules\.(cache_once|shared_dependency_once|import_runtime_failure|temp_root_success|temp_root_failure)|runtime_core"` passed after the change.
 
 ### Subtask 14.5 - Sweep/reclaim integration and unreachable-object tests
 

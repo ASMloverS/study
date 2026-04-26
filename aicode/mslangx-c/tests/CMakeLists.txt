@@ -346,6 +346,19 @@ mslangc_add_e2e_named_test(modules.regression_chain
   "e2e/modules/regression_chain.ms"
   "e2e/modules/regression_chain.ms.out"
   "modules")
+mslangc_add_e2e_named_test(modules.temp_root_success
+  "e2e/modules/temp_root_success.ms"
+  "e2e/modules/temp_root_success.ms.out"
+  "modules")
+mslangc_add_cli_test(modules.temp_root_failure
+  -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+  -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/temp_root_failure.ms"
+  -DEXPECT_EXIT=70
+  -DEXPECT_STDOUT=""
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;temp_root_failure.ms:1:1;phase=runtime;code=MS4004;runtime_fail.ms:1:1"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
+set_tests_properties(modules.temp_root_failure PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
 mslangc_add_cli_test(functions.non_callable
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"

@@ -348,6 +348,13 @@ static void ms_vm_reset(MsVM* vm) {
   vm->stack_count = 0;
   vm->frame_count = 0;
   vm->open_upvalues = NULL;
+  while (vm->temporary_roots != NULL) {
+    MsGCTemporaryRoot* next = vm->temporary_roots->next;
+
+    free(vm->temporary_roots);
+    vm->temporary_roots = next;
+  }
+  vm->temporary_root_count = 0;
   ms_diag_list_clear(&vm->diagnostics);
 }
 
@@ -360,6 +367,58 @@ void ms_vm_gc_track_object(MsVM* vm, MsObject* object) {
   object->next = vm->gc.objects;
   vm->gc.objects = object;
   vm->gc.allocation_count += 1;
+}
+
+static void ms_vm_gc_remove_temporary_root(MsVM* vm, MsObject* object) {
+  MsGCTemporaryRoot* previous = NULL;
+  MsGCTemporaryRoot* root = NULL;
+
+  if (vm == NULL || object == NULL) {
+    return;
+  }
+
+  root = vm->temporary_roots;
+  while (root != NULL) {
+    MsGCTemporaryRoot* next = root->next;
+
+    if (root->object == object) {
+      if (previous != NULL) {
+        previous->next = next;
+      } else {
+        vm->temporary_roots = next;
+      }
+      free(root);
+      if (vm->temporary_root_count > 0) {
+        vm->temporary_root_count -= 1;
+      }
+      return;
+    }
+    previous = root;
+    root = next;
+  }
+}
+
+int ms_vm_gc_push_temporary_root(MsVM* vm, MsObject* object) {
+  MsGCTemporaryRoot* root;
+
+  if (vm == NULL || object == NULL) {
+    return 0;
+  }
+
+  root = (MsGCTemporaryRoot*) calloc(1, sizeof(*root));
+  if (root == NULL) {
+    return 0;
+  }
+
+  root->object = object;
+  root->next = vm->temporary_roots;
+  vm->temporary_roots = root;
+  vm->temporary_root_count += 1;
+  return 1;
+}
+
+void ms_vm_gc_pop_temporary_root(MsVM* vm, MsObject* object) {
+  ms_vm_gc_remove_temporary_root(vm, object);
 }
 
 static void ms_vm_gc_mark_value(MsVM* vm, MsValue value);
@@ -646,6 +705,10 @@ void ms_vm_gc_mark_roots(MsVM* vm) {
        upvalue = upvalue->next) {
     ms_vm_gc_mark_object(vm, (MsObject*) upvalue);
   }
+  for (MsGCTemporaryRoot* root = vm->temporary_roots; root != NULL;
+       root = root->next) {
+    ms_vm_gc_mark_object(vm, root->object);
+  }
 }
 
 void ms_vm_gc_collect(MsVM* vm) {
@@ -671,6 +734,7 @@ void ms_vm_gc_collect(MsVM* vm) {
       if (object->type == MS_OBJ_MODULE) {
         ms_vm_gc_remove_module_cache_entry(vm, (MsModule*) object);
       }
+      ms_vm_gc_remove_temporary_root(vm, object);
       ms_vm_gc_free_object(object);
       vm->gc.free_count += 1;
     } else {
@@ -2084,6 +2148,8 @@ void ms_vm_init(MsVM* vm) {
   vm->gc.allocation_count = 0;
   vm->gc.free_count = 0;
   vm->gc.collection_count = 0;
+  vm->temporary_roots = NULL;
+  vm->temporary_root_count = 0;
   ms_diag_list_init(&vm->diagnostics);
   vm->write_fn = NULL;
   vm->write_user_data = NULL;
@@ -2108,6 +2174,12 @@ void ms_vm_destroy(MsVM* vm) {
   free(vm->module_search_roots);
   free(vm->frames);
   free(vm->stack);
+  while (vm->temporary_roots != NULL) {
+    MsGCTemporaryRoot* next = vm->temporary_roots->next;
+
+    free(vm->temporary_roots);
+    vm->temporary_roots = next;
+  }
   vm->module_cache.modules = NULL;
   vm->module_cache.count = 0;
   vm->module_cache.capacity = 0;
@@ -2115,6 +2187,7 @@ void ms_vm_destroy(MsVM* vm) {
   vm->gc.allocation_count = 0;
   vm->gc.free_count = 0;
   vm->gc.collection_count = 0;
+  vm->temporary_root_count = 0;
   vm->module_search_roots = NULL;
   vm->module_search_root_count = 0;
   vm->module_search_root_capacity = 0;
@@ -2435,7 +2508,14 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                "MS4001",
                                "invalid opcode stream");
   }
+  if (!ms_vm_gc_push_temporary_root(vm, (MsObject*) module)) {
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
   if (module->state == MS_MODULE_STATE_INITIALIZED) {
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     *out_module = module;
     return MS_VM_RESULT_OK;
   }
@@ -2451,6 +2531,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
   if (module->state != MS_MODULE_STATE_UNSEEN ||
@@ -2465,6 +2546,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
 
@@ -2481,6 +2563,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
 
@@ -2501,6 +2584,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return MS_VM_RESULT_RUNTIME_ERROR;
   }
   caller_frame_count = vm->frame_count;
@@ -2521,6 +2605,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
 
@@ -2536,6 +2621,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
   if (vm->stack_count > caller_stack_count && !ms_vm_pop(vm, NULL)) {
@@ -2568,12 +2654,14 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
 
   *out_module = module;
   ms_diag_list_destroy(&diagnostics);
   ms_chunk_destroy(&chunk);
+  ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
   return MS_VM_RESULT_OK;
 }
 
