@@ -558,9 +558,13 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
 
         case MS_OP_STR: {
-            char* s = ms_value_to_cstring(RK(B));
-            R(A) = MS_OBJ_VAL(ms_obj_string_copy(vm, s, (int)strlen(s)));
-            free(s);
+            MsValue bv = RK(B);
+            if (MS_IS_STRING(bv)) {
+                R(A) = bv;
+            } else {
+                char* s = ms_value_to_cstring(bv);
+                R(A) = MS_OBJ_VAL(ms_obj_string_take(vm, s, (int)strlen(s)));
+            }
             break;
         }
 

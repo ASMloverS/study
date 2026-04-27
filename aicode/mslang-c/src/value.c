@@ -1,4 +1,5 @@
 #include "ms/value.h"
+#include "ms/object.h"
 
 void ms_value_array_init(MsValueArray* arr) {
     arr->data = NULL;
@@ -52,7 +53,10 @@ char* ms_value_to_cstring(MsValue v) {
         case MS_VAL_BOOL:   snprintf(buf, sizeof(buf), "%s", MS_AS_BOOL(v) ? "true" : "false"); break;
         case MS_VAL_INT:    snprintf(buf, sizeof(buf), "%lld", (long long)MS_AS_INT(v)); break;
         case MS_VAL_NUMBER: snprintf(buf, sizeof(buf), "%g", MS_AS_NUMBER(v)); break;
-        case MS_VAL_OBJECT: snprintf(buf, sizeof(buf), "<object>"); break;
+        case MS_VAL_OBJECT:
+            if (MS_IS_STRING(v)) return ms_strdup(MS_AS_CSTRING(v));
+            snprintf(buf, sizeof(buf), "<object>");
+            break;
     }
     return ms_strdup(buf);
 }

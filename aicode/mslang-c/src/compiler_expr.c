@@ -7,6 +7,7 @@
 /* forward declarations */
 static void parse_number(MsCompiler* c, bool can_assign);
 static void parse_string(MsCompiler* c, bool can_assign);
+static void parse_string_interp(MsCompiler* c, bool can_assign);
 static void parse_literal(MsCompiler* c, bool can_assign);
 static void parse_unary(MsCompiler* c, bool can_assign);
 static void parse_binary(MsCompiler* c, bool can_assign);
@@ -93,14 +94,10 @@ static void parse_number(MsCompiler* c, bool can_assign) {
     }
 }
 
-static void parse_string(MsCompiler* c, bool can_assign) {
-    MS_UNUSED(can_assign);
-    const char* raw = c->previous.start + 1;
-    int raw_len = c->previous.length - 2;
-    char buf[4096];
+static int unescape_segment(const char* raw, int raw_len, char* buf, int cap) {
     int out = 0;
-    for (int i = 0; i < raw_len && out < (int)sizeof(buf)-1; i++) {
-        if (raw[i] == '\\' && i+1 < raw_len) {
+    for (int i = 0; i < raw_len && out < cap - 1; i++) {
+        if (raw[i] == '\\' && i + 1 < raw_len) {
             i++;
             switch (raw[i]) {
             case 'n':  buf[out++] = '\n'; break;
@@ -113,9 +110,64 @@ static void parse_string(MsCompiler* c, bool can_assign) {
             buf[out++] = raw[i];
         }
     }
+    return out;
+}
+
+/* acc_reg < 0: allocate fresh register; >= 0: concat segment into it. */
+static int load_and_concat(MsCompiler* c, const char* raw, int raw_len, int acc_reg) {
+    char buf[4096];
+    int out = unescape_segment(raw, raw_len, buf, (int)sizeof(buf));
+    if (out == 0 && acc_reg >= 0) return acc_reg;
     int k = add_str_const(c, buf, out);
     int r = alloc_reg(c);
     emit(c, ms_enc_ABx(MS_OP_LOADK, r, k));
+    if (acc_reg >= 0) {
+        emit(c, ms_enc_ABC(MS_OP_ADD, acc_reg, acc_reg, r));
+        free_reg(c, r);
+        return acc_reg;
+    }
+    return r;
+}
+
+static void parse_string(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    char buf[4096];
+    int out = unescape_segment(c->previous.start + 1, c->previous.length - 2,
+                               buf, (int)sizeof(buf));
+    int k = add_str_const(c, buf, out);
+    int r = alloc_reg(c);
+    emit(c, ms_enc_ABx(MS_OP_LOADK, r, k));
+}
+
+static void parse_string_interp(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    /* First STRING_INTERP token has a leading '"'; middle continuation segments don't. */
+    const char* raw = c->previous.start[0] == '"'
+        ? c->previous.start + 1 : c->previous.start;
+    int raw_len = c->previous.start[0] == '"'
+        ? c->previous.length - 1 : c->previous.length;
+
+    int acc = load_and_concat(c, raw, raw_len, -1);
+    if (acc < 0) {
+        int k = add_str_const(c, "", 0);
+        acc = alloc_reg(c);
+        emit(c, ms_enc_ABx(MS_OP_LOADK, acc, k));
+    }
+
+    for (;;) {
+        parse_precedence(c, PREC_ASSIGNMENT);
+        int expr_reg = c->next_reg - 1;
+        emit(c, ms_enc_ABC(MS_OP_STR, expr_reg, expr_reg, 0));
+        emit(c, ms_enc_ABC(MS_OP_ADD, acc, acc, expr_reg));
+        free_reg(c, expr_reg);
+
+        advance(c);
+        if (c->previous.type == MS_TK_STRING_INTERP_END) {
+            load_and_concat(c, c->previous.start, c->previous.length - 1, acc);
+            break;
+        }
+        load_and_concat(c, c->previous.start, c->previous.length, acc);
+    }
 }
 
 static void parse_literal(MsCompiler* c, bool can_assign) {
@@ -657,7 +709,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* DOT_DOT */         RULE(NO, NO, PREC_NONE),
     /* IDENTIFIER */      RULE(parse_identifier, NO, PREC_NONE),
     /* STRING */          RULE(parse_string, NO, PREC_NONE),
-    /* STRING_INTERP */   RULE(NO, NO, PREC_NONE),
+    /* STRING_INTERP */   RULE(parse_string_interp, NO, PREC_NONE),
     /* STRING_INTERP_END*/RULE(NO, NO, PREC_NONE),
     /* NUMBER_INT */      RULE(parse_number, NO, PREC_NONE),
     /* NUMBER_FLOAT */    RULE(parse_number, NO, PREC_NONE),
