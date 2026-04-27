@@ -259,6 +259,11 @@ void ms_object_print(MsObject* obj) {
             printf(")");
             break;
         }
+        case MS_OBJ_STRING_BUILDER: {
+            MsObjStringBuilder* sb = (MsObjStringBuilder*)obj;
+            printf("<StringBuilder len=%d>", sb->length);
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -334,9 +339,42 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sz, 0);
             break;
         }
+        case MS_OBJ_STRING_BUILDER: {
+            MsObjStringBuilder* sb = (MsObjStringBuilder*)obj;
+            if (sb->buffer) ms_reallocate(vm, sb->buffer, (size_t)sb->capacity, 0);
+            ms_reallocate(vm, obj, sizeof(MsObjStringBuilder), 0);
+            break;
+        }
         default:
             /* Unhandled object type: abort to catch missing free cases early. */
             abort();
             break;
     }
+}
+
+MsObjStringBuilder* ms_obj_sb_new(struct MsVM* vm) {
+    MsObjStringBuilder* sb = MS_ALLOC_OBJ(vm, MS_OBJ_STRING_BUILDER,
+                                            MsObjStringBuilder, 0);
+    sb->buffer   = NULL;
+    sb->length   = 0;
+    sb->capacity = 0;
+    return sb;
+}
+
+void ms_obj_sb_append(MsObjStringBuilder* sb, const char* str, int len) {
+    int needed = sb->length + len + 1;
+    if (needed > sb->capacity) {
+        int cap = sb->capacity < 16 ? 16 : sb->capacity * 2;
+        if (cap < needed) cap = needed;
+        sb->buffer = (char*)realloc(sb->buffer, (size_t)cap);
+        if (!sb->buffer) abort();
+        sb->capacity = cap;
+    }
+    memcpy(sb->buffer + sb->length, str, (size_t)len);
+    sb->length += len;
+    sb->buffer[sb->length] = '\0';
+}
+
+MsObjString* ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb) {
+    return ms_obj_string_copy(vm, sb->buffer ? sb->buffer : "", sb->length);
 }

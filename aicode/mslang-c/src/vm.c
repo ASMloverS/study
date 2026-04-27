@@ -239,6 +239,57 @@ MsInterpretResult ms_vm_run(MsVM* vm) {
     return vm_run_inner(vm);
 }
 
+/* ms_vm_call_sync: call a closure from C, synchronously.
+   Saves all VM frame state, runs closure in isolation, restores state.
+   RETURN stores result in vm->call_result; we read it back. */
+MsInterpretResult ms_vm_call_sync(MsVM* vm, MsValue callee,
+                                   MsValue* argv, int argc, MsValue* out) {
+    if (!MS_IS_CLOSURE(callee) && !MS_IS_NATIVE(callee)) {
+        ms_vm_runtime_error(vm, "Callback is not a function.");
+        return MS_INTERPRET_RUNTIME_ERROR;
+    }
+
+    if (MS_IS_NATIVE(callee)) {
+        MsObjNative* nat = MS_AS_NATIVE(callee);
+        *out = nat->function(vm, argc, argv);
+        return MS_INTERPRET_OK;
+    }
+
+    MsObjClosure* cl = MS_AS_CLOSURE(callee);
+    MsObjFunction* fn = cl->function;
+
+    /* Save entire execution state. */
+    int saved_fc = vm->frame_count;
+    MsCallFrame saved_frames[MS_FRAMES_MAX];
+    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->frames[i];
+    MsValue*      saved_top = vm->stack_top;
+    MsObjUpvalue* saved_uv  = vm->open_upvalues;
+
+    /* Place args in upper half of stack (isolated from current execution). */
+    MsValue* base = vm->stack + MS_STACK_SIZE / 2;
+    for (int i = 0; i < argc; i++) base[i] = argv[i];
+
+    /* Run closure as sole frame; RETURN stores result in vm->call_result. */
+    vm->frame_count       = 1;
+    vm->open_upvalues     = NULL;
+    vm->frames[0].closure = cl;
+    vm->frames[0].ip      = fn->chunk.code;
+    vm->frames[0].slots   = base;
+    vm->stack_top         = base + fn->max_stack_size + 1;
+
+    vm->call_result = MS_NIL_VAL();
+    MsInterpretResult r = vm_run_inner(vm);
+    if (r == MS_INTERPRET_OK) *out = vm->call_result;
+
+    /* Restore original execution state. */
+    vm->frame_count   = saved_fc;
+    vm->stack_top     = saved_top;
+    vm->open_upvalues = saved_uv;
+    for (int i = 0; i < saved_fc; i++) vm->frames[i] = saved_frames[i];
+
+    return r;
+}
+
 /* ---- arithmetic helpers ---- */
 
 static bool numeric_binop(MsValue b, MsValue c, int op, MsValue* out) {
@@ -640,7 +691,10 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             close_upvalues(vm, frame->slots);
             vm->frame_count--;
-            if (vm->frame_count == 0) return MS_INTERPRET_OK;
+            if (vm->frame_count == 0) {
+                vm->call_result = ret;
+                return MS_INTERPRET_OK;
+            }
 
             /* Recover caller CALL target register */
             MsCallFrame* caller = &vm->frames[vm->frame_count - 1];
@@ -825,7 +879,15 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 break;
             }
             if (!MS_IS_INSTANCE(obj)) {
-                RUNTIME_ERROR(vm, "Only instances have methods.");
+                MsObjString* bname = MS_AS_STRING(K(B));
+                /* argv starts at slot A+1 */
+                MsValue* bargs = frame->slots + A + 1;
+                MsValue bout  = MS_NIL_VAL();
+                if (ms_builtin_invoke(vm, obj, bname, C, bargs, &bout)) {
+                    R(A) = bout;
+                    break;
+                }
+                RUNTIME_ERROR(vm, "No built-in method '%s' on this type.", bname->data);
             }
             MsObjInstance* inst = MS_AS_INSTANCE(obj);
             MsObjString* name = MS_AS_STRING(K(B));

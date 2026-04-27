@@ -1,6 +1,5 @@
 #pragma once
 #include "ms/object.h"
-#include "ms/table.h"
 #include "ms/consts.h"
 #include "ms/memory.h"
 
@@ -21,6 +20,7 @@ typedef enum {
 typedef struct MsVM {
     MsValue         stack[MS_STACK_SIZE];
     MsValue*        stack_top;
+    MsValue         call_result;     /* captures return value from ms_vm_call_sync */
     MsCallFrame     frames[MS_FRAMES_MAX];
     int             frame_count;
     MsTable         globals;
@@ -51,3 +51,14 @@ MsInterpretResult ms_vm_interpret(MsVM* vm, const char* source, const char* path
 MsInterpretResult ms_vm_run(MsVM* vm);
 void              ms_vm_runtime_error(MsVM* vm, const char* fmt, ...);
 void              ms_vm_define_native(MsVM* vm, const char* name, MsNativeFn fn, int arity);
+
+/* Call a closure synchronously from C (used by builtins like map/filter).
+   argv[0] = arg1, ..., argv[argc-1] = argN. Result stored in *out.
+   Returns MS_INTERPRET_OK or MS_INTERPRET_RUNTIME_ERROR. */
+MsInterpretResult ms_vm_call_sync(MsVM* vm, MsValue callee,
+                                   MsValue* argv, int argc, MsValue* out);
+
+/* Built-in method dispatch for non-instance receivers (string/list/map/tuple).
+   Returns true if method was handled; result stored in *out. */
+bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
+                        int argc, MsValue* argv, MsValue* out);

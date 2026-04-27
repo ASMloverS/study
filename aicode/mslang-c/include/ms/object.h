@@ -187,3 +187,19 @@ typedef struct {
 MsObjList*  ms_obj_list_new(struct MsVM* vm);
 MsObjMap*   ms_obj_map_new(struct MsVM* vm);
 MsObjTuple* ms_obj_tuple_new(struct MsVM* vm, MsValue* items, int count);
+
+/* ---- StringBuilder ---- */
+
+typedef struct {
+    MsObject obj;
+    char*    buffer;
+    int      length;
+    int      capacity;
+} MsObjStringBuilder;
+
+#define MS_IS_STRING_BUILDER(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_STRING_BUILDER)
+#define MS_AS_STRING_BUILDER(v)  ((MsObjStringBuilder*)MS_AS_OBJECT(v))
+
+MsObjStringBuilder* ms_obj_sb_new(struct MsVM* vm);
+void                ms_obj_sb_append(MsObjStringBuilder* sb, const char* str, int len);
+MsObjString*        ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb);
