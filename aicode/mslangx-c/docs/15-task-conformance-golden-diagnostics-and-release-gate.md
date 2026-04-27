@@ -78,7 +78,7 @@ Use these status markers consistently in this document:
 
 | Subtask | Status | Depends on | Summary |
 | --- | --- | --- | --- |
-| 15.1 | `TODO` | Task 01 through Task 14 | Test taxonomy, naming, and runner entrypoints |
+| 15.1 | `DONE` | Task 01 through Task 14 | Test taxonomy, naming, and runner entrypoints |
 | 15.2 | `TODO` | Tasks 04, 05, 06, 07, 08, 09 | Static conformance coverage for parser and resolver rules |
 | 15.3 | `TODO` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
 | 15.4 | `TODO` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
@@ -87,7 +87,7 @@ Use these status markers consistently in this document:
 
 ### Subtask 15.1 - Test taxonomy, naming, and runner entrypoints
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Task 01 through Task 14.
 
@@ -122,6 +122,20 @@ ctest --test-dir build -C Debug --output-on-failure -N
 1. The suite labels and directory conventions are documented in one place.
 2. The release entrypoint is stable and easy to run locally.
 3. The test taxonomy matches the file layout used by the repository.
+
+**Implementation summary**
+
+1. `tests/CMakeLists.txt` now tags the CLI, e2e, resolver, module, class, and
+   container suites with `integration` plus `conformance`, and
+   `tests/unit/CMakeLists.txt` does the same for the lexer and parser fixture
+   suites.
+2. `ctest --test-dir build -C Debug --output-on-failure -L conformance` now
+   selects the language-contract suites instead of returning zero tests.
+3. The existing `tests/` layout already matches the documented `tests/ms/`,
+   `tests/e2e/`, `tests/stress/`, and `tests/unit/` split, so no file moves or
+   new runner entrypoint were required for this subtask.
+4. `ctest --test-dir build -C Debug --output-on-failure` remains the single
+   local gate entrypoint for developers.
 
 ### Subtask 15.2 - Static conformance coverage for parser and resolver rules
 

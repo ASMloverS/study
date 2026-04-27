@@ -6,7 +6,7 @@ function(mslangc_add_cli_test test_name)
   add_test(NAME "${test_name}"
     COMMAND "${CMAKE_COMMAND}" ${ARGN})
   set_tests_properties("${test_name}" PROPERTIES
-    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};runner")
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};runner")
 endfunction()
 
 function(mslangc_add_e2e_basic_test test_name script_name)
@@ -19,7 +19,7 @@ function(mslangc_add_e2e_basic_test test_name script_name)
       -DEXPECT_STDERR=""
       -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
   set_tests_properties("${test_name}" PROPERTIES
-    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};e2e_basic")
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};e2e_basic")
 endfunction()
 
 function(mslangc_add_e2e_named_test test_name script_path output_path test_label)
@@ -32,7 +32,7 @@ function(mslangc_add_e2e_named_test test_name script_path output_path test_label
       -DEXPECT_STDERR=""
       -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
   set_tests_properties("${test_name}" PROPERTIES
-    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${test_label}")
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};${test_label}")
 endfunction()
 
 add_executable(containers_e2e_runner containers_e2e_runner.c)
@@ -109,7 +109,7 @@ mslangc_add_cli_test(containers.truthiness
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.truthiness PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.length
   -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/length.ms"
@@ -118,7 +118,7 @@ mslangc_add_cli_test(containers.length
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.length PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.literals
   -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/literals.ms"
@@ -127,7 +127,7 @@ mslangc_add_cli_test(containers.literals
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.literals PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.list_indexing
   -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/list_indexing.ms"
@@ -136,7 +136,7 @@ mslangc_add_cli_test(containers.list_indexing
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.list_indexing PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.tuple_index_read
   -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/tuple_index_read.ms"
@@ -145,7 +145,7 @@ mslangc_add_cli_test(containers.tuple_index_read
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.tuple_index_read PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.map_indexing
   -DMSLANGC_EXE="$<TARGET_FILE:containers_e2e_runner>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/map_indexing.ms"
@@ -154,7 +154,7 @@ mslangc_add_cli_test(containers.map_indexing
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.map_indexing PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.regression_chain
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/regression_chain.ms"
@@ -163,7 +163,7 @@ mslangc_add_cli_test(containers.regression_chain
   -DEXPECT_STDERR=""
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.regression_chain PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.invalid_index_target
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/invalid_index_target.ms"
@@ -172,7 +172,7 @@ mslangc_add_cli_test(containers.invalid_index_target
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4012;value is not indexable"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.invalid_index_target PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.non_integral_index
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/non_integral_index.ms"
@@ -181,7 +181,7 @@ mslangc_add_cli_test(containers.non_integral_index
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4013;index must be a non-negative integer"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.non_integral_index PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.index_out_of_range
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/index_out_of_range.ms"
@@ -190,7 +190,7 @@ mslangc_add_cli_test(containers.index_out_of_range
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4014;index out of range"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.index_out_of_range PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.tuple_write
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/tuple_write.ms"
@@ -199,7 +199,7 @@ mslangc_add_cli_test(containers.tuple_write
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4015;tuple elements are immutable"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.tuple_write PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.missing_map_key
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/missing_map_key.ms"
@@ -208,7 +208,7 @@ mslangc_add_cli_test(containers.missing_map_key
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4016;map key not found"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.missing_map_key PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.string_indexing
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/string_indexing.ms"
@@ -217,7 +217,7 @@ mslangc_add_cli_test(containers.string_indexing
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4012;value is not indexable"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.string_indexing PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 mslangc_add_cli_test(containers.non_string_map_key
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/non_string_map_key.ms"
@@ -226,7 +226,7 @@ mslangc_add_cli_test(containers.non_string_map_key
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4011;map keys must be strings"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.non_string_map_key PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};containers")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
 
 mslangc_add_e2e_named_test(class.basic_class
   "e2e/class/basic_class.ms"
@@ -284,7 +284,7 @@ mslangc_add_cli_test(modules.missing_export
   -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5002;missing_export.ms:4:"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(modules.missing_export PROPERTIES
-  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};modules")
 mslangc_add_e2e_named_test(modules.cache_once
   "e2e/modules/cache_once.ms"
   "e2e/modules/cache_once.ms.out"

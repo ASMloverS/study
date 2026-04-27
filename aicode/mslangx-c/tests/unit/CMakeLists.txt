@@ -95,7 +95,7 @@ function(mslangc_add_lexer_fixture_test test_name fixture_name)
     COMMAND lexer.fixture
       "${CMAKE_CURRENT_SOURCE_DIR}/../ms/lexer/${fixture_name}")
   set_tests_properties("${test_name}" PROPERTIES
-    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};lexer")
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};lexer")
 endfunction()
 
 function(mslangc_add_parser_expr_fixture_test test_name fixture_name)
@@ -103,7 +103,7 @@ function(mslangc_add_parser_expr_fixture_test test_name fixture_name)
     COMMAND parser_expr.fixture
       "${CMAKE_CURRENT_SOURCE_DIR}/../ms/parser_expr/${fixture_name}")
   set_tests_properties("${test_name}" PROPERTIES
-    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};parser_expr")
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};parser_expr")
 endfunction()
 
 function(mslangc_add_parser_decl_stmt_fixture_test test_name fixture_name)
@@ -111,7 +111,7 @@ function(mslangc_add_parser_decl_stmt_fixture_test test_name fixture_name)
     COMMAND parser_decl_stmt.fixture
       "${CMAKE_CURRENT_SOURCE_DIR}/../ms/parser_decl_stmt/${fixture_name}")
   set_tests_properties("${test_name}" PROPERTIES
-    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};parser_decl_stmt")
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};parser_decl_stmt")
 endfunction()
 
 mslangc_add_lexer_fixture_test(lexer.fixture.basic_program basic_program.ms)
