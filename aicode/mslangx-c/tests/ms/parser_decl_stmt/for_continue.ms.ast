@@ -1,0 +1,17 @@
+program count=1
+  for
+    init
+      var "i"
+        number "0"
+    condition
+      binary "<"
+        variable "i"
+        number "3"
+    increment
+      assign
+        variable "i"
+        binary "+"
+          variable "i"
+          number "1"
+    block count=1
+      continue

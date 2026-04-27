@@ -1,0 +1,5 @@
+program count=1
+  while
+    true
+    block count=1
+      break

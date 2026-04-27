@@ -79,7 +79,7 @@ Use these status markers consistently in this document:
 | Subtask | Status | Depends on | Summary |
 | --- | --- | --- | --- |
 | 15.1 | `DONE` | Task 01 through Task 14 | Test taxonomy, naming, and runner entrypoints |
-| 15.2 | `TODO` | Tasks 04, 05, 06, 07, 08, 09 | Static conformance coverage for parser and resolver rules |
+| 15.2 | `DONE` | Tasks 04, 05, 06, 07, 08, 09 | Static conformance coverage for parser and resolver rules |
 | 15.3 | `TODO` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
 | 15.4 | `TODO` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
 | 15.5 | `TODO` | 15.3, 14.6 | Module and GC stress regressions under the standard test gate |
@@ -139,7 +139,7 @@ ctest --test-dir build -C Debug --output-on-failure -N
 
 ### Subtask 15.2 - Static conformance coverage for parser and resolver rules
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Tasks 04, 05, 06, 07, 08, and 09.
 
@@ -163,6 +163,19 @@ ctest --test-dir build -C Debug --output-on-failure -N
    violations, especially `break`, `continue`, `self`, `super`, and
    `init`-return restrictions.
 3. Keep each fixture small enough that one diagnostic maps to one rule.
+
+**Implementation summary**
+
+1. Added `tests/ms/parser_decl_stmt/while_break.ms` and
+   `tests/ms/parser_decl_stmt/for_continue.ms` to lock the AST shapes for loop
+   bodies that contain `break` and `continue`.
+2. Registered both fixtures in `tests/unit/CMakeLists.txt` so they run through
+   the existing parser-declaration fixture harness.
+3. The existing resolver fixtures already cover the static legality checks for
+   `break`, `continue`, `self`, `super`, and illegal `return <expr>` in `init`,
+   so no resolver-side code change was needed for this subtask.
+4. The targeted conformance sweep passed with
+   `ctest --test-dir build -C Debug --output-on-failure -R "parser_expr\\.fixture|parser_decl_stmt\\.fixture|resolver_static"`.
 
 **Verification**
 
