@@ -80,7 +80,7 @@ Use these status markers consistently in this document:
 | --- | --- | --- | --- |
 | 15.1 | `DONE` | Task 01 through Task 14 | Test taxonomy, naming, and runner entrypoints |
 | 15.2 | `DONE` | Tasks 04, 05, 06, 07, 08, 09 | Static conformance coverage for parser and resolver rules |
-| 15.3 | `TODO` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
+| 15.3 | `DONE` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
 | 15.4 | `TODO` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
 | 15.5 | `TODO` | 15.3, 14.6 | Module and GC stress regressions under the standard test gate |
 | 15.6 | `TODO` | 15.1 through 15.5 | Unified local and CI release gate definition |
@@ -191,7 +191,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "parser_expr\.fixture|par
 
 ### Subtask 15.3 - Runtime conformance coverage for functions, classes, containers, and modules
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Tasks 10, 11, 12, 13, and 14.
 
@@ -213,6 +213,19 @@ ctest --test-dir build -C Debug --output-on-failure -R "parser_expr\.fixture|par
 2. Add any missing `.out` files so the success-path output is explicit.
 3. Keep module namespace isolation and import chaining covered by end-to-end
    scripts rather than by unit tests alone.
+
+**Implementation summary**
+
+1. Added `tests/e2e/basic/evaluation_order.ms` and
+   `tests/e2e/basic/evaluation_order.ms.out` to lock left-to-right runtime
+   evaluation order for function-call operands and binary `+` operands.
+2. Registered `e2e_basic.evaluation_order` in `tests/CMakeLists.txt` so the new
+   runtime conformance case runs with the existing e2e basic suite.
+3. The existing runtime fixtures already covered functions, closures, classes,
+   containers, and modules, so no additional feature-area scripts were needed
+   beyond the new evaluation-order case.
+4. The runtime conformance sweep passed with
+   `ctest --test-dir build -C Debug --output-on-failure -R "e2e_basic|functions|closures|class|containers|modules"`.
 
 **Verification**
 

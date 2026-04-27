@@ -84,6 +84,7 @@ add_subdirectory(unit)
 
 mslangc_add_e2e_basic_test(e2e_basic.smoke smoke.ms)
 mslangc_add_e2e_basic_test(e2e_basic.short_circuit short_circuit.ms)
+mslangc_add_e2e_basic_test(e2e_basic.evaluation_order evaluation_order.ms)
 mslangc_add_e2e_basic_test(e2e_basic.loops loops.ms)
 mslangc_add_e2e_named_test(functions.recursion
   "e2e/functions/recursion.ms"
