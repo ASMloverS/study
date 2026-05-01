@@ -9,6 +9,8 @@ function(mslangc_add_cli_test test_name)
     LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};runner")
 endfunction()
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 function(mslangc_add_e2e_basic_test test_name script_name)
   add_test(NAME "${test_name}"
     COMMAND "${CMAKE_COMMAND}"
@@ -499,3 +501,17 @@ add_test(NAME gc.modules
     -Configuration "$<CONFIG>")
 set_tests_properties(gc.modules PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};gc;modules")
+
+add_test(NAME examples.launcher
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/run_ms_examples.py"
+    --runner "$<TARGET_FILE:mslangc>"
+    --root "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set_tests_properties(examples.launcher PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};examples")
+
+add_test(NAME examples.launcher.unit
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_run_ms_examples.py")
+set_tests_properties(examples.launcher.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_CONFORMANCE};examples;python")

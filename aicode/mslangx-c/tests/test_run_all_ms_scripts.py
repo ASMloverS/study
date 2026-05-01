@@ -290,7 +290,7 @@ class RunAllMsScriptsTest(unittest.TestCase):
     self.assertEqual(exit_code, 0)
     self.assertIn("PASS general.ms", stdout.getvalue())
     self.assertIn("PASS e2e/containers/special.ms", stdout.getvalue())
-    self.assertIn("ran special.ms", stdout.getvalue())
+    self.assertIn("ran container special.ms", stdout.getvalue())
     self.assertNotIn("wrong runner", stderr.getvalue())
     self.assertIn("Summary: 2 passed, 0 failed, 2 total", stdout.getvalue())
 
