@@ -176,6 +176,7 @@ static int test_reports_resolve_errors_before_lowering(void) {
   TEST_ASSERT(diagnostic != NULL);
   TEST_ASSERT(strcmp(diagnostic->phase, "resolve") == 0);
   TEST_ASSERT(strcmp(diagnostic->code, "MS3004") == 0);
+  TEST_ASSERT(diagnostic->span.line == 1);
   TEST_ASSERT(strcmp(diagnostic->message,
                      "cannot read local variable in its own initializer") == 0);
 

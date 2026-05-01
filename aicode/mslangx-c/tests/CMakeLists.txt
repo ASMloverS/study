@@ -61,7 +61,7 @@ mslangc_add_cli_test(runner_basic.parse_error
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/basic/parse_error.ms"
   -DEXPECT_EXIT=65
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=parse;MS2001"
+  -DEXPECT_STDERR_CONTAINS="phase=parse;code=MS2001;parse_error.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(runner_basic.resolve_error
@@ -69,7 +69,7 @@ mslangc_add_cli_test(runner_basic.resolve_error
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/basic/resolve_error.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3003"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3003;resolve_error.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(runner_basic.runtime_error
@@ -77,7 +77,7 @@ mslangc_add_cli_test(runner_basic.runtime_error
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/basic/runtime_error.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;MS4004"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4004;runtime_error.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 add_subdirectory(unit)
@@ -170,7 +170,7 @@ mslangc_add_cli_test(containers.invalid_index_target
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/invalid_index_target.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4012;value is not indexable"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4012;invalid_index_target.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.invalid_index_target PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -179,7 +179,7 @@ mslangc_add_cli_test(containers.non_integral_index
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/non_integral_index.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4013;index must be a non-negative integer"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4013;non_integral_index.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.non_integral_index PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -188,7 +188,7 @@ mslangc_add_cli_test(containers.index_out_of_range
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/index_out_of_range.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4014;index out of range"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4014;index_out_of_range.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.index_out_of_range PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -197,7 +197,7 @@ mslangc_add_cli_test(containers.tuple_write
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/tuple_write.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4015;tuple elements are immutable"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4015;tuple_write.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.tuple_write PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -206,7 +206,7 @@ mslangc_add_cli_test(containers.missing_map_key
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/missing_map_key.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4016;map key not found"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4016;missing_map_key.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.missing_map_key PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -215,7 +215,7 @@ mslangc_add_cli_test(containers.string_indexing
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/string_indexing.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4012;value is not indexable"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4012;string_indexing.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.string_indexing PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -224,7 +224,7 @@ mslangc_add_cli_test(containers.non_string_map_key
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/containers/non_string_map_key.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4011;map keys must be strings"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4011;non_string_map_key.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(containers.non_string_map_key PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};containers")
@@ -282,7 +282,7 @@ mslangc_add_cli_test(modules.missing_export
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_export.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/missing_export.ms.out"
-  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5002;missing_export.ms:4:"
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5002;missing_export.ms:4:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(modules.missing_export PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};modules")
@@ -321,7 +321,7 @@ mslangc_add_cli_test(modules.import_parse_failure
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/modules/import_parse_failure.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;import_parse_failure.ms:1:1;phase=parse;code=MS2001;parse_fail.ms:2:1"
+  -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;import_parse_failure.ms:1:1;phase=parse;code=MS2001;parse_fail.ms:3:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 set_tests_properties(modules.import_parse_failure PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};modules")
@@ -365,21 +365,21 @@ mslangc_add_cli_test(functions.non_callable
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/non_callable.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;MS4006"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4006;non_callable.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 mslangc_add_cli_test(functions.wrong_arity
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/functions/wrong_arity.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=runtime;MS4007"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4007;wrong_arity.ms:5:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 mslangc_add_cli_test(resolver_static.top_level_return
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/top_level_return.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3001"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3001;top_level_return.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.duplicate_module_binding
@@ -387,7 +387,7 @@ mslangc_add_cli_test(resolver_static.duplicate_module_binding
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_module_binding.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3002;duplicate_module_binding.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.duplicate_import_alias_binding
@@ -395,7 +395,7 @@ mslangc_add_cli_test(resolver_static.duplicate_import_alias_binding
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_import_alias_binding.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3002;duplicate_import_alias_binding.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.duplicate_local_binding
@@ -403,7 +403,7 @@ mslangc_add_cli_test(resolver_static.duplicate_local_binding
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/duplicate_local_binding.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3002"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3002;duplicate_local_binding.ms:3:3"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.self_read_initializer
@@ -411,14 +411,14 @@ mslangc_add_cli_test(resolver_static.self_read_initializer
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/self_read_initializer.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3004"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3004;self_read_initializer.ms:2:15"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 mslangc_add_cli_test(resolver_static.illegal_self
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_self_outside_class.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="code=MS3007"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3007;illegal_self_outside_class.ms:1:7"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.illegal_super
@@ -426,7 +426,7 @@ mslangc_add_cli_test(resolver_static.illegal_super
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_super_outside_subclass.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="code=MS3008"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3008;illegal_super_outside_subclass.ms:1:7"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.illegal_init_return
@@ -434,7 +434,7 @@ mslangc_add_cli_test(resolver_static.illegal_init_return
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_init_return_value.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="code=MS3009"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3009;illegal_init_return_value.ms:3:5"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.self_inherit
@@ -442,7 +442,7 @@ mslangc_add_cli_test(resolver_static.self_inherit
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/class_inherits_from_itself.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="code=MS3010"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3010;class_inherits_from_itself.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.illegal_break
@@ -450,7 +450,7 @@ mslangc_add_cli_test(resolver_static.illegal_break
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_break.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3003"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3003;illegal_break.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 mslangc_add_cli_test(resolver_static.illegal_continue
@@ -458,21 +458,21 @@ mslangc_add_cli_test(resolver_static.illegal_continue
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/ms/resolver/illegal_continue.ms"
   -DEXPECT_EXIT=66
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="phase=resolve;MS3003"
+  -DEXPECT_STDERR_CONTAINS="phase=resolve;code=MS3003;illegal_continue.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 mslangc_add_cli_test(class.missing_property
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/class/missing_property.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="code=MS4010"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4010;missing_property.ms:3:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 mslangc_add_cli_test(class.invalid_property_receiver
   -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
   -DSCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/e2e/class/invalid_property_receiver.ms"
   -DEXPECT_EXIT=70
   -DEXPECT_STDOUT=""
-  -DEXPECT_STDERR_CONTAINS="code=MS4009"
+  -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4009;invalid_property_receiver.ms:2:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
 add_test(NAME gc.stress

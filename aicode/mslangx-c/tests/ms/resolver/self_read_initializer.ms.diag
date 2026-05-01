@@ -1,0 +1,1 @@
+resolve MS3004 2:15+5 cannot read local variable in its own initializer

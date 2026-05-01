@@ -36,6 +36,7 @@ static int test_rejects_top_level_return(void) {
   TEST_ASSERT(diagnostic != NULL);
   TEST_ASSERT(strcmp(diagnostic->phase, "resolve") == 0);
   TEST_ASSERT(strcmp(diagnostic->code, "MS3001") == 0);
+  TEST_ASSERT(diagnostic->span.line == 1);
   TEST_ASSERT(strcmp(diagnostic->message, "top-level return is not allowed") == 0);
 
   ms_resolution_table_destroy(&table);

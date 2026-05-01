@@ -61,6 +61,28 @@ mslangc_add_frontend_unit_test(lexer.unit lexer_test.c lexer)
 mslangc_add_frontend_unit_test(parser_expr.unit parser_expr_test.c parser_expr)
 mslangc_add_frontend_unit_test(parser_decl_stmt.unit parser_decl_stmt_test.c parser_decl_stmt)
 mslangc_add_frontend_unit_test(resolver.unit resolver_test.c resolver)
+add_executable(resolver.fixture resolver_fixture_test.c)
+target_link_libraries(resolver.fixture PRIVATE mslang_frontend)
+mslangc_apply_test_warnings(resolver.fixture)
+function(mslangc_add_resolver_fixture_test test_name fixture_name)
+  add_test(NAME "${test_name}"
+    COMMAND resolver.fixture
+      "${CMAKE_CURRENT_SOURCE_DIR}/../ms/resolver/${fixture_name}")
+  set_tests_properties("${test_name}" PROPERTIES
+    LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};resolver")
+endfunction()
+
+mslangc_add_resolver_fixture_test(resolver.fixture.top_level_return top_level_return.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.duplicate_module_binding duplicate_module_binding.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.duplicate_import_alias_binding duplicate_import_alias_binding.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.duplicate_local_binding duplicate_local_binding.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.self_read_initializer self_read_initializer.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.illegal_self_outside_class illegal_self_outside_class.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.illegal_super_outside_subclass illegal_super_outside_subclass.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.illegal_init_return_value illegal_init_return_value.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.class_inherits_from_itself class_inherits_from_itself.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.illegal_break illegal_break.ms)
+mslangc_add_resolver_fixture_test(resolver.fixture.illegal_continue illegal_continue.ms)
 add_executable(functions_closures.unit functions_closures_test.c)
 target_link_libraries(functions_closures.unit PRIVATE
   mslang_frontend

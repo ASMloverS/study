@@ -81,7 +81,7 @@ Use these status markers consistently in this document:
 | 15.1 | `DONE` | Task 01 through Task 14 | Test taxonomy, naming, and runner entrypoints |
 | 15.2 | `DONE` | Tasks 04, 05, 06, 07, 08, 09 | Static conformance coverage for parser and resolver rules |
 | 15.3 | `DONE` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
-| 15.4 | `TODO` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
+| 15.4 | `DONE` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
 | 15.5 | `TODO` | 15.3, 14.6 | Module and GC stress regressions under the standard test gate |
 | 15.6 | `TODO` | 15.1 through 15.5 | Unified local and CI release gate definition |
 
@@ -244,7 +244,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "e2e_basic|functions|clos
 
 ### Subtask 15.4 - Golden diagnostics with stable `phase + code + line` assertions
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtasks 15.2 and 15.3.
 
@@ -278,6 +278,20 @@ ctest --test-dir build -C Debug --output-on-failure -R "runner_basic\.(parse_err
 2. Golden output is updated only with an explicit reason.
 3. Parser, resolver, module, and runtime failure modes are easy to compare
    against the expected contract.
+
+**Implementation summary**
+
+1. Tightened the CLI failure checks in `tests/CMakeLists.txt` so parser,
+   resolver, module, class, container, and function failures now assert the
+   expected diagnostic line in addition to phase and code.
+2. Added a dedicated resolver fixture harness in `tests/unit/` and pinned the
+   current resolver failure modes with `.diag` goldens under `tests/ms/resolver/`.
+3. Updated the resolver and lowering unit tests to pin `diagnostic->span.line`
+   for the negative cases that feed the golden contract.
+4. Corrected the module parse-failure expectation so it matches the current
+   `parse_fail.ms:3:1` diagnostic.
+5. Verified the targeted failure checks against the current CLI output before
+   marking the subtask complete.
 
 ### Subtask 15.5 - Module and GC stress regressions under the standard test gate
 
