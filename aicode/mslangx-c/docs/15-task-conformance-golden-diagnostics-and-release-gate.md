@@ -82,7 +82,7 @@ Use these status markers consistently in this document:
 | 15.2 | `DONE` | Tasks 04, 05, 06, 07, 08, 09 | Static conformance coverage for parser and resolver rules |
 | 15.3 | `DONE` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
 | 15.4 | `DONE` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
-| 15.5 | `TODO` | 15.3, 14.6 | Module and GC stress regressions under the standard test gate |
+| 15.5 | `DONE` | 15.3, 14.6 | Module and GC stress regressions under the standard test gate |
 | 15.6 | `TODO` | 15.1 through 15.5 | Unified local and CI release gate definition |
 
 ### Subtask 15.1 - Test taxonomy, naming, and runner entrypoints
@@ -295,7 +295,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "runner_basic\.(parse_err
 
 ### Subtask 15.5 - Module and GC stress regressions under the standard test gate
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtasks 15.3 and 14.6.
 
@@ -331,6 +331,19 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.stress|gc\.modules|m
 2. Module regressions run as part of the same release gate.
 3. Stress failures clearly point to one behavior family instead of a broad
    runtime area.
+
+**Implementation summary**
+
+1. Kept `tests/stress/gc/alloc_churn.ms` and `tests/stress/gc/modules/module_gc.ms`
+   in the standard release-gate test set.
+2. Kept `tests/run_gc_stress.ps1` and `tests/run_gc_modules.ps1` as the
+   deterministic runners for the GC stress and module regression subsets, and
+   made the module runner follow the active CTest configuration.
+3. Confirmed the existing module regressions for cache reuse, shared
+   dependency reuse, and temporary-root coverage still pass under the release
+   gate.
+4. Verified the documented gate command passes:
+   `ctest --test-dir build -C Debug --output-on-failure -R "gc\.stress|gc\.modules|modules\.(cache_once|shared_dependency_once|temp_root_success|temp_root_failure)"`.
 
 ### Subtask 15.6 - Unified local and CI release gate definition
 

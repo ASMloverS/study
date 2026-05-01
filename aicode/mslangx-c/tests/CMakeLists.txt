@@ -495,6 +495,7 @@ add_test(NAME gc.modules
     Bypass
     -File "${CMAKE_CURRENT_SOURCE_DIR}/run_gc_modules.ps1"
     -CTest "${CMAKE_CTEST_COMMAND}"
-    -BuildDir "${CMAKE_BINARY_DIR}")
+    -BuildDir "${CMAKE_BINARY_DIR}"
+    -Configuration "$<CONFIG>")
 set_tests_properties(gc.modules PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};gc;modules")
