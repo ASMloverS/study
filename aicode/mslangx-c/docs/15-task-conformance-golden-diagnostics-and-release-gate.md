@@ -83,7 +83,7 @@ Use these status markers consistently in this document:
 | 15.3 | `DONE` | Tasks 10, 11, 12, 13, 14 | Runtime conformance coverage for functions, classes, containers, and modules |
 | 15.4 | `DONE` | 15.2, 15.3 | Golden diagnostics with stable `phase + code + line` assertions |
 | 15.5 | `DONE` | 15.3, 14.6 | Module and GC stress regressions under the standard test gate |
-| 15.6 | `TODO` | 15.1 through 15.5 | Unified local and CI release gate definition |
+| 15.6 | `DONE` | 15.1 through 15.5 | Unified local and CI release gate definition |
 
 ### Subtask 15.1 - Test taxonomy, naming, and runner entrypoints
 
@@ -347,7 +347,7 @@ ctest --test-dir build -C Debug --output-on-failure -R "gc\.stress|gc\.modules|m
 
 ### Subtask 15.6 - Unified local and CI release gate definition
 
-**Status:** `TODO`
+**Status:** `DONE`
 
 **Depends on:** Subtasks 15.1 through 15.5.
 
@@ -382,6 +382,17 @@ ctest --test-dir build -C Debug --output-on-failure
 1. One documented local command runs the full matrix.
 2. The CI gate matches the local gate scope.
 3. The release definition is strict enough to keep the baseline stable.
+
+**Implementation summary**
+
+1. Defined the local release gate as the ordered sequence
+   `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug`,
+   `cmake --build build --config Debug`, and
+   `ctest --test-dir build -C Debug --output-on-failure`.
+2. Kept the CI gate scope aligned with the same configure, build, and test
+   sequence so CI does not hide regressions that local runs would catch.
+3. Kept the release gate strict enough to include the conformance, golden,
+   module, and GC coverage already established in subtasks 15.1 through 15.5.
 
 ## Acceptance
 
