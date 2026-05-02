@@ -570,6 +570,97 @@ static void parse_try_stmt(MsCompiler* c) {
     free_reg(c, catch_reg);
 }
 
+/* ---- import ---- */
+
+/*
+ * import "path"               -- IMPORT A Bx  (K(Bx)=path, R(A)=module, stored as global 'basename')
+ * from "path" import name     -- IMPORT A Bx + IMPFROM A A C  (K(C)=name, store as global 'name')
+ * from "path" import name as alias -- same + IMPALIAS (store alias)
+ */
+static void parse_import_stmt(MsCompiler* c) {
+    /* import "path" */
+    consume(c, MS_TK_STRING, "Expected path string after 'import'.");
+    int path_k = add_string_constant(c, c->previous.start + 1,
+                                     c->previous.length - 2);
+    int mod_reg = alloc_reg(c);
+    emit(c, ms_enc_ABx(MS_OP_IMPORT, mod_reg, path_k));
+
+    /* Derive module name from path (last component, strip .ms) */
+    const char* path = c->previous.start + 1;
+    int path_len = c->previous.length - 2;
+    int de = -1;
+    for (int i = 0; i < path_len; i++) {
+        if (path[i] == '/' || path[i] == '\\') de = i;
+    }
+    const char* base = path + de + 1;
+    int base_len = path_len - de - 1;
+    /* Strip .ms */
+    if (base_len > 3 && base[base_len - 3] == '.' &&
+        base[base_len - 2] == 'm' && base[base_len - 1] == 's') {
+        base_len -= 3;
+    }
+
+    /* Define module as global under its basename */
+    if (c->scope_depth == 0) {
+        int name_k = add_string_constant(c, base, base_len);
+        emit(c, ms_enc_ABx(MS_OP_DEFGLOBAL, mod_reg, name_k));
+        free_reg(c, mod_reg);
+    } else {
+        /* Local scope: just keep it as a local */
+        MsToken fake_tok;
+        fake_tok.type   = MS_TK_IDENTIFIER;
+        fake_tok.start  = base;
+        fake_tok.length = base_len;
+        fake_tok.line   = c->previous.line;
+        fake_tok.column = c->previous.column;
+        MsLocal* loc = &c->locals[c->local_count++];
+        loc->name        = fake_tok;
+        loc->depth       = c->scope_depth;
+        loc->is_captured = false;
+        loc->slot        = mod_reg;
+    }
+}
+
+static void parse_from_import_stmt(MsCompiler* c) {
+    /* from "path" import name [as alias] */
+    consume(c, MS_TK_STRING, "Expected path string after 'from'.");
+    int path_k = add_string_constant(c, c->previous.start + 1,
+                                     c->previous.length - 2);
+    consume(c, MS_TK_IMPORT, "Expected 'import' after path.");
+    consume(c, MS_TK_IDENTIFIER, "Expected name after 'import'.");
+    MsToken name_tok = c->previous;
+    int name_k = add_string_constant(c, name_tok.start, name_tok.length);
+
+    /* IMPORT: load module into a temp reg */
+    int mod_reg = alloc_reg(c);
+    emit(c, ms_enc_ABx(MS_OP_IMPORT, mod_reg, path_k));
+
+    /* IMPFROM: extract the named export */
+    int val_reg = alloc_reg(c);
+    emit(c, ms_enc_ABC(MS_OP_IMPFROM, val_reg, mod_reg, name_k));
+    free_reg(c, mod_reg);
+
+    /* Determine the binding name (alias or original) */
+    MsToken bind_tok = name_tok;
+    if (match_tok(c, MS_TK_AS)) {
+        consume(c, MS_TK_IDENTIFIER, "Expected alias name after 'as'.");
+        bind_tok = c->previous;
+    }
+
+    /* Bind */
+    if (c->scope_depth == 0) {
+        int bind_k = add_string_constant(c, bind_tok.start, bind_tok.length);
+        emit(c, ms_enc_ABx(MS_OP_DEFGLOBAL, val_reg, bind_k));
+        free_reg(c, val_reg);
+    } else {
+        MsLocal* loc = &c->locals[c->local_count++];
+        loc->name        = bind_tok;
+        loc->depth       = c->scope_depth;
+        loc->is_captured = false;
+        loc->slot        = val_reg;
+    }
+}
+
 /* ---- defer ---- */
 
 static void parse_defer_stmt(MsCompiler* c) {
@@ -997,6 +1088,10 @@ static void compile_statement(MsCompiler* c) {
         parse_throw_stmt(c);
     } else if (match_tok(c, MS_TK_DEFER)) {
         parse_defer_stmt(c);
+    } else if (match_tok(c, MS_TK_IMPORT)) {
+        parse_import_stmt(c);
+    } else if (match_tok(c, MS_TK_FROM)) {
+        parse_from_import_stmt(c);
     } else if (match_tok(c, MS_TK_SWITCH)) {
         parse_switch_stmt(c);
         return;
@@ -1021,7 +1116,6 @@ MsObjFunction* ms_compile(MsVM* vm, const char* source, const char* path,
                            MsDiagnostic* diags, int* diag_count, int max_diags) {
     MsCompiler c;
     compiler_init(&c, vm, source, diags, diag_count, max_diags);
-    MS_UNUSED(path);
 
     while (!check(&c, MS_TK_EOF_TOKEN)) {
         if (match_tok(&c, MS_TK_NEWLINE) || match_tok(&c, MS_TK_SEMICOLON))
@@ -1031,6 +1125,8 @@ MsObjFunction* ms_compile(MsVM* vm, const char* source, const char* path,
 
     emit(&c, ms_enc_ABC(MS_OP_RETURN, 0, 0, 0));
     c.function->max_stack_size = c.max_reg;
+    if (path)
+        c.function->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
     ms_table_free(&c.string_cache);
 
     return c.had_error ? NULL : c.function;

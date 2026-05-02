@@ -137,6 +137,13 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
             ms_mark_object(vm, (MsObject*)uv);
         break;
     }
+    case MS_OBJ_MODULE: {
+        MsObjModule* mod = (MsObjModule*)obj;
+        ms_mark_object(vm, (MsObject*)mod->name);
+        ms_mark_object(vm, (MsObject*)mod->path);
+        ms_mark_table(vm, &mod->exports);
+        break;
+    }
     default:
         break;
     }
@@ -162,6 +169,7 @@ static void mark_roots(MsVM* vm) {
     for (MsObjUpvalue* uv = vm->open_upvalues; uv; uv = uv->next)
         ms_mark_object(vm, (MsObject*)uv);
     ms_mark_table(vm, &vm->globals);
+    ms_mark_table(vm, &vm->module_cache);
     if (vm->compiler) mark_compiler_roots(vm);
     if (vm->init_string) ms_mark_object(vm, (MsObject*)vm->init_string);
 }

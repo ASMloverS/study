@@ -62,6 +62,7 @@ typedef struct {
     bool          is_generator;
     MsChunk       chunk;
     MsObjString*  name;
+    MsObjString*  script_path;   /* canonical path of source file (for module imports) */
     MsInlineCache* ic;
     int           ic_count;
 } MsObjFunction;
@@ -187,6 +188,28 @@ typedef struct {
 MsObjList*  ms_obj_list_new(struct MsVM* vm);
 MsObjMap*   ms_obj_map_new(struct MsVM* vm);
 MsObjTuple* ms_obj_tuple_new(struct MsVM* vm, MsValue* items, int count);
+
+/* ---- Module ---- */
+
+typedef enum {
+    MS_MOD_UNSEEN,
+    MS_MOD_INITIALIZING,
+    MS_MOD_INITIALIZED,
+    MS_MOD_FAILED,
+} MsModuleState;
+
+typedef struct {
+    MsObject      obj;
+    MsObjString*  name;
+    MsObjString*  path;
+    MsTable       exports;
+    MsModuleState state;
+} MsObjModule;
+
+#define MS_IS_MODULE(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_MODULE)
+#define MS_AS_MODULE(v)  ((MsObjModule*)MS_AS_OBJECT(v))
+
+MsObjModule* ms_obj_module_new(struct MsVM* vm, MsObjString* name, MsObjString* path);
 
 /* ---- Coroutine ---- */
 

@@ -1,5 +1,6 @@
 #include "ms/vm.h"
 #include "ms/compiler.h"
+#include "ms/module.h"
 #include "ms/opcode.h"
 #include "ms/object.h"
 #include "ms/table.h"
@@ -153,6 +154,7 @@ void ms_vm_init(MsVM* vm) {
     ms_pool_init(&vm->bound_pool,   sizeof(void*) * 4); /* ObjBoundMethod size est.; resized in T18 */
     ms_table_init(&vm->globals);
     ms_table_init(&vm->strings);
+    ms_table_init(&vm->module_cache);
     vm->init_string = ms_obj_string_copy(vm, "init", 4);
     ms_vm_register_natives(vm);
 }
@@ -166,6 +168,7 @@ void ms_vm_free(MsVM* vm) {
     }
     ms_table_free(&vm->globals);
     ms_table_free(&vm->strings);
+    ms_table_free(&vm->module_cache);
     free(vm->gray_stack);
     vm->gray_stack    = NULL;
     vm->gray_count    = 0;
@@ -231,6 +234,8 @@ MsInterpretResult ms_vm_interpret(MsVM* vm, const char* source, const char* path
         }
         return MS_INTERPRET_COMPILE_ERROR;
     }
+    if (path)
+        fn->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
 
     MsObjClosure* cl = ms_obj_closure_new(vm, fn);
     MsCallFrame*  frame = &vm->frames[0];
@@ -584,6 +589,67 @@ static bool throw_exception(MsVM* vm, MsValue error) {
     return false;
 }
 
+/* ---- module execution ---- */
+
+MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
+                                        MsObjModule* mod) {
+    MsObjClosure* cl = ms_obj_closure_new(vm, fn);
+    /* Save current VM execution state */
+    int saved_fc = vm->frame_count;
+    MsCallFrame saved_frames[MS_FRAMES_MAX];
+    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->frames[i];
+    MsValue*      saved_top    = vm->stack_top;
+    MsObjUpvalue* saved_uv     = vm->open_upvalues;
+    int           saved_exc    = vm->exception_count;
+    MsTable       saved_globals = vm->globals;
+
+    /* Give module its own globals table; pre-seed with native functions so
+       module code can call print(), type(), etc. */
+    ms_table_init(&vm->globals);
+    for (int i = 0; i < saved_globals.capacity; i++) {
+        MsEntry* e = &saved_globals.entries[i];
+        if (e->key == NULL || e->key == MS_TABLE_TOMBSTONE) continue;
+        if (MS_IS_NATIVE(e->value))
+            ms_table_set(&vm->globals, e->key, e->value);
+    }
+
+    /* Isolate module execution in the upper half of the stack */
+    MsValue* base = vm->stack + MS_STACK_SIZE / 2;
+    vm->frame_count              = 1;
+    vm->open_upvalues            = NULL;
+    vm->exception_count          = 0;
+    vm->frames[0].closure        = cl;
+    vm->frames[0].ip             = fn->chunk.code;
+    vm->frames[0].slots          = base;
+    vm->frames[0].deferred       = NULL;
+    vm->frames[0].deferred_count    = 0;
+    vm->frames[0].deferred_capacity = 0;
+    vm->stack_top = base + fn->max_stack_size + 1;
+
+    MsInterpretResult r = vm_run_inner(vm);
+
+    /* Everything the module defined (non-native) goes into mod->exports */
+    if (r == MS_INTERPRET_OK) {
+        for (int i = 0; i < vm->globals.capacity; i++) {
+            MsEntry* e = &vm->globals.entries[i];
+            if (e->key == NULL || e->key == MS_TABLE_TOMBSTONE) continue;
+            if (!MS_IS_NATIVE(e->value))
+                ms_table_set(&mod->exports, e->key, e->value);
+        }
+    }
+    ms_table_free(&vm->globals);
+
+    /* Restore all VM state */
+    vm->globals       = saved_globals;
+    vm->frame_count   = saved_fc;
+    vm->stack_top     = saved_top;
+    vm->open_upvalues = saved_uv;
+    vm->exception_count = saved_exc;
+    for (int i = 0; i < saved_fc; i++) vm->frames[i] = saved_frames[i];
+
+    return r;
+}
+
 /* ---- main dispatch loop ---- */
 
 #define RUNTIME_ERROR(vm, ...) \
@@ -906,6 +972,18 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 }
                 break;
             }
+            /* Handle module.export access */
+            if (MS_IS_MODULE(obj)) {
+                MsObjModule* mod = MS_AS_MODULE(obj);
+                MsObjString* name = MS_AS_STRING(K(MS_RK_TO_K(C)));
+                MsValue val;
+                if (!ms_table_get(&mod->exports, name, &val)) {
+                    RUNTIME_ERROR(vm, "Module '%s' has no export '%s'.",
+                                  mod->name ? mod->name->data : "?", name->data);
+                }
+                R(A) = val;
+                break;
+            }
             if (!MS_IS_INSTANCE(obj)) {
                 RUNTIME_ERROR(vm, "Only instances have properties.");
             }
@@ -1041,6 +1119,20 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 } else {
                     RUNTIME_ERROR(vm, "Undefined static method '%s'.", name->data);
                 }
+                break;
+            }
+            /* Handle module.fn() calls */
+            if (MS_IS_MODULE(obj)) {
+                MsObjModule* mod = MS_AS_MODULE(obj);
+                MsObjString* name = MS_AS_STRING(K(B));
+                MsValue fn_val;
+                if (!ms_table_get(&mod->exports, name, &fn_val)) {
+                    RUNTIME_ERROR(vm, "Module '%s' has no export '%s'.",
+                                  mod->name ? mod->name->data : "?", name->data);
+                }
+                MsInterpretResult cr = call_value(vm, fn_val, C, A);
+                if (cr != MS_INTERPRET_OK) return cr;
+                frame = &vm->frames[vm->frame_count - 1];
                 break;
             }
             if (!MS_IS_INSTANCE(obj)) {
@@ -1374,6 +1466,41 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = result;
             break;
         }
+
+        case MS_OP_IMPORT: {
+            /* A=dst_reg, Bx=path_const */
+            MsObjString* path_str = MS_AS_STRING(K(MS_GET_Bx(instr)));
+            /* from_path: the script path of the importing function */
+            const char* from_path = frame->closure->function->script_path
+                                    ? frame->closure->function->script_path->data
+                                    : NULL;
+            MsObjModule* mod = ms_module_load(vm, path_str->data, from_path);
+            if (!mod) return MS_INTERPRET_RUNTIME_ERROR;
+            R(A) = MS_OBJ_VAL(mod);
+            break;
+        }
+
+        case MS_OP_IMPFROM: {
+            /* A=dst_reg, B=mod_reg, C=name_const */
+            MsValue mod_val = R(B);
+            if (!MS_IS_MODULE(mod_val)) {
+                RUNTIME_ERROR(vm, "IMPFROM: expected module.");
+            }
+            MsObjModule* mod = MS_AS_MODULE(mod_val);
+            MsObjString* name = MS_AS_STRING(K(C));
+            MsValue val;
+            if (!ms_table_get(&mod->exports, name, &val)) {
+                RUNTIME_ERROR(vm, "Module '%s' has no export '%s'.",
+                              mod->name ? mod->name->data : "?", name->data);
+            }
+            R(A) = val;
+            break;
+        }
+
+        case MS_OP_IMPALIAS:
+            /* A=dst_reg, B=src_reg: just a move; alias already in dst */
+            R(A) = R(B);
+            break;
 
         default:
             /* unimplemented opcode: store nil and continue */

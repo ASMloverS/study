@@ -73,3 +73,6 @@ target_link_libraries(test_exceptions PRIVATE ms_frontend)
 
 ms_add_test(test_coroutines unit/test_coroutines.c)
 target_link_libraries(test_coroutines PRIVATE ms_frontend)
+
+ms_add_test(test_modules unit/test_modules.c)
+target_link_libraries(test_modules PRIVATE ms_frontend)

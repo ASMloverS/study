@@ -93,6 +93,7 @@ MsObjFunction* ms_obj_function_new(struct MsVM* vm) {
     fn->max_stack_size = 0;
     fn->is_generator = false;
     fn->name = NULL;
+    fn->script_path = NULL;
     fn->ic = NULL;
     fn->ic_count = 0;
     ms_chunk_init(&fn->chunk);
@@ -259,6 +260,12 @@ void ms_object_print(MsObject* obj) {
             printf(")");
             break;
         }
+        case MS_OBJ_MODULE: {
+            MsObjModule* mod = (MsObjModule*)obj;
+            if (mod->name) printf("<module %s>", mod->name->data);
+            else           printf("<module>");
+            break;
+        }
         case MS_OBJ_STRING_BUILDER: {
             MsObjStringBuilder* sb = (MsObjStringBuilder*)obj;
             printf("<StringBuilder len=%d>", sb->length);
@@ -351,6 +358,12 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sz, 0);
             break;
         }
+        case MS_OBJ_MODULE: {
+            MsObjModule* mod = (MsObjModule*)obj;
+            ms_table_free(&mod->exports);
+            ms_reallocate(vm, obj, sizeof(MsObjModule), 0);
+            break;
+        }
         case MS_OBJ_STRING_BUILDER: {
             MsObjStringBuilder* sb = (MsObjStringBuilder*)obj;
             if (sb->buffer) ms_reallocate(vm, sb->buffer, (size_t)sb->capacity, 0);
@@ -371,6 +384,16 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             abort();
             break;
     }
+}
+
+MsObjModule* ms_obj_module_new(struct MsVM* vm, MsObjString* name,
+                                MsObjString* path) {
+    MsObjModule* mod = MS_ALLOC_OBJ(vm, MS_OBJ_MODULE, MsObjModule, 0);
+    mod->name  = name;
+    mod->path  = path;
+    mod->state = MS_MOD_UNSEEN;
+    ms_table_init(&mod->exports);
+    return mod;
 }
 
 MsObjStringBuilder* ms_obj_sb_new(struct MsVM* vm) {

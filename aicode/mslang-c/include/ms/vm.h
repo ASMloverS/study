@@ -50,6 +50,7 @@ typedef struct MsVM {
     int             minor_count;  /* minor GCs since last major */
     MsObjUpvalue*   open_upvalues;
     MsObjString*    init_string;
+    MsTable         module_cache;  /* canonical path -> MsObjModule */
     struct MsCompiler* compiler;
     MsObject**      gray_stack;
     int             gray_count;
@@ -85,3 +86,8 @@ bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
    or MS_INTERPRET_RUNTIME_ERROR. */
 MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
                                      MsValue sent, MsValue* out);
+
+/* Execute the top-level code of a module function, populating mod->exports
+   with all top-level globals defined during execution. */
+MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
+                                        MsObjModule* mod);
