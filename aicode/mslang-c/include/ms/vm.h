@@ -9,7 +9,19 @@ typedef struct {
     MsObjClosure*   closure;
     MsInstruction*  ip;
     MsValue*        slots;
+    MsObjClosure**  deferred;
+    int             deferred_count;
+    int             deferred_capacity;
 } MsCallFrame;
+
+#define MS_MAX_EXCEPTION_HANDLERS 16
+
+typedef struct {
+    MsInstruction*  handler_ip;
+    int             frame_index;
+    int             catch_reg;
+    MsValue*        stack_top;
+} MsExceptionHandler;
 
 typedef enum {
     MS_INTERPRET_OK,
@@ -43,6 +55,8 @@ typedef struct MsVM {
     int             gray_capacity;
     MsObjectPool    upvalue_pool;
     MsObjectPool    bound_pool;
+    MsExceptionHandler exception_handlers[MS_MAX_EXCEPTION_HANDLERS];
+    int             exception_count;
 } MsVM;
 
 void              ms_vm_init(MsVM* vm);

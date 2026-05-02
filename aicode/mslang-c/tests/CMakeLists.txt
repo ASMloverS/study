@@ -67,3 +67,6 @@ target_link_libraries(test_builtins PRIVATE ms_frontend)
 
 ms_add_test(test_interp_exec unit/test_interp_exec.c)
 target_link_libraries(test_interp_exec PRIVATE ms_frontend)
+
+ms_add_test(test_exceptions unit/test_exceptions.c)
+target_link_libraries(test_exceptions PRIVATE ms_frontend)

@@ -25,7 +25,7 @@
 | ✅ | [T21](T21-collections-list-map-tuple.md) | Collections — List, Map, Tuple |
 | ✅ | [T22](T22-builtin-methods.md) | Built-in Methods |
 | ✅ | [T23](T23-string-interpolation-exec.md) | String Interpolation Execution |
-| ⬜ | [T24](T24-exceptions-defer.md) | Exceptions & Defer |
+| ✅ | [T24](T24-exceptions-defer.md) | Exceptions & Defer |
 | ⬜ | [T25](T25-coroutines.md) | Coroutines |
 | ⬜ | [T26](T26-modules.md) | Module System |
 | ⬜ | [T27](T27-native-functions.md) | Native Functions |

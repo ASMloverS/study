@@ -128,8 +128,10 @@ static void close_upvalues(MsVM* vm, MsValue* last) {
 /* ---- init / free ---- */
 
 void ms_vm_init(MsVM* vm) {
+    memset(vm->frames, 0, sizeof(vm->frames));
     vm->stack_top            = vm->stack;
     vm->frame_count          = 0;
+    vm->exception_count      = 0;
     vm->objects              = NULL;
     vm->young_objects        = NULL;
     vm->old_objects          = NULL;
@@ -155,6 +157,12 @@ void ms_vm_init(MsVM* vm) {
 }
 
 void ms_vm_free(MsVM* vm) {
+    for (int i = 0; i < MS_FRAMES_MAX; i++) {
+        if (vm->frames[i].deferred) {
+            free(vm->frames[i].deferred);
+            vm->frames[i].deferred = NULL;
+        }
+    }
     ms_table_free(&vm->globals);
     ms_table_free(&vm->strings);
     free(vm->gray_stack);
@@ -431,6 +439,71 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
     return MS_INTERPRET_RUNTIME_ERROR;
 }
 
+/* ---- defer / exception helpers ---- */
+
+/* Execute deferred closures LIFO, then reset count.
+   Each deferred closure is run as a fresh top-level invocation so that
+   MS_OP_RETURN hits frame_count == 0 and exits cleanly. */
+static void run_deferred(MsVM* vm, MsCallFrame* f) {
+    for (int i = f->deferred_count - 1; i >= 0; i--) {
+        MsObjClosure* cl = f->deferred[i];
+        /* Save all execution state */
+        int saved_fc  = vm->frame_count;
+        int saved_exc = vm->exception_count;
+        MsValue* saved_top = vm->stack_top;
+        MsCallFrame saved_frame0 = vm->frames[0];
+
+        /* Run deferred closure as sole frame (frame_count=1) */
+        MsValue* base = vm->stack_top;
+        MsValue* new_top = base + cl->function->max_stack_size + 1;
+        if (new_top > vm->stack + MS_STACK_SIZE)
+            new_top = vm->stack + MS_STACK_SIZE;
+        vm->frame_count          = 1;
+        vm->exception_count      = 0;
+        vm->stack_top            = new_top;
+        vm->frames[0].closure    = cl;
+        vm->frames[0].ip         = cl->function->chunk.code;
+        vm->frames[0].slots      = base;
+        vm->frames[0].deferred   = NULL;
+        vm->frames[0].deferred_count    = 0;
+        vm->frames[0].deferred_capacity = 0;
+        vm_run_inner(vm);
+
+        /* Restore all execution state */
+        vm->frame_count      = saved_fc;
+        vm->exception_count  = saved_exc;
+        vm->stack_top        = saved_top;
+        vm->frames[0]        = saved_frame0;
+    }
+    if (f->deferred) {
+        free(f->deferred);
+        f->deferred = NULL;
+    }
+    f->deferred_count    = 0;
+    f->deferred_capacity = 0;
+}
+
+/* Unwind to nearest handler; returns true if handler found. */
+static bool throw_exception(MsVM* vm, MsValue error) {
+    while (vm->exception_count > 0) {
+        MsExceptionHandler* h = &vm->exception_handlers[vm->exception_count - 1];
+        /* Unwind frames above the handler's frame */
+        while (vm->frame_count - 1 > h->frame_index) {
+            MsCallFrame* f = &vm->frames[vm->frame_count - 1];
+            run_deferred(vm, f);
+            close_upvalues(vm, f->slots);
+            vm->frame_count--;
+        }
+        vm->exception_count--;
+        MsCallFrame* target = &vm->frames[h->frame_index];
+        target->ip                    = h->handler_ip;
+        target->slots[h->catch_reg]   = error;
+        vm->stack_top                 = h->stack_top;
+        return true;
+    }
+    return false;
+}
+
 /* ---- main dispatch loop ---- */
 
 #define RUNTIME_ERROR(vm, ...) \
@@ -693,6 +766,14 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             if (retfn->name == vm->init_string && MS_IS_NIL(ret)) {
                 ret = frame->slots[0];
             }
+            int cur_fi = vm->frame_count - 1;
+            /* Pop any exception handlers belonging to this frame */
+            while (vm->exception_count > 0 &&
+                   vm->exception_handlers[vm->exception_count - 1].frame_index == cur_fi) {
+                vm->exception_count--;
+            }
+            /* Run deferred closures LIFO before closing upvalues */
+            run_deferred(vm, frame);
             close_upvalues(vm, frame->slots);
             vm->frame_count--;
             if (vm->frame_count == 0) {
@@ -1127,6 +1208,48 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             } else {
                 RUNTIME_ERROR(vm, "Value is not subscript-assignable.");
             }
+            break;
+        }
+
+        case MS_OP_TRY: {
+            if (vm->exception_count >= MS_MAX_EXCEPTION_HANDLERS) {
+                RUNTIME_ERROR(vm, "Exception handler stack overflow.");
+            }
+            int offset = MS_GET_sBx(instr);
+            MsExceptionHandler* h = &vm->exception_handlers[vm->exception_count++];
+            h->handler_ip  = frame->ip + offset;
+            h->frame_index = vm->frame_count - 1;
+            h->catch_reg   = A;
+            h->stack_top   = vm->stack_top;
+            break;
+        }
+
+        case MS_OP_ENDTRY:
+            if (vm->exception_count > 0) vm->exception_count--;
+            break;
+
+        case MS_OP_THROW: {
+            MsValue error = R(A);
+            if (!throw_exception(vm, error)) {
+                char* s = ms_value_to_cstring(error);
+                ms_vm_runtime_error(vm, "Uncaught exception: %s", s);
+                free(s);
+                return MS_INTERPRET_RUNTIME_ERROR;
+            }
+            /* throw_exception updated frame/ip; refresh frame pointer */
+            frame = &vm->frames[vm->frame_count - 1];
+            break;
+        }
+
+        case MS_OP_DEFER: {
+            MsObjClosure* cl = MS_AS_CLOSURE(R(A));
+            if (frame->deferred_count >= frame->deferred_capacity) {
+                int cap = frame->deferred_capacity < 4 ? 4 : frame->deferred_capacity * 2;
+                frame->deferred = (MsObjClosure**)realloc(
+                    frame->deferred, sizeof(MsObjClosure*) * (size_t)cap);
+                frame->deferred_capacity = cap;
+            }
+            frame->deferred[frame->deferred_count++] = cl;
             break;
         }
 

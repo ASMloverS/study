@@ -497,6 +497,94 @@ static void parse_switch_stmt(MsCompiler* c) {
     patch_list(c, sw_shim.break_list, c->function->chunk.code_count);
 }
 
+/* ---- throw ---- */
+
+static void parse_throw_stmt(MsCompiler* c) {
+    expression(c);
+    int reg = c->next_reg - 1;
+    emit(c, ms_enc_ABC(MS_OP_THROW, reg, 0, 0));
+    free_reg(c, reg);
+}
+
+/* ---- try / catch ---- */
+
+static void parse_try_stmt(MsCompiler* c) {
+    /* Allocate a register for the caught exception value.
+       We keep it fixed so TRY can encode it, and it becomes the
+       catch-variable local after the catch block starts. */
+    int catch_reg = alloc_reg(c);
+
+    /* Emit TRY with a placeholder offset; A = catch_reg */
+    int try_ip = emit(c, ms_enc_AsBx(MS_OP_TRY, catch_reg, 0));
+
+    /* Compile try body */
+    match_tok(c, MS_TK_NEWLINE);
+    consume(c, MS_TK_LEFT_BRACE, "Expected '{' after 'try'.");
+    parse_block(c);
+
+    /* ENDTRY pops the handler */
+    emit(c, ms_enc_ABC(MS_OP_ENDTRY, 0, 0, 0));
+
+    /* JMP past catch block */
+    int jmp_past = emit_jmp(c);
+
+    /* Patch TRY offset to point here (catch block start) */
+    int catch_start = c->function->chunk.code_count;
+    {
+        int offset = catch_start - try_ip - 1;
+        c->function->chunk.code[try_ip] = ms_enc_AsBx(MS_OP_TRY, catch_reg, offset);
+    }
+
+    /* catch (e) { body } */
+    consume(c, MS_TK_CATCH, "Expected 'catch' after try block.");
+    consume(c, MS_TK_LEFT_PAREN, "Expected '(' after 'catch'.");
+    consume(c, MS_TK_IDENTIFIER, "Expected catch variable name.");
+    MsToken catch_var = c->previous;
+    consume(c, MS_TK_RIGHT_PAREN, "Expected ')' after catch variable.");
+
+    /* Bind catch_var as a local pointing to catch_reg.
+       Ensure next_reg is above catch_reg so subsequent alloc_reg
+       won't clobber the catch variable's slot. */
+    begin_scope(c);
+    if (c->next_reg <= catch_reg) c->next_reg = catch_reg + 1;
+    if (c->local_count < 256) {
+        MsLocal* loc = &c->locals[c->local_count++];
+        loc->name        = catch_var;
+        loc->depth       = c->scope_depth;
+        loc->is_captured = false;
+        loc->slot        = catch_reg;
+    }
+
+    match_tok(c, MS_TK_NEWLINE);
+    consume(c, MS_TK_LEFT_BRACE, "Expected '{' after catch clause.");
+    /* parse_block will call end_scope and free locals */
+    while (!check(c, MS_TK_RIGHT_BRACE) && !check(c, MS_TK_EOF_TOKEN)) {
+        if (match_tok(c, MS_TK_NEWLINE) || match_tok(c, MS_TK_SEMICOLON))
+            continue;
+        compile_statement(c);
+    }
+    consume(c, MS_TK_RIGHT_BRACE, "Expected '}' after catch block.");
+    end_scope(c);
+
+    patch_jmp(c, jmp_past);
+    free_reg(c, catch_reg);
+}
+
+/* ---- defer ---- */
+
+static void parse_defer_stmt(MsCompiler* c) {
+    /* expect an anonymous function expression */
+    if (!check(c, MS_TK_FUN)) {
+        error_current(c, "Expected 'fun' after 'defer'.");
+        return;
+    }
+    advance(c); /* consume 'fun' */
+    compile_function(c, NULL, 0);
+    int fn_reg = c->next_reg - 1;
+    emit(c, ms_enc_ABC(MS_OP_DEFER, fn_reg, 0, 0));
+    free_reg(c, fn_reg);
+}
+
 /* ---- return ---- */
 
 static void parse_return_stmt(MsCompiler* c) {
@@ -796,6 +884,13 @@ static void compile_statement(MsCompiler* c) {
         parse_continue_stmt(c);
     } else if (match_tok(c, MS_TK_RETURN)) {
         parse_return_stmt(c);
+    } else if (match_tok(c, MS_TK_TRY)) {
+        parse_try_stmt(c);
+        return;
+    } else if (match_tok(c, MS_TK_THROW)) {
+        parse_throw_stmt(c);
+    } else if (match_tok(c, MS_TK_DEFER)) {
+        parse_defer_stmt(c);
     } else if (match_tok(c, MS_TK_SWITCH)) {
         parse_switch_stmt(c);
         return;
