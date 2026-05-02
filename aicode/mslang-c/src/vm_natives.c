@@ -63,10 +63,23 @@ static MsValue native_tofloat(MsVM* vm, int argc, MsValue* argv) {
     return MS_NUMBER_VAL(0.0);
 }
 
+static MsValue native_resume(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || !MS_IS_COROUTINE(argv[0])) {
+        ms_vm_runtime_error(vm, "resume: expected coroutine as first argument.");
+        return MS_NIL_VAL();
+    }
+    MsObjCoroutine* co = MS_AS_COROUTINE(argv[0]);
+    MsValue sent = (argc >= 2) ? argv[1] : MS_NIL_VAL();
+    MsValue result = MS_NIL_VAL();
+    ms_vm_coro_resume(vm, co, sent, &result);
+    return result;
+}
+
 void ms_vm_register_natives(MsVM* vm) {
     ms_vm_define_native(vm, "print",    native_print,    -1);
     ms_vm_define_native(vm, "type",     native_type,      1);
     ms_vm_define_native(vm, "tostring", native_tostring,  1);
     ms_vm_define_native(vm, "toint",    native_toint,     1);
     ms_vm_define_native(vm, "tofloat",  native_tofloat,   1);
+    ms_vm_define_native(vm, "resume",   native_resume,   -1);
 }

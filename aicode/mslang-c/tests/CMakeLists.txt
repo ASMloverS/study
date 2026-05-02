@@ -70,3 +70,6 @@ target_link_libraries(test_interp_exec PRIVATE ms_frontend)
 
 ms_add_test(test_exceptions unit/test_exceptions.c)
 target_link_libraries(test_exceptions PRIVATE ms_frontend)
+
+ms_add_test(test_coroutines unit/test_coroutines.c)
+target_link_libraries(test_coroutines PRIVATE ms_frontend)

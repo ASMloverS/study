@@ -188,6 +188,41 @@ MsObjList*  ms_obj_list_new(struct MsVM* vm);
 MsObjMap*   ms_obj_map_new(struct MsVM* vm);
 MsObjTuple* ms_obj_tuple_new(struct MsVM* vm, MsValue* items, int count);
 
+/* ---- Coroutine ---- */
+
+typedef enum {
+    MS_CORO_CREATED,    /* created but not yet started */
+    MS_CORO_RUNNING,    /* currently executing */
+    MS_CORO_SUSPENDED,  /* suspended after yield */
+    MS_CORO_DEAD,       /* execution complete */
+} MsCoroState;
+
+/* Forward-declare MsCallFrame to avoid circular include with vm.h */
+struct MsCallFrame;
+
+typedef struct {
+    MsObject        obj;
+    MsCoroState     state;
+    MsObjClosure*   closure;
+    /* Independent stack */
+    MsValue*        stack;
+    int             stack_size;  /* allocated slots */
+    MsValue*        stack_top;
+    /* Independent call frames */
+    struct MsCallFrame* frames;
+    int             frame_count;
+    int             frame_capacity;
+    /* Open upvalues chain */
+    MsObjUpvalue*   open_upvalues;
+    /* Value last yielded or sent */
+    MsValue         yield_value;
+} MsObjCoroutine;
+
+#define MS_IS_COROUTINE(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_COROUTINE)
+#define MS_AS_COROUTINE(v)  ((MsObjCoroutine*)MS_AS_OBJECT(v))
+
+MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl);
+
 /* ---- StringBuilder ---- */
 
 typedef struct {

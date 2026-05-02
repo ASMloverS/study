@@ -264,6 +264,18 @@ void ms_object_print(MsObject* obj) {
             printf("<StringBuilder len=%d>", sb->length);
             break;
         }
+        case MS_OBJ_COROUTINE: {
+            MsObjCoroutine* co = (MsObjCoroutine*)obj;
+            const char* state = "?";
+            switch (co->state) {
+            case MS_CORO_CREATED:   state = "created";   break;
+            case MS_CORO_RUNNING:   state = "running";   break;
+            case MS_CORO_SUSPENDED: state = "suspended"; break;
+            case MS_CORO_DEAD:      state = "dead";      break;
+            }
+            printf("<coroutine %s>", state);
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -345,6 +357,15 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sizeof(MsObjStringBuilder), 0);
             break;
         }
+        case MS_OBJ_COROUTINE: {
+            MsObjCoroutine* co = (MsObjCoroutine*)obj;
+            if (co->stack)
+                free(co->stack);
+            if (co->frames)
+                free(co->frames);
+            ms_reallocate(vm, obj, sizeof(MsObjCoroutine), 0);
+            break;
+        }
         default:
             /* Unhandled object type: abort to catch missing free cases early. */
             abort();
@@ -377,4 +398,26 @@ void ms_obj_sb_append(MsObjStringBuilder* sb, const char* str, int len) {
 
 MsObjString* ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb) {
     return ms_obj_string_copy(vm, sb->buffer ? sb->buffer : "", sb->length);
+}
+
+/* ---- Coroutine ---- */
+
+#define CORO_STACK_SIZE 256
+#define CORO_FRAME_CAP  16
+
+MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl) {
+    MsObjCoroutine* co = MS_ALLOC_OBJ(vm, MS_OBJ_COROUTINE, MsObjCoroutine, 0);
+    co->state          = MS_CORO_CREATED;
+    co->closure        = cl;
+    co->open_upvalues  = NULL;
+    co->yield_value    = MS_NIL_VAL();
+    co->stack_size     = CORO_STACK_SIZE;
+    co->stack          = (MsValue*)malloc(sizeof(MsValue) * (size_t)CORO_STACK_SIZE);
+    if (!co->stack) abort();
+    co->stack_top      = co->stack;
+    co->frame_capacity = CORO_FRAME_CAP;
+    co->frames         = (struct MsCallFrame*)malloc(sizeof(struct MsCallFrame) * (size_t)CORO_FRAME_CAP);
+    if (!co->frames) abort();
+    co->frame_count    = 0;
+    return co;
 }

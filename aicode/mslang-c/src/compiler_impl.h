@@ -84,6 +84,7 @@ typedef struct MsCompiler {
     MsLoopCtx*       loop;
     MsClassCompiler* klass;
     MsTable          string_cache;
+    bool             is_generator;   /* compiling a fun* body */
 } MsCompiler;
 
 /* Declared in compiler.c, used by compiler_expr.c */
@@ -108,3 +109,4 @@ void          error_current(MsCompiler* c, const char* msg);
 const MsParseRule* get_rule(MsTokenType t);   /* alias for rule_at, external use */
 int           resolve_upvalue(MsCompiler* c, const char* name, int len);
 void          compile_function(MsCompiler* outer, const char* fname, int flen);
+void          compile_generator_function(MsCompiler* outer, const char* fname, int flen);

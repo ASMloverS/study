@@ -148,6 +148,7 @@ void ms_vm_init(MsVM* vm) {
     vm->gray_stack           = NULL;
     vm->gray_count           = 0;
     vm->gray_capacity        = 0;
+    vm->current_coroutine = NULL;
     ms_pool_init(&vm->upvalue_pool, sizeof(MsObjUpvalue));
     ms_pool_init(&vm->bound_pool,   sizeof(void*) * 4); /* ObjBoundMethod size est.; resized in T18 */
     ms_table_init(&vm->globals);
@@ -245,6 +246,61 @@ MsInterpretResult ms_vm_interpret(MsVM* vm, const char* source, const char* path
 
 MsInterpretResult ms_vm_run(MsVM* vm) {
     return vm_run_inner(vm);
+}
+
+MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
+                                     MsValue sent, MsValue* out) {
+    if (co->state == MS_CORO_DEAD)
+        return MS_INTERPRET_RUNTIME_ERROR;
+    if (co->state == MS_CORO_RUNNING)
+        return MS_INTERPRET_RUNTIME_ERROR;
+    bool first_resume = (co->state == MS_CORO_CREATED);
+
+    MsValue*        saved_stack_top  = vm->stack_top;
+    int             saved_fc         = vm->frame_count;
+    MsCallFrame     saved_frames[MS_FRAMES_MAX];
+    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->frames[i];
+    MsObjUpvalue*   saved_uv         = vm->open_upvalues;
+    int             saved_exc        = vm->exception_count;
+    MsObjCoroutine* saved_coro       = vm->current_coroutine;
+
+    vm->stack_top         = co->stack_top;
+    vm->frame_count       = co->frame_count;
+    for (int i = 0; i < co->frame_count; i++) vm->frames[i] = co->frames[i];
+    vm->open_upvalues     = co->open_upvalues;
+    vm->exception_count   = 0;
+    vm->current_coroutine = co;
+    co->state             = MS_CORO_RUNNING;
+
+    if (!first_resume) {
+        MsCallFrame* co_frame = &vm->frames[vm->frame_count - 1];
+        MsInstruction prev = *(co_frame->ip - 1);
+        int yield_reg = MS_GET_A(prev);
+        co_frame->slots[yield_reg] = sent;
+    }
+
+    MsInterpretResult cr = vm_run_inner(vm);
+
+    *out = MS_NIL_VAL();
+    if (cr == MS_INTERPRET_YIELD) {
+        *out = co->yield_value;
+        /* save coroutine state (already done inside YIELD opcode) */
+    } else if (cr == MS_INTERPRET_OK) {
+        *out = vm->call_result;
+        co->state = MS_CORO_DEAD;
+    } else {
+        co->state = MS_CORO_DEAD;
+    }
+
+    vm->stack_top         = saved_stack_top;
+    vm->frame_count       = saved_fc;
+    for (int i = 0; i < saved_fc; i++) vm->frames[i] = saved_frames[i];
+    vm->open_upvalues     = saved_uv;
+    vm->exception_count   = saved_exc;
+    vm->current_coroutine = saved_coro;
+
+    return (cr == MS_INTERPRET_YIELD || cr == MS_INTERPRET_OK)
+           ? MS_INTERPRET_OK : MS_INTERPRET_RUNTIME_ERROR;
 }
 
 /* ms_vm_call_sync: call a closure from C, synchronously.
@@ -364,6 +420,30 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
             ms_vm_runtime_error(vm, "Expected %d args but got %d.",
                                 fn->arity, arg_count);
             return MS_INTERPRET_RUNTIME_ERROR;
+        }
+        /* Generator closure: create coroutine, copy args into its stack */
+        if (fn->is_generator) {
+            MsObjCoroutine* co = ms_obj_coroutine_new(vm, cl);
+            /* Copy args into coroutine's stack */
+            MsCallFrame* caller = &vm->frames[vm->frame_count - 1];
+            MsValue* caller_args = caller->slots + ret_dst + 1;
+            for (int i = 0; i < arg_count; i++)
+                co->stack[i] = caller_args[i];
+            /* Set up initial frame */
+            co->stack_top = co->stack + (fn->max_stack_size + 1);
+            if (co->stack_top > co->stack + co->stack_size)
+                co->stack_top = co->stack + co->stack_size;
+            MsCallFrame* f = &co->frames[0];
+            f->closure        = cl;
+            f->ip             = fn->chunk.code;
+            f->slots          = co->stack;
+            f->deferred       = NULL;
+            f->deferred_count    = 0;
+            f->deferred_capacity = 0;
+            co->frame_count = 1;
+            co->state = MS_CORO_CREATED;
+            caller->slots[ret_dst] = MS_OBJ_VAL(co);
+            return MS_INTERPRET_OK;
         }
         if (vm->frame_count >= MS_FRAMES_MAX) {
             ms_vm_runtime_error(vm, "Stack overflow.");
@@ -1250,6 +1330,48 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 frame->deferred_capacity = cap;
             }
             frame->deferred[frame->deferred_count++] = cl;
+            break;
+        }
+
+        case MS_OP_YIELD: {
+            /* Must be inside a coroutine */
+            MsObjCoroutine* co = vm->current_coroutine;
+            if (!co) {
+                RUNTIME_ERROR(vm, "yield outside coroutine.");
+            }
+            MsValue val = (B >= 2) ? R(A) : MS_NIL_VAL();
+            /* Save coroutine execution state */
+            co->yield_value   = val;
+            co->stack_top     = vm->stack_top;
+            co->frame_count   = vm->frame_count;
+            /* Save current frame (with updated ip) back into co->frames */
+            for (int i = 0; i < vm->frame_count; i++)
+                co->frames[i] = vm->frames[i];
+            co->open_upvalues = vm->open_upvalues;
+            co->state         = MS_CORO_SUSPENDED;
+            return MS_INTERPRET_YIELD;
+        }
+
+        case MS_OP_RESUME: {
+            /* A=dst, B=coroutine_reg, C=sent_value_rk */
+            MsValue coro_val = R(B);
+            if (!MS_IS_COROUTINE(coro_val)) {
+                RUNTIME_ERROR(vm, "resume: expected coroutine.");
+            }
+            MsObjCoroutine* co = MS_AS_COROUTINE(coro_val);
+            if (co->state == MS_CORO_DEAD) {
+                RUNTIME_ERROR(vm, "Cannot resume dead coroutine.");
+            }
+            if (co->state == MS_CORO_RUNNING) {
+                RUNTIME_ERROR(vm, "Cannot resume running coroutine.");
+            }
+            MsValue sent = RK(C);
+            MsValue result = MS_NIL_VAL();
+            MsInterpretResult cr = ms_vm_coro_resume(vm, co, sent, &result);
+            if (cr != MS_INTERPRET_OK) return MS_INTERPRET_RUNTIME_ERROR;
+            /* Refresh frame pointer after state restore */
+            frame = &vm->frames[vm->frame_count - 1];
+            R(A) = result;
             break;
         }
 

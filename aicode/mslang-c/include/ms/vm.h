@@ -5,7 +5,7 @@
 
 #define MS_STACK_SIZE (MS_FRAMES_MAX * MS_STACK_MAX)
 
-typedef struct {
+typedef struct MsCallFrame {
     MsObjClosure*   closure;
     MsInstruction*  ip;
     MsValue*        slots;
@@ -27,6 +27,7 @@ typedef enum {
     MS_INTERPRET_OK,
     MS_INTERPRET_COMPILE_ERROR,
     MS_INTERPRET_RUNTIME_ERROR,
+    MS_INTERPRET_YIELD,  /* internal: coroutine suspended at yield */
 } MsInterpretResult;
 
 typedef struct MsVM {
@@ -57,6 +58,8 @@ typedef struct MsVM {
     MsObjectPool    bound_pool;
     MsExceptionHandler exception_handlers[MS_MAX_EXCEPTION_HANDLERS];
     int             exception_count;
+    /* Coroutine support: non-NULL when inside a coroutine execution */
+    MsObjCoroutine* current_coroutine;
 } MsVM;
 
 void              ms_vm_init(MsVM* vm);
@@ -76,3 +79,9 @@ MsInterpretResult ms_vm_call_sync(MsVM* vm, MsValue callee,
    Returns true if method was handled; result stored in *out. */
 bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
                         int argc, MsValue* argv, MsValue* out);
+
+/* Resume a coroutine, passing sent value. Result in *out (yield or return value).
+   Returns MS_INTERPRET_OK (coroutine returned), MS_INTERPRET_YIELD (suspended),
+   or MS_INTERPRET_RUNTIME_ERROR. */
+MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
+                                     MsValue sent, MsValue* out);

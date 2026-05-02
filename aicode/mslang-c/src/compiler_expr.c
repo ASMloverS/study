@@ -18,6 +18,7 @@ static void parse_call(MsCompiler* c, bool can_assign);
 static void parse_dot(MsCompiler* c, bool can_assign);
 static void parse_print_stmt(MsCompiler* c, bool can_assign);
 static void parse_fun_expr(MsCompiler* c, bool can_assign);
+static void parse_yield_expr(MsCompiler* c, bool can_assign);
 static void parse_this(MsCompiler* c, bool can_assign);
 static void parse_super(MsCompiler* c, bool can_assign);
 static void parse_list(MsCompiler* c, bool can_assign);
@@ -541,6 +542,23 @@ static void parse_fun_expr(MsCompiler* c, bool can_assign) {
     compile_function(c, NULL, 0);
 }
 
+static void parse_yield_expr(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    /* yield [expr] -- usable as expression: result = sent value on resume */
+    if (check(c, MS_TK_NEWLINE) || check(c, MS_TK_SEMICOLON) ||
+        check(c, MS_TK_RIGHT_BRACE) || check(c, MS_TK_EOF_TOKEN) ||
+        check(c, MS_TK_RIGHT_PAREN)) {
+        int dst = alloc_reg(c);
+        emit(c, ms_enc_ABC(MS_OP_YIELD, dst, 1, 0));
+        /* dst now holds the sent value */
+    } else {
+        expression(c);
+        int val_reg = c->next_reg - 1;
+        emit(c, ms_enc_ABC(MS_OP_YIELD, val_reg, 2, 0));
+        /* val_reg now holds the sent value after resume */
+    }
+}
+
 /* ---- collection literals ---- */
 
 static void parse_list(MsCompiler* c, bool can_assign) {
@@ -741,7 +759,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* CATCH */           RULE(NO, NO, PREC_NONE),
     /* THROW */           RULE(NO, NO, PREC_NONE),
     /* DEFER */           RULE(NO, NO, PREC_NONE),
-    /* YIELD */           RULE(NO, NO, PREC_NONE),
+    /* YIELD */           RULE(parse_yield_expr, NO, PREC_NONE),
     /* SWITCH */          RULE(NO, NO, PREC_NONE),
     /* CASE */            RULE(NO, NO, PREC_NONE),
     /* DEFAULT */         RULE(NO, NO, PREC_NONE),

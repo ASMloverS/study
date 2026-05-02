@@ -125,6 +125,18 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
             ms_mark_value(vm, tup->items[i]);
         break;
     }
+    case MS_OBJ_COROUTINE: {
+        MsObjCoroutine* co = (MsObjCoroutine*)obj;
+        ms_mark_object(vm, (MsObject*)co->closure);
+        ms_mark_value(vm, co->yield_value);
+        for (MsValue* v = co->stack; v < co->stack_top; v++)
+            ms_mark_value(vm, *v);
+        for (int i = 0; i < co->frame_count; i++)
+            ms_mark_object(vm, (MsObject*)co->frames[i].closure);
+        for (MsObjUpvalue* uv = co->open_upvalues; uv; uv = uv->next)
+            ms_mark_object(vm, (MsObject*)uv);
+        break;
+    }
     default:
         break;
     }
