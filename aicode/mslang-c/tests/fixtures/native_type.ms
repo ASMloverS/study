@@ -1,0 +1,7 @@
+print(type(42))
+print(type(3.14))
+print(type("hello"))
+print(type(true))
+print(type(nil))
+print(type([1,2]))
+print(type({"a":1}))

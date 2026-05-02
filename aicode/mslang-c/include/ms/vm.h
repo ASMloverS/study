@@ -61,6 +61,8 @@ typedef struct MsVM {
     int             exception_count;
     /* Coroutine support: non-NULL when inside a coroutine execution */
     MsObjCoroutine* current_coroutine;
+    /* ASCII single-char string cache (indices 0-127) */
+    MsObjString*    ascii_cache[128];
 } MsVM;
 
 void              ms_vm_init(MsVM* vm);

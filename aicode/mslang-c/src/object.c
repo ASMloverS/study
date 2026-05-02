@@ -47,6 +47,8 @@ static MsObjString* alloc_string(struct MsVM* vm, const char* chars, int length,
 }
 
 MsObjString* ms_obj_string_copy(struct MsVM* vm, const char* chars, int length) {
+    if (length == 1 && (unsigned char)chars[0] < 128 && vm->ascii_cache[(unsigned char)chars[0]])
+        return vm->ascii_cache[(unsigned char)chars[0]];
     uint32_t hash = ms_fnv1a(chars, length);
     MsObjString* interned = ms_table_find_string(&vm->strings, chars, length, hash);
     if (interned) return interned;

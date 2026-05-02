@@ -28,7 +28,7 @@
 | ✅ | [T24](T24-exceptions-defer.md) | Exceptions & Defer |
 | ✅ | [T25](T25-coroutines.md) | Coroutines |
 | ✅ | [T26](T26-modules.md) | Module System |
-| ⬜ | [T27](T27-native-functions.md) | Native Functions |
+| ✅ | [T27](T27-native-functions.md) | Native Functions |
 | ⬜ | [T28](T28-peephole-optimizer.md) | Peephole Optimizer |
 | ⬜ | [T29](T29-quickening.md) | Quickening |
 | ⬜ | [T30](T30-serializer-incremental-gc.md) | Serializer & Incremental GC |

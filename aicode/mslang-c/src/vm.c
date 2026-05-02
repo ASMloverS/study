@@ -156,6 +156,11 @@ void ms_vm_init(MsVM* vm) {
     ms_table_init(&vm->strings);
     ms_table_init(&vm->module_cache);
     vm->init_string = ms_obj_string_copy(vm, "init", 4);
+    memset(vm->ascii_cache, 0, sizeof(vm->ascii_cache));
+    for (int i = 0; i < 128; i++) {
+        char c = (char)i;
+        vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
+    }
     ms_vm_register_natives(vm);
 }
 
@@ -465,8 +470,10 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
     }
     if (MS_IS_NATIVE(callee)) {
         MsObjNative* nat = MS_AS_NATIVE(callee);
-        MsValue* argv = vm->frames[vm->frame_count - 1].slots + ret_dst + 1;
+        int saved_fc = vm->frame_count;
+        MsValue* argv = vm->frames[saved_fc - 1].slots + ret_dst + 1;
         MsValue result = nat->function(vm, arg_count, argv);
+        if (vm->frame_count == 0) return MS_INTERPRET_RUNTIME_ERROR;
         vm->frames[vm->frame_count - 1].slots[ret_dst] = result;
         return MS_INTERPRET_OK;
     }

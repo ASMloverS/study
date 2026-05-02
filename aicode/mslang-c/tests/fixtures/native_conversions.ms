@@ -1,0 +1,5 @@
+print(str(42))
+print(str(true))
+print(num("3.14"))
+print(int(3.7))
+print(float(42))
