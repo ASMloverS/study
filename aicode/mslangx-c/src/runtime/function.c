@@ -2,6 +2,22 @@
 
 #include <stdlib.h>
 
+static int ms_function_init_optional_name(const char* name,
+                                          size_t length,
+                                          MsString** out_name) {
+  if (out_name == NULL) {
+    return 0;
+  }
+
+  *out_name = NULL;
+  if (name == NULL || length == 0) {
+    return 1;
+  }
+
+  *out_name = ms_string_new(name, length);
+  return *out_name != NULL;
+}
+
 MsFunction* ms_function_new(const char* name, size_t length, int arity) {
   MsFunction* function = NULL;
 
@@ -12,18 +28,12 @@ MsFunction* ms_function_new(const char* name, size_t length, int arity) {
 
   ms_object_init(&function->object, MS_OBJ_FUNCTION);
   function->arity = arity;
-  function->upvalue_count = 0;
-  function->flags = 0;
-  function->name = NULL;
   ms_chunk_init(&function->chunk);
 
-  if (name != NULL && length > 0) {
-    function->name = ms_string_new(name, length);
-    if (function->name == NULL) {
-      ms_chunk_destroy(&function->chunk);
-      free(function);
-      return NULL;
-    }
+  if (!ms_function_init_optional_name(name, length, &function->name)) {
+    ms_chunk_destroy(&function->chunk);
+    free(function);
+    return NULL;
   }
 
   return function;
@@ -43,8 +53,6 @@ MsClosure* ms_closure_new(MsFunction* function) {
 
   ms_object_init(&closure->object, MS_OBJ_CLOSURE);
   closure->function = function;
-  closure->module = NULL;
-  closure->owner_class = NULL;
   closure->upvalue_count = function->upvalue_count;
   if (closure->upvalue_count > 0) {
     closure->upvalues = (MsUpvalue**) calloc(closure->upvalue_count,
@@ -84,13 +92,10 @@ MsClass* ms_class_new(const char* name, size_t length, MsClass* superclass) {
   ms_object_init(&klass->object, MS_OBJ_CLASS);
   klass->superclass = superclass;
   ms_table_init(&klass->methods);
-  if (name != NULL && length > 0) {
-    klass->name = ms_string_new(name, length);
-    if (klass->name == NULL) {
-      ms_table_destroy(&klass->methods);
-      free(klass);
-      return NULL;
-    }
+  if (!ms_function_init_optional_name(name, length, &klass->name)) {
+    ms_table_destroy(&klass->methods);
+    free(klass);
+    return NULL;
   }
 
   return klass;
@@ -150,12 +155,9 @@ MsNativeFunction* ms_native_function_new(const char* name,
   ms_object_init(&native_function->object, MS_OBJ_NATIVE_FN);
   native_function->arity = arity;
   native_function->function = function;
-  if (name != NULL && length > 0) {
-    native_function->name = ms_string_new(name, length);
-    if (native_function->name == NULL) {
-      free(native_function);
-      return NULL;
-    }
+  if (!ms_function_init_optional_name(name, length, &native_function->name)) {
+    free(native_function);
+    return NULL;
   }
 
   return native_function;
@@ -217,31 +219,52 @@ void ms_native_function_free(MsNativeFunction* function) {
 }
 
 MsString* ms_class_name(const MsClass* klass) {
-  return klass != NULL ? klass->name : NULL;
+  if (klass == NULL) {
+    return NULL;
+  }
+  return klass->name;
 }
 
 MsClass* ms_class_superclass(const MsClass* klass) {
-  return klass != NULL ? klass->superclass : NULL;
+  if (klass == NULL) {
+    return NULL;
+  }
+  return klass->superclass;
 }
 
 MsTable* ms_class_methods(MsClass* klass) {
-  return klass != NULL ? &klass->methods : NULL;
+  if (klass == NULL) {
+    return NULL;
+  }
+  return &klass->methods;
 }
 
 MsClass* ms_instance_class(const MsInstance* instance) {
-  return instance != NULL ? instance->klass : NULL;
+  if (instance == NULL) {
+    return NULL;
+  }
+  return instance->klass;
 }
 
 MsTable* ms_instance_fields(MsInstance* instance) {
-  return instance != NULL ? &instance->fields : NULL;
+  if (instance == NULL) {
+    return NULL;
+  }
+  return &instance->fields;
 }
 
 MsValue ms_bound_method_receiver(const MsBoundMethod* bound_method) {
-  return bound_method != NULL ? bound_method->receiver : ms_value_nil();
+  if (bound_method == NULL) {
+    return ms_value_nil();
+  }
+  return bound_method->receiver;
 }
 
 MsClosure* ms_bound_method_method(const MsBoundMethod* bound_method) {
-  return bound_method != NULL ? bound_method->method : NULL;
+  if (bound_method == NULL) {
+    return NULL;
+  }
+  return bound_method->method;
 }
 
 MsCallResult ms_call_result_ok(MsValue value) {

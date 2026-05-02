@@ -24,6 +24,17 @@ static MsCallResult mslangc_native_gc_collect(MsVM* vm,
   return ms_call_result_ok(ms_value_nil());
 }
 
+static const char* mslangc_string_or_unknown(const char* text) {
+  if (text == NULL) {
+    return "<unknown>";
+  }
+  return text;
+}
+
+static int mslangc_is_path_separator(char ch) {
+  return ch == '/' || ch == '\\';
+}
+
 static void mslangc_print_help(FILE *stream) {
   fprintf(stream,
           "usage: mslangc [--help] [-e code] [script]\n"
@@ -47,12 +58,12 @@ static void mslangc_print_diagnostics(FILE *stream,
     }
     fprintf(stream,
             "phase=%s code=%s %s:%d:%d %s\n",
-            diagnostic->phase != NULL ? diagnostic->phase : "<unknown>",
-            diagnostic->code != NULL ? diagnostic->code : "<unknown>",
-            diagnostic->span.file != NULL ? diagnostic->span.file : "<unknown>",
+            mslangc_string_or_unknown(diagnostic->phase),
+            mslangc_string_or_unknown(diagnostic->code),
+            mslangc_string_or_unknown(diagnostic->span.file),
             diagnostic->span.line,
             diagnostic->span.column,
-            diagnostic->message != NULL ? diagnostic->message : "<unknown>");
+            mslangc_string_or_unknown(diagnostic->message));
   }
 }
 
@@ -144,7 +155,7 @@ static char *mslangc_dirname(const char *path) {
   }
 
   for (cursor = path; *cursor != '\0'; ++cursor) {
-    if (*cursor == '/' || *cursor == '\\') {
+    if (mslangc_is_path_separator(*cursor)) {
       last_separator = cursor;
     }
   }
@@ -176,7 +187,8 @@ static char *mslangc_dirname(const char *path) {
 static char *mslangc_join_path(const char *left, const char *right) {
   size_t left_length;
   size_t right_length;
-  int needs_separator;
+  size_t separator_length;
+  size_t total_length;
   char *joined;
 
   if (left == NULL || right == NULL) {
@@ -185,20 +197,20 @@ static char *mslangc_join_path(const char *left, const char *right) {
 
   left_length = strlen(left);
   right_length = strlen(right);
-  needs_separator =
-      left_length > 0 && left[left_length - 1] != '/' && left[left_length - 1] != '\\';
-  joined =
-      (char *) malloc(left_length + (needs_separator ? 1u : 0u) + right_length + 1);
+  separator_length =
+      left_length > 0 && !mslangc_is_path_separator(left[left_length - 1]) ? 1u : 0u;
+  total_length = left_length + separator_length + right_length;
+  joined = (char *) malloc(total_length + 1);
   if (joined == NULL) {
     return NULL;
   }
 
   memcpy(joined, left, left_length);
-  if (needs_separator) {
+  if (separator_length > 0) {
     joined[left_length] = '/';
   }
-  memcpy(joined + left_length + (needs_separator ? 1u : 0u), right, right_length);
-  joined[left_length + (needs_separator ? 1u : 0u) + right_length] = '\0';
+  memcpy(joined + left_length + separator_length, right, right_length);
+  joined[total_length] = '\0';
   return joined;
 }
 
