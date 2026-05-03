@@ -1,5 +1,6 @@
 #include "compiler_impl.h"
 #include "ms/opcode.h"
+#include "ms/optimize.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1128,6 +1129,9 @@ MsObjFunction* ms_compile(MsVM* vm, const char* source, const char* path,
     if (path)
         c.function->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
     ms_table_free(&c.string_cache);
+
+    if (!c.had_error)
+        ms_peephole_optimize(&c.function->chunk);
 
     return c.had_error ? NULL : c.function;
 }

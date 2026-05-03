@@ -79,3 +79,6 @@ target_link_libraries(test_modules PRIVATE ms_frontend)
 
 ms_add_test(test_natives unit/test_natives.c)
 target_link_libraries(test_natives PRIVATE ms_frontend)
+
+ms_add_test(test_optimize unit/test_optimize.c)
+target_link_libraries(test_optimize PRIVATE ms_optimize ms_chunk)
