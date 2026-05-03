@@ -64,10 +64,15 @@ add_library(ms_scanner STATIC src/scanner.c)
 target_include_directories(ms_scanner PUBLIC include)
 target_compile_options(ms_scanner PRIVATE ${MSLANG_COMPILE_OPTIONS})
 
+add_library(ms_serializer STATIC src/serializer.c)
+target_include_directories(ms_serializer PUBLIC include)
+target_compile_options(ms_serializer PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(ms_serializer PUBLIC ms_vm)
+
 add_library(ms_frontend STATIC src/compiler.c src/compiler_expr.c)
 target_include_directories(ms_frontend PUBLIC include PRIVATE src)
 target_compile_options(ms_frontend PRIVATE ${MSLANG_COMPILE_OPTIONS})
-target_link_libraries(ms_frontend PUBLIC ms_vm ms_scanner ms_debug ms_optimize)
+target_link_libraries(ms_frontend PUBLIC ms_vm ms_scanner ms_debug ms_optimize ms_serializer)
 
 add_executable(mslang-c src/main.c)
 target_include_directories(mslang-c PRIVATE include)

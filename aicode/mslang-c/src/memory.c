@@ -10,8 +10,12 @@ void* ms_reallocate(struct MsVM* vm, void* ptr, size_t old_size, size_t new_size
             vm->bytes_allocated -= old_size;
         else
             vm->bytes_allocated = 0;
-        if (new_size > old_size && vm->bytes_allocated > vm->next_gc)
-            ms_gc_collect(vm);
+        if (new_size > old_size) {
+            if (vm->gc_phase != MS_GC_IDLE)
+                ms_gc_incremental_step(vm);
+            else if (vm->bytes_allocated > vm->next_gc)
+                ms_gc_incremental_step(vm);
+        }
     }
     if (new_size == 0) {
         free(ptr);

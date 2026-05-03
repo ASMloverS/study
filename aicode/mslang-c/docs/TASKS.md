@@ -31,7 +31,7 @@
 | ✅ | [T27](T27-native-functions.md) | Native Functions |
 | ✅ | [T28](T28-peephole-optimizer.md) | Peephole Optimizer |
 | ✅ | [T29](T29-quickening.md) | Quickening |
-| ⬜ | [T30](T30-serializer-incremental-gc.md) | Serializer & Incremental GC |
+| ✅ | [T30](T30-serializer-incremental-gc.md) | Serializer & Incremental GC |
 
 ## Legend
 

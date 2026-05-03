@@ -162,6 +162,9 @@ void ms_vm_init(MsVM* vm) {
         vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
     }
     ms_vm_register_natives(vm);
+    vm->gc_phase     = MS_GC_IDLE;
+    vm->sweep_cursor = NULL;
+    vm->sweep_prev   = NULL;
 }
 
 void ms_vm_free(MsVM* vm) {

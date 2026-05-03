@@ -30,6 +30,12 @@ typedef enum {
     MS_INTERPRET_YIELD,  /* internal: coroutine suspended at yield */
 } MsInterpretResult;
 
+typedef enum {
+    MS_GC_IDLE,
+    MS_GC_MARKING,
+    MS_GC_SWEEPING,
+} MsGcPhase;
+
 typedef struct MsVM {
     MsValue         stack[MS_STACK_SIZE];
     MsValue*        stack_top;
@@ -63,6 +69,10 @@ typedef struct MsVM {
     MsObjCoroutine* current_coroutine;
     /* ASCII single-char string cache (indices 0-127) */
     MsObjString*    ascii_cache[128];
+    /* Incremental GC state */
+    MsGcPhase       gc_phase;
+    MsObject*       sweep_cursor;
+    MsObject**      sweep_prev;
 } MsVM;
 
 void              ms_vm_init(MsVM* vm);

@@ -229,6 +229,52 @@ static void sweep_all(MsVM* vm) {
     sweep_list(vm, &vm->objects); /* legacy list from pre-generational allocs */
 }
 
+/* ---- Incremental GC step ---- */
+
+void ms_gc_incremental_step(MsVM* vm) {
+    switch (vm->gc_phase) {
+    case MS_GC_IDLE:
+        mark_roots(vm);
+        vm->gc_phase = MS_GC_MARKING;
+        break;
+    case MS_GC_MARKING:
+        for (int i = 0; i < MS_GC_INCR_WORK && vm->gray_count > 0; i++) {
+            MsObject* obj = vm->gray_stack[--vm->gray_count];
+            blacken_object(vm, obj);
+        }
+        if (vm->gray_count == 0) {
+            ms_table_remove_white(&vm->strings);
+            vm->sweep_prev  = &vm->objects;
+            vm->sweep_cursor = vm->objects;
+            vm->gc_phase    = MS_GC_SWEEPING;
+        }
+        break;
+    case MS_GC_SWEEPING: {
+        int steps = 0;
+        while (vm->sweep_cursor && steps < MS_GC_INCR_WORK) {
+            MsObject* obj = vm->sweep_cursor;
+            if (!obj->is_marked) {
+                *vm->sweep_prev  = obj->next;
+                vm->sweep_cursor = obj->next;
+                ms_object_free(vm, obj);
+            } else {
+                obj->is_marked   = false;
+                vm->sweep_prev   = &obj->next;
+                vm->sweep_cursor = obj->next;
+            }
+            steps++;
+        }
+        if (!vm->sweep_cursor) {
+            vm->gc_phase = MS_GC_IDLE;
+            vm->next_gc  = vm->bytes_allocated < 512 * 1024
+                           ? 1024 * 1024
+                           : vm->bytes_allocated * 2;
+        }
+        break;
+    }
+    }
+}
+
 /* ---- Minor GC ---- */
 
 void ms_gc_collect_minor(MsVM* vm) {
@@ -265,4 +311,8 @@ void ms_gc_collect(MsVM* vm) {
     vm->next_gc = vm->bytes_allocated < 512 * 1024
                   ? 1024 * 1024
                   : vm->bytes_allocated * 2;
+    /* reset incremental state */
+    vm->gc_phase     = MS_GC_IDLE;
+    vm->sweep_cursor = NULL;
+    vm->sweep_prev   = NULL;
 }

@@ -85,3 +85,6 @@ target_link_libraries(test_optimize PRIVATE ms_optimize ms_chunk)
 
 ms_add_test(test_quickening unit/test_quickening.c)
 target_link_libraries(test_quickening PRIVATE ms_frontend)
+
+ms_add_test(test_serializer unit/test_serializer.c)
+target_link_libraries(test_serializer PRIVATE ms_frontend ms_serializer)
