@@ -418,6 +418,33 @@ static bool cmp_values(MsValue b, MsValue c, int op, bool* result) {
     return false;
 }
 
+/* ---- quickening helpers ---- */
+
+/* Lazily allocate the deopt counter array for fn, sized to code_count. */
+static ms_u8* ensure_deopt(MsObjFunction* fn) {
+    int need = fn->chunk.code_count;
+    if (need <= 0) need = 1;
+    if (fn->arith_deopt_size < need) {
+        fn->arith_deopt = (ms_u8*)realloc(fn->arith_deopt, (size_t)need);
+        if (fn->arith_deopt) {
+            for (int i = fn->arith_deopt_size; i < need; i++)
+                fn->arith_deopt[i] = 0;
+        }
+        fn->arith_deopt_size = need;
+    }
+    return fn->arith_deopt;
+}
+
+/* Increment deopt counter for instr at `offset`.
+   Returns new counter value, or 255 if alloc failed. */
+static int bump_deopt(MsObjFunction* fn, int offset) {
+    ms_u8* arr = ensure_deopt(fn);
+    if (!arr) return 255;
+    if (offset < 0 || offset >= fn->arith_deopt_size) return 255;
+    if (arr[offset] < 255) arr[offset]++;
+    return (int)arr[offset];
+}
+
 /* ---- call_value ---- */
 
 static MsInterpretResult call_value(MsVM* vm, MsValue callee,
@@ -721,54 +748,272 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             ms_write_barrier(vm, (MsObject*)frame->closure, R(A));
             break;
 
-        case MS_OP_ADD: case MS_OP_SUB: case MS_OP_MUL:
-        case MS_OP_DIV: case MS_OP_MOD: {
+        /* ---- generic arithmetic: execute + quicken ---- */
+        case MS_OP_ADD: {
             MsValue bv = RK(B), cv = RK(C);
             MsValue result = MS_NIL_VAL();
-            if (op == MS_OP_ADD && MS_IS_STRING(bv) && MS_IS_STRING(cv)) {
+            if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
+                result = MS_INT_VAL(MS_AS_INT(bv) + MS_AS_INT(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_ADD_II, A, B, C);
+            } else if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
+                result = MS_NUMBER_VAL(ms_as_double(bv) + ms_as_double(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_ADD_FF, A, B, C);
+            } else if (MS_IS_STRING(bv) && MS_IS_STRING(cv)) {
                 result = MS_OBJ_VAL(
                     ms_obj_string_concat(vm, MS_AS_STRING(bv), MS_AS_STRING(cv)));
-            } else if (!numeric_binop(bv, cv, op, &result)) {
-                RUNTIME_ERROR(vm, "Operands must be numbers or strings for arithmetic.");
+                frame->ip[-1] = ms_enc_ABC(MS_OP_ADD_SS, A, B, C);
+            } else {
+                RUNTIME_ERROR(vm, "Operands must be numbers or strings for '+'.");
+            }
+            R(A) = result;
+            break;
+        }
+        case MS_OP_SUB: {
+            MsValue bv = RK(B), cv = RK(C);
+            MsValue result = MS_NIL_VAL();
+            if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
+                result = MS_INT_VAL(MS_AS_INT(bv) - MS_AS_INT(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_SUB_II, A, B, C);
+            } else if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
+                result = MS_NUMBER_VAL(ms_as_double(bv) - ms_as_double(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_SUB_FF, A, B, C);
+            } else {
+                RUNTIME_ERROR(vm, "Operands must be numbers for '-'.");
+            }
+            R(A) = result;
+            break;
+        }
+        case MS_OP_MUL: {
+            MsValue bv = RK(B), cv = RK(C);
+            MsValue result = MS_NIL_VAL();
+            if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
+                result = MS_INT_VAL(MS_AS_INT(bv) * MS_AS_INT(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_MUL_II, A, B, C);
+            } else if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
+                result = MS_NUMBER_VAL(ms_as_double(bv) * ms_as_double(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_MUL_FF, A, B, C);
+            } else {
+                RUNTIME_ERROR(vm, "Operands must be numbers for '*'.");
+            }
+            R(A) = result;
+            break;
+        }
+        case MS_OP_DIV: {
+            MsValue bv = RK(B), cv = RK(C);
+            MsValue result = MS_NIL_VAL();
+            if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
+                result = MS_NUMBER_VAL(ms_as_double(bv) / ms_as_double(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_DIV_FF, A, B, C);
+            } else {
+                RUNTIME_ERROR(vm, "Operands must be numbers for '/'.");
+            }
+            R(A) = result;
+            break;
+        }
+        case MS_OP_MOD: {
+            MsValue bv = RK(B), cv = RK(C);
+            MsValue result = MS_NIL_VAL();
+            if (!numeric_binop(bv, cv, MS_OP_MOD, &result)) {
+                RUNTIME_ERROR(vm, "Operands must be numbers for '%%'.");
             }
             R(A) = result;
             break;
         }
 
-        case MS_OP_ADD_II:
-            R(A) = MS_INT_VAL(MS_AS_INT(RK(B)) + MS_AS_INT(RK(C)));
+        /* ---- specialized arithmetic: fast path + deopt on mismatch ---- */
+#define DEOPT_AND_RESPECIALIZE(generic_op, spec_ii, spec_ff) \
+        { \
+            int _off = (int)(frame->ip - 1 - frame->closure->function->chunk.code); \
+            int _cnt = bump_deopt(frame->closure->function, _off); \
+            if (_cnt >= 3) { \
+                frame->ip[-1] = ms_enc_ABC((generic_op), A, B, C); \
+            } else { \
+                MsValue _bv = RK(B), _cv = RK(C); \
+                if (MS_IS_INT(_bv) && MS_IS_INT(_cv)) \
+                    frame->ip[-1] = ms_enc_ABC((spec_ii), A, B, C); \
+                else if (MS_IS_NUMERIC(_bv) && MS_IS_NUMERIC(_cv)) \
+                    frame->ip[-1] = ms_enc_ABC((spec_ff), A, B, C); \
+                else \
+                    frame->ip[-1] = ms_enc_ABC((generic_op), A, B, C); \
+            } \
+        }
+
+        case MS_OP_ADD_II: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
+                R(A) = MS_INT_VAL(MS_AS_INT(bv) + MS_AS_INT(cv));
+            } else {
+                DEOPT_AND_RESPECIALIZE(MS_OP_ADD, MS_OP_ADD_II, MS_OP_ADD_FF)
+                MsValue result = MS_NIL_VAL();
+                if (MS_IS_STRING(bv) && MS_IS_STRING(cv))
+                    result = MS_OBJ_VAL(ms_obj_string_concat(vm, MS_AS_STRING(bv), MS_AS_STRING(cv)));
+                else if (!numeric_binop(bv, cv, MS_OP_ADD, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers or strings for '+'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_ADD_FF:
-            R(A) = MS_NUMBER_VAL(MS_AS_NUMBER(RK(B)) + MS_AS_NUMBER(RK(C)));
+        }
+        case MS_OP_ADD_FF: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
+                R(A) = MS_NUMBER_VAL(ms_as_double(bv) + ms_as_double(cv));
+            } else {
+                DEOPT_AND_RESPECIALIZE(MS_OP_ADD, MS_OP_ADD_II, MS_OP_ADD_FF)
+                MsValue result = MS_NIL_VAL();
+                if (MS_IS_STRING(bv) && MS_IS_STRING(cv))
+                    result = MS_OBJ_VAL(ms_obj_string_concat(vm, MS_AS_STRING(bv), MS_AS_STRING(cv)));
+                else if (!numeric_binop(bv, cv, MS_OP_ADD, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers or strings for '+'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_ADD_SS:
-            R(A) = MS_OBJ_VAL(
-                ms_obj_string_concat(vm, MS_AS_STRING(RK(B)), MS_AS_STRING(RK(C))));
+        }
+        case MS_OP_ADD_SS: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_STRING(bv) && MS_IS_STRING(cv))) {
+                R(A) = MS_OBJ_VAL(ms_obj_string_concat(vm, MS_AS_STRING(bv), MS_AS_STRING(cv)));
+            } else {
+                int _off = (int)(frame->ip - 1 - frame->closure->function->chunk.code);
+                int _cnt = bump_deopt(frame->closure->function, _off);
+                if (_cnt >= 3)
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_ADD, A, B, C);
+                else if (MS_IS_INT(bv) && MS_IS_INT(cv))
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_ADD_II, A, B, C);
+                else if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_ADD_FF, A, B, C);
+                else
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_ADD, A, B, C);
+                MsValue result = MS_NIL_VAL();
+                if (!numeric_binop(bv, cv, MS_OP_ADD, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers or strings for '+'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_SUB_II:
-            R(A) = MS_INT_VAL(MS_AS_INT(RK(B)) - MS_AS_INT(RK(C)));
+        }
+        case MS_OP_SUB_II: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
+                R(A) = MS_INT_VAL(MS_AS_INT(bv) - MS_AS_INT(cv));
+            } else {
+                DEOPT_AND_RESPECIALIZE(MS_OP_SUB, MS_OP_SUB_II, MS_OP_SUB_FF)
+                MsValue result = MS_NIL_VAL();
+                if (!numeric_binop(bv, cv, MS_OP_SUB, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '-'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_SUB_FF:
-            R(A) = MS_NUMBER_VAL(MS_AS_NUMBER(RK(B)) - MS_AS_NUMBER(RK(C)));
+        }
+        case MS_OP_SUB_FF: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
+                R(A) = MS_NUMBER_VAL(ms_as_double(bv) - ms_as_double(cv));
+            } else {
+                DEOPT_AND_RESPECIALIZE(MS_OP_SUB, MS_OP_SUB_II, MS_OP_SUB_FF)
+                MsValue result = MS_NIL_VAL();
+                if (!numeric_binop(bv, cv, MS_OP_SUB, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '-'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_MUL_II:
-            R(A) = MS_INT_VAL(MS_AS_INT(RK(B)) * MS_AS_INT(RK(C)));
+        }
+        case MS_OP_MUL_II: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
+                R(A) = MS_INT_VAL(MS_AS_INT(bv) * MS_AS_INT(cv));
+            } else {
+                DEOPT_AND_RESPECIALIZE(MS_OP_MUL, MS_OP_MUL_II, MS_OP_MUL_FF)
+                MsValue result = MS_NIL_VAL();
+                if (!numeric_binop(bv, cv, MS_OP_MUL, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '*'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_MUL_FF:
-            R(A) = MS_NUMBER_VAL(MS_AS_NUMBER(RK(B)) * MS_AS_NUMBER(RK(C)));
+        }
+        case MS_OP_MUL_FF: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
+                R(A) = MS_NUMBER_VAL(ms_as_double(bv) * ms_as_double(cv));
+            } else {
+                DEOPT_AND_RESPECIALIZE(MS_OP_MUL, MS_OP_MUL_II, MS_OP_MUL_FF)
+                MsValue result = MS_NIL_VAL();
+                if (!numeric_binop(bv, cv, MS_OP_MUL, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '*'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_DIV_FF:
-            R(A) = MS_NUMBER_VAL(MS_AS_NUMBER(RK(B)) / MS_AS_NUMBER(RK(C)));
+        }
+        case MS_OP_DIV_FF: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
+                R(A) = MS_NUMBER_VAL(ms_as_double(bv) / ms_as_double(cv));
+            } else {
+                int _off = (int)(frame->ip - 1 - frame->closure->function->chunk.code);
+                int _cnt = bump_deopt(frame->closure->function, _off);
+                if (_cnt >= 3)
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_DIV, A, B, C);
+                else
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_DIV, A, B, C);
+                MsValue result = MS_NIL_VAL();
+                if (!numeric_binop(bv, cv, MS_OP_DIV, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '/'.");
+                R(A) = result;
+            }
             break;
-        case MS_OP_LT_II:
-            R(A) = MS_BOOL_VAL(MS_AS_INT(RK(B)) < MS_AS_INT(RK(C)));
+        }
+        case MS_OP_LT_II: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
+                R(A) = MS_BOOL_VAL(MS_AS_INT(bv) < MS_AS_INT(cv));
+            } else {
+                int _off = (int)(frame->ip - 1 - frame->closure->function->chunk.code);
+                int _cnt = bump_deopt(frame->closure->function, _off);
+                MsOpCode spec = (_cnt >= 3 || (!MS_IS_NUMERIC(bv) || !MS_IS_NUMERIC(cv)))
+                                ? MS_OP_LT
+                                : (MS_IS_INT(bv) && MS_IS_INT(cv) ? MS_OP_LT_II : MS_OP_LT_FF);
+                frame->ip[-1] = ms_enc_ABC(spec, A, B, C);
+                bool result = false;
+                if (!cmp_values(bv, cv, MS_OP_LT, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '<'.");
+                R(A) = MS_BOOL_VAL(result);
+            }
             break;
-        case MS_OP_LT_FF:
-            R(A) = MS_BOOL_VAL(MS_AS_NUMBER(RK(B)) < MS_AS_NUMBER(RK(C)));
+        }
+        case MS_OP_LT_FF: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
+                R(A) = MS_BOOL_VAL(ms_as_double(bv) < ms_as_double(cv));
+            } else {
+                int _off = (int)(frame->ip - 1 - frame->closure->function->chunk.code);
+                int _cnt = bump_deopt(frame->closure->function, _off);
+                MsOpCode spec = (_cnt >= 3 || (!MS_IS_NUMERIC(bv) || !MS_IS_NUMERIC(cv)))
+                                ? MS_OP_LT
+                                : (MS_IS_INT(bv) && MS_IS_INT(cv) ? MS_OP_LT_II : MS_OP_LT_FF);
+                frame->ip[-1] = ms_enc_ABC(spec, A, B, C);
+                bool result = false;
+                if (!cmp_values(bv, cv, MS_OP_LT, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for '<'.");
+                R(A) = MS_BOOL_VAL(result);
+            }
             break;
-        case MS_OP_EQ_II:
-            R(A) = MS_BOOL_VAL(MS_AS_INT(RK(B)) == MS_AS_INT(RK(C)));
+        }
+        case MS_OP_EQ_II: {
+            MsValue bv = RK(B), cv = RK(C);
+            if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
+                R(A) = MS_BOOL_VAL(MS_AS_INT(bv) == MS_AS_INT(cv));
+            } else {
+                int _off = (int)(frame->ip - 1 - frame->closure->function->chunk.code);
+                int _cnt = bump_deopt(frame->closure->function, _off);
+                if (_cnt >= 3)
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_EQ, A, B, C);
+                else
+                    frame->ip[-1] = ms_enc_ABC(MS_OP_EQ, A, B, C);
+                bool result = false;
+                cmp_values(bv, cv, MS_OP_EQ, &result);
+                R(A) = MS_BOOL_VAL(result);
+            }
             break;
+        }
+#undef DEOPT_AND_RESPECIALIZE
 
         case MS_OP_NEG:
             if (MS_IS_INT(RK(B)))
@@ -838,15 +1083,30 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         }
 
         case MS_OP_EQ: {
+            MsValue bv = RK(B), cv = RK(C);
             bool result = false;
-            cmp_values(RK(B), RK(C), MS_OP_EQ, &result);
+            if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
+                result = (MS_AS_INT(bv) == MS_AS_INT(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_EQ_II, A, B, C);
+            } else {
+                cmp_values(bv, cv, MS_OP_EQ, &result);
+            }
             R(A) = MS_BOOL_VAL(result);
             break;
         }
         case MS_OP_LT: {
+            MsValue bv = RK(B), cv = RK(C);
             bool result = false;
-            if (!cmp_values(RK(B), RK(C), MS_OP_LT, &result))
-                RUNTIME_ERROR(vm, "Operands must be numbers for comparison.");
+            if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
+                result = (MS_AS_INT(bv) < MS_AS_INT(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_LT_II, A, B, C);
+            } else if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
+                result = (ms_as_double(bv) < ms_as_double(cv));
+                frame->ip[-1] = ms_enc_ABC(MS_OP_LT_FF, A, B, C);
+            } else {
+                if (!cmp_values(bv, cv, MS_OP_LT, &result))
+                    RUNTIME_ERROR(vm, "Operands must be numbers for comparison.");
+            }
             R(A) = MS_BOOL_VAL(result);
             break;
         }

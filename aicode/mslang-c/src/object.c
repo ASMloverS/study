@@ -98,6 +98,8 @@ MsObjFunction* ms_obj_function_new(struct MsVM* vm) {
     fn->script_path = NULL;
     fn->ic = NULL;
     fn->ic_count = 0;
+    fn->arith_deopt = NULL;
+    fn->arith_deopt_size = 0;
     ms_chunk_init(&fn->chunk);
     return fn;
 }
@@ -301,6 +303,7 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
         case MS_OBJ_FUNCTION: {
             MsObjFunction* fn = (MsObjFunction*)obj;
             ms_chunk_free(&fn->chunk);
+            if (fn->arith_deopt) free(fn->arith_deopt);
             ms_reallocate(vm, obj, sizeof(MsObjFunction), 0);
             break;
         }

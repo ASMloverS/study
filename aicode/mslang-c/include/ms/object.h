@@ -65,6 +65,8 @@ typedef struct {
     MsObjString*  script_path;   /* canonical path of source file (for module imports) */
     MsInlineCache* ic;
     int           ic_count;
+    ms_u8*        arith_deopt;      /* lazy alloc: deopt counter per instr offset */
+    int           arith_deopt_size; /* allocated size of arith_deopt array */
 } MsObjFunction;
 
 typedef struct {
