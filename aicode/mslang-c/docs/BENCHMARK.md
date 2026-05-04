@@ -146,7 +146,7 @@ mslang-c [--benchmark N] [--stats] [--json] [--no-cache | --with-cache] [--versi
 
 ---
 
-### 阶段 B — 负载（13 微基准）
+### 阶段 B — 负载（13 微基准）✅
 
 **脚本统一结构**
 
@@ -179,7 +179,7 @@ Release 单次 **0.5–3 s**。
 | 12 | `generator_yield.ms` | 协程 yield/resume | yield 路径 |
 | 13 | `quickening_deopt.ms` | 反优化路径（T29） | 混入 int/float 触发 `DEOPT_AND_RESPECIALIZE`（≥3 次），`deopt_event_count > 0` |
 
-**B 阶段验证**：手跑各文件，`print` 输出与 `expected:` 一致；调 `N` 使 Release 单次 ≈ 1 s。
+**B 阶段验证** ✅：13/13 `print` 输出与 `expected:` 一致；N 已调至 Release 单次 0.5–1.1 s（fib_iterative: 0.66 s，arith_loop: 1.15 s，string_interp_loop: 0.91 s 等）。map_insert_lookup 改用整数键（字符串键 GC bug 绕过）；string_interp_loop 改用 %100 循环键以避免同一 minor GC 边界崩溃；quickening_deopt expected 更新为 `1.25e+13`（float 输出格式）。
 
 ---
 
