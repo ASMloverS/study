@@ -2,6 +2,7 @@
 #include "ms/object.h"
 #include "ms/consts.h"
 #include "ms/memory.h"
+#include <stdint.h>
 
 #define MS_STACK_SIZE (MS_FRAMES_MAX * MS_STACK_MAX)
 
@@ -35,6 +36,19 @@ typedef enum {
     MS_GC_MARKING,
     MS_GC_SWEEPING,
 } MsGcPhase;
+
+#ifdef MSLANG_VM_STATS
+typedef struct {
+    uint64_t instruction_count;
+    uint64_t minor_gc_count;
+    uint64_t major_gc_count;
+    uint64_t incremental_step_count;
+    uint64_t deopt_event_count;
+    size_t   bytes_allocated_peak;
+    int      peak_frame_count;
+    int      live_objects_after_final_gc;
+} MsVMStats;
+#endif
 
 typedef struct MsVM {
     MsValue         stack[MS_STACK_SIZE];
@@ -73,6 +87,9 @@ typedef struct MsVM {
     MsGcPhase       gc_phase;
     MsObject*       sweep_cursor;
     MsObject**      sweep_prev;
+#ifdef MSLANG_VM_STATS
+    MsVMStats       stats;
+#endif
 } MsVM;
 
 void              ms_vm_init(MsVM* vm);
@@ -103,3 +120,8 @@ MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
    with all top-level globals defined during execution. */
 MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
                                         MsObjModule* mod);
+
+#ifdef MSLANG_VM_STATS
+void ms_vm_get_stats(const MsVM* vm, MsVMStats* out);
+void ms_vm_reset_stats(MsVM* vm);
+#endif

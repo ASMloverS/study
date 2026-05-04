@@ -79,5 +79,18 @@ target_include_directories(mslang-c PRIVATE include)
 target_compile_options(mslang-c PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(mslang-c PRIVATE ms_frontend)
 
+option(MSLANG_BUILD_BENCHMARKS "Build mslang-c benchmark suite" OFF)
+option(MSLANG_VM_STATS         "Enable VM stats counters"        OFF)
+
+if(MSLANG_VM_STATS)
+    target_compile_definitions(ms_memory PUBLIC MSLANG_VM_STATS)
+    target_compile_definitions(ms_vm PUBLIC MSLANG_VM_STATS)
+    target_compile_definitions(mslang-c PRIVATE MSLANG_VM_STATS)
+endif()
+
+if(MSLANG_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
+
 enable_testing()
 add_subdirectory(tests)

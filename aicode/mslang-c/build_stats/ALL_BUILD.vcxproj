@@ -1,0 +1,352 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ResolveNugetPackages>false</ResolveNugetPackages>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{36A44E5F-F48A-3572-830D-6E9148B95602}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <Platform>x64</Platform>
+    <ProjectName>ALL_BUILD</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Workspace\Repositories\study\aicode\mslang-c\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Workspace/Repositories/study/aicode/mslang-c/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe -SC:/Workspace/Repositories/study/aicode/mslang-c -BC:/Workspace/Repositories/study/aicode/mslang-c/build_stats --check-stamp-file C:/Workspace/Repositories/study/aicode/mslang-c/build_stats/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCommonLanguageInclude.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeGenericSystem.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeInitializeConfigs.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeLanguageInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeRCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInitialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-Initialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\WindowsPaths.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeRCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Workspace/Repositories/study/aicode/mslang-c/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe -SC:/Workspace/Repositories/study/aicode/mslang-c -BC:/Workspace/Repositories/study/aicode/mslang-c/build_stats --check-stamp-file C:/Workspace/Repositories/study/aicode/mslang-c/build_stats/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCommonLanguageInclude.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeGenericSystem.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeInitializeConfigs.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeLanguageInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeRCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInitialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-Initialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\WindowsPaths.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeRCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Workspace/Repositories/study/aicode/mslang-c/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe -SC:/Workspace/Repositories/study/aicode/mslang-c -BC:/Workspace/Repositories/study/aicode/mslang-c/build_stats --check-stamp-file C:/Workspace/Repositories/study/aicode/mslang-c/build_stats/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCommonLanguageInclude.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeGenericSystem.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeInitializeConfigs.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeLanguageInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeRCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInitialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-Initialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\WindowsPaths.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeRCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Workspace/Repositories/study/aicode/mslang-c/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe -SC:/Workspace/Repositories/study/aicode/mslang-c -BC:/Workspace/Repositories/study/aicode/mslang-c/build_stats --check-stamp-file C:/Workspace/Repositories/study/aicode/mslang-c/build_stats/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeCommonLanguageInclude.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeGenericSystem.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeInitializeConfigs.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeLanguageInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeRCInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInformation.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\CMakeSystemSpecificInitialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Compiler\MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-Initialize.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC-C.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows-MSVC.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\Windows.cmake;C:\Tools\VS2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\share\cmake-3.29\Modules\Platform\WindowsPaths.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeRCCompiler.cmake;C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\3.29.5-msvc4\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ZERO_CHECK.vcxproj">
+      <Project>{3E3C9390-02BA-3AD5-B443-6C91F45BA8F3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_chunk.vcxproj">
+      <Project>{26CB4054-086D-3092-8EAA-F5190B61D06F}</Project>
+      <Name>ms_chunk</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_debug.vcxproj">
+      <Project>{F8A4023F-9FFD-3D86-B97B-BC75EDCDA3E8}</Project>
+      <Name>ms_debug</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_frontend.vcxproj">
+      <Project>{770770FE-71A4-382B-9CE3-67521B09B9D9}</Project>
+      <Name>ms_frontend</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_memory.vcxproj">
+      <Project>{0C116538-7C43-3F65-A74D-FECADC465674}</Project>
+      <Name>ms_memory</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_object.vcxproj">
+      <Project>{A9AA4785-5631-3320-AC0B-DA6355481614}</Project>
+      <Name>ms_object</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_optimize.vcxproj">
+      <Project>{A0DEB2DA-B9D7-3993-8A4E-509BDA436534}</Project>
+      <Name>ms_optimize</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_scanner.vcxproj">
+      <Project>{40B792FF-1183-3B68-ACBB-3E0E042C9D44}</Project>
+      <Name>ms_scanner</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_serializer.vcxproj">
+      <Project>{7FCD2A2B-A1CD-3FEF-BDC8-6EA57BEB5862}</Project>
+      <Name>ms_serializer</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_support.vcxproj">
+      <Project>{4E41EFA0-38F3-357D-A229-03665EB22DC1}</Project>
+      <Name>ms_support</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_table.vcxproj">
+      <Project>{15F5A85E-C91D-3581-8D0E-3369584A9953}</Project>
+      <Name>ms_table</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_vm.vcxproj">
+      <Project>{7AFBE866-D4F4-39D5-87A9-093960FC6011}</Project>
+      <Name>ms_vm</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\ms_vtable.vcxproj">
+      <Project>{57AE929C-AB07-3D9D-8A98-333CC6E8FF96}</Project>
+      <Name>ms_vtable</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\mslang-c.vcxproj">
+      <Project>{198A5079-4EAA-37F5-A74B-4278034BC297}</Project>
+      <Name>mslang-c</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_base_objects.vcxproj">
+      <Project>{7C9B7C5D-A91B-373C-B72B-D324DF0BF847}</Project>
+      <Name>test_base_objects</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_builtins.vcxproj">
+      <Project>{69FB1511-2696-314D-99F0-67A4F99C3E78}</Project>
+      <Name>test_builtins</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_chunk.vcxproj">
+      <Project>{B7F85C45-36E7-3ECE-B57F-D9CB14215E97}</Project>
+      <Name>test_chunk</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_collections.vcxproj">
+      <Project>{A9BB1B04-4495-31F5-A294-4C1ABD3DD4BA}</Project>
+      <Name>test_collections</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_compiler_expr.vcxproj">
+      <Project>{0CC3555A-94E8-3684-92C8-A4FDDB755B6B}</Project>
+      <Name>test_compiler_expr</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_compiler_stmts.vcxproj">
+      <Project>{19CC4632-6235-304D-8F0C-EC4FF91B5399}</Project>
+      <Name>test_compiler_stmts</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_compiler_vars.vcxproj">
+      <Project>{8E08EB54-6FF9-3C8A-8398-DB6837FEF084}</Project>
+      <Name>test_compiler_vars</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_coroutines.vcxproj">
+      <Project>{82FE9AA4-401A-34A8-BF7E-E9DEADCC8D02}</Project>
+      <Name>test_coroutines</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_debug.vcxproj">
+      <Project>{0AAC3BA7-0CB3-3CA1-A5F5-BDBE75A16C00}</Project>
+      <Name>test_debug</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_exceptions.vcxproj">
+      <Project>{6DF2FA21-CB4D-3A3D-A95F-56E64F5CD56B}</Project>
+      <Name>test_exceptions</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_gc.vcxproj">
+      <Project>{0596847F-624B-3D54-A62F-01170F99D4A2}</Project>
+      <Name>test_gc</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_gc_gen.vcxproj">
+      <Project>{DA2D27A4-90CF-3263-BBD8-C944AA063163}</Project>
+      <Name>test_gc_gen</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_interp_exec.vcxproj">
+      <Project>{12C51278-C0E8-3CE9-B974-98AE8571A966}</Project>
+      <Name>test_interp_exec</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_modules.vcxproj">
+      <Project>{07355564-14B6-3BBE-9CA7-29FA5EEF557E}</Project>
+      <Name>test_modules</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_natives.vcxproj">
+      <Project>{161544B9-C753-341E-A5B0-9BC52F047E17}</Project>
+      <Name>test_natives</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_object_string.vcxproj">
+      <Project>{9C61BFE2-CE60-328E-8C0B-708F11C0F756}</Project>
+      <Name>test_object_string</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_oop.vcxproj">
+      <Project>{2D2C7EFE-CEF1-31C9-A474-8CCA55259F4E}</Project>
+      <Name>test_oop</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_oop_inherit.vcxproj">
+      <Project>{D7622E76-7F8F-35E8-B729-288E04C9EFD1}</Project>
+      <Name>test_oop_inherit</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_optimize.vcxproj">
+      <Project>{6D633046-B7A8-3F59-A6CA-4D91E1168115}</Project>
+      <Name>test_optimize</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_quickening.vcxproj">
+      <Project>{48A42BBD-912C-3026-A6A8-54D9A9D8421D}</Project>
+      <Name>test_quickening</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_scanner.vcxproj">
+      <Project>{4FBB465D-FCAF-3EEF-816C-42E5CBBA7643}</Project>
+      <Name>test_scanner</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_scanner_interp.vcxproj">
+      <Project>{A526C6C7-AE53-379D-8025-5CA6EA8180D4}</Project>
+      <Name>test_scanner_interp</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_serializer.vcxproj">
+      <Project>{0C7F8F96-E08E-395C-B220-71982C854A1F}</Project>
+      <Name>test_serializer</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_shapes.vcxproj">
+      <Project>{4D09BC29-7366-38F4-B458-AE4C492B8E77}</Project>
+      <Name>test_shapes</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_smoke.vcxproj">
+      <Project>{3756DC06-7780-3FB1-B736-5845D439C41B}</Project>
+      <Name>test_smoke</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_table.vcxproj">
+      <Project>{A11CEB9C-EB1C-3B69-A787-44C39E187E7C}</Project>
+      <Name>test_table</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_value.vcxproj">
+      <Project>{F079DED3-0800-33F2-A52C-BB4CB48DB652}</Project>
+      <Name>test_value</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_vm_basic.vcxproj">
+      <Project>{7EB29FCB-5B8E-3D62-9DE2-2362843D161F}</Project>
+      <Name>test_vm_basic</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_vm_closures.vcxproj">
+      <Project>{8EEA63CC-7CE3-3E15-BE50-CC34232EFD9A}</Project>
+      <Name>test_vm_closures</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Workspace\Repositories\study\aicode\mslang-c\build_stats\tests\test_vm_control.vcxproj">
+      <Project>{1195BF26-4B08-3102-A850-C92B15F82370}</Project>
+      <Name>test_vm_control</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

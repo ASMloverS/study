@@ -232,6 +232,11 @@ static void sweep_all(MsVM* vm) {
 /* ---- Incremental GC step ---- */
 
 void ms_gc_incremental_step(MsVM* vm) {
+#ifdef MSLANG_VM_STATS
+    vm->stats.incremental_step_count++;
+    if (vm->bytes_allocated > vm->stats.bytes_allocated_peak)
+        vm->stats.bytes_allocated_peak = vm->bytes_allocated;
+#endif
     switch (vm->gc_phase) {
     case MS_GC_IDLE:
         mark_roots(vm);
@@ -290,6 +295,9 @@ void ms_gc_collect_minor(MsVM* vm) {
     vm->remembered_count = 0;
     vm->young_bytes = 0;
     vm->minor_count++;
+#ifdef MSLANG_VM_STATS
+    vm->stats.minor_gc_count++;
+#endif
 }
 
 /* ---- Major GC ---- */
@@ -315,4 +323,18 @@ void ms_gc_collect(MsVM* vm) {
     vm->gc_phase     = MS_GC_IDLE;
     vm->sweep_cursor = NULL;
     vm->sweep_prev   = NULL;
+#ifdef MSLANG_VM_STATS
+    vm->stats.major_gc_count++;
+    /* Count live objects after major GC */
+    {
+        int live = 0;
+        MsObject* o = vm->objects;
+        while (o) { live++; o = o->next; }
+        o = vm->old_objects;
+        while (o) { live++; o = o->next; }
+        o = vm->young_objects;
+        while (o) { live++; o = o->next; }
+        vm->stats.live_objects_after_final_gc = live;
+    }
+#endif
 }

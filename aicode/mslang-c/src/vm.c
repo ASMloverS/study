@@ -165,6 +165,9 @@ void ms_vm_init(MsVM* vm) {
     vm->gc_phase     = MS_GC_IDLE;
     vm->sweep_cursor = NULL;
     vm->sweep_prev   = NULL;
+#ifdef MSLANG_VM_STATS
+    memset(&vm->stats, 0, sizeof(vm->stats));
+#endif
 }
 
 void ms_vm_free(MsVM* vm) {
@@ -198,6 +201,17 @@ void ms_vm_free(MsVM* vm) {
     ms_pool_destroy(&vm->upvalue_pool);
     ms_pool_destroy(&vm->bound_pool);
 }
+
+/* ---- stats API ---- */
+
+#ifdef MSLANG_VM_STATS
+void ms_vm_get_stats(const MsVM* vm, MsVMStats* out) {
+    *out = vm->stats;
+}
+void ms_vm_reset_stats(MsVM* vm) {
+    memset(&vm->stats, 0, sizeof(vm->stats));
+}
+#endif
 
 /* ---- runtime error ---- */
 
@@ -440,6 +454,8 @@ static ms_u8* ensure_deopt(MsObjFunction* fn) {
 
 /* Increment deopt counter for instr at `offset`.
    Returns new counter value, or 255 if alloc failed. */
+/* bump_deopt is called from DEOPT_AND_RESPECIALIZE; the vm pointer is not
+   available here, so deopt_event_count is incremented at the call sites. */
 static int bump_deopt(MsObjFunction* fn, int offset) {
     ms_u8* arr = ensure_deopt(fn);
     if (!arr) return 255;
@@ -447,6 +463,19 @@ static int bump_deopt(MsObjFunction* fn, int offset) {
     if (arr[offset] < 255) arr[offset]++;
     return (int)arr[offset];
 }
+
+/* ---- stats tracking macros (used in call_value and dispatch loop) ---- */
+
+#ifdef MSLANG_VM_STATS
+#  define STATS_TRACK_FRAME(vm) \
+    do { if ((vm)->frame_count > (vm)->stats.peak_frame_count) \
+             (vm)->stats.peak_frame_count = (vm)->frame_count; } while (0)
+#  define STATS_TRACK_DEOPT(vm) \
+    do { (vm)->stats.deopt_event_count++; } while (0)
+#else
+#  define STATS_TRACK_FRAME(vm) ((void)0)
+#  define STATS_TRACK_DEOPT(vm) ((void)0)
+#endif
 
 /* ---- call_value ---- */
 
@@ -490,6 +519,7 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
             return MS_INTERPRET_RUNTIME_ERROR;
         }
         MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+        STATS_TRACK_FRAME(vm);
         new_frame->closure = cl;
         new_frame->ip      = fn->chunk.code;
         /* args are in slots ret_dst+1 .. ret_dst+arg_count of caller frame */
@@ -522,6 +552,7 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
                 return MS_INTERPRET_RUNTIME_ERROR;
             }
             MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+            STATS_TRACK_FRAME(vm);
             new_frame->closure = init_cl;
             new_frame->ip      = init_cl->function->chunk.code;
             /* slot 0 = this (instance), then args */
@@ -548,6 +579,7 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
             return MS_INTERPRET_RUNTIME_ERROR;
         }
         MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+        STATS_TRACK_FRAME(vm);
         new_frame->closure = bm->method;
         new_frame->ip      = fn->chunk.code;
         new_frame->slots   = vm->frames[vm->frame_count - 2].slots + ret_dst;
@@ -707,6 +739,9 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         int A  = MS_GET_A(instr);
         int B  = MS_GET_B(instr);
         int C  = MS_GET_C(instr);
+#ifdef MSLANG_VM_STATS
+        vm->stats.instruction_count++;
+#endif
 
         switch (op) {
         case MS_OP_NOP: break;
@@ -839,6 +874,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 else \
                     frame->ip[-1] = ms_enc_ABC((generic_op), A, B, C); \
             } \
+            STATS_TRACK_DEOPT(vm); \
         }
 
         case MS_OP_ADD_II: {
@@ -886,6 +922,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                     frame->ip[-1] = ms_enc_ABC(MS_OP_ADD_FF, A, B, C);
                 else
                     frame->ip[-1] = ms_enc_ABC(MS_OP_ADD, A, B, C);
+                STATS_TRACK_DEOPT(vm);
                 MsValue result = MS_NIL_VAL();
                 if (!numeric_binop(bv, cv, MS_OP_ADD, &result))
                     RUNTIME_ERROR(vm, "Operands must be numbers or strings for '+'.");
@@ -956,6 +993,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                     frame->ip[-1] = ms_enc_ABC(MS_OP_DIV, A, B, C);
                 else
                     frame->ip[-1] = ms_enc_ABC(MS_OP_DIV, A, B, C);
+                STATS_TRACK_DEOPT(vm);
                 MsValue result = MS_NIL_VAL();
                 if (!numeric_binop(bv, cv, MS_OP_DIV, &result))
                     RUNTIME_ERROR(vm, "Operands must be numbers for '/'.");
@@ -974,6 +1012,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                                 ? MS_OP_LT
                                 : (MS_IS_INT(bv) && MS_IS_INT(cv) ? MS_OP_LT_II : MS_OP_LT_FF);
                 frame->ip[-1] = ms_enc_ABC(spec, A, B, C);
+                STATS_TRACK_DEOPT(vm);
                 bool result = false;
                 if (!cmp_values(bv, cv, MS_OP_LT, &result))
                     RUNTIME_ERROR(vm, "Operands must be numbers for '<'.");
@@ -992,6 +1031,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                                 ? MS_OP_LT
                                 : (MS_IS_INT(bv) && MS_IS_INT(cv) ? MS_OP_LT_II : MS_OP_LT_FF);
                 frame->ip[-1] = ms_enc_ABC(spec, A, B, C);
+                STATS_TRACK_DEOPT(vm);
                 bool result = false;
                 if (!cmp_values(bv, cv, MS_OP_LT, &result))
                     RUNTIME_ERROR(vm, "Operands must be numbers for '<'.");
@@ -1010,6 +1050,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                     frame->ip[-1] = ms_enc_ABC(MS_OP_EQ, A, B, C);
                 else
                     frame->ip[-1] = ms_enc_ABC(MS_OP_EQ, A, B, C);
+                STATS_TRACK_DEOPT(vm);
                 bool result = false;
                 cmp_values(bv, cv, MS_OP_EQ, &result);
                 R(A) = MS_BOOL_VAL(result);
@@ -1287,6 +1328,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                     RUNTIME_ERROR(vm, "Stack overflow.");
                 }
                 MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = cl->function->chunk.code;
                 nf->slots   = frame->slots + A;
@@ -1324,6 +1366,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 }
                 MsValue val = R(A);
                 MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = cl->function->chunk.code;
                 nf->slots   = frame->slots + B;
@@ -1379,6 +1422,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                         RUNTIME_ERROR(vm, "Stack overflow.");
                     }
                     MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                    STATS_TRACK_FRAME(vm);
                     nf->closure = cl;
                     nf->ip      = fn->chunk.code;
                     /* slot 0 = class (this), args in slots 1..argc */
@@ -1439,6 +1483,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                     RUNTIME_ERROR(vm, "Stack overflow.");
                 }
                 MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = fn->chunk.code;
                 /* slot 0 = this (obj), args in slots 1..argc */
@@ -1504,6 +1549,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 RUNTIME_ERROR(vm, "Stack overflow.");
             }
             MsCallFrame* nf = &vm->frames[vm->frame_count++];
+            STATS_TRACK_FRAME(vm);
             nf->closure = cl;
             nf->ip      = fn->chunk.code;
             nf->slots   = frame->slots + A;

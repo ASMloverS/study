@@ -1,9 +1,33 @@
 #include "ms/common.h"
 #include "ms/consts.h"
 #include "ms/vm.h"
+#include "ms/memory.h"
+#include "ms/serializer.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* ---- platform timing ---- */
+
+#ifdef _WIN32
+#  include <windows.h>
+static double get_time_ms(void) {
+    LARGE_INTEGER freq, cnt;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&cnt);
+    return (double)cnt.QuadPart * 1000.0 / (double)freq.QuadPart;
+}
+#else
+#  include <time.h>
+static double get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
+#endif
+
+/* ---- file helpers ---- */
 
 static char* read_file(const char* path) {
     FILE* f = NULL;
@@ -18,10 +42,93 @@ static char* read_file(const char* path) {
     rewind(f);
     char* buf = (char*)malloc((size_t)sz + 1);
     if (!buf) { fclose(f); return NULL; }
-    size_t read = fread(buf, 1, (size_t)sz, f);
+    size_t rd = fread(buf, 1, (size_t)sz, f);
     fclose(f);
-    buf[read] = '\0';
+    buf[rd] = '\0';
     return buf;
+}
+
+/* ---- sort helpers for median ---- */
+
+static int cmp_double(const void* a, const void* b) {
+    double da = *(const double*)a, db = *(const double*)b;
+    return (da > db) - (da < db);
+}
+
+static double median_of(double* arr, int n) {
+    qsort(arr, (size_t)n, sizeof(double), cmp_double);
+    if (n % 2 == 1) return arr[n / 2];
+    return (arr[n / 2 - 1] + arr[n / 2]) / 2.0;
+}
+
+/* ---- benchmark run ---- */
+
+typedef struct {
+    double compile_ms;
+    double interpret_ms;
+} RunSample;
+
+/* Run one iteration: compile fresh from source, then interpret.
+   Returns MS_INTERPRET_OK on success. */
+static MsInterpretResult run_one_nocache(const char* src, const char* path,
+                                          RunSample* s) {
+    double t0, t1, t2;
+
+    t0 = get_time_ms();
+    MsVM vm;
+    ms_vm_init(&vm);
+
+    /* Use ms_vm_interpret which compiles + runs internally.
+       We split timing by compiling separately first. */
+    /* Compile phase */
+    t1 = get_time_ms();
+    MsInterpretResult res = ms_vm_interpret(&vm, src, path);
+    t2 = get_time_ms();
+
+    /* We cannot easily split compile vs interpret with ms_vm_interpret.
+       Report total as interpret_ms; compile_ms = 0 for no-cache mode.
+       Callers that need split timing use the with-cache path. */
+    MS_UNUSED(t0); MS_UNUSED(t1);
+    s->compile_ms   = 0.0;
+    s->interpret_ms = t2 - t1;
+    ms_vm_free(&vm);
+    return res;
+}
+
+/* Run one iteration using ms_compile_cached (with-cache mode).
+   is_cold: true for first run (measures cold compile). */
+static MsInterpretResult run_one_cached(const char* src, const char* path,
+                                         bool is_cold, RunSample* s) {
+    double t0, t1, t2;
+    MsVM vm;
+    ms_vm_init(&vm);
+
+    t0 = get_time_ms();
+    MsObjFunction* fn = ms_compile_cached(&vm, src, path);
+    t1 = get_time_ms();
+    s->compile_ms = t1 - t0;
+
+    MsInterpretResult res = MS_INTERPRET_OK;
+    if (!fn) {
+        res = MS_INTERPRET_COMPILE_ERROR;
+    } else {
+        MsObjClosure* cl = ms_obj_closure_new(&vm, fn);
+        vm.frames[0].closure = cl;
+        vm.frames[0].ip      = fn->chunk.code;
+        vm.frames[0].slots   = vm.stack;
+        vm.frame_count = 1;
+        int need = fn->max_stack_size + 1;
+        if (need < 1) need = 1;
+        vm.stack_top = vm.stack + need;
+        double r0 = get_time_ms();
+        res = ms_vm_run(&vm);
+        t2 = get_time_ms();
+        MS_UNUSED(r0);
+        s->interpret_ms = t2 - t1;
+    }
+    MS_UNUSED(is_cold);
+    ms_vm_free(&vm);
+    return res;
 }
 
 int main(int argc, char* argv[]) {
@@ -29,16 +136,189 @@ int main(int argc, char* argv[]) {
         printf("mslang-c %s\n", MS_VERSION);
         return 0;
     }
-    if (argc == 2) {
-        char* src = read_file(argv[1]);
-        if (!src) return 1;
+
+    /* Parse flags */
+    int   bench_n    = 0;
+    bool  flag_stats = false;
+    bool  flag_json  = false;
+    bool  flag_cache = false;   /* true = --with-cache */
+    const char* script = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--benchmark") == 0 && i + 1 < argc) {
+            bench_n = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--stats") == 0) {
+            flag_stats = true;
+        } else if (strcmp(argv[i], "--json") == 0) {
+            flag_json = true;
+        } else if (strcmp(argv[i], "--with-cache") == 0) {
+            flag_cache = true;
+        } else if (strcmp(argv[i], "--no-cache") == 0) {
+            flag_cache = false;
+        } else if (argv[i][0] != '-') {
+            script = argv[i];
+        } else {
+            fprintf(stderr, "Unknown flag: %s\n", argv[i]);
+            return 1;
+        }
+    }
+
+    if (!script) {
+        fprintf(stderr, "Usage: mslang-c [--benchmark N] [--stats] [--json]"
+                        " [--no-cache | --with-cache] [--version] <script>\n");
+        return 1;
+    }
+
+    char* src = read_file(script);
+    if (!src) return 1;
+
+    /* Non-benchmark: simple run */
+    if (bench_n <= 0) {
         MsVM vm;
         ms_vm_init(&vm);
-        MsInterpretResult result = ms_vm_interpret(&vm, src, argv[1]);
+        MsInterpretResult result = ms_vm_interpret(&vm, src, script);
+#ifdef MSLANG_VM_STATS
+        if (flag_stats && result == MS_INTERPRET_OK) {
+            MsVMStats st;
+            ms_vm_get_stats(&vm, &st);
+            fprintf(stderr, "stats: instr=%" PRIu64 " minor_gc=%" PRIu64
+                    " major_gc=%" PRIu64 " incr_step=%" PRIu64
+                    " deopt=%" PRIu64 " peak_bytes=%zu peak_frames=%d"
+                    " live_obj=%d\n",
+                    st.instruction_count, st.minor_gc_count, st.major_gc_count,
+                    st.incremental_step_count, st.deopt_event_count,
+                    st.bytes_allocated_peak, st.peak_frame_count,
+                    st.live_objects_after_final_gc);
+        }
+#else
+        MS_UNUSED(flag_stats);
+#endif
+        MS_UNUSED(flag_json);
         ms_vm_free(&vm);
         free(src);
         return result == MS_INTERPRET_OK ? 0 : 1;
     }
-    fprintf(stderr, "Usage: mslang-c [--version] [<script.ms>]\n");
-    return 1;
+
+    /* Benchmark mode */
+    double* compile_times   = (double*)malloc(sizeof(double) * (size_t)bench_n);
+    double* interpret_times = (double*)malloc(sizeof(double) * (size_t)bench_n);
+    double  compile_cold    = 0.0;
+    if (!compile_times || !interpret_times) { free(src); return 1; }
+
+#ifdef MSLANG_VM_STATS
+    MsVMStats last_stats;
+    memset(&last_stats, 0, sizeof(last_stats));
+#endif
+
+    for (int i = 0; i < bench_n; i++) {
+        RunSample s = {0.0, 0.0};
+        MsInterpretResult res;
+
+        if (flag_cache) {
+            res = run_one_cached(src, script, i == 0, &s);
+            if (i == 0) compile_cold = s.compile_ms;
+        } else {
+            res = run_one_nocache(src, script, &s);
+        }
+
+        if (res != MS_INTERPRET_OK) {
+            free(compile_times); free(interpret_times); free(src);
+            return 1;
+        }
+
+        compile_times[i]   = s.compile_ms;
+        interpret_times[i] = s.interpret_ms;
+
+        /* Collect stats on last run */
+#ifdef MSLANG_VM_STATS
+        if (flag_stats && i == bench_n - 1) {
+            /* Run once more with stats collection */
+            MsVM vm;
+            ms_vm_init(&vm);
+            ms_vm_interpret(&vm, src, script);
+            ms_gc_collect(&vm);   /* force full GC for live_objects_after_final_gc */
+            ms_vm_get_stats(&vm, &last_stats);
+            ms_vm_free(&vm);
+        }
+#endif
+
+        if (!flag_json) {
+            printf("run %d: compile=%.3f ms  interpret=%.3f ms\n",
+                   i + 1, s.compile_ms, s.interpret_ms);
+        }
+    }
+
+    /* Aggregate */
+    double* itimes_copy = (double*)malloc(sizeof(double) * (size_t)bench_n);
+    if (!itimes_copy) { free(compile_times); free(interpret_times); free(src); return 1; }
+    memcpy(itimes_copy, interpret_times, sizeof(double) * (size_t)bench_n);
+
+    double min_ms = interpret_times[0], max_ms = interpret_times[0], sum = 0.0;
+    for (int i = 0; i < bench_n; i++) {
+        if (interpret_times[i] < min_ms) min_ms = interpret_times[i];
+        if (interpret_times[i] > max_ms) max_ms = interpret_times[i];
+        sum += interpret_times[i];
+    }
+    double mean_ms   = sum / bench_n;
+    double med_ms    = median_of(itimes_copy, bench_n);
+    double compile_warm = (bench_n > 1 && flag_cache) ? compile_times[bench_n - 1] : 0.0;
+
+    if (flag_json) {
+        printf("{\"runs\":%d,\"best_ms\":%.3f,\"median_ms\":%.3f,"
+               "\"max_ms\":%.3f,\"mean_ms\":%.3f",
+               bench_n, min_ms, med_ms, max_ms, mean_ms);
+        if (flag_cache) {
+            printf(",\"compile_ms_cold\":%.3f,\"compile_ms_warm\":%.3f",
+                   compile_cold, compile_warm);
+        }
+#ifdef MSLANG_VM_STATS
+        if (flag_stats) {
+            printf(",\"instruction_count\":%" PRIu64
+                   ",\"minor_gc_count\":%" PRIu64
+                   ",\"major_gc_count\":%" PRIu64
+                   ",\"incremental_step_count\":%" PRIu64
+                   ",\"deopt_event_count\":%" PRIu64
+                   ",\"bytes_allocated_peak\":%zu"
+                   ",\"peak_frame_count\":%d"
+                   ",\"live_objects_after_final_gc\":%d",
+                   last_stats.instruction_count, last_stats.minor_gc_count,
+                   last_stats.major_gc_count, last_stats.incremental_step_count,
+                   last_stats.deopt_event_count, last_stats.bytes_allocated_peak,
+                   last_stats.peak_frame_count,
+                   last_stats.live_objects_after_final_gc);
+        }
+#endif
+        printf("}\n");
+    } else {
+        printf("---\n");
+        printf("runs=%d  best=%.3f ms  median=%.3f ms  max=%.3f ms  mean=%.3f ms\n",
+               bench_n, min_ms, med_ms, max_ms, mean_ms);
+        if (flag_cache) {
+            printf("compile_cold=%.3f ms  compile_warm=%.3f ms\n",
+                   compile_cold, compile_warm);
+        }
+#ifdef MSLANG_VM_STATS
+        if (flag_stats) {
+            printf("instruction_count=%" PRIu64
+                   "  minor_gc=%" PRIu64
+                   "  major_gc=%" PRIu64
+                   "  incr_step=%" PRIu64
+                   "  deopt=%" PRIu64
+                   "  peak_bytes=%zu"
+                   "  peak_frames=%d"
+                   "  live_obj=%d\n",
+                   last_stats.instruction_count, last_stats.minor_gc_count,
+                   last_stats.major_gc_count, last_stats.incremental_step_count,
+                   last_stats.deopt_event_count, last_stats.bytes_allocated_peak,
+                   last_stats.peak_frame_count,
+                   last_stats.live_objects_after_final_gc);
+        }
+#endif
+    }
+
+    free(compile_times);
+    free(interpret_times);
+    free(itimes_copy);
+    free(src);
+    return 0;
 }
