@@ -86,7 +86,7 @@ void ms_vm_reset_stats(MsVM* vm);
 
 `MsVM` 追加 `MsVMStats stats;`（`MSLANG_VM_STATS` 未定义时空结构零大小）。
 
-**2. `src/vm.c`**
+**2. `src/vm.c` ✅**
 
 dispatch 循环顶：
 
