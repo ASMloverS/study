@@ -113,7 +113,7 @@ frame 入栈处：
 #endif
 ```
 
-**3. `src/vm_gc.c`**
+**3. `src/vm_gc.c` ✅**
 
 - `gc_collect_minor` 末：`++vm->stats.minor_gc_count`
 - `gc_collect_major` 末：`++vm->stats.major_gc_count`
