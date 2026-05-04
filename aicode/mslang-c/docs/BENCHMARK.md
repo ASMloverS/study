@@ -64,7 +64,7 @@ T01–T30 已成，然无基准设施：
 
 ## 实现
 
-### 阶段 A — 引擎插装
+### 阶段 A — 引擎插装 ✅
 
 **1. `include/ms/vm.h`：定义 `MsVMStats` ✅**
 
@@ -120,7 +120,7 @@ frame 入栈处：
 - `ms_gc_incremental_step` 入口：`++vm->stats.incremental_step_count`
 - `ms_allocate_object` 路径：`if (vm->bytes_allocated > vm->stats.bytes_allocated_peak) vm->stats.bytes_allocated_peak = vm->bytes_allocated`
 
-**4. `src/main.c`：CLI 升级**
+**4. `src/main.c`：CLI 升级 ✅**
 
 ```
 mslang-c [--benchmark N] [--stats] [--json] [--no-cache | --with-cache] [--version] <script>
