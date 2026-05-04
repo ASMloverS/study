@@ -1,1 +1,0 @@
-C:/Tools/VS2022/Community/MSBuild/Microsoft/VC/v170

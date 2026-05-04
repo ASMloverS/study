@@ -8,10 +8,56 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ---- platform timing ---- */
+/* ---- stdout redirect (json mode: silence script output during runs) ---- */
 
 #ifdef _WIN32
 #  include <windows.h>
+#  include <io.h>
+#  define MS_DEVNULL "NUL"
+#  define ms_dup(fd)        _dup(fd)
+#  define ms_dup2(src, dst) _dup2(src, dst)
+#  define ms_close(fd)      _close(fd)
+#  define ms_fileno(f)      _fileno(f)
+#else
+#  include <unistd.h>
+#  define MS_DEVNULL "/dev/null"
+#  define ms_dup(fd)        dup(fd)
+#  define ms_dup2(src, dst) dup2(src, dst)
+#  define ms_close(fd)      close(fd)
+#  define ms_fileno(f)      fileno(f)
+#endif
+
+/* Redirect stdout to MS_DEVNULL so VM print() is suppressed.
+   Returns saved fd (>= 0) on success, -1 on failure. */
+static int stdout_silence(void) {
+    fflush(stdout);
+    int saved = ms_dup(ms_fileno(stdout));
+    if (saved < 0) return -1;
+#ifdef _MSC_VER
+    FILE* nul = NULL;
+    if (freopen_s(&nul, MS_DEVNULL, "wb", stdout) != 0) {
+        ms_close(saved); return -1;
+    }
+    MS_UNUSED(nul);
+#else
+    if (!freopen(MS_DEVNULL, "wb", stdout)) {
+        ms_close(saved); return -1;
+    }
+#endif
+    return saved;
+}
+
+/* Restore stdout from the fd saved by stdout_silence(). */
+static void stdout_restore(int saved) {
+    if (saved < 0) return;
+    fflush(stdout);
+    ms_dup2(saved, ms_fileno(stdout));
+    ms_close(saved);
+}
+
+/* ---- platform timing ---- */
+
+#ifdef _WIN32
 static double get_time_ms(void) {
     LARGE_INTEGER freq, cnt;
     QueryPerformanceFrequency(&freq);
@@ -214,12 +260,17 @@ int main(int argc, char* argv[]) {
         RunSample s = {0.0, 0.0};
         MsInterpretResult res;
 
+        /* In JSON mode, silence script stdout so JSON is the only stdout line */
+        int saved_fd = flag_json ? stdout_silence() : -1;
+
         if (flag_cache) {
             res = run_one_cached(src, script, i == 0, &s);
             if (i == 0) compile_cold = s.compile_ms;
         } else {
             res = run_one_nocache(src, script, &s);
         }
+
+        if (flag_json) stdout_restore(saved_fd);
 
         if (res != MS_INTERPRET_OK) {
             free(compile_times); free(interpret_times); free(src);
@@ -232,13 +283,15 @@ int main(int argc, char* argv[]) {
         /* Collect stats on last run */
 #ifdef MSLANG_VM_STATS
         if (flag_stats && i == bench_n - 1) {
-            /* Run once more with stats collection */
+            /* Run once more with stats collection; silence script output */
+            int sfd = flag_json ? stdout_silence() : -1;
             MsVM vm;
             ms_vm_init(&vm);
             ms_vm_interpret(&vm, src, script);
             ms_gc_collect(&vm);   /* force full GC for live_objects_after_final_gc */
             ms_vm_get_stats(&vm, &last_stats);
             ms_vm_free(&vm);
+            if (flag_json) stdout_restore(sfd);
         }
 #endif
 
