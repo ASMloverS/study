@@ -244,7 +244,7 @@ python benchmarks/run_all.py --runs 5 --hyperfine
 
 ---
 
-### 阶段 D — 基线与文档
+### 阶段 D — 基线与文档 ✅
 
 1. 干净 Release 构建，跑 `run_all.py --runs 9 --with-cache`，各用例 `best/median/instruction_count/peak_bytes/incremental_step_count/deopt_event_count/compile_ms_cold/compile_ms_warm` 写入 `benchmarks/baseline.json`。
 2. `benchmarks/README.md` 涵盖：一键命令、新增用例检查清单（命名规范/`expected` 注释/调参至 ~1 s/标注用例类别：`quickening`/`gc-pressure`/`deopt`）、`MSLANG_VM_STATS=OFF` 零成本承诺、回归阈值。
