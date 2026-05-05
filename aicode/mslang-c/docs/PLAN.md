@@ -216,3 +216,25 @@ mslang-c/
 - `mslang/src/VMGC.cc` — generational incremental GC
 - `mslang/src/Optimize.cc` — peephole optimizer
 - `mslangx-c/CMakeLists.txt` — C11 CMake config ref
+
+---
+
+## Benchmarking
+
+See `docs/BENCHMARK.md` for the full benchmark design rationale and phase breakdown.
+See `benchmarks/README.md` for usage, case conventions, and regression thresholds.
+
+The benchmark suite (`benchmarks/`) covers 13 micro-benchmark cases targeting individual VM subsystems. It requires `MSLANG_BUILD_BENCHMARKS=ON` and `MSLANG_VM_STATS=ON` at configure time and is excluded from the default build.
+
+**Quick run:**
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DMSLANG_BUILD_BENCHMARKS=ON -DMSLANG_VM_STATS=ON
+cmake --build build --config Release
+python benchmarks/run_all.py --runs 5
+```
+
+**Baseline:** `benchmarks/baseline.json` was first captured in a Release + `MSLANG_VM_STATS=ON` build with 9 runs per case (`--with-cache`). It covers T28 (peephole optimizer), T29 (quickening + deopt), and T30 (incremental GC + `.msc` cache).
+
+**Regression thresholds:** wall-clock ±5%, instruction count ±0.5%, `deopt_event_count` any absolute change — all trigger mandatory review.

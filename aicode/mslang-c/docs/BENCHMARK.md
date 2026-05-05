@@ -183,7 +183,7 @@ Release 单次 **0.5–3 s**。
 
 ---
 
-### 阶段 C — 驱动 + CMake
+### 阶段 C — 驱动 + CMake ✅
 
 **`benchmarks/run_all.py`**（仅 stdlib）
 
