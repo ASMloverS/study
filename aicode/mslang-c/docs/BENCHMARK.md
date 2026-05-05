@@ -255,14 +255,14 @@ python benchmarks/run_all.py --runs 5 --hyperfine
 
 ## 验收清单
 
-- [ ] 默认构建（`MSLANG_VM_STATS=OFF`/`MSLANG_BUILD_BENCHMARKS=OFF`）：ctest 全过，`--version` 正常，行为与基线一致。
-- [ ] `MSLANG_VM_STATS=ON`：`mslang-c --benchmark 3 --stats benchmarks/cases/fib_recursive.ms` → 3 条 run + 完整 stats，`instruction_count > 0`/`peak_frame_count > 0`。
-- [ ] `--json` 单行可解析：`mslang-c --benchmark 1 --json benchmarks/cases/arith_loop.ms | python -c "import json,sys; print(json.loads(sys.stdin.readline())['best_ms'])"`
-- [ ] 13 个 `.ms` 用例 `print` 末行均与 `expected:` 一致（驱动自动比对）。
-- [ ] `run_all.py --runs 5` → `benchmarks/results/` 写出 markdown，同脚本两次跑偏差 ≈0%。
-- [ ] `hyperfine` 在则 `--hyperfine` 融合 wall-time；不在则跳过不报错。
-- [ ] `cmake --build build --target bench` Release 下完成 ≤ 60 s。
-- [ ] `mslang-c --benchmark 3 --stats benchmarks/cases/quickening_deopt.ms` → `deopt_event_count > 0`，`instruction_count` 与同量级用例相当。
-- [ ] `mslang-c --benchmark 3 --with-cache --stats benchmarks/cases/fib_recursive.ms` → 首轮 `compile_ms_cold` 显著大于第 2/3 轮 `compile_ms_warm`（缓存命中），`interpret_ms` 三轮近似。
-- [ ] `mslang-c --benchmark 3 --stats benchmarks/cases/binary_trees_alloc.ms` → `incremental_step_count >= 0`（若分配触发增量 GC，则 > 0）。
-- [ ] 默认构建（`MSLANG_VM_STATS=OFF`）运行 `quickening_deopt.ms` 行为正确（stats 不输出，功能不变）。
+- [x] 默认构建（`MSLANG_VM_STATS=OFF`/`MSLANG_BUILD_BENCHMARKS=OFF`）：ctest 全过，`--version` 正常，行为与基线一致。
+- [x] `MSLANG_VM_STATS=ON`：`mslang-c --benchmark 3 --stats benchmarks/cases/fib_recursive.ms` → 3 条 run + 完整 stats，`instruction_count > 0`/`peak_frame_count > 0`。
+- [x] `--json` 单行可解析：`mslang-c --benchmark 1 --json benchmarks/cases/arith_loop.ms | python -c "import json,sys; print(json.loads(sys.stdin.readline())['best_ms'])"`
+- [ ] 13 个 `.ms` 用例 `print` 末行均与 `expected:` 一致（驱动自动比对）。<!-- binary_trees_alloc benchmark 模式 segfault；map_insert_lookup N 过大挂起 -->
+- [ ] `run_all.py --runs 5` → `benchmarks/results/` 写出 markdown，同脚本两次跑偏差 ≈0%。<!-- run_all.py 无超时，map_insert_lookup 挂起致结果未写出 -->
+- [ ] `hyperfine` 在则 `--hyperfine` 融合 wall-time；不在则跳过不报错。<!-- 本机无 hyperfine；脚本在 map_insert_lookup 挂起前无法触达跳过逻辑 -->
+- [ ] `cmake --build build --target bench` Release 下完成 ≤ 60 s。<!-- map_insert_lookup 导致超时 -->
+- [x] `mslang-c --benchmark 3 --stats benchmarks/cases/quickening_deopt.ms` → `deopt_event_count > 0`，`instruction_count` 与同量级用例相当。
+- [ ] `mslang-c --benchmark 3 --with-cache --stats benchmarks/cases/fib_recursive.ms` → 首轮 `compile_ms_cold` 显著大于第 2/3 轮 `compile_ms_warm`（缓存命中），`interpret_ms` 三轮近似。<!-- 实测 compile_cold=0.07ms < compile_warm=0.43ms，方向反向；interpret 三轮差异巨大（2210/5154/6872 ms） -->
+- [ ] `mslang-c --benchmark 3 --stats benchmarks/cases/binary_trees_alloc.ms` → `incremental_step_count >= 0`（若分配触发增量 GC，则 > 0）。<!-- --benchmark 3 segfault；--benchmark 1 正常（incr_step=1213） -->
+- [x] 默认构建（`MSLANG_VM_STATS=OFF`）运行 `quickening_deopt.ms` 行为正确（stats 不输出，功能不变）。

@@ -27,6 +27,7 @@ Makefile
 build
 build_ninja
 build_stats
+build_debug
 build_release
 cmake-build
 asio
