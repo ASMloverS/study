@@ -42,6 +42,13 @@ mslangc_apply_test_warnings(cache_format.unit)
 add_test(NAME cache_format.unit COMMAND cache_format.unit)
 set_tests_properties(cache_format.unit PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_UNIT};cache")
+
+add_executable(chunk_codec.unit chunk_codec_test.c)
+target_link_libraries(chunk_codec.unit PRIVATE mslang_cache)
+mslangc_apply_test_warnings(chunk_codec.unit)
+add_test(NAME chunk_codec.unit COMMAND chunk_codec.unit)
+set_tests_properties(chunk_codec.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_UNIT};cache")
 mslangc_add_runtime_unit_test(runtime_core.value value_test.c)
 mslangc_add_runtime_unit_test(runtime_core.string string_test.c)
 mslangc_add_runtime_unit_test(runtime_core.table table_test.c)

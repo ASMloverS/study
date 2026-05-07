@@ -17,7 +17,8 @@ add_library(mslang_support
   src/support/diag.c)
 
 add_library(mslang_cache
-  src/cache/cache_format.c)
+  src/cache/cache_format.c
+  src/cache/chunk_codec.c)
 
 add_library(mslang_runtime_core
   src/runtime/chunk.c
@@ -57,6 +58,7 @@ target_include_directories(mslang_frontend PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 target_link_libraries(mslang_runtime_core PUBLIC mslang_support)
+target_link_libraries(mslang_cache PUBLIC mslang_runtime_core)
 target_link_libraries(mslang_frontend PUBLIC mslang_support mslang_runtime_core)
 target_link_libraries(mslangc PRIVATE mslang_frontend mslang_runtime_core)
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned.
+Complete. Verified on 2026-05-07 with the acceptance commands in this document.
 
 ## Goal
 
