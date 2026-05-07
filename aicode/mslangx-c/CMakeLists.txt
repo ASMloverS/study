@@ -16,6 +16,9 @@ add_library(mslang_support
   src/support/buffer.c
   src/support/diag.c)
 
+add_library(mslang_cache
+  src/cache/cache_format.c)
+
 add_library(mslang_runtime_core
   src/runtime/chunk.c
   src/runtime/disasm.c
@@ -38,12 +41,15 @@ add_library(mslang_frontend
 
 target_compile_features(mslangc PRIVATE c_std_11)
 target_compile_features(mslang_support PUBLIC c_std_11)
+target_compile_features(mslang_cache PUBLIC c_std_11)
 target_compile_features(mslang_runtime_core PUBLIC c_std_11)
 target_compile_features(mslang_frontend PUBLIC c_std_11)
 
 target_include_directories(mslangc PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(mslang_support PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(mslang_cache PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(mslang_runtime_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -62,6 +68,7 @@ if(MSVC)
 else()
   target_compile_options(mslangc PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_support PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_compile_options(mslang_cache PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_runtime_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_frontend PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
@@ -78,6 +85,7 @@ add_dependencies(check
   support.diag
   support.arena
   support.buffer
+  cache_format.unit
   runtime_core.value
   runtime_core.string
   runtime_core.table
