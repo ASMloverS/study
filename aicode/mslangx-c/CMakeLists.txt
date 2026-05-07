@@ -18,6 +18,7 @@ add_library(mslang_support
 
 add_library(mslang_cache
   src/cache/cache_format.c
+  src/cache/cache_file.c
   src/cache/chunk_codec.c)
 
 add_library(mslang_runtime_core
@@ -88,6 +89,7 @@ add_dependencies(check
   support.arena
   support.buffer
   cache_format.unit
+  cache_file.unit
   runtime_core.value
   runtime_core.string
   runtime_core.table

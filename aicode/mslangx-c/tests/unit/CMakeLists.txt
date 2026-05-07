@@ -43,6 +43,13 @@ add_test(NAME cache_format.unit COMMAND cache_format.unit)
 set_tests_properties(cache_format.unit PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_UNIT};cache")
 
+add_executable(cache_file.unit cache_file_test.c)
+target_link_libraries(cache_file.unit PRIVATE mslang_cache)
+mslangc_apply_test_warnings(cache_file.unit)
+add_test(NAME cache_file.unit COMMAND cache_file.unit)
+set_tests_properties(cache_file.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_UNIT};cache")
+
 add_executable(chunk_codec.unit chunk_codec_test.c)
 target_link_libraries(chunk_codec.unit PRIVATE mslang_cache)
 mslangc_apply_test_warnings(chunk_codec.unit)
