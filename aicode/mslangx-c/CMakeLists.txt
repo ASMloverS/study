@@ -21,6 +21,9 @@ add_library(mslang_cache
   src/cache/cache_file.c
   src/cache/chunk_codec.c)
 
+add_library(mslang_source_loader
+  src/cache/source_loader.c)
+
 add_library(mslang_runtime_core
   src/runtime/chunk.c
   src/runtime/disasm.c
@@ -44,6 +47,7 @@ add_library(mslang_frontend
 target_compile_features(mslangc PRIVATE c_std_11)
 target_compile_features(mslang_support PUBLIC c_std_11)
 target_compile_features(mslang_cache PUBLIC c_std_11)
+target_compile_features(mslang_source_loader PUBLIC c_std_11)
 target_compile_features(mslang_runtime_core PUBLIC c_std_11)
 target_compile_features(mslang_frontend PUBLIC c_std_11)
 
@@ -53,6 +57,8 @@ target_include_directories(mslang_support PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(mslang_cache PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(mslang_source_loader PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(mslang_runtime_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(mslang_frontend PUBLIC
@@ -60,6 +66,9 @@ target_include_directories(mslang_frontend PUBLIC
 
 target_link_libraries(mslang_runtime_core PUBLIC mslang_support)
 target_link_libraries(mslang_cache PUBLIC mslang_runtime_core)
+target_link_libraries(mslang_source_loader PUBLIC
+  mslang_cache
+  mslang_frontend)
 target_link_libraries(mslang_frontend PUBLIC mslang_support mslang_runtime_core)
 target_link_libraries(mslangc PRIVATE mslang_frontend mslang_runtime_core)
 
@@ -72,6 +81,7 @@ else()
   target_compile_options(mslangc PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_support PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_cache PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_compile_options(mslang_source_loader PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_runtime_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(mslang_frontend PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
@@ -90,6 +100,7 @@ add_dependencies(check
   support.buffer
   cache_format.unit
   cache_file.unit
+  source_loader.unit
   runtime_core.value
   runtime_core.string
   runtime_core.table

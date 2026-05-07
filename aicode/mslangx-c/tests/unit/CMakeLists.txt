@@ -50,6 +50,13 @@ add_test(NAME cache_file.unit COMMAND cache_file.unit)
 set_tests_properties(cache_file.unit PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_UNIT};cache")
 
+add_executable(source_loader.unit source_loader_test.c)
+target_link_libraries(source_loader.unit PRIVATE mslang_source_loader)
+mslangc_apply_test_warnings(source_loader.unit)
+add_test(NAME source_loader.unit COMMAND source_loader.unit)
+set_tests_properties(source_loader.unit PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_UNIT};cache")
+
 add_executable(chunk_codec.unit chunk_codec_test.c)
 target_link_libraries(chunk_codec.unit PRIVATE mslang_cache)
 mslangc_apply_test_warnings(chunk_codec.unit)
