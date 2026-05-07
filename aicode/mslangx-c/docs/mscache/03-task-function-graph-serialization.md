@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned.
+Complete. Verified on 2026-05-08 with the acceptance commands in this document.
 
 ## Goal
 
@@ -26,11 +26,10 @@ object graph, including nested function chunks.
 
 1. Add an explicit function constant tag to the payload format.
 2. Serialize function name, arity, upvalue count, flags, and nested chunk.
-3. Deserialize function constants through normal runtime object allocation or
-   equivalent initialization code.
+3. Deserialize function constants through normal runtime allocation.
 4. Add recursive structural validation for nested chunks and function payloads.
-5. Add tests for top-level chunks containing named functions, anonymous
-   functions if supported by current bytecode, and nested function constants.
+5. Add tests for named, anonymous, and nested function constants where
+   supported.
 
 ## Implementation Boundaries
 
