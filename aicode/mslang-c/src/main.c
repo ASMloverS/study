@@ -118,26 +118,22 @@ typedef struct {
    Returns MS_INTERPRET_OK on success. */
 static MsInterpretResult run_one_nocache(const char* src, const char* path,
                                           RunSample* s) {
-    double t0, t1, t2;
+    double t1, t2;
 
-    t0 = get_time_ms();
-    MsVM vm;
-    ms_vm_init(&vm);
+    /* Heap-allocate MsVM to avoid stack overflow (~300 KB struct) and
+       to ensure clean state each iteration regardless of compiler inlining. */
+    MsVM* vm = (MsVM*)malloc(sizeof(MsVM));
+    if (!vm) { return MS_INTERPRET_RUNTIME_ERROR; }
+    ms_vm_init(vm);
 
-    /* Use ms_vm_interpret which compiles + runs internally.
-       We split timing by compiling separately first. */
-    /* Compile phase */
     t1 = get_time_ms();
-    MsInterpretResult res = ms_vm_interpret(&vm, src, path);
+    MsInterpretResult res = ms_vm_interpret(vm, src, path);
     t2 = get_time_ms();
 
-    /* We cannot easily split compile vs interpret with ms_vm_interpret.
-       Report total as interpret_ms; compile_ms = 0 for no-cache mode.
-       Callers that need split timing use the with-cache path. */
-    MS_UNUSED(t0); MS_UNUSED(t1);
     s->compile_ms   = 0.0;
     s->interpret_ms = t2 - t1;
-    ms_vm_free(&vm);
+    ms_vm_free(vm);
+    free(vm);
     return res;
 }
 
@@ -146,11 +142,12 @@ static MsInterpretResult run_one_nocache(const char* src, const char* path,
 static MsInterpretResult run_one_cached(const char* src, const char* path,
                                          bool is_cold, RunSample* s) {
     double t0, t1, t2;
-    MsVM vm;
-    ms_vm_init(&vm);
+    MsVM* vm = (MsVM*)malloc(sizeof(MsVM));
+    if (!vm) { return MS_INTERPRET_RUNTIME_ERROR; }
+    ms_vm_init(vm);
 
     t0 = get_time_ms();
-    MsObjFunction* fn = ms_compile_cached(&vm, src, path);
+    MsObjFunction* fn = ms_compile_cached(vm, src, path);
     t1 = get_time_ms();
     s->compile_ms = t1 - t0;
 
@@ -158,22 +155,23 @@ static MsInterpretResult run_one_cached(const char* src, const char* path,
     if (!fn) {
         res = MS_INTERPRET_COMPILE_ERROR;
     } else {
-        MsObjClosure* cl = ms_obj_closure_new(&vm, fn);
-        vm.frames[0].closure = cl;
-        vm.frames[0].ip      = fn->chunk.code;
-        vm.frames[0].slots   = vm.stack;
-        vm.frame_count = 1;
+        MsObjClosure* cl = ms_obj_closure_new(vm, fn);
+        vm->frames[0].closure = cl;
+        vm->frames[0].ip      = fn->chunk.code;
+        vm->frames[0].slots   = vm->stack;
+        vm->frame_count = 1;
         int need = fn->max_stack_size + 1;
         if (need < 1) need = 1;
-        vm.stack_top = vm.stack + need;
+        vm->stack_top = vm->stack + need;
         double r0 = get_time_ms();
-        res = ms_vm_run(&vm);
+        res = ms_vm_run(vm);
         t2 = get_time_ms();
         MS_UNUSED(r0);
         s->interpret_ms = t2 - t1;
     }
     MS_UNUSED(is_cold);
-    ms_vm_free(&vm);
+    ms_vm_free(vm);
+    free(vm);
     return res;
 }
 
@@ -285,12 +283,25 @@ int main(int argc, char* argv[]) {
         if (flag_stats && i == bench_n - 1) {
             /* Run once more with stats collection; silence script output */
             int sfd = flag_json ? stdout_silence() : -1;
-            MsVM vm;
-            ms_vm_init(&vm);
-            ms_vm_interpret(&vm, src, script);
-            ms_gc_collect(&vm);   /* force full GC for live_objects_after_final_gc */
-            ms_vm_get_stats(&vm, &last_stats);
-            ms_vm_free(&vm);
+            MsVM* svm = (MsVM*)malloc(sizeof(MsVM));
+            if (svm) {
+                ms_vm_init(svm);
+                ms_vm_interpret(svm, src, script);
+                /* Walk all three GC lists to count surviving objects.
+                   Avoids running ms_gc_collect which can crash on stale
+                   cross-generational pointers left after script exit. */
+                {
+                    int live = 0;
+                    MsObject* o;
+                    for (o = svm->young_objects; o; o = o->next) live++;
+                    for (o = svm->old_objects;   o; o = o->next) live++;
+                    for (o = svm->objects;       o; o = o->next) live++;
+                    svm->stats.live_objects_after_final_gc = live;
+                }
+                ms_vm_get_stats(svm, &last_stats);
+                ms_vm_free(svm);
+                free(svm);
+            }
             if (flag_json) stdout_restore(sfd);
         }
 #endif

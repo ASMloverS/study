@@ -150,6 +150,9 @@ void ms_vm_init(MsVM* vm) {
     vm->gray_count           = 0;
     vm->gray_capacity        = 0;
     vm->current_coroutine = NULL;
+    vm->gc_phase     = MS_GC_IDLE;
+    vm->sweep_cursor = NULL;
+    vm->sweep_prev   = NULL;
     ms_pool_init(&vm->upvalue_pool, sizeof(MsObjUpvalue));
     ms_pool_init(&vm->bound_pool,   sizeof(void*) * 4); /* ObjBoundMethod size est.; resized in T18 */
     ms_table_init(&vm->globals);
@@ -162,9 +165,6 @@ void ms_vm_init(MsVM* vm) {
         vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
     }
     ms_vm_register_natives(vm);
-    vm->gc_phase     = MS_GC_IDLE;
-    vm->sweep_cursor = NULL;
-    vm->sweep_prev   = NULL;
 #ifdef MSLANG_VM_STATS
     memset(&vm->stats, 0, sizeof(vm->stats));
 #endif
@@ -1234,7 +1234,8 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             close_upvalues(vm, frame->slots);
             vm->frame_count--;
             if (vm->frame_count == 0) {
-                vm->call_result = ret;
+                vm->stack_top    = vm->stack;
+                vm->call_result  = ret;
                 return MS_INTERPRET_OK;
             }
 

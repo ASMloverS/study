@@ -172,6 +172,9 @@ static void mark_roots(MsVM* vm) {
     ms_mark_table(vm, &vm->module_cache);
     if (vm->compiler) mark_compiler_roots(vm);
     if (vm->init_string) ms_mark_object(vm, (MsObject*)vm->init_string);
+    for (int i = 0; i < 128; i++) {
+        if (vm->ascii_cache[i]) ms_mark_object(vm, (MsObject*)vm->ascii_cache[i]);
+    }
 }
 
 /* ---- Phase 2: trace gray stack ---- */
@@ -288,6 +291,7 @@ void ms_gc_collect_minor(MsVM* vm) {
     for (int i = 0; i < vm->remembered_count; i++)
         ms_mark_object(vm, vm->remembered_set[i]);
     trace_references(vm);
+    ms_table_remove_white(&vm->strings);
     sweep_young(vm);
     /* clear remembered set */
     for (int i = 0; i < vm->remembered_count; i++)
