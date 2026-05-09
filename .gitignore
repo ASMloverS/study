@@ -25,10 +25,12 @@ logging
 coc-setting.json
 Makefile
 build
-build_ninja
-build_stats
+build_asan
 build_debug
+build_ninja
+build_nostats
 build_release
+build_stats
 cmake-build
 asio
 MARK.CNYX
