@@ -70,7 +70,10 @@ target_link_libraries(mslang_source_loader PUBLIC
   mslang_cache
   mslang_frontend)
 target_link_libraries(mslang_frontend PUBLIC mslang_support mslang_runtime_core)
-target_link_libraries(mslangc PRIVATE mslang_frontend mslang_runtime_core)
+target_link_libraries(mslangc PRIVATE
+  mslang_frontend
+  mslang_runtime_core
+  mslang_source_loader)
 
 if(MSVC)
   target_compile_options(mslangc PRIVATE /W4 /WX)

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "ms/cache/source_loader.h"
 #include "ms/diag.h"
 #include "ms/frontend/lowering.h"
 #include "ms/runtime/chunk.h"
@@ -37,7 +38,7 @@ static int mslangc_is_path_separator(char ch) {
 
 static void mslangc_print_help(FILE *stream) {
   fprintf(stream,
-          "usage: mslangc [--help] [-e code] [script]\n"
+          "usage: mslangc [--help] [--no-cache] [-e code] [script]\n"
           "\n"
           "Bootstrap CLI for the mslangc runtime.\n");
 }
@@ -96,53 +97,9 @@ static int mslangc_exit_for_compile_result(MsCompileResult result,
   return 1;
 }
 
-static char *mslangc_read_file(const char *path) {
-  FILE *file;
-  long size;
-  size_t read_size;
-  char *buffer;
-
-  if (path == NULL) {
-    return NULL;
-  }
-
-#if defined(_MSC_VER)
-  if (fopen_s(&file, path, "rb") != 0) {
-    file = NULL;
-  }
-#else
-  file = fopen(path, "rb");
-#endif
-  if (file == NULL) {
-    return NULL;
-  }
-  if (fseek(file, 0, SEEK_END) != 0) {
-    fclose(file);
-    return NULL;
-  }
-
-  size = ftell(file);
-  if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
-    fclose(file);
-    return NULL;
-  }
-
-  buffer = (char *) malloc((size_t) size + 1);
-  if (buffer == NULL) {
-    fclose(file);
-    return NULL;
-  }
-
-  read_size = fread(buffer, 1, (size_t) size, file);
-  fclose(file);
-  if (read_size != (size_t) size) {
-    free(buffer);
-    return NULL;
-  }
-
-  buffer[size] = '\0';
-  return buffer;
-}
+static int mslangc_run_source(const char *file,
+                              const char *source,
+                              FILE *error_stream);
 
 static char *mslangc_dirname(const char *path) {
   const char *last_separator = NULL;
@@ -268,14 +225,77 @@ static void mslangc_add_module_search_roots(MsVM *vm, const char *file) {
   free(cursor);
 }
 
+static int mslangc_execute_chunk(const char *file,
+                                 const MsChunk *chunk,
+                                 FILE *error_stream) {
+  MsVM vm;
+  MsModule module;
+  int exit_code = 0;
+
+  ms_vm_init(&vm);
+  mslangc_add_module_search_roots(&vm, file);
+  ms_module_init(&module, file);
+  ms_vm_set_current_module(&vm, &module);
+  ms_vm_define_native(&vm, &module, "__gc_collect__", 0, mslangc_native_gc_collect);
+  if (ms_vm_run_chunk(&vm, chunk) != MS_VM_RESULT_OK) {
+    mslangc_print_diagnostics(error_stream, &vm.diagnostics);
+    exit_code = kExitRuntime;
+  }
+
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  return exit_code;
+}
+
+static int mslangc_run_script_file(const char *file,
+                                   int cache_enabled,
+                                   FILE *error_stream) {
+  MsSourceLoadOptions options;
+  MsSourceLoadResult result;
+  MsDiagnosticList diagnostics;
+  MsSourceLoadStatus load_status;
+  int exit_code = 0;
+
+  ms_source_load_options_init(&options);
+  options.cache_enabled = cache_enabled;
+  ms_source_load_result_init(&result);
+  ms_diag_list_init(&diagnostics);
+
+  load_status = ms_source_load_source(file, &options, &diagnostics, &result);
+  if (load_status != MS_SOURCE_LOAD_STATUS_OK) {
+    if (load_status == MS_SOURCE_LOAD_STATUS_COMPILE_ERROR) {
+      mslangc_print_diagnostics(error_stream, &diagnostics);
+      exit_code = mslangc_exit_for_compile_result(MS_COMPILE_RESULT_PARSE_ERROR,
+                                                  &diagnostics);
+    } else if (load_status == MS_SOURCE_LOAD_STATUS_IO_ERROR) {
+      fprintf(error_stream, "error: failed to read script: %s\n", file);
+      exit_code = kExitIo;
+    } else {
+      fprintf(error_stream, "error: unsupported script: %s\n", file);
+      exit_code = kExitUsage;
+    }
+
+    ms_diag_list_destroy(&diagnostics);
+    ms_source_load_result_destroy(&result);
+    return exit_code;
+  }
+  ms_diag_list_destroy(&diagnostics);
+
+  exit_code = mslangc_execute_chunk(result.source.display_path != NULL
+                                        ? result.source.display_path
+                                        : file,
+                                    &result.chunk,
+                                    error_stream);
+  ms_source_load_result_destroy(&result);
+  return exit_code;
+}
+
 static int mslangc_run_source(const char *file,
                               const char *source,
                               FILE *error_stream) {
   MsChunk chunk;
   MsDiagnosticList diagnostics;
   MsCompileResult compile_result;
-  MsVM vm;
-  MsModule module;
   int exit_code = 0;
 
   ms_chunk_init(&chunk);
@@ -290,57 +310,51 @@ static int mslangc_run_source(const char *file,
   }
   ms_diag_list_destroy(&diagnostics);
 
-  ms_vm_init(&vm);
-  mslangc_add_module_search_roots(&vm, file);
-  ms_module_init(&module, file);
-  ms_vm_set_current_module(&vm, &module);
-  ms_vm_define_native(&vm, &module, "__gc_collect__", 0, mslangc_native_gc_collect);
-  if (ms_vm_run_chunk(&vm, &chunk) != MS_VM_RESULT_OK) {
-    mslangc_print_diagnostics(error_stream, &vm.diagnostics);
-    exit_code = kExitRuntime;
-  }
-
-  ms_module_destroy(&module);
-  ms_vm_destroy(&vm);
+  exit_code = mslangc_execute_chunk(file, &chunk, error_stream);
   ms_chunk_destroy(&chunk);
   return exit_code;
 }
 
 int main(int argc, char **argv) {
+  int cache_enabled = 1;
+  const char *script_path = NULL;
+  int i;
+
   if (argc <= 1) {
     mslangc_print_help(stdout);
     return 0;
   }
 
-  if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
+  for (i = 1; i < argc; ++i) {
+    const char *arg = argv[i];
+
+    if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+      mslangc_print_help(stdout);
+      return 0;
+    }
+    if (strcmp(arg, "--no-cache") == 0) {
+      cache_enabled = 0;
+      continue;
+    }
+    if (strcmp(arg, "-e") == 0) {
+      if (i + 1 >= argc) {
+        fprintf(stderr, "error: missing argument for -e\n");
+        return kExitUsage;
+      }
+      return mslangc_run_source("<inline>", argv[i + 1], stderr);
+    }
+    if (arg[0] == '-') {
+      fprintf(stderr, "error: unknown option: %s\n", arg);
+      return kExitUsage;
+    }
+    script_path = arg;
+    break;
+  }
+
+  if (script_path == NULL) {
     mslangc_print_help(stdout);
     return 0;
   }
 
-  if (strcmp(argv[1], "-e") == 0) {
-    if (argc < 3) {
-      fprintf(stderr, "error: missing argument for -e\n");
-      return kExitUsage;
-    }
-    return mslangc_run_source("<inline>", argv[2], stderr);
-  }
-
-  if (argv[1][0] == '-') {
-    fprintf(stderr, "error: unknown option: %s\n", argv[1]);
-    return kExitUsage;
-  }
-
-  {
-    char *source = mslangc_read_file(argv[1]);
-    int exit_code;
-
-    if (source == NULL) {
-      fprintf(stderr, "error: failed to read script: %s\n", argv[1]);
-      return kExitIo;
-    }
-
-    exit_code = mslangc_run_source(argv[1], source, stderr);
-    free(source);
-    return exit_code;
-  }
+  return mslangc_run_script_file(script_path, cache_enabled, stderr);
 }

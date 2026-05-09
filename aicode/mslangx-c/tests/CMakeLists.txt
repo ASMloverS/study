@@ -82,6 +82,72 @@ mslangc_add_cli_test(runner_basic.runtime_error
   -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4004;runtime_error.ms:1:1"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_run.cmake")
 
+add_test(NAME mscache.cli.create_reuse
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.create_reuse"
+    -DMODE=create_reuse
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_cache_policy.cmake")
+set_tests_properties(mscache.cli.create_reuse PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.corrupt_fallback
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.corrupt_fallback"
+    -DMODE=corrupt_fallback
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_cache_policy.cmake")
+set_tests_properties(mscache.cli.corrupt_fallback PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.stale_fallback
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.stale_fallback"
+    -DMODE=stale_fallback
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms"
+    -DREPLACEMENT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy_stale.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms.out"
+    -DEXPECT_STALE_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy_stale.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_cache_policy.cmake")
+set_tests_properties(mscache.cli.stale_fallback PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.no_cache
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.no_cache"
+    -DMODE=no_cache
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy.ms.out"
+    -DREPLACEMENT_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy_stale.ms"
+    -DEXPECT_STALE_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/cache_policy_stale.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_cache_policy.cmake")
+set_tests_properties(mscache.cli.no_cache PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.inline_no_cache
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.inline_no_cache"
+    -DMODE=inline_no_cache
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_cache_policy.cmake")
+set_tests_properties(mscache.cli.inline_no_cache PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.unknown_option
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.unknown_option"
+    -DMODE=unknown_option
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_cache_policy.cmake")
+set_tests_properties(mscache.cli.unknown_option PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
 add_subdirectory(unit)
 
 mslangc_add_e2e_basic_test(e2e_basic.smoke smoke.ms)
