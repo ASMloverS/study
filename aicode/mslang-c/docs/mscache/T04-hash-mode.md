@@ -18,7 +18,7 @@
 
 ---
 
-- [ ] **Step 1: 在 `tests/unit/test_serializer.c` 追加 hash 模式测试**
+- [x] **Step 1: 在 `tests/unit/test_serializer.c` 追加 hash 模式测试**
 
 在 `test_mtime_fastpath_miss_on_mtime_change` 函数**之后**、`main` 函数**之前**插入：
 
@@ -140,7 +140,7 @@ static void test_mtime_cache_not_used_by_hash_mode(void) {
     test_mtime_cache_not_used_by_hash_mode();
 ```
 
-- [ ] **Step 2: 构建**
+- [x] **Step 2: 构建**
 
 ```bash
 cmake --build build
@@ -148,7 +148,7 @@ cmake --build build
 
 预期：零错误（所有函数已在 T03 实现）。
 
-- [ ] **Step 3: 运行 test_serializer**
+- [x] **Step 3: 运行 test_serializer**
 
 ```bash
 cd build && ctest -R test_serializer --output-on-failure
@@ -162,7 +162,7 @@ test_serializer: all passed
 
 若 `test_mtime_cache_not_used_by_hash_mode` 失败，检查 `ms_deserialize` 中的分支逻辑：header 的 `flags` 应决定校验方式，而非调用方传入的 `flags` 参数。`ms_deserialize` 是 self-describing 的——它从 header 读 flags，而非从参数决定。
 
-- [ ] **Step 4: 验证 hash 模式 CLI（配合 T05 实现后完整验证）**
+- [x] **Step 4: 验证 hash 模式 CLI（配合 T05 实现后完整验证）**
 
 此时 `--cache-mode=hash` 还未接入 CLI（T05 实现），可用以下方式手动验证：
 
@@ -172,13 +172,13 @@ test_serializer: all passed
 cd build && ctest -R test_serializer -V
 ```
 
-- [ ] **Step 5: 全量测试不回归**
+- [x] **Step 5: 全量测试不回归**
 
 ```bash
 cd build && ctest --output-on-failure
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/unit/test_serializer.c
