@@ -7,7 +7,7 @@
 | 任务 | 内容 | 依赖 | 测试目标 |
 |---|---|---|---|
 | ✅ [T01](T01-fs-util.md) | 跨平台 fs_util 模块 | 无 | `ctest -R test_fs_util` |
-| [T02](T02-header-v2-cache-path.md) | MsMscHeader v2 + 缓存路径解析 | T01 | `ctest -R test_serializer` |
+| ✅ [T02](T02-header-v2-cache-path.md) | MsMscHeader v2 + 缓存路径解析 | T01 | `ctest -R test_serializer` |
 | [T03](T03-mtime-fast-path.md) | mtime 快速路径 + 原子写入 | T01, T02 | `ctest -R test_serializer` |
 | [T04](T04-hash-mode.md) | hash 校验模式 | T03 | `ctest -R test_serializer` |
 | [T05](T05-cli-default-on.md) | CLI 默认开启 + --no-cache / --cache-mode | T03, T04 | smoke test |

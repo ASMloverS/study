@@ -1,10 +1,14 @@
 #include "ms/serializer.h"
+#include "ms/fs_util.h"
 #include "ms/vm.h"
 #include "ms/compiler.h"
 #include "ms/chunk.h"
+#include "ms/module.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+_Static_assert(sizeof(MsMscHeader) == 32, "MsMscHeader must be 32 bytes");
 
 #define TAG_NIL  0
 #define TAG_BOOL 1
@@ -18,6 +22,16 @@
 #define W4S(f,v) do { int32_t  _=(int32_t)(v);  fwrite(&_,4,1,f); } while(0)
 #define W8I(f,v) do { int64_t  _=(int64_t)(v);  fwrite(&_,8,1,f); } while(0)
 #define W8F(f,v) do { double   _=(double)(v);   fwrite(&_,8,1,f); } while(0)
+
+#define R1(f,v)  do { uint8_t  _=0; if(fread(&_,1,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
+#define R4(f,v)  do { uint32_t _=0; if(fread(&_,4,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
+#define R4S(f,v) do { int32_t  _=0; if(fread(&_,4,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
+#define R8I(f,v) do { int64_t  _=0; if(fread(&_,8,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
+#define R8F(f,v) do { double   _=0.0; if(fread(&_,8,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
+
+#ifndef PATH_MAX
+#  define PATH_MAX 4096
+#endif
 
 typedef struct { MsObjFunction** data; int count; int cap; } FnArray;
 
@@ -82,35 +96,6 @@ static void write_fn(FILE* f, MsObjFunction* fn, FnArray* fns) {
     }
 }
 
-bool ms_serialize(MsObjFunction* fn, const char* path, uint32_t src_hash) {
-    FnArray fns = {NULL, 0, 0};
-    collect_fns(fn, &fns);
-    FILE* f = fopen(path, "wb");
-    if (!f) { free(fns.data); return false; }
-    MsMscHeader hdr;
-    hdr.magic[0]='M'; hdr.magic[1]='S'; hdr.magic[2]='C'; hdr.magic[3]='\0';
-    hdr.version = MS_MSC_VERSION; hdr.flags = 0; hdr.src_hash = src_hash;
-    fwrite(&hdr, sizeof(hdr), 1, f);
-    W4(f, fns.count);
-    for (int i = 0; i < fns.count; i++)
-        write_fn(f, fns.data[i], &fns);
-    fclose(f);
-    free(fns.data);
-    return true;
-}
-
-/* ---- deserialize ---- */
-
-#ifndef PATH_MAX
-#  define PATH_MAX 4096
-#endif
-
-#define R1(f,v)  do { uint8_t  _=0; if(fread(&_,1,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
-#define R4(f,v)  do { uint32_t _=0; if(fread(&_,4,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
-#define R4S(f,v) do { int32_t  _=0; if(fread(&_,4,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
-#define R8I(f,v) do { int64_t  _=0; if(fread(&_,8,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
-#define R8F(f,v) do { double   _=0.0; if(fread(&_,8,1,f)!=(size_t)1) goto fail; (v)=_; } while(0)
-
 static MsObjFunction* read_fn(FILE* f, MsVM* vm,
                                MsObjFunction** fns, int fn_idx) {
     MsObjFunction* fn = ms_obj_function_new(vm);
@@ -174,13 +159,38 @@ fail:
     free(buf); return NULL;
 }
 
-MsObjFunction* ms_deserialize(MsVM* vm, const char* path, uint32_t src_hash) {
+/* ---- public API ---- */
+
+bool ms_serialize(MsObjFunction* fn, const char* path, const MsMscHeader* hdr) {
+    FnArray fns = {NULL, 0, 0};
+    collect_fns(fn, &fns);
+    FILE* f = fopen(path, "wb");
+    if (!f) { free(fns.data); return false; }
+    fwrite(hdr, sizeof(*hdr), 1, f);
+    W4(f, fns.count);
+    for (int i = 0; i < fns.count; i++)
+        write_fn(f, fns.data[i], &fns);
+    fclose(f);
+    free(fns.data);
+    return true;
+}
+
+MsObjFunction* ms_deserialize(MsVM* vm, const char* path,
+                               uint64_t src_size, int64_t src_mtime_ns,
+                               uint32_t src_hash) {
     FILE* f = fopen(path, "rb");
     if (!f) return NULL;
-    MsMscHeader hdr; uint32_t fn_count = 0;
+    MsMscHeader hdr;
     if (fread(&hdr, sizeof(hdr), 1, f) != (size_t)1) goto fail_f;
-    if (memcmp(hdr.magic, "MSC", 3) || hdr.magic[3] || hdr.version != MS_MSC_VERSION
-        || hdr.src_hash != src_hash) goto fail_f;
+    if (memcmp(hdr.magic, "MSC", 3) || hdr.magic[3] || hdr.version != MS_MSC_VERSION)
+        goto fail_f;
+    /* Validate based on cache mode stored in header */
+    if (hdr.flags & MS_CACHE_HASH) {
+        if (hdr.src_hash != src_hash) goto fail_f;
+    } else {
+        if (hdr.src_size != src_size || hdr.src_mtime_ns != src_mtime_ns) goto fail_f;
+    }
+    uint32_t fn_count = 0;
     if (fread(&fn_count, 4, 1, f) != (size_t)1 || fn_count == 0) goto fail_f;
     MsObjFunction** fns = (MsObjFunction**)calloc(fn_count, sizeof(*fns));
     if (!fns) goto fail_f;
@@ -192,17 +202,65 @@ MsObjFunction* ms_deserialize(MsVM* vm, const char* path, uint32_t src_hash) {
     MsObjFunction* res = fns[fn_count - 1];
     vm->next_gc = saved; free(fns); fclose(f);
     return res;
-fail_f: fclose(f); return NULL;
+fail_f:
+    fclose(f); return NULL;
+}
+
+/* Return index of last '/' or '\\' in path, or -1 if none. */
+static int last_sep(const char* path) {
+    int last = -1;
+    for (int i = 0; path[i]; i++)
+        if (path[i] == '/' || path[i] == '\\') last = i;
+    return last;
+}
+
+bool ms_cache_path_for(const char* src_path, char* out, size_t cap) {
+    int sep = last_sep(src_path);
+    const char* base = (sep >= 0) ? src_path + sep + 1 : src_path;
+    size_t blen = strlen(base);
+    /* Strip ".ms" extension */
+    if (blen > 3 &&
+        base[blen-3] == '.' && base[blen-2] == 'm' && base[blen-1] == 's')
+        blen -= 3;
+    int written;
+    if (sep >= 0)
+        written = snprintf(out, cap, "%.*s__mscache__/%.*s.msc",
+                           sep + 1, src_path, (int)blen, base);
+    else
+        written = snprintf(out, cap, "__mscache__/%.*s.msc", (int)blen, base);
+    return written > 0 && (size_t)written < cap;
 }
 
 MsObjFunction* ms_compile_cached(MsVM* vm, const char* source,
                                    const char* src_path) {
     uint32_t hash = ms_fnv1a(source, (int)strlen(source));
-    char msc[PATH_MAX]; snprintf(msc, sizeof(msc), "%sc", src_path);
-    MsObjFunction* fn = ms_deserialize(vm, msc, hash);
+    char cache[PATH_MAX];
+    if (!ms_cache_path_for(src_path, cache, sizeof(cache))) return NULL;
+
+    /* Create __mscache__/ directory (best effort, silent on failure) */
+    int sep = last_sep(cache);
+    if (sep > 0) {
+        char dir[PATH_MAX];
+        snprintf(dir, sizeof(dir), "%.*s", sep, cache);
+        ms_fs_mkdir(dir);
+    }
+
+    /* Try to load from cache (hash mode: T03 will add mtime fast path) */
+    MsObjFunction* fn = ms_deserialize(vm, cache, 0, 0, hash);
     if (fn) return fn;
-    MsDiagnostic diags[8]; int dc = 0;
-    fn = ms_compile(vm, source, src_path, diags, &dc, 8);
-    if (fn) ms_serialize(fn, msc, hash);
+
+    /* Compile */
+    MsDiagnostic diags[32]; int dc = 0;
+    fn = ms_compile(vm, source, src_path, diags, &dc, 32);
+    if (!fn) return NULL;
+
+    /* Write cache (hash mode header) */
+    MsMscHeader hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.magic[0] = 'M'; hdr.magic[1] = 'S'; hdr.magic[2] = 'C'; hdr.magic[3] = '\0';
+    hdr.version  = MS_MSC_VERSION;
+    hdr.flags    = MS_CACHE_HASH;
+    hdr.src_hash = hash;
+    ms_serialize(fn, cache, &hdr);  /* failure is silently ignored */
     return fn;
 }
