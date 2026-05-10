@@ -49,5 +49,6 @@ node_modules/
 dist/
 minicli.yaml
 python/hfserver/uploads
+benchmarks/results
 package-lock.json
 package.json
