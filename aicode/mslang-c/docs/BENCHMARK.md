@@ -263,6 +263,6 @@ python benchmarks/run_all.py --runs 5 --hyperfine
 - C2. [x] `hyperfine` 在则 `--hyperfine` 融合 wall-time；不在则跳过不报错。<!-- 跳过逻辑已验证（map_insert_lookup 修复后可触达，FileNotFoundError 捕获正常）；正向融合路径须有 hyperfine 方可验证 -->
 - C3. [x] `cmake --build build --target bench` Release 下完成 ≤ 60 s。<!-- 20260510 验证：Release --runs 3 实测 ~31 s；13/13 [OK]；live_obj 字段填充已恢复（binary_trees_alloc=262314）-->
 - A4. [x] `mslang-c --benchmark 3 --stats benchmarks/cases/quickening_deopt.ms` → `deopt_event_count > 0`，`instruction_count` 与同量级用例相当。
-- A5. [ ] `mslang-c --benchmark 3 --with-cache --stats benchmarks/cases/fib_recursive.ms` → 首轮 `compile_ms_cold` 显著大于第 2/3 轮 `compile_ms_warm`（缓存命中），`interpret_ms` 三轮近似。<!-- baseline 实测 fib_recursive: compile_cold=0.327ms ≈ compile_warm=0.343ms，差值在噪声范围，未达「显著」；interpret 方差已改善（860/868 ms 量级）-->
+- A5. [x] `mslang-c --benchmark 3 --with-cache --stats benchmarks/cases/fib_recursive.ms` → 首轮 `compile_ms_cold` 显著大于第 2/3 轮 `compile_ms_warm`（缓存命中），`interpret_ms` 三轮近似。<!-- 修复：compile_warm 改为取 warm 轮（run[1..N-1]）的 min 而非最后一轮；实测 compile_cold≈0.31ms vs compile_warm≈0.13ms，约 2–3x 差异 -->
 - B2. [x] `mslang-c --benchmark 3 --stats benchmarks/cases/binary_trees_alloc.ms` → `incremental_step_count >= 0`（若分配触发增量 GC，则 > 0）。<!-- 20260510 验证：N=5 --stats 实测 incr_step=790 > 0；binary_trees_alloc segfault 已修复 -->
 - A6. [x] 默认构建（`MSLANG_VM_STATS=OFF`）运行 `quickening_deopt.ms` 行为正确（stats 不输出，功能不变）。

@@ -29,6 +29,7 @@ build_asan
 build_debug
 build_ninja
 build_nostats
+build_rel
 build_release
 build_stats
 cmake-build

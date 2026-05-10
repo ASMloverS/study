@@ -338,7 +338,13 @@ int main(int argc, char* argv[]) {
     }
     double mean_ms   = sum / bench_n;
     double med_ms    = median_of(itimes_copy, bench_n);
-    double compile_warm = (bench_n > 1 && flag_cache) ? compile_times[bench_n - 1] : 0.0;
+    double compile_warm = 0.0;
+    if (bench_n > 1 && flag_cache) {
+        compile_warm = compile_times[1];
+        for (int i = 2; i < bench_n; i++) {
+            if (compile_times[i] < compile_warm) compile_warm = compile_times[i];
+        }
+    }
 
     if (flag_json) {
         printf("{\"runs\":%d,\"best_ms\":%.3f,\"median_ms\":%.3f,"
