@@ -129,6 +129,7 @@ static void close_upvalues(MsVM* vm, MsValue* last) {
 /* ---- init / free ---- */
 
 void ms_vm_init(MsVM* vm) {
+    memset(vm->stack,  0, sizeof(vm->stack));
     memset(vm->frames, 0, sizeof(vm->frames));
     vm->stack_top            = vm->stack;
     vm->frame_count          = 0;

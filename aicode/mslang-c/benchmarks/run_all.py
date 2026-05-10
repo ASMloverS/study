@@ -133,16 +133,24 @@ def build_row(name: str, data: dict, cache_data: dict | None,
         if bl_best > 0:
             wall_pct = (best - bl_best) / bl_best * 100.0
             delta_str = fmt_delta(wall_pct)
-            if abs(wall_pct) > REGRESSION_WALL_PCT:
+            if wall_pct > REGRESSION_WALL_PCT:
                 warnings.append(
                     f"WALL regression {wall_pct:+.1f}% on {name}"
+                )
+            elif wall_pct < -REGRESSION_WALL_PCT:
+                warnings.append(
+                    f"WALL improvement {wall_pct:+.1f}% on {name} [informational]"
                 )
         bl_instr = bl.get("instruction_count", 0)
         if isinstance(instr, int) and bl_instr > 0:
             instr_pct = (instr - bl_instr) / bl_instr * 100.0
-            if abs(instr_pct) > REGRESSION_INSTR_PCT:
+            if instr_pct > REGRESSION_INSTR_PCT:
                 warnings.append(
                     f"INSTR regression {instr_pct:+.1f}% on {name}"
+                )
+            elif instr_pct < -REGRESSION_INSTR_PCT:
+                warnings.append(
+                    f"INSTR improvement {instr_pct:+.1f}% on {name} [informational]"
                 )
         bl_deopt = bl.get("deopt_event_count", None)
         if isinstance(deopt, int) and bl_deopt is not None and deopt != bl_deopt:
@@ -308,7 +316,10 @@ def main():
         print("\nWarnings:")
         for w in all_warnings:
             print(f"  {w}")
-        sys.exit(1)
+        # Exit 1 only for actual regressions or output mismatches, not improvements.
+        regressions = [w for w in all_warnings if "[informational]" not in w]
+        if regressions:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

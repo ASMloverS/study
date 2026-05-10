@@ -1,7 +1,6 @@
 #include "ms/common.h"
 #include "ms/consts.h"
 #include "ms/vm.h"
-#include "ms/memory.h"
 #include "ms/serializer.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -115,9 +114,14 @@ typedef struct {
 } RunSample;
 
 /* Run one iteration: compile fresh from source, then interpret.
-   Returns MS_INTERPRET_OK on success. */
+   Returns MS_INTERPRET_OK on success.
+   If stats_out is non-NULL (MSLANG_VM_STATS only), copies stats before freeing. */
 static MsInterpretResult run_one_nocache(const char* src, const char* path,
-                                          RunSample* s) {
+                                          RunSample* s
+#ifdef MSLANG_VM_STATS
+                                          , MsVMStats* stats_out
+#endif
+                                          ) {
     double t1, t2;
 
     /* Heap-allocate MsVM to avoid stack overflow (~300 KB struct) and
@@ -132,15 +136,30 @@ static MsInterpretResult run_one_nocache(const char* src, const char* path,
 
     s->compile_ms   = 0.0;
     s->interpret_ms = t2 - t1;
+#ifdef MSLANG_VM_STATS
+    if (stats_out) {
+        int live = 0;
+        for (MsObject* o = vm->young_objects; o; o = o->next) live++;
+        for (MsObject* o = vm->old_objects;   o; o = o->next) live++;
+        for (MsObject* o = vm->objects;       o; o = o->next) live++;
+        vm->stats.live_objects_after_final_gc = live;
+        ms_vm_get_stats(vm, stats_out);
+    }
+#endif
     ms_vm_free(vm);
     free(vm);
     return res;
 }
 
 /* Run one iteration using ms_compile_cached (with-cache mode).
-   is_cold: true for first run (measures cold compile). */
+   is_cold: true for first run (measures cold compile).
+   If stats_out is non-NULL (MSLANG_VM_STATS only), copies stats before freeing. */
 static MsInterpretResult run_one_cached(const char* src, const char* path,
-                                         bool is_cold, RunSample* s) {
+                                         bool is_cold, RunSample* s
+#ifdef MSLANG_VM_STATS
+                                         , MsVMStats* stats_out
+#endif
+                                         ) {
     double t0, t1, t2;
     MsVM* vm = (MsVM*)malloc(sizeof(MsVM));
     if (!vm) { return MS_INTERPRET_RUNTIME_ERROR; }
@@ -170,6 +189,16 @@ static MsInterpretResult run_one_cached(const char* src, const char* path,
         s->interpret_ms = t2 - t1;
     }
     MS_UNUSED(is_cold);
+#ifdef MSLANG_VM_STATS
+    if (stats_out && res == MS_INTERPRET_OK) {
+        int live = 0;
+        for (MsObject* o = vm->young_objects; o; o = o->next) live++;
+        for (MsObject* o = vm->old_objects;   o; o = o->next) live++;
+        for (MsObject* o = vm->objects;       o; o = o->next) live++;
+        vm->stats.live_objects_after_final_gc = live;
+        ms_vm_get_stats(vm, stats_out);
+    }
+#endif
     ms_vm_free(vm);
     free(vm);
     return res;
@@ -261,12 +290,24 @@ int main(int argc, char* argv[]) {
         /* In JSON mode, silence script stdout so JSON is the only stdout line */
         int saved_fd = flag_json ? stdout_silence() : -1;
 
+        /* Capture stats from the last benchmark run to avoid a separate VM. */
+#ifdef MSLANG_VM_STATS
+        bool is_last = (i == bench_n - 1);
+        MsVMStats* stats_capture = (flag_stats && is_last) ? &last_stats : NULL;
+        if (flag_cache) {
+            res = run_one_cached(src, script, i == 0, &s, stats_capture);
+            if (i == 0) compile_cold = s.compile_ms;
+        } else {
+            res = run_one_nocache(src, script, &s, stats_capture);
+        }
+#else
         if (flag_cache) {
             res = run_one_cached(src, script, i == 0, &s);
             if (i == 0) compile_cold = s.compile_ms;
         } else {
             res = run_one_nocache(src, script, &s);
         }
+#endif
 
         if (flag_json) stdout_restore(saved_fd);
 
@@ -277,34 +318,6 @@ int main(int argc, char* argv[]) {
 
         compile_times[i]   = s.compile_ms;
         interpret_times[i] = s.interpret_ms;
-
-        /* Collect stats on last run */
-#ifdef MSLANG_VM_STATS
-        if (flag_stats && i == bench_n - 1) {
-            /* Run once more with stats collection; silence script output */
-            int sfd = flag_json ? stdout_silence() : -1;
-            MsVM* svm = (MsVM*)malloc(sizeof(MsVM));
-            if (svm) {
-                ms_vm_init(svm);
-                ms_vm_interpret(svm, src, script);
-                /* Walk all three GC lists to count surviving objects.
-                   Avoids running ms_gc_collect which can crash on stale
-                   cross-generational pointers left after script exit. */
-                {
-                    int live = 0;
-                    MsObject* o;
-                    for (o = svm->young_objects; o; o = o->next) live++;
-                    for (o = svm->old_objects;   o; o = o->next) live++;
-                    for (o = svm->objects;       o; o = o->next) live++;
-                    svm->stats.live_objects_after_final_gc = live;
-                }
-                ms_vm_get_stats(svm, &last_stats);
-                ms_vm_free(svm);
-                free(svm);
-            }
-            if (flag_json) stdout_restore(sfd);
-        }
-#endif
 
         if (!flag_json) {
             printf("run %d: compile=%.3f ms  interpret=%.3f ms\n",

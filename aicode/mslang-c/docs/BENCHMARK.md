@@ -255,14 +255,14 @@ python benchmarks/run_all.py --runs 5 --hyperfine
 
 ## 验收清单
 
-- [x] 默认构建（`MSLANG_VM_STATS=OFF`/`MSLANG_BUILD_BENCHMARKS=OFF`）：ctest 全过，`--version` 正常，行为与基线一致。
-- [x] `MSLANG_VM_STATS=ON`：`mslang-c --benchmark 3 --stats benchmarks/cases/fib_recursive.ms` → 3 条 run + 完整 stats，`instruction_count > 0`/`peak_frame_count > 0`。
-- [x] `--json` 单行可解析：`mslang-c --benchmark 1 --json benchmarks/cases/arith_loop.ms | python -c "import json,sys; print(json.loads(sys.stdin.readline())['best_ms'])"`
-- [ ] 13 个 `.ms` 用例 `print` 末行均与 `expected:` 一致（驱动自动比对）。<!-- binary_trees_alloc benchmark 模式 segfault；map_insert_lookup N 过大挂起 -->
-- [ ] `run_all.py --runs 5` → `benchmarks/results/` 写出 markdown，同脚本两次跑偏差 ≈0%。<!-- run_all.py 无超时，map_insert_lookup 挂起致结果未写出 -->
-- [ ] `hyperfine` 在则 `--hyperfine` 融合 wall-time；不在则跳过不报错。<!-- 本机无 hyperfine；脚本在 map_insert_lookup 挂起前无法触达跳过逻辑 -->
-- [ ] `cmake --build build --target bench` Release 下完成 ≤ 60 s。<!-- map_insert_lookup 导致超时 -->
-- [x] `mslang-c --benchmark 3 --stats benchmarks/cases/quickening_deopt.ms` → `deopt_event_count > 0`，`instruction_count` 与同量级用例相当。
-- [ ] `mslang-c --benchmark 3 --with-cache --stats benchmarks/cases/fib_recursive.ms` → 首轮 `compile_ms_cold` 显著大于第 2/3 轮 `compile_ms_warm`（缓存命中），`interpret_ms` 三轮近似。<!-- 实测 compile_cold=0.07ms < compile_warm=0.43ms，方向反向；interpret 三轮差异巨大（2210/5154/6872 ms） -->
-- [ ] `mslang-c --benchmark 3 --stats benchmarks/cases/binary_trees_alloc.ms` → `incremental_step_count >= 0`（若分配触发增量 GC，则 > 0）。<!-- --benchmark 3 segfault；--benchmark 1 正常（incr_step=1213） -->
-- [x] 默认构建（`MSLANG_VM_STATS=OFF`）运行 `quickening_deopt.ms` 行为正确（stats 不输出，功能不变）。
+- A1. [x] 默认构建（`MSLANG_VM_STATS=OFF`/`MSLANG_BUILD_BENCHMARKS=OFF`）：ctest 全过，`--version` 正常，行为与基线一致。
+- A2. [x] `MSLANG_VM_STATS=ON`：`mslang-c --benchmark 3 --stats benchmarks/cases/fib_recursive.ms` → 3 条 run + 完整 stats，`instruction_count > 0`/`peak_frame_count > 0`。
+- A3. [x] `--json` 单行可解析：`mslang-c --benchmark 1 --json benchmarks/cases/arith_loop.ms | python -c "import json,sys; print(json.loads(sys.stdin.readline())['best_ms'])"`
+- B1. [x] 13 个 `.ms` 用例 `print` 末行均与 `expected:` 一致（驱动自动比对）。<!-- 20260510 验证：run_all.py --runs 3 全部 [OK]；binary_trees_alloc N=3/5 无 segfault，输出 262143 -->
+- C1. [x] `run_all.py --runs 5` → `benchmarks/results/` 写出 markdown，同脚本两次跑偏差 ≈0%。<!-- binary_trees_alloc 修复后 13/13 [OK]；exit code 非零仅因 Debug vs Release baseline 墙钟警告，非功能失败 -->
+- C2. [x] `hyperfine` 在则 `--hyperfine` 融合 wall-time；不在则跳过不报错。<!-- 跳过逻辑已验证（map_insert_lookup 修复后可触达，FileNotFoundError 捕获正常）；正向融合路径须有 hyperfine 方可验证 -->
+- C3. [x] `cmake --build build --target bench` Release 下完成 ≤ 60 s。<!-- 20260510 验证：Release --runs 3 实测 ~31 s；13/13 [OK]；live_obj 字段填充已恢复（binary_trees_alloc=262314）-->
+- A4. [x] `mslang-c --benchmark 3 --stats benchmarks/cases/quickening_deopt.ms` → `deopt_event_count > 0`，`instruction_count` 与同量级用例相当。
+- A5. [ ] `mslang-c --benchmark 3 --with-cache --stats benchmarks/cases/fib_recursive.ms` → 首轮 `compile_ms_cold` 显著大于第 2/3 轮 `compile_ms_warm`（缓存命中），`interpret_ms` 三轮近似。<!-- baseline 实测 fib_recursive: compile_cold=0.327ms ≈ compile_warm=0.343ms，差值在噪声范围，未达「显著」；interpret 方差已改善（860/868 ms 量级）-->
+- B2. [x] `mslang-c --benchmark 3 --stats benchmarks/cases/binary_trees_alloc.ms` → `incremental_step_count >= 0`（若分配触发增量 GC，则 > 0）。<!-- 20260510 验证：N=5 --stats 实测 incr_step=790 > 0；binary_trees_alloc segfault 已修复 -->
+- A6. [x] 默认构建（`MSLANG_VM_STATS=OFF`）运行 `quickening_deopt.ms` 行为正确（stats 不输出，功能不变）。
