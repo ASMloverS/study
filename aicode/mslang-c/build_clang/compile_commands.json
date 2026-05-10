@@ -1,0 +1,314 @@
+[
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_fs_util.dir\\src\\fs_util.c.obj /FdCMakeFiles\\ms_fs_util.dir\\ms_fs_util.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\fs_util.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\fs_util.c",
+  "output": "CMakeFiles\\ms_fs_util.dir\\src\\fs_util.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_support.dir\\src\\value.c.obj /FdCMakeFiles\\ms_support.dir\\ms_support.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\value.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\value.c",
+  "output": "CMakeFiles\\ms_support.dir\\src\\value.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_table.dir\\src\\table.c.obj /FdCMakeFiles\\ms_table.dir\\ms_table.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\table.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\table.c",
+  "output": "CMakeFiles\\ms_table.dir\\src\\table.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_memory.dir\\src\\memory.c.obj /FdCMakeFiles\\ms_memory.dir\\ms_memory.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\memory.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\memory.c",
+  "output": "CMakeFiles\\ms_memory.dir\\src\\memory.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_chunk.dir\\src\\chunk.c.obj /FdCMakeFiles\\ms_chunk.dir\\ms_chunk.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\chunk.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\chunk.c",
+  "output": "CMakeFiles\\ms_chunk.dir\\src\\chunk.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_debug.dir\\src\\debug.c.obj /FdCMakeFiles\\ms_debug.dir\\ms_debug.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\debug.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\debug.c",
+  "output": "CMakeFiles\\ms_debug.dir\\src\\debug.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vtable.dir\\src\\vtable.c.obj /FdCMakeFiles\\ms_vtable.dir\\ms_vtable.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vtable.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vtable.c",
+  "output": "CMakeFiles\\ms_vtable.dir\\src\\vtable.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_object.dir\\src\\object.c.obj /FdCMakeFiles\\ms_object.dir\\ms_object.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\object.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\object.c",
+  "output": "CMakeFiles\\ms_object.dir\\src\\object.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\vm.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\vm.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\vm_call.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_call.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_call.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\vm_call.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\vm_natives.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_natives.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_natives.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\vm_natives.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\vm_gc.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_gc.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_gc.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\vm_gc.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\shape.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\shape.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\shape.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\shape.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\vm_builtins.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_builtins.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\vm_builtins.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\vm_builtins.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_vm.dir\\src\\module.c.obj /FdCMakeFiles\\ms_vm.dir\\ms_vm.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\module.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\module.c",
+  "output": "CMakeFiles\\ms_vm.dir\\src\\module.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_optimize.dir\\src\\optimize.c.obj /FdCMakeFiles\\ms_optimize.dir\\ms_optimize.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\optimize.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\optimize.c",
+  "output": "CMakeFiles\\ms_optimize.dir\\src\\optimize.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_scanner.dir\\src\\scanner.c.obj /FdCMakeFiles\\ms_scanner.dir\\ms_scanner.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\scanner.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\scanner.c",
+  "output": "CMakeFiles\\ms_scanner.dir\\src\\scanner.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_serializer.dir\\src\\serializer.c.obj /FdCMakeFiles\\ms_serializer.dir\\ms_serializer.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\serializer.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\serializer.c",
+  "output": "CMakeFiles\\ms_serializer.dir\\src\\serializer.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_frontend.dir\\src\\compiler.c.obj /FdCMakeFiles\\ms_frontend.dir\\ms_frontend.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\compiler.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\compiler.c",
+  "output": "CMakeFiles\\ms_frontend.dir\\src\\compiler.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\ms_frontend.dir\\src\\compiler_expr.c.obj /FdCMakeFiles\\ms_frontend.dir\\ms_frontend.pdb /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\compiler_expr.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\compiler_expr.c",
+  "output": "CMakeFiles\\ms_frontend.dir\\src\\compiler_expr.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /FoCMakeFiles\\mslang-c.dir\\src\\main.c.obj /FdCMakeFiles\\mslang-c.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\main.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\src\\main.c",
+  "output": "CMakeFiles\\mslang-c.dir\\src\\main.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_smoke.dir\\unit\\test_smoke.c.obj /Fdtests\\CMakeFiles\\test_smoke.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_smoke.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_smoke.c",
+  "output": "tests\\CMakeFiles\\test_smoke.dir\\unit\\test_smoke.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_value.dir\\unit\\test_value.c.obj /Fdtests\\CMakeFiles\\test_value.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_value.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_value.c",
+  "output": "tests\\CMakeFiles\\test_value.dir\\unit\\test_value.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_table.dir\\unit\\test_table.c.obj /Fdtests\\CMakeFiles\\test_table.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_table.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_table.c",
+  "output": "tests\\CMakeFiles\\test_table.dir\\unit\\test_table.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_object_string.dir\\unit\\test_object_string.c.obj /Fdtests\\CMakeFiles\\test_object_string.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_object_string.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_object_string.c",
+  "output": "tests\\CMakeFiles\\test_object_string.dir\\unit\\test_object_string.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_base_objects.dir\\unit\\test_base_objects.c.obj /Fdtests\\CMakeFiles\\test_base_objects.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_base_objects.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_base_objects.c",
+  "output": "tests\\CMakeFiles\\test_base_objects.dir\\unit\\test_base_objects.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_chunk.dir\\unit\\test_chunk.c.obj /Fdtests\\CMakeFiles\\test_chunk.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_chunk.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_chunk.c",
+  "output": "tests\\CMakeFiles\\test_chunk.dir\\unit\\test_chunk.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_debug.dir\\unit\\test_debug.c.obj /Fdtests\\CMakeFiles\\test_debug.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_debug.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_debug.c",
+  "output": "tests\\CMakeFiles\\test_debug.dir\\unit\\test_debug.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_scanner.dir\\unit\\test_scanner.c.obj /Fdtests\\CMakeFiles\\test_scanner.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_scanner.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_scanner.c",
+  "output": "tests\\CMakeFiles\\test_scanner.dir\\unit\\test_scanner.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_scanner_interp.dir\\unit\\test_scanner_interp.c.obj /Fdtests\\CMakeFiles\\test_scanner_interp.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_scanner_interp.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_scanner_interp.c",
+  "output": "tests\\CMakeFiles\\test_scanner_interp.dir\\unit\\test_scanner_interp.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_compiler_expr.dir\\unit\\test_compiler_expr.c.obj /Fdtests\\CMakeFiles\\test_compiler_expr.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_compiler_expr.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_compiler_expr.c",
+  "output": "tests\\CMakeFiles\\test_compiler_expr.dir\\unit\\test_compiler_expr.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_compiler_vars.dir\\unit\\test_compiler_vars.c.obj /Fdtests\\CMakeFiles\\test_compiler_vars.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_compiler_vars.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_compiler_vars.c",
+  "output": "tests\\CMakeFiles\\test_compiler_vars.dir\\unit\\test_compiler_vars.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_compiler_stmts.dir\\unit\\test_compiler_stmts.c.obj /Fdtests\\CMakeFiles\\test_compiler_stmts.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_compiler_stmts.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_compiler_stmts.c",
+  "output": "tests\\CMakeFiles\\test_compiler_stmts.dir\\unit\\test_compiler_stmts.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_vm_basic.dir\\unit\\test_vm_basic.c.obj /Fdtests\\CMakeFiles\\test_vm_basic.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_vm_basic.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_vm_basic.c",
+  "output": "tests\\CMakeFiles\\test_vm_basic.dir\\unit\\test_vm_basic.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_vm_closures.dir\\unit\\test_vm_closures.c.obj /Fdtests\\CMakeFiles\\test_vm_closures.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_vm_closures.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_vm_closures.c",
+  "output": "tests\\CMakeFiles\\test_vm_closures.dir\\unit\\test_vm_closures.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_vm_control.dir\\unit\\test_vm_control.c.obj /Fdtests\\CMakeFiles\\test_vm_control.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_vm_control.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_vm_control.c",
+  "output": "tests\\CMakeFiles\\test_vm_control.dir\\unit\\test_vm_control.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_gc.dir\\unit\\test_gc.c.obj /Fdtests\\CMakeFiles\\test_gc.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_gc.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_gc.c",
+  "output": "tests\\CMakeFiles\\test_gc.dir\\unit\\test_gc.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_gc_gen.dir\\unit\\test_gc_gen.c.obj /Fdtests\\CMakeFiles\\test_gc_gen.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_gc_gen.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_gc_gen.c",
+  "output": "tests\\CMakeFiles\\test_gc_gen.dir\\unit\\test_gc_gen.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_oop.dir\\unit\\test_oop.c.obj /Fdtests\\CMakeFiles\\test_oop.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_oop.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_oop.c",
+  "output": "tests\\CMakeFiles\\test_oop.dir\\unit\\test_oop.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_oop_inherit.dir\\unit\\test_oop_inherit.c.obj /Fdtests\\CMakeFiles\\test_oop_inherit.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_oop_inherit.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_oop_inherit.c",
+  "output": "tests\\CMakeFiles\\test_oop_inherit.dir\\unit\\test_oop_inherit.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_shapes.dir\\unit\\test_shapes.c.obj /Fdtests\\CMakeFiles\\test_shapes.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_shapes.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_shapes.c",
+  "output": "tests\\CMakeFiles\\test_shapes.dir\\unit\\test_shapes.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_collections.dir\\unit\\test_collections.c.obj /Fdtests\\CMakeFiles\\test_collections.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_collections.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_collections.c",
+  "output": "tests\\CMakeFiles\\test_collections.dir\\unit\\test_collections.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_builtins.dir\\unit\\test_builtins.c.obj /Fdtests\\CMakeFiles\\test_builtins.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_builtins.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_builtins.c",
+  "output": "tests\\CMakeFiles\\test_builtins.dir\\unit\\test_builtins.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_interp_exec.dir\\unit\\test_interp_exec.c.obj /Fdtests\\CMakeFiles\\test_interp_exec.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_interp_exec.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_interp_exec.c",
+  "output": "tests\\CMakeFiles\\test_interp_exec.dir\\unit\\test_interp_exec.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_exceptions.dir\\unit\\test_exceptions.c.obj /Fdtests\\CMakeFiles\\test_exceptions.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_exceptions.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_exceptions.c",
+  "output": "tests\\CMakeFiles\\test_exceptions.dir\\unit\\test_exceptions.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_coroutines.dir\\unit\\test_coroutines.c.obj /Fdtests\\CMakeFiles\\test_coroutines.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_coroutines.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_coroutines.c",
+  "output": "tests\\CMakeFiles\\test_coroutines.dir\\unit\\test_coroutines.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_modules.dir\\unit\\test_modules.c.obj /Fdtests\\CMakeFiles\\test_modules.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_modules.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_modules.c",
+  "output": "tests\\CMakeFiles\\test_modules.dir\\unit\\test_modules.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_natives.dir\\unit\\test_natives.c.obj /Fdtests\\CMakeFiles\\test_natives.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_natives.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_natives.c",
+  "output": "tests\\CMakeFiles\\test_natives.dir\\unit\\test_natives.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_optimize.dir\\unit\\test_optimize.c.obj /Fdtests\\CMakeFiles\\test_optimize.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_optimize.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_optimize.c",
+  "output": "tests\\CMakeFiles\\test_optimize.dir\\unit\\test_optimize.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_quickening.dir\\unit\\test_quickening.c.obj /Fdtests\\CMakeFiles\\test_quickening.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_quickening.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_quickening.c",
+  "output": "tests\\CMakeFiles\\test_quickening.dir\\unit\\test_quickening.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_serializer.dir\\unit\\test_serializer.c.obj /Fdtests\\CMakeFiles\\test_serializer.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_serializer.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_serializer.c",
+  "output": "tests\\CMakeFiles\\test_serializer.dir\\unit\\test_serializer.c.obj"
+},
+{
+  "directory": "C:/Workspace/Repositories/study/aicode/mslang-c/build_clang",
+  "command": "C:\\Tools\\VS2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx86\\x64\\cl.exe  /nologo -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\include -IC:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests /DWIN32 /D_WINDOWS /Zi /Ob0 /Od /RTC1 -std:c11 -MDd /W4 /WX /wd4200 /wd4127 /Fotests\\CMakeFiles\\test_fs_util.dir\\unit\\test_fs_util.c.obj /Fdtests\\CMakeFiles\\test_fs_util.dir\\ /FS -c C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_fs_util.c",
+  "file": "C:\\Workspace\\Repositories\\study\\aicode\\mslang-c\\tests\\unit\\test_fs_util.c",
+  "output": "tests\\CMakeFiles\\test_fs_util.dir\\unit\\test_fs_util.c.obj"
+}
+]

@@ -88,3 +88,6 @@ target_link_libraries(test_quickening PRIVATE ms_frontend)
 
 ms_add_test(test_serializer unit/test_serializer.c)
 target_link_libraries(test_serializer PRIVATE ms_frontend ms_serializer)
+
+ms_add_test(test_fs_util unit/test_fs_util.c)
+target_link_libraries(test_fs_util PRIVATE ms_fs_util)

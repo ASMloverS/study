@@ -16,6 +16,10 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
+add_library(ms_fs_util STATIC src/fs_util.c)
+target_include_directories(ms_fs_util PUBLIC include)
+target_compile_options(ms_fs_util PRIVATE ${MSLANG_COMPILE_OPTIONS})
+
 add_library(ms_support STATIC src/value.c)
 target_include_directories(ms_support PUBLIC include)
 target_compile_options(ms_support PRIVATE ${MSLANG_COMPILE_OPTIONS})

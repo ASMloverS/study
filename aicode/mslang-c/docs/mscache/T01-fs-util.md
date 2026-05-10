@@ -20,7 +20,7 @@
 
 ---
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/unit/test_fs_util.c`：
 
@@ -118,7 +118,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: 注册测试到 `tests/CMakeLists.txt`**
+- [x] **Step 2: 注册测试到 `tests/CMakeLists.txt`**
 
 在末尾追加：
 
@@ -127,7 +127,7 @@ ms_add_test(test_fs_util unit/test_fs_util.c)
 target_link_libraries(test_fs_util PRIVATE ms_fs_util)
 ```
 
-- [ ] **Step 3: 运行，确认编译失败（预期）**
+- [x] **Step 3: 运行，确认编译失败（预期）**
 
 ```bash
 cmake --build build
@@ -135,7 +135,7 @@ cmake --build build
 
 预期输出：`fatal error: ms/fs_util.h: No such file or directory`
 
-- [ ] **Step 4: 创建 `include/ms/fs_util.h`**
+- [x] **Step 4: 创建 `include/ms/fs_util.h`**
 
 ```c
 #pragma once
@@ -153,7 +153,7 @@ bool ms_fs_atomic_rename(const char* tmp, const char* dst); /* replaces dst */
 bool ms_fs_unlink(const char* path);
 ```
 
-- [ ] **Step 5: 创建 `src/fs_util.c`**
+- [x] **Step 5: 创建 `src/fs_util.c`**
 
 ```c
 #include "ms/fs_util.h"
@@ -223,7 +223,7 @@ bool ms_fs_unlink(const char* path) {
 #endif
 ```
 
-- [ ] **Step 6: 注册 `ms_fs_util` 到根 `CMakeLists.txt`**
+- [x] **Step 6: 注册 `ms_fs_util` 到根 `CMakeLists.txt`**
 
 在 `add_library(ms_support ...)` 行**之前**插入：
 
@@ -233,7 +233,7 @@ target_include_directories(ms_fs_util PUBLIC include)
 target_compile_options(ms_fs_util PRIVATE ${MSLANG_COMPILE_OPTIONS})
 ```
 
-- [ ] **Step 7: 构建 + 运行测试**
+- [x] **Step 7: 构建 + 运行测试**
 
 ```bash
 cmake --build build && cd build && ctest -R test_fs_util --output-on-failure
@@ -246,7 +246,7 @@ test_fs_util: all passed
 1/1 Test #1: test_fs_util .................... Passed
 ```
 
-- [ ] **Step 8: 确认全量测试不回归**
+- [x] **Step 8: 确认全量测试不回归**
 
 ```bash
 cd build && ctest --output-on-failure
@@ -254,7 +254,7 @@ cd build && ctest --output-on-failure
 
 预期：所有原有测试继续通过。
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add include/ms/fs_util.h src/fs_util.c \
