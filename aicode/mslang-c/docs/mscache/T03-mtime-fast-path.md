@@ -21,7 +21,7 @@
 
 ---
 
-- [ ] **Step 1: 新增 mtime 快速路径测试（追加到 `tests/unit/test_serializer.c`）**
+- [x] **Step 1: 新增 mtime 快速路径测试（追加到 `tests/unit/test_serializer.c`）**
 
 在 `test_compile_cached_writes_to_mscache` 函数**之后**、`main` 函数**之前**插入：
 
@@ -117,7 +117,7 @@ static void test_mtime_fastpath_miss_on_mtime_change(void) {
     test_mtime_fastpath_miss_on_mtime_change();
 ```
 
-- [ ] **Step 2: 运行，确认测试失败（预期——新签名还未实现）**
+- [x] **Step 2: 运行，确认测试失败（预期——新签名还未实现）**
 
 ```bash
 cmake --build build 2>&1 | head -20
@@ -125,7 +125,7 @@ cmake --build build 2>&1 | head -20
 
 预期：编译错误，`ms_compile_cached` 参数数量不匹配。
 
-- [ ] **Step 3: 更新 `include/ms/serializer.h` 中 `ms_compile_cached` 签名**
+- [x] **Step 3: 更新 `include/ms/serializer.h` 中 `ms_compile_cached` 签名**
 
 将：
 
@@ -147,7 +147,7 @@ MsObjFunction* ms_compile_cached(struct MsVM* vm, const char* src_path,
                                    uint32_t flags);
 ```
 
-- [ ] **Step 4: 重写 `src/serializer.c` 中的 `ms_compile_cached`**
+- [x] **Step 4: 重写 `src/serializer.c` 中的 `ms_compile_cached`**
 
 在文件末尾，将整个 `ms_compile_cached` 函数替换为：
 
@@ -246,7 +246,7 @@ MsObjFunction* ms_compile_cached(MsVM* vm, const char* src_path, uint32_t flags)
 
 > **注意**：`#include <windows.h>` / `#include <unistd.h>` 放在文件顶部 `#include` 区块中（与其他平台头文件一起），而不是在函数内部。上面为了可读性放在一起展示。
 
-- [ ] **Step 5: 更新 `src/main.c` 中 `run_one_cached` 函数**
+- [x] **Step 5: 更新 `src/main.c` 中 `run_one_cached` 函数**
 
 将 `run_one_cached` 完整替换为（去掉 `source` 参数，使用新签名）：
 
@@ -285,7 +285,7 @@ static MsInterpretResult run_one_cached(const char* path, uint32_t cache_flags,
 }
 ```
 
-- [ ] **Step 6: 更新 `src/main.c` 中 `run_one_cached` 的调用点**
+- [x] **Step 6: 更新 `src/main.c` 中 `run_one_cached` 的调用点**
 
 找到：
 
@@ -303,7 +303,7 @@ static MsInterpretResult run_one_cached(const char* path, uint32_t cache_flags,
 
 （`src` 在 `flag_cache` 模式下不再需要，但 `read_file` 调用保留供 `run_one_nocache` 使用。）
 
-- [ ] **Step 7: 构建**
+- [x] **Step 7: 构建**
 
 ```bash
 cmake --build build
@@ -311,7 +311,7 @@ cmake --build build
 
 预期：零错误。若有 `unused variable 'src'` 警告，在 `flag_cache` 分支前检查 `src` 是否仍被 `run_one_nocache` 引用——若是则保留，若否则移除 `read_file` 调用。
 
-- [ ] **Step 8: 运行 test_serializer**
+- [x] **Step 8: 运行 test_serializer**
 
 ```bash
 cd build && ctest -R test_serializer --output-on-failure
@@ -323,7 +323,7 @@ cd build && ctest -R test_serializer --output-on-failure
 test_serializer: all passed
 ```
 
-- [ ] **Step 9: 冒烟测试 mtime fast path**
+- [x] **Step 9: 冒烟测试 mtime fast path**
 
 ```bash
 # 首次：编译 + 写缓存（mtime 模式）
@@ -338,13 +338,13 @@ ls -la tests/fixtures/__mscache__/hello.msc
 
 预期：第二次 `compile_ms` 显著低于第一次（<0.5 ms vs 数 ms）。
 
-- [ ] **Step 10: 全量测试不回归**
+- [x] **Step 10: 全量测试不回归**
 
 ```bash
 cd build && ctest --output-on-failure
 ```
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add include/ms/serializer.h src/serializer.c src/main.c \
