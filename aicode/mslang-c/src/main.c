@@ -152,10 +152,10 @@ static MsInterpretResult run_one_nocache(const char* src, const char* path,
 }
 
 /* Run one iteration using ms_compile_cached (with-cache mode).
-   is_cold: true for first run (measures cold compile).
+   cache_flags: MS_CACHE_MTIME (0) or MS_CACHE_HASH (1).
    If stats_out is non-NULL (MSLANG_VM_STATS only), copies stats before freeing. */
-static MsInterpretResult run_one_cached(const char* src, const char* path,
-                                         bool is_cold, RunSample* s
+static MsInterpretResult run_one_cached(const char* path, uint32_t cache_flags,
+                                         RunSample* s
 #ifdef MSLANG_VM_STATS
                                          , MsVMStats* stats_out
 #endif
@@ -166,7 +166,7 @@ static MsInterpretResult run_one_cached(const char* src, const char* path,
     ms_vm_init(vm);
 
     t0 = get_time_ms();
-    MsObjFunction* fn = ms_compile_cached(vm, src, path);
+    MsObjFunction* fn = ms_compile_cached(vm, path, cache_flags);
     t1 = get_time_ms();
     s->compile_ms = t1 - t0;
 
@@ -188,7 +188,6 @@ static MsInterpretResult run_one_cached(const char* src, const char* path,
         MS_UNUSED(r0);
         s->interpret_ms = t2 - t1;
     }
-    MS_UNUSED(is_cold);
 #ifdef MSLANG_VM_STATS
     if (stats_out && res == MS_INTERPRET_OK) {
         int live = 0;
@@ -295,14 +294,14 @@ int main(int argc, char* argv[]) {
         bool is_last = (i == bench_n - 1);
         MsVMStats* stats_capture = (flag_stats && is_last) ? &last_stats : NULL;
         if (flag_cache) {
-            res = run_one_cached(src, script, i == 0, &s, stats_capture);
+            res = run_one_cached(script, 0, &s, stats_capture);  /* 0 = MS_CACHE_MTIME */
             if (i == 0) compile_cold = s.compile_ms;
         } else {
             res = run_one_nocache(src, script, &s, stats_capture);
         }
 #else
         if (flag_cache) {
-            res = run_one_cached(src, script, i == 0, &s);
+            res = run_one_cached(script, 0, &s);  /* 0 = MS_CACHE_MTIME */
             if (i == 0) compile_cold = s.compile_ms;
         } else {
             res = run_one_nocache(src, script, &s);

@@ -4,9 +4,15 @@
 #include "ms/compiler.h"
 #include "ms/chunk.h"
 #include "ms/module.h"
+#include "ms/object.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#  include <windows.h>   /* GetCurrentProcessId */
+#else
+#  include <unistd.h>    /* getpid */
+#endif
 
 _Static_assert(sizeof(MsMscHeader) == 32, "MsMscHeader must be 32 bytes");
 
@@ -231,13 +237,51 @@ bool ms_cache_path_for(const char* src_path, char* out, size_t cap) {
     return written > 0 && (size_t)written < cap;
 }
 
-MsObjFunction* ms_compile_cached(MsVM* vm, const char* source,
-                                   const char* src_path) {
-    uint32_t hash = ms_fnv1a(source, (int)strlen(source));
+MsObjFunction* ms_compile_cached(MsVM* vm, const char* src_path, uint32_t flags) {
     char cache[PATH_MAX];
     if (!ms_cache_path_for(src_path, cache, sizeof(cache))) return NULL;
 
-    /* Create __mscache__/ directory (best effort, silent on failure) */
+    /* Stat source file - needed for mtime validation or existence check */
+    MsFileMeta meta;
+    bool has_meta = ms_fs_stat(src_path, &meta);
+
+    char* source = NULL;
+    uint32_t hash = 0;
+
+    if (flags & MS_CACHE_HASH) {
+        /* Hash mode: must read source before checking cache */
+        source = ms_read_file(src_path);
+        if (!source) return NULL;
+        hash = ms_fnv1a(source, (int)strlen(source));
+    }
+
+    /* Try cache (mtime mode: source never read on hit) */
+    MsObjFunction* fn = ms_deserialize(vm, cache,
+                                        has_meta ? meta.size     : 0,
+                                        has_meta ? meta.mtime_ns : 0,
+                                        hash);
+    if (fn) { free(source); return fn; }  /* cache hit */
+
+    /* Cache miss: read source if not already read (mtime mode) */
+    if (!source) {
+        source = ms_read_file(src_path);
+        if (!source) return NULL;
+        if (!has_meta) has_meta = ms_fs_stat(src_path, &meta);
+        hash = 0;
+    }
+
+    /* Compile */
+    MsDiagnostic diags[32]; int dc = 0;
+    fn = ms_compile(vm, source, src_path, diags, &dc, 32);
+    if (!fn) {
+        for (int i = 0; i < dc; i++)
+            fprintf(stderr, "[line %d] %s: %s\n",
+                    diags[i].line, src_path, diags[i].message);
+        free(source);
+        return NULL;
+    }
+
+    /* Create __mscache__/ directory (best effort) */
     int sep = last_sep(cache);
     if (sep > 0) {
         char dir[PATH_MAX];
@@ -245,22 +289,31 @@ MsObjFunction* ms_compile_cached(MsVM* vm, const char* source,
         ms_fs_mkdir(dir);
     }
 
-    /* Try to load from cache (hash mode: T03 will add mtime fast path) */
-    MsObjFunction* fn = ms_deserialize(vm, cache, 0, 0, hash);
-    if (fn) return fn;
-
-    /* Compile */
-    MsDiagnostic diags[32]; int dc = 0;
-    fn = ms_compile(vm, source, src_path, diags, &dc, 32);
-    if (!fn) return NULL;
-
-    /* Write cache (hash mode header) */
+    /* Build header */
     MsMscHeader hdr;
     memset(&hdr, 0, sizeof(hdr));
     hdr.magic[0] = 'M'; hdr.magic[1] = 'S'; hdr.magic[2] = 'C'; hdr.magic[3] = '\0';
-    hdr.version  = MS_MSC_VERSION;
-    hdr.flags    = MS_CACHE_HASH;
-    hdr.src_hash = hash;
-    ms_serialize(fn, cache, &hdr);  /* failure is silently ignored */
+    hdr.version      = MS_MSC_VERSION;
+    hdr.flags        = flags & 1u;
+    hdr.src_size     = has_meta ? meta.size     : 0;
+    hdr.src_mtime_ns = has_meta ? meta.mtime_ns : 0;
+    hdr.src_hash     = hash;
+
+    /* Atomic write: serialize to tmp, then rename */
+    char tmp[PATH_MAX];
+#ifdef _WIN32
+    snprintf(tmp, sizeof(tmp), "%s.tmp.%lu", cache,
+             (unsigned long)GetCurrentProcessId());
+#else
+    snprintf(tmp, sizeof(tmp), "%s.tmp.%d", cache, (int)getpid());
+#endif
+
+    if (ms_serialize(fn, tmp, &hdr)) {
+        if (!ms_fs_atomic_rename(tmp, cache))
+            ms_fs_unlink(tmp);   /* cleanup on rename failure */
+    }
+    /* Any write failure above is silently swallowed */
+
+    free(source);
     return fn;
 }

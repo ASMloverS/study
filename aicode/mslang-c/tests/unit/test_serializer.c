@@ -1,3 +1,6 @@
+#ifdef _WIN32
+#  define _CRT_SECURE_NO_WARNINGS
+#endif
 #include "test_assert.h"
 #include "ms/vm.h"
 #include "ms/compiler.h"
@@ -131,12 +134,8 @@ static void test_compile_cached_writes_to_mscache(void) {
     fclose(f);
 
     MsVM vm; ms_vm_init(&vm);
-    char* source = ms_read_file("_t02_test.ms");
-    TEST_ASSERT(source != NULL);
-
-    MsObjFunction* fn = ms_compile_cached(&vm, source, "_t02_test.ms");
+    MsObjFunction* fn = ms_compile_cached(&vm, "_t02_test.ms", MS_CACHE_MTIME);
     TEST_ASSERT(fn != NULL);
-    free(source);
 
     /* Cache must have been written to __mscache__/_t02_test.msc */
     MsFileMeta m;
@@ -148,12 +147,89 @@ static void test_compile_cached_writes_to_mscache(void) {
     ms_vm_free(&vm);
 }
 
+static void test_mtime_fastpath_hit(void) {
+    /* Write source file */
+    FILE* f = fopen("_t03_fast.ms", "wb");
+    TEST_ASSERT(f != NULL);
+    const char* src = "print(99)";
+    fwrite(src, 1, strlen(src), f);
+    fclose(f);
+
+    /* First run: compiles + writes mtime-mode cache */
+    MsVM vm; ms_vm_init(&vm);
+    MsObjFunction* fn1 = ms_compile_cached(&vm, "_t03_fast.ms", MS_CACHE_MTIME);
+    TEST_ASSERT(fn1 != NULL);
+    ms_vm_free(&vm);
+
+    /* Cache file must exist */
+    MsFileMeta cm;
+    TEST_ASSERT(ms_fs_stat("__mscache__/_t03_fast.msc", &cm));
+
+    /* Second run: must hit cache (source not needed on mtime hit). */
+    /* Verify indirectly: function is returned and cache file mtime is
+       unchanged (no rewrite happened). */
+    MsFileMeta cm2_before;
+    ms_fs_stat("__mscache__/_t03_fast.msc", &cm2_before);
+
+    MsVM vm2; ms_vm_init(&vm2);
+    MsObjFunction* fn2 = ms_compile_cached(&vm2, "_t03_fast.ms", MS_CACHE_MTIME);
+    TEST_ASSERT(fn2 != NULL);
+    ms_vm_free(&vm2);
+
+    MsFileMeta cm2_after;
+    ms_fs_stat("__mscache__/_t03_fast.msc", &cm2_after);
+    /* Cache file should not have been rewritten (mtime unchanged) */
+    TEST_ASSERT_EQ(cm2_before.mtime_ns, cm2_after.mtime_ns);
+
+    remove("_t03_fast.ms");
+    remove("__mscache__/_t03_fast.msc");
+}
+
+static void test_mtime_fastpath_miss_on_mtime_change(void) {
+    /* Write source file */
+    FILE* f = fopen("_t03_stale.ms", "wb");
+    TEST_ASSERT(f != NULL);
+    fwrite("print(1)", 1, 8, f);
+    fclose(f);
+
+    /* First run */
+    MsVM vm; ms_vm_init(&vm);
+    MsObjFunction* fn1 = ms_compile_cached(&vm, "_t03_stale.ms", MS_CACHE_MTIME);
+    TEST_ASSERT(fn1 != NULL);
+    ms_vm_free(&vm);
+
+    MsFileMeta cm1;
+    ms_fs_stat("__mscache__/_t03_stale.msc", &cm1);
+
+    /* Overwrite source with different size to guarantee size mismatch -> cache miss */
+    f = fopen("_t03_stale.ms", "wb");
+    TEST_ASSERT(f != NULL);
+    fwrite("print(2) /* extra */", 1, 20, f);  /* different size */
+    fclose(f);
+
+    /* Second run: size changed -> cache miss -> recompile -> new cache written */
+    MsVM vm2; ms_vm_init(&vm2);
+    MsObjFunction* fn2 = ms_compile_cached(&vm2, "_t03_stale.ms", MS_CACHE_MTIME);
+    TEST_ASSERT(fn2 != NULL);
+    ms_vm_free(&vm2);
+
+    MsFileMeta cm2;
+    ms_fs_stat("__mscache__/_t03_stale.msc", &cm2);
+    /* Cache was rewritten -> file size changed (new source is bigger) */
+    TEST_ASSERT(cm2.size != cm1.size || cm2.mtime_ns != cm1.mtime_ns);
+
+    remove("_t03_stale.ms");
+    remove("__mscache__/_t03_stale.msc");
+}
+
 int main(void) {
     test_cache_path_for();
     test_roundtrip_hash_mode();
     test_roundtrip_mtime_mode();
     test_missing_file();
     test_compile_cached_writes_to_mscache();
+    test_mtime_fastpath_hit();
+    test_mtime_fastpath_miss_on_mtime_change();
     printf("test_serializer: all passed\n");
     return 0;
 }

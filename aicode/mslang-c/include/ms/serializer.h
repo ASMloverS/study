@@ -40,8 +40,10 @@ struct MsVM;
  *                     Pass 0 for unused parameters.
  * ms_cache_path_for - map "dir/script.ms" => "dir/__mscache__/script.msc".
  *                     Returns false if out buffer is too small.
- * ms_compile_cached - high-level: load from cache or compile + cache.
- *                     (Signature unchanged until T03.)
+ * ms_compile_cached - load from __mscache__/<basename>.msc or compile + cache.
+ *                     flags: MS_CACHE_MTIME (default) or MS_CACHE_HASH.
+ *                     mtime mode: source file is never opened on cache hit.
+ *                     Write failures are silently ignored.
  */
 bool           ms_serialize(MsObjFunction* fn, const char* path,
                              const MsMscHeader* hdr);
@@ -49,5 +51,5 @@ MsObjFunction* ms_deserialize(struct MsVM* vm, const char* path,
                                uint64_t src_size, int64_t src_mtime_ns,
                                uint32_t src_hash);
 bool           ms_cache_path_for(const char* src_path, char* out, size_t cap);
-MsObjFunction* ms_compile_cached(struct MsVM* vm, const char* source,
-                                   const char* src_path);
+MsObjFunction* ms_compile_cached(struct MsVM* vm, const char* src_path,
+                                   uint32_t flags);
