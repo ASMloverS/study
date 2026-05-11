@@ -48,16 +48,18 @@ static void inst_set_by_slot(struct MsVM* vm, MsObjInstance* inst,
 
 /* ---- IC helpers ---- */
 
-/* Ensure fn->ic is allocated (lazily). */
+/* Ensure fn->ic is allocated and large enough for idx (handles stale ic_count after deserialization). */
 static MsInlineCache* ensure_ic(MsVM* vm, MsObjFunction* fn, int idx) {
-    if (!fn->ic) {
-        int n = fn->ic_count > 0 ? fn->ic_count : 1;
-        fn->ic = (MsInlineCache*)ms_reallocate(vm, NULL, 0,
-                     sizeof(MsInlineCache) * (size_t)n);
-        for (int i = 0; i < n; i++) {
+    int needed = idx + 1;
+    if (!fn->ic || fn->ic_count < needed) {
+        size_t old_sz = (size_t)fn->ic_count * sizeof(MsInlineCache);
+        fn->ic = (MsInlineCache*)ms_reallocate(vm, fn->ic, old_sz,
+                     (size_t)needed * sizeof(MsInlineCache));
+        for (int i = fn->ic_count; i < needed; i++) {
             fn->ic[i].count       = 0;
             fn->ic[i].megamorphic = false;
         }
+        fn->ic_count = needed;
     }
     return &fn->ic[idx];
 }

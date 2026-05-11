@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define MS_MSC_MAGIC    "MSC\0"
-#define MS_MSC_VERSION  2
+#define MS_MSC_VERSION  3
 
 #define MS_CACHE_MTIME  0u   /* validate by (src_size, src_mtime_ns) -- default */
 #define MS_CACHE_HASH   1u   /* validate by FNV-1a hash of source               */

@@ -182,6 +182,9 @@ static MsInterpretResult run_one_cached(const char* path, uint32_t cache_flags,
         int need = fn->max_stack_size + 1;
         if (need < 1) need = 1;
         vm->stack_top = vm->stack + need;
+        /* fn is now rooted via frames[0]; safe to allocate script_path string */
+        if (!fn->script_path)
+            fn->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
         double r0 = get_time_ms();
         res = ms_vm_run(vm);
         t2 = get_time_ms();
@@ -210,10 +213,11 @@ int main(int argc, char* argv[]) {
     }
 
     /* Parse flags */
-    int   bench_n    = 0;
-    bool  flag_stats = false;
-    bool  flag_json  = false;
-    bool  flag_cache = false;   /* true = --with-cache */
+    int   bench_n       = 0;
+    bool  flag_stats    = false;
+    bool  flag_json     = false;
+    bool  flag_no_cache = false;           /* --no-cache */
+    uint32_t cache_flags = MS_CACHE_MTIME; /* --cache-mode=mtime|hash */
     const char* script = NULL;
 
     for (int i = 1; i < argc; i++) {
@@ -223,10 +227,18 @@ int main(int argc, char* argv[]) {
             flag_stats = true;
         } else if (strcmp(argv[i], "--json") == 0) {
             flag_json = true;
-        } else if (strcmp(argv[i], "--with-cache") == 0) {
-            flag_cache = true;
         } else if (strcmp(argv[i], "--no-cache") == 0) {
-            flag_cache = false;
+            flag_no_cache = true;
+        } else if (strncmp(argv[i], "--cache-mode=", 13) == 0) {
+            const char* mode = argv[i] + 13;
+            if (strcmp(mode, "hash") == 0)
+                cache_flags = MS_CACHE_HASH;
+            else if (strcmp(mode, "mtime") == 0)
+                cache_flags = MS_CACHE_MTIME;
+            else {
+                fprintf(stderr, "Unknown cache mode: %s (use mtime or hash)\n", mode);
+                return 1;
+            }
         } else if (argv[i][0] != '-') {
             script = argv[i];
         } else {
@@ -236,19 +248,53 @@ int main(int argc, char* argv[]) {
     }
 
     if (!script) {
-        fprintf(stderr, "Usage: mslang-c [--benchmark N] [--stats] [--json]"
-                        " [--no-cache | --with-cache] [--version] <script>\n");
+        fprintf(stderr,
+            "Usage: mslang-c [--benchmark N] [--stats] [--json]\n"
+            "                [--no-cache] [--cache-mode=mtime|hash]\n"
+            "                [--version] <script>\n");
         return 1;
     }
 
-    char* src = read_file(script);
-    if (!src) return 1;
+    /* Only read source for --no-cache or benchmark no-cache path */
+    char* src = NULL;
+    if (flag_no_cache) {
+        src = read_file(script);
+        if (!src) return 1;
+    }
 
     /* Non-benchmark: simple run */
     if (bench_n <= 0) {
         MsVM vm;
         ms_vm_init(&vm);
-        MsInterpretResult result = ms_vm_interpret(&vm, src, script);
+        MsInterpretResult result;
+
+        if (!flag_no_cache) {
+            /* Default: cache path - source file not read by us */
+            MsObjFunction* fn = ms_compile_cached(&vm, script, cache_flags);
+            if (!fn) {
+                ms_vm_free(&vm);
+                free(src);
+                return 1;
+            }
+            MsObjClosure* cl = ms_obj_closure_new(&vm, fn);
+            vm.frames[0].closure = cl;
+            vm.frames[0].ip      = fn->chunk.code;
+            vm.frames[0].slots   = vm.stack;
+            vm.frame_count       = 1;
+            int need = fn->max_stack_size + 1;
+            if (need < 1) need = 1;
+            vm.stack_top = vm.stack + need;
+            /* fn is now rooted via frames[0]; safe to allocate script_path string */
+            if (!fn->script_path)
+                fn->script_path = ms_obj_string_copy(&vm, script, (int)strlen(script));
+            result = ms_vm_run(&vm);
+        } else {
+            /* --no-cache: classic interpret path (needs source) */
+            if (!src) { src = read_file(script); }
+            if (!src) { ms_vm_free(&vm); return 1; }
+            result = ms_vm_interpret(&vm, src, script);
+        }
+
 #ifdef MSLANG_VM_STATS
         if (flag_stats && result == MS_INTERPRET_OK) {
             MsVMStats st;
@@ -293,17 +339,19 @@ int main(int argc, char* argv[]) {
 #ifdef MSLANG_VM_STATS
         bool is_last = (i == bench_n - 1);
         MsVMStats* stats_capture = (flag_stats && is_last) ? &last_stats : NULL;
-        if (flag_cache) {
-            res = run_one_cached(script, 0, &s, stats_capture);  /* 0 = MS_CACHE_MTIME */
+        if (!flag_no_cache) {
+            res = run_one_cached(script, cache_flags, &s, stats_capture);
             if (i == 0) compile_cold = s.compile_ms;
         } else {
+            if (!src) { src = read_file(script); if (!src) { free(compile_times); free(interpret_times); return 1; } }
             res = run_one_nocache(src, script, &s, stats_capture);
         }
 #else
-        if (flag_cache) {
-            res = run_one_cached(script, 0, &s);  /* 0 = MS_CACHE_MTIME */
+        if (!flag_no_cache) {
+            res = run_one_cached(script, cache_flags, &s);
             if (i == 0) compile_cold = s.compile_ms;
         } else {
+            if (!src) { src = read_file(script); if (!src) { free(compile_times); free(interpret_times); return 1; } }
             res = run_one_nocache(src, script, &s);
         }
 #endif
@@ -338,7 +386,7 @@ int main(int argc, char* argv[]) {
     double mean_ms   = sum / bench_n;
     double med_ms    = median_of(itimes_copy, bench_n);
     double compile_warm = 0.0;
-    if (bench_n > 1 && flag_cache) {
+    if (bench_n > 1 && !flag_no_cache) {
         compile_warm = compile_times[1];
         for (int i = 2; i < bench_n; i++) {
             if (compile_times[i] < compile_warm) compile_warm = compile_times[i];
@@ -349,7 +397,7 @@ int main(int argc, char* argv[]) {
         printf("{\"runs\":%d,\"best_ms\":%.3f,\"median_ms\":%.3f,"
                "\"max_ms\":%.3f,\"mean_ms\":%.3f",
                bench_n, min_ms, med_ms, max_ms, mean_ms);
-        if (flag_cache) {
+        if (!flag_no_cache) {
             printf(",\"compile_ms_cold\":%.3f,\"compile_ms_warm\":%.3f",
                    compile_cold, compile_warm);
         }
@@ -375,7 +423,7 @@ int main(int argc, char* argv[]) {
         printf("---\n");
         printf("runs=%d  best=%.3f ms  median=%.3f ms  max=%.3f ms  mean=%.3f ms\n",
                bench_n, min_ms, med_ms, max_ms, mean_ms);
-        if (flag_cache) {
+        if (!flag_no_cache) {
             printf("compile_cold=%.3f ms  compile_warm=%.3f ms\n",
                    compile_cold, compile_warm);
         }

@@ -89,6 +89,7 @@ static void write_fn(FILE* f, MsObjFunction* fn, FnArray* fns) {
     W4(f, fn->arity); W4S(f, fn->min_arity);
     W4(f, fn->upvalue_count); W4(f, fn->max_stack_size);
     W1(f, fn->is_generator ? 1 : 0);
+    W4(f, (uint32_t)fn->ic_count);
     W4(f, fn->chunk.code_count);
     fwrite(fn->chunk.code, sizeof(MsInstruction),
            (size_t)fn->chunk.code_count, f);
@@ -122,6 +123,7 @@ static MsObjFunction* read_fn(FILE* f, MsVM* vm,
     R4(f, tmp4); fn->upvalue_count = (int)tmp4;
     R4(f, tmp4); fn->max_stack_size = (int)tmp4;
     R1(f, tmp1); fn->is_generator = tmp1 != 0;
+    R4(f, tmp4); fn->ic_count = (int)tmp4;
     R4(f, tmp4);
     if (tmp4 > 0) {
         fn->chunk.code = (MsInstruction*)malloc(sizeof(MsInstruction) * tmp4);
@@ -260,7 +262,7 @@ MsObjFunction* ms_compile_cached(MsVM* vm, const char* src_path, uint32_t flags)
                                         has_meta ? meta.size     : 0,
                                         has_meta ? meta.mtime_ns : 0,
                                         hash);
-    if (fn) { free(source); return fn; }  /* cache hit */
+    if (fn) { free(source); return fn; }  /* cache hit; caller sets script_path after rooting fn */
 
     /* Cache miss: read source if not already read (mtime mode) */
     if (!source) {
