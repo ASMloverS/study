@@ -139,6 +139,58 @@ add_test(NAME mscache.cli.inline_no_cache
 set_tests_properties(mscache.cli.inline_no_cache PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
 
+add_test(NAME mscache.import.create_reuse
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.import.create_reuse"
+    -DMODE=create_reuse
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cache.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules"
+    -DMODULE_SOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules/cache/counter.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_import_cache.cmake")
+set_tests_properties(mscache.import.create_reuse PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};modules;mscache")
+
+add_test(NAME mscache.import.no_cache
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.import.no_cache"
+    -DMODE=no_cache
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cache.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules"
+    -DMODULE_SOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules/cache/counter.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_import_cache.cmake")
+set_tests_properties(mscache.import.no_cache PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};modules;mscache")
+
+add_test(NAME mscache.import.cycle_failure
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.import.cycle_failure"
+    -DMODE=cycle_failure
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cycle.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules"
+    -DMODULE_SOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules/cycle/a.ms"
+    -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5003;import_cycle.ms:1:1;phase=module;code=MS5004;import_cycle.ms:1:1"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_import_cache.cmake")
+set_tests_properties(mscache.import.cycle_failure PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};modules;mscache")
+
+add_test(NAME mscache.import.runtime_failure
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.import.runtime_failure"
+    -DMODE=runtime_failure
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_runtime_failure.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules"
+    -DMODULE_SOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules/failures/runtime_fail.ms"
+    -DEXPECT_STDERR_CONTAINS="phase=module;code=MS5004;import_runtime_failure.ms:1:1;phase=runtime;code=MS4004;runtime_fail.ms:1:1"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_import_cache.cmake")
+set_tests_properties(mscache.import.runtime_failure PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};modules;mscache")
+
 add_test(NAME mscache.cli.unknown_option
   COMMAND "${CMAKE_COMMAND}"
     -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"

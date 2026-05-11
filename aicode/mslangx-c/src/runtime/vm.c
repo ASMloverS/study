@@ -6,6 +6,7 @@
 
 #include "ms/frontend/lowering.h"
 #include "ms/frontend/resolution_table.h"
+#include "ms/cache/source_loader.h"
 #include "ms/object.h"
 #include "ms/runtime/opcode.h"
 #include "ms/string.h"
@@ -183,54 +184,6 @@ static MsModule* ms_vm_active_module(MsVM* vm) {
     return vm->current_module;
   }
   return NULL;
-}
-
-static char* ms_vm_read_file(const char* path) {
-  FILE* file = NULL;
-  long size;
-  size_t read_size;
-  char* buffer;
-
-  if (path == NULL) {
-    return NULL;
-  }
-
-#if defined(_MSC_VER)
-  if (fopen_s(&file, path, "rb") != 0) {
-    file = NULL;
-  }
-#else
-  file = fopen(path, "rb");
-#endif
-  if (file == NULL) {
-    return NULL;
-  }
-  if (fseek(file, 0, SEEK_END) != 0) {
-    fclose(file);
-    return NULL;
-  }
-
-  size = ftell(file);
-  if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
-    fclose(file);
-    return NULL;
-  }
-
-  buffer = (char*) malloc((size_t) size + 1);
-  if (buffer == NULL) {
-    fclose(file);
-    return NULL;
-  }
-
-  read_size = fread(buffer, 1, (size_t) size, file);
-  fclose(file);
-  if (read_size != (size_t) size) {
-    free(buffer);
-    return NULL;
-  }
-
-  buffer[size] = '\0';
-  return buffer;
 }
 
 static int ms_vm_file_exists(const char* path) {
@@ -2138,6 +2091,9 @@ void ms_vm_init(MsVM* vm) {
   vm->frame_capacity = 0;
   vm->open_upvalues = NULL;
   vm->current_module = NULL;
+  vm->cache_enabled = 1;
+  vm->source_load_fn = NULL;
+  vm->source_load_user_data = NULL;
   vm->module_search_roots = NULL;
   vm->module_search_root_count = 0;
   vm->module_search_root_capacity = 0;
@@ -2199,6 +2155,9 @@ void ms_vm_destroy(MsVM* vm) {
   vm->stack_capacity = 0;
   vm->open_upvalues = NULL;
   vm->current_module = NULL;
+  vm->cache_enabled = 0;
+  vm->source_load_fn = NULL;
+  vm->source_load_user_data = NULL;
   ms_diag_list_destroy(&vm->diagnostics);
   vm->write_fn = NULL;
   vm->write_user_data = NULL;
@@ -2210,6 +2169,25 @@ void ms_vm_set_current_module(MsVM* vm, MsModule* module) {
   }
 
   vm->current_module = module;
+}
+
+void ms_vm_set_cache_enabled(MsVM* vm, int cache_enabled) {
+  if (vm == NULL) {
+    return;
+  }
+
+  vm->cache_enabled = cache_enabled ? 1 : 0;
+}
+
+void ms_vm_set_source_load_callback(MsVM* vm,
+                                    MsVmSourceLoadFn source_load_fn,
+                                    void* source_load_user_data) {
+  if (vm == NULL) {
+    return;
+  }
+
+  vm->source_load_fn = source_load_fn;
+  vm->source_load_user_data = source_load_user_data;
 }
 
 int ms_module_build_file_path(const char* module_name, char** out_relative_path) {
@@ -2467,16 +2445,16 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                     MsModule** out_module,
                                     int* out_missing_module) {
   char* resolved_path = NULL;
-  char* source = NULL;
-  MsChunk chunk;
+  MsSourceLoadOptions load_options;
+  MsSourceLoadResult load_result;
   MsDiagnosticList diagnostics;
-  MsCompileResult compile_result;
   MsModule* module = NULL;
   MsModule* caller_module;
   const MsChunk* caller_chunk;
   size_t caller_frame_count;
   size_t caller_stack_count;
   int inserted_new = 0;
+  MsSourceLoadStatus load_status;
   MsVmResult result = MS_VM_RESULT_RUNTIME_ERROR;
 
   if (out_module != NULL) {
@@ -2550,34 +2528,36 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
     return result;
   }
 
-  source = ms_vm_read_file(module->canonical_path);
-  if (source == NULL) {
-    ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
-    result = ms_vm_runtime_error(vm,
-                                 instruction_offset,
-                                 "MS4004",
-                                 "failed to read module");
-    ms_vm_append_import_failure(vm,
-                                caller_module,
-                                caller_chunk,
-                                module,
-                                0,
-                                instruction_offset);
-    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
-    return result;
+  ms_source_load_options_init(&load_options);
+  load_options.cache_enabled = vm->cache_enabled;
+  load_options.entry_kind = MS_CACHE_ENTRY_KIND_MODULE;
+  ms_source_load_result_init(&load_result);
+  ms_diag_list_init(&diagnostics);
+  if (vm->source_load_fn != NULL) {
+    load_status = vm->source_load_fn(vm->source_load_user_data,
+                                     module->canonical_path,
+                                     &load_options,
+                                     &diagnostics,
+                                     &load_result);
+  } else {
+    load_status = ms_source_load_source(module->canonical_path,
+                                        &load_options,
+                                        &diagnostics,
+                                        &load_result);
   }
 
-  ms_chunk_init(&chunk);
-  ms_diag_list_init(&diagnostics);
-  compile_result =
-      ms_compile_source(module->canonical_path, source, &chunk, &diagnostics);
-  free(source);
-
-  if (compile_result != MS_COMPILE_RESULT_OK) {
+  if (load_status != MS_SOURCE_LOAD_STATUS_OK) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
-    ms_vm_append_diagnostics(&vm->diagnostics, &diagnostics);
+    if (load_status == MS_SOURCE_LOAD_STATUS_COMPILE_ERROR) {
+      ms_vm_append_diagnostics(&vm->diagnostics, &diagnostics);
+    } else if (load_status == MS_SOURCE_LOAD_STATUS_IO_ERROR) {
+      ms_vm_runtime_error(vm,
+                          instruction_offset,
+                          "MS4004",
+                          "failed to read module");
+    }
     ms_diag_list_destroy(&diagnostics);
-    ms_chunk_destroy(&chunk);
+    ms_source_load_result_destroy(&load_result);
     ms_vm_append_import_failure(vm,
                                 caller_module,
                                 caller_chunk,
@@ -2589,12 +2569,17 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
   }
   caller_frame_count = vm->frame_count;
   caller_stack_count = vm->stack_count;
-  if (!ms_vm_push_entry_frame(
-          vm, &chunk, NULL, module, caller_stack_count, ms_value_nil(), 0)) {
+  if (!ms_vm_push_entry_frame(vm,
+                              &load_result.chunk,
+                              NULL,
+                              module,
+                              caller_stack_count,
+                              ms_value_nil(),
+                              0)) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     vm->current_module = caller_module;
     ms_diag_list_destroy(&diagnostics);
-    ms_chunk_destroy(&chunk);
+    ms_source_load_result_destroy(&load_result);
     result = ms_vm_runtime_error(vm,
                                  instruction_offset,
                                  "MS4001",
@@ -2614,7 +2599,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
   if (result != MS_VM_RESULT_OK) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     ms_diag_list_destroy(&diagnostics);
-    ms_chunk_destroy(&chunk);
+    ms_source_load_result_destroy(&load_result);
     ms_vm_append_import_failure(vm,
                                 caller_module,
                                 caller_chunk,
@@ -2627,7 +2612,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
   if (vm->stack_count > caller_stack_count && !ms_vm_pop(vm, NULL)) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     ms_diag_list_destroy(&diagnostics);
-    ms_chunk_destroy(&chunk);
+    ms_source_load_result_destroy(&load_result);
     result = ms_vm_runtime_error(vm,
                                  instruction_offset,
                                  "MS4002",
@@ -2638,12 +2623,13 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
                                 module,
                                 0,
                                 instruction_offset);
+    ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
     return result;
   }
   if (!ms_module_transition_state(module, MS_MODULE_STATE_INITIALIZED)) {
     ms_module_transition_state(module, MS_MODULE_STATE_FAILED);
     ms_diag_list_destroy(&diagnostics);
-    ms_chunk_destroy(&chunk);
+    ms_source_load_result_destroy(&load_result);
     result = ms_vm_runtime_error(vm,
                                  instruction_offset,
                                  "MS4001",
@@ -2660,7 +2646,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
 
   *out_module = module;
   ms_diag_list_destroy(&diagnostics);
-  ms_chunk_destroy(&chunk);
+  ms_source_load_result_destroy(&load_result);
   ms_vm_gc_pop_temporary_root(vm, (MsObject*) module);
   return MS_VM_RESULT_OK;
 }

@@ -14,7 +14,12 @@
 #define MS_TEST_PATH_SEP '/'
 #endif
 
+#include "ms/buffer.h"
+#include "ms/diag.h"
+#include "ms/frontend/lowering.h"
+#include "ms/runtime/chunk.h"
 #include "ms/runtime/vm.h"
+#include "ms/value.h"
 
 #include "test_assert.h"
 
@@ -64,6 +69,20 @@ static char* canonicalize_path(const char* path) {
 #else
   return realpath(path, NULL);
 #endif
+}
+
+static int append_output(void* user_data, const char* text, size_t length) {
+  MsBuffer* buffer = (MsBuffer*) user_data;
+
+  return ms_buffer_append(buffer, text, length);
+}
+
+static int expect_output_equals(const MsBuffer* buffer, const char* expected) {
+  size_t expected_length = strlen(expected);
+
+  TEST_ASSERT(buffer->length == expected_length);
+  TEST_ASSERT(memcmp(buffer->data, expected, expected_length) == 0);
+  return 0;
 }
 
 static int test_module_name_mapping_and_search_root_precedence(void) {
@@ -218,6 +237,59 @@ static int test_module_cache_entries_are_gc_roots(void) {
   return 0;
 }
 
+static int test_module_import_uses_default_source_loader(void) {
+  MsVM vm;
+  MsModule module;
+  MsChunk chunk;
+  MsDiagnosticList diagnostics;
+  MsBuffer output;
+  char module_root[256];
+  char module_path[320];
+  const char* source =
+      "import cache.counter as counter\n"
+      "print counter.value\n";
+
+  ms_vm_init(&vm);
+  ms_module_init(&module, "<unit>");
+  ms_chunk_init(&chunk);
+  ms_diag_list_init(&diagnostics);
+  ms_buffer_init(&output);
+
+  snprintf(module_root,
+           sizeof(module_root),
+           "modules_test_tmp%cdefault_loader%cfixtures%cmodules",
+           MS_TEST_PATH_SEP,
+           MS_TEST_PATH_SEP,
+           MS_TEST_PATH_SEP);
+  snprintf(module_path,
+           sizeof(module_path),
+           "%s%ccache%ccounter.ms",
+           module_root,
+           MS_TEST_PATH_SEP,
+           MS_TEST_PATH_SEP);
+
+  TEST_ASSERT(write_file(module_path,
+                         "var value = \"module\"\n"
+                         "\n"
+                         "print \"counter loaded\"\n") == 0);
+  TEST_ASSERT(ms_vm_add_search_root(&vm, module_root));
+  TEST_ASSERT(ms_compile_source("<unit>", source, &chunk, &diagnostics) ==
+              MS_COMPILE_RESULT_OK);
+  TEST_ASSERT(ms_diag_list_count(&diagnostics) == 0);
+
+  ms_vm_set_current_module(&vm, &module);
+  ms_vm_set_write_callback(&vm, append_output, &output);
+  TEST_ASSERT(ms_vm_run_chunk(&vm, &chunk) == MS_VM_RESULT_OK);
+  TEST_ASSERT(expect_output_equals(&output, "counter loaded\nmodule\n") == 0);
+
+  ms_buffer_destroy(&output);
+  ms_module_destroy(&module);
+  ms_vm_destroy(&vm);
+  ms_diag_list_destroy(&diagnostics);
+  ms_chunk_destroy(&chunk);
+  return 0;
+}
+
 static int test_module_state_transitions(void) {
   MsModule module;
 
@@ -240,6 +312,7 @@ int main(void) {
   TEST_ASSERT(test_module_name_mapping_and_search_root_precedence() == 0);
   TEST_ASSERT(test_module_cache_uses_canonical_keys() == 0);
   TEST_ASSERT(test_module_cache_entries_are_gc_roots() == 0);
+  TEST_ASSERT(test_module_import_uses_default_source_loader() == 0);
   TEST_ASSERT(test_module_state_transitions() == 0);
   return 0;
 }

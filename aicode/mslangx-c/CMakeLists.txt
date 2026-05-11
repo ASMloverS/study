@@ -64,7 +64,9 @@ target_include_directories(mslang_runtime_core PUBLIC
 target_include_directories(mslang_frontend PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-target_link_libraries(mslang_runtime_core PUBLIC mslang_support)
+target_link_libraries(mslang_runtime_core PUBLIC
+  mslang_support
+  mslang_source_loader)
 target_link_libraries(mslang_cache PUBLIC mslang_runtime_core)
 target_link_libraries(mslang_source_loader PUBLIC
   mslang_cache

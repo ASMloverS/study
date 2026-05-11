@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 
+#include "ms/cache/source_loader.h"
 #include "ms/diag.h"
 #include "ms/runtime/chunk.h"
 #include "ms/runtime/function.h"
@@ -42,6 +43,11 @@ typedef struct MsGCTemporaryRoot {
 } MsGCTemporaryRoot;
 
 typedef int (*MsVmWriteFn)(void* user_data, const char* text, size_t length);
+typedef MsSourceLoadStatus (*MsVmSourceLoadFn)(void* user_data,
+                                               const char* source_path,
+                                               const MsSourceLoadOptions* options,
+                                               MsDiagnosticList* diagnostics,
+                                               MsSourceLoadResult* out_result);
 
 typedef enum MsVmResult {
   MS_VM_RESULT_OK,
@@ -67,6 +73,9 @@ typedef struct MsVM {
   size_t frame_capacity;
   MsUpvalue* open_upvalues;
   MsModule* current_module;
+  int cache_enabled;
+  MsVmSourceLoadFn source_load_fn;
+  void* source_load_user_data;
   char** module_search_roots;
   size_t module_search_root_count;
   size_t module_search_root_capacity;
@@ -91,6 +100,10 @@ void ms_vm_gc_pop_temporary_root(MsVM* vm, MsObject* object);
 void ms_vm_gc_mark_roots(MsVM* vm);
 void ms_vm_gc_collect(MsVM* vm);
 void ms_vm_set_current_module(MsVM* vm, MsModule* module);
+void ms_vm_set_cache_enabled(MsVM* vm, int cache_enabled);
+void ms_vm_set_source_load_callback(MsVM* vm,
+                                    MsVmSourceLoadFn source_load_fn,
+                                    void* source_load_user_data);
 int ms_module_build_file_path(const char* module_name, char** out_relative_path);
 int ms_vm_add_search_root(MsVM* vm, const char* root_path);
 int ms_vm_resolve_module_path(const MsVM* vm,

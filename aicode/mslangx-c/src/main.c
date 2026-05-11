@@ -98,6 +98,7 @@ static int mslangc_exit_for_compile_result(MsCompileResult result,
 }
 
 static int mslangc_run_source(const char *file,
+                              int cache_enabled,
                               const char *source,
                               FILE *error_stream);
 
@@ -226,6 +227,7 @@ static void mslangc_add_module_search_roots(MsVM *vm, const char *file) {
 }
 
 static int mslangc_execute_chunk(const char *file,
+                                 int cache_enabled,
                                  const MsChunk *chunk,
                                  FILE *error_stream) {
   MsVM vm;
@@ -233,6 +235,7 @@ static int mslangc_execute_chunk(const char *file,
   int exit_code = 0;
 
   ms_vm_init(&vm);
+  ms_vm_set_cache_enabled(&vm, cache_enabled);
   mslangc_add_module_search_roots(&vm, file);
   ms_module_init(&module, file);
   ms_vm_set_current_module(&vm, &module);
@@ -284,6 +287,7 @@ static int mslangc_run_script_file(const char *file,
   exit_code = mslangc_execute_chunk(result.source.display_path != NULL
                                         ? result.source.display_path
                                         : file,
+                                    cache_enabled,
                                     &result.chunk,
                                     error_stream);
   ms_source_load_result_destroy(&result);
@@ -291,6 +295,7 @@ static int mslangc_run_script_file(const char *file,
 }
 
 static int mslangc_run_source(const char *file,
+                              int cache_enabled,
                               const char *source,
                               FILE *error_stream) {
   MsChunk chunk;
@@ -310,7 +315,7 @@ static int mslangc_run_source(const char *file,
   }
   ms_diag_list_destroy(&diagnostics);
 
-  exit_code = mslangc_execute_chunk(file, &chunk, error_stream);
+  exit_code = mslangc_execute_chunk(file, cache_enabled, &chunk, error_stream);
   ms_chunk_destroy(&chunk);
   return exit_code;
 }
@@ -341,7 +346,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "error: missing argument for -e\n");
         return kExitUsage;
       }
-      return mslangc_run_source("<inline>", argv[i + 1], stderr);
+      return mslangc_run_source("<inline>", cache_enabled, argv[i + 1], stderr);
     }
     if (arg[0] == '-') {
       fprintf(stderr, "error: unknown option: %s\n", arg);
