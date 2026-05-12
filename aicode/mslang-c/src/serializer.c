@@ -167,6 +167,22 @@ fail:
     free(buf); return NULL;
 }
 
+static MsObjFunction* load_fns_from_file(MsVM* vm, FILE* f) {
+    uint32_t fn_count = 0;
+    if (fread(&fn_count, 4, 1, f) != (size_t)1 || fn_count == 0) return NULL;
+    MsObjFunction** fns = (MsObjFunction**)calloc(fn_count, sizeof(*fns));
+    if (!fns) return NULL;
+    size_t saved = vm->next_gc; vm->next_gc = (size_t)-1;
+    for (uint32_t i = 0; i < fn_count; i++) {
+        fns[i] = read_fn(f, vm, fns, (int)i);
+        if (!fns[i]) { vm->next_gc = saved; free(fns); return NULL; }
+    }
+    MsObjFunction* res = fns[fn_count - 1];
+    vm->next_gc = saved;
+    free(fns);
+    return res;
+}
+
 /* ---- public API ---- */
 
 bool ms_serialize(MsObjFunction* fn, const char* path, const MsMscHeader* hdr) {
@@ -318,4 +334,20 @@ MsObjFunction* ms_compile_cached(MsVM* vm, const char* src_path, uint32_t flags)
 
     free(source);
     return fn;
+}
+
+MsObjFunction* ms_load_msc(MsVM* vm, const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "Cannot open '%s'.\n", path); return NULL; }
+    MsMscHeader hdr;
+    if (fread(&hdr, sizeof(hdr), 1, f) != (size_t)1 ||
+        memcmp(hdr.magic, "MSC", 3) || hdr.magic[3] ||
+        hdr.version != MS_MSC_VERSION) {
+        fprintf(stderr, "Not a valid .msc file: %s\n", path);
+        fclose(f); return NULL;
+    }
+    MsObjFunction* res = load_fns_from_file(vm, f);
+    fclose(f);
+    if (!res) fprintf(stderr, "Failed to load .msc file: %s\n", path);
+    return res;
 }

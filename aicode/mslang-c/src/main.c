@@ -93,6 +93,11 @@ static char* read_file(const char* path) {
     return buf;
 }
 
+static bool has_msc_ext(const char* path) {
+    size_t n = strlen(path);
+    return n >= 4 && strcmp(path + n - 4, ".msc") == 0;
+}
+
 /* ---- sort helpers for median ---- */
 
 static int cmp_double(const void* a, const void* b) {
@@ -206,6 +211,54 @@ static MsInterpretResult run_one_cached(const char* path, uint32_t cache_flags,
     return res;
 }
 
+static MsInterpretResult run_one_msc(const char* path, RunSample* s
+#ifdef MSLANG_VM_STATS
+                                      , MsVMStats* stats_out
+#endif
+                                      ) {
+    double t0, t1, t2;
+    MsVM* vm = (MsVM*)malloc(sizeof(MsVM));
+    if (!vm) { return MS_INTERPRET_RUNTIME_ERROR; }
+    ms_vm_init(vm);
+
+    t0 = get_time_ms();
+    MsObjFunction* fn = ms_load_msc(vm, path);
+    t1 = get_time_ms();
+    s->compile_ms = t1 - t0;
+
+    MsInterpretResult res = MS_INTERPRET_OK;
+    if (!fn) {
+        res = MS_INTERPRET_COMPILE_ERROR;
+    } else {
+        MsObjClosure* cl = ms_obj_closure_new(vm, fn);
+        vm->frames[0].closure = cl;
+        vm->frames[0].ip      = fn->chunk.code;
+        vm->frames[0].slots   = vm->stack;
+        vm->frame_count = 1;
+        int need = fn->max_stack_size + 1;
+        if (need < 1) need = 1;
+        vm->stack_top = vm->stack + need;
+        if (!fn->script_path)
+            fn->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
+        res = ms_vm_run(vm);
+        t2 = get_time_ms();
+        s->interpret_ms = t2 - t1;
+    }
+#ifdef MSLANG_VM_STATS
+    if (stats_out && res == MS_INTERPRET_OK) {
+        int live = 0;
+        for (MsObject* o = vm->young_objects; o; o = o->next) live++;
+        for (MsObject* o = vm->old_objects;   o; o = o->next) live++;
+        for (MsObject* o = vm->objects;       o; o = o->next) live++;
+        vm->stats.live_objects_after_final_gc = live;
+        ms_vm_get_stats(vm, stats_out);
+    }
+#endif
+    ms_vm_free(vm);
+    free(vm);
+    return res;
+}
+
 int main(int argc, char* argv[]) {
     if (argc == 2 && strcmp(argv[1], "--version") == 0) {
         printf("mslang-c %s\n", MS_VERSION);
@@ -268,7 +321,26 @@ int main(int argc, char* argv[]) {
         ms_vm_init(&vm);
         MsInterpretResult result;
 
-        if (!flag_no_cache) {
+        if (has_msc_ext(script)) {
+            /* Direct .msc execution: load bytecode, skip source validation */
+            MsObjFunction* fn = ms_load_msc(&vm, script);
+            if (!fn) {
+                ms_vm_free(&vm);
+                free(src);
+                return 1;
+            }
+            MsObjClosure* cl = ms_obj_closure_new(&vm, fn);
+            vm.frames[0].closure = cl;
+            vm.frames[0].ip      = fn->chunk.code;
+            vm.frames[0].slots   = vm.stack;
+            vm.frame_count       = 1;
+            int need = fn->max_stack_size + 1;
+            if (need < 1) need = 1;
+            vm.stack_top = vm.stack + need;
+            if (!fn->script_path)
+                fn->script_path = ms_obj_string_copy(&vm, script, (int)strlen(script));
+            result = ms_vm_run(&vm);
+        } else if (!flag_no_cache) {
             /* Default: cache path - source file not read by us */
             MsObjFunction* fn = ms_compile_cached(&vm, script, cache_flags);
             if (!fn) {
@@ -339,7 +411,10 @@ int main(int argc, char* argv[]) {
 #ifdef MSLANG_VM_STATS
         bool is_last = (i == bench_n - 1);
         MsVMStats* stats_capture = (flag_stats && is_last) ? &last_stats : NULL;
-        if (!flag_no_cache) {
+        if (has_msc_ext(script)) {
+            res = run_one_msc(script, &s, stats_capture);
+            if (i == 0) compile_cold = s.compile_ms;
+        } else if (!flag_no_cache) {
             res = run_one_cached(script, cache_flags, &s, stats_capture);
             if (i == 0) compile_cold = s.compile_ms;
         } else {
@@ -347,7 +422,10 @@ int main(int argc, char* argv[]) {
             res = run_one_nocache(src, script, &s, stats_capture);
         }
 #else
-        if (!flag_no_cache) {
+        if (has_msc_ext(script)) {
+            res = run_one_msc(script, &s);
+            if (i == 0) compile_cold = s.compile_ms;
+        } else if (!flag_no_cache) {
             res = run_one_cached(script, cache_flags, &s);
             if (i == 0) compile_cold = s.compile_ms;
         } else {

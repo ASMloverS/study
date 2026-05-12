@@ -53,3 +53,4 @@ MsObjFunction* ms_deserialize(struct MsVM* vm, const char* path,
 bool           ms_cache_path_for(const char* src_path, char* out, size_t cap);
 MsObjFunction* ms_compile_cached(struct MsVM* vm, const char* src_path,
                                    uint32_t flags);
+MsObjFunction* ms_load_msc(struct MsVM* vm, const char* path);
