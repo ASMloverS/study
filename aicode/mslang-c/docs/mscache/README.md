@@ -11,7 +11,7 @@
 | ✅ [T03](T03-mtime-fast-path.md) | mtime 快速路径 + 原子写入 | T01, T02 | `ctest -R test_serializer` |
 | ✅ [T04](T04-hash-mode.md) | hash 校验模式 | T03 | `ctest -R test_serializer` |
 | ✅ [T05](T05-cli-default-on.md) | CLI 默认开启 + --no-cache / --cache-mode | T03, T04 | smoke test |
-| [T06](T06-module-cache.md) | 模块加载器缓存集成 | T03 | `ctest -R test_modules` |
+| ✅ [T06](T06-module-cache.md) | 模块加载器缓存集成 | T03 | `ctest -R test_modules` |
 
 每个任务完成后系统均可编译、`./build/mslang-c --version` 正常执行、对应测试通过。
 

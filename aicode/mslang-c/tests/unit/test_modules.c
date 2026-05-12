@@ -1,9 +1,16 @@
 #include "test_assert.h"
 #include "ms/module.h"
 #include "ms/vm.h"
+#include "ms/serializer.h"
+#include "ms/fs_util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#  include <direct.h>
+#else
+#  include <sys/stat.h>
+#endif
 
 /* ---- stdout capture helpers ---- */
 
@@ -132,12 +139,77 @@ static void test_import_as_namespace(void) {
     remove("_mod_ns.ms");
 }
 
+static void test_import_writes_cache(void) {
+    /* Write two source files: main imports helper */
+#ifdef _WIN32
+    _mkdir("_t06_pkg");
+#else
+    mkdir("_t06_pkg", 0755);
+#endif
+
+    FILE* f = NULL;
+#ifdef _MSC_VER
+    fopen_s(&f, "_t06_pkg/helper.ms", "wb");
+#else
+    f = fopen("_t06_pkg/helper.ms", "wb");
+#endif
+    TEST_ASSERT(f != NULL);
+    fputs("fun greet() { return \"hi\" }", f);
+    fclose(f);
+
+#ifdef _MSC_VER
+    fopen_s(&f, "_t06_main.ms", "wb");
+#else
+    f = fopen("_t06_main.ms", "wb");
+#endif
+    TEST_ASSERT(f != NULL);
+    fputs("import \"_t06_pkg/helper\"", f);
+    fclose(f);
+
+    /* Compile+run via ms_compile_cached; the import triggers module caching */
+    MsVM vm2; ms_vm_init(&vm2);
+    MsObjFunction* fn = ms_compile_cached(&vm2, "_t06_main.ms", 0);
+    TEST_ASSERT(fn != NULL);
+
+    MsObjClosure* cl = ms_obj_closure_new(&vm2, fn);
+    vm2.frames[0].closure = cl;
+    vm2.frames[0].ip      = fn->chunk.code;
+    vm2.frames[0].slots   = vm2.stack;
+    vm2.frame_count       = 1;
+    int need = fn->max_stack_size + 1;
+    if (need < 1) need = 1;
+    vm2.stack_top = vm2.stack + need;
+    TEST_ASSERT(ms_vm_run(&vm2) == MS_INTERPRET_OK);
+    ms_vm_free(&vm2);
+
+    /* Both scripts should have cache files */
+    MsFileMeta m;
+    TEST_ASSERT(ms_fs_stat("__mscache__/_t06_main.msc", &m));
+    TEST_ASSERT(ms_fs_stat("_t06_pkg/__mscache__/helper.msc", &m));
+
+    /* Cleanup */
+    remove("__mscache__/_t06_main.msc");
+    remove("_t06_pkg/__mscache__/helper.msc");
+    remove("_t06_pkg/helper.ms");
+#ifdef _WIN32
+    _rmdir("__mscache__");
+    _rmdir("_t06_pkg/__mscache__");
+    _rmdir("_t06_pkg");
+#else
+    rmdir("__mscache__");
+    rmdir("_t06_pkg/__mscache__");
+    rmdir("_t06_pkg");
+#endif
+    remove("_t06_main.ms");
+}
+
 int main(void) {
     test_read_file();
     test_resolve_path_no_ext();
     test_resolve_path_with_ext();
     test_module_load_and_import();
     test_import_as_namespace();
+    test_import_writes_cache();
     printf("test_modules: all passed\n");
     return 0;
 }

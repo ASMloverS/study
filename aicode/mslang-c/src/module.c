@@ -1,5 +1,5 @@
 #include "ms/module.h"
-#include "ms/compiler.h"
+#include "ms/serializer.h"
 #include "ms/object.h"
 #include "ms/table.h"
 #include "ms/value.h"
@@ -133,26 +133,10 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
     mod->state = MS_MOD_INITIALIZING;
     ms_table_set(&vm->module_cache, key, MS_OBJ_VAL(mod));
 
-    /* Read source */
-    char* source = ms_read_file(resolved);
+    /* Compile (cached: writes to __mscache__/<module>.msc on first load) */
+    MsObjFunction* fn = ms_compile_cached(vm, resolved, 0);
     free(resolved);
-    if (!source) {
-        ms_vm_runtime_error(vm, "Cannot open module '%s'.", import_path);
-        mod->state = MS_MOD_FAILED;
-        return NULL;
-    }
-
-    /* Compile */
-    MsDiagnostic diags[32];
-    int diag_count = 0;
-    MsObjFunction* fn = ms_compile(vm, source, mod->path->data,
-                                    diags, &diag_count, 32);
-    free(source);
     if (!fn) {
-        for (int i = 0; i < diag_count; i++) {
-            fprintf(stderr, "[line %d] Error in module: %s\n",
-                    diags[i].line, diags[i].message);
-        }
         mod->state = MS_MOD_FAILED;
         return NULL;
     }
