@@ -64,8 +64,15 @@ MsInterpretResult ms_loop_run_until_complete(MsEventLoop* loop, MsObjFuture* roo
             MsObjCoroutine* coro = ready_dequeue(loop);
             MsValue out;
             MsInterpretResult r = ms_vm_coro_resume(loop->vm, coro, MS_NIL_VAL(), &out);
-            if (r == MS_INTERPRET_RUNTIME_ERROR) return r;
-            // YIELD/OK: coroutine 自己会在 OP_AWAIT 时注册到 future waiter
+            if (r == MS_INTERPRET_RUNTIME_ERROR) {
+                // 将错误 reject 到协程的返回 future，触发上游 await 链的异常传播
+                // （defer T24 已由 vm_coro_resume 内部处理）
+                if (coro->return_future)
+                    ms_future_reject(loop->vm, coro->return_future, loop->vm->current_error);
+                continue;  // 继续调度其他就绪协程
+            }
+            // AWAIT: 协程已注册到 future.waiters，无需额外操作
+            // OK:    协程正常完成，return_future 由 vm_call.c 内 resolve
         }
 
         // 2. 检查到期 Timer
@@ -118,7 +125,7 @@ static MsTimerEntry timer_heap_pop(MsEventLoop* loop) {
 static MsValue native_sleep(MsVM* vm, int argc, MsValue* argv) {
     uint64_t delay = (uint64_t)MS_AS_INT(argv[0]);
     MsObjFuture* fut = ms_obj_future_new(vm);
-    ms_loop_call_later(vm->event_loop, delay, fut);
+    ms_loop_call_later(&vm->event_loop, delay, fut);
     return MS_OBJECT_VAL((MsObject*)fut);
 }
 // 用法：await sleep(100)  -- 挂起 100ms
@@ -126,39 +133,55 @@ static MsValue native_sleep(MsVM* vm, int argc, MsValue* argv) {
 
 ## EventLoop 与 VM 的集成
 
-`MsVM`（`include/ms/vm.h`）加字段：
+`MsVM`（`include/ms/vm.h`）内嵌 EventLoop（避免 GC 误 trace 非 GC 对象）：
 
 ```c
-MsEventLoop* event_loop;  // NULL = no async context
+struct MsVM {
+    // ... 其他字段 ...
+    MsEventLoop event_loop;    // 内嵌，非指针
+    bool        loop_inited;   // 是否已调用 ms_loop_init
+};
 ```
 
-`ms_vm_init`（`src/vm.c`）默认不初始化 event_loop（惰性）；  
-`run_until_complete(fut)` 原生函数按需创建：
+`ms_vm_init` 仅将 `loop_inited = false`；`ms_vm_free` 须检查并销毁：
+
+```c
+// src/vm.c — ms_vm_free
+if (vm->loop_inited) ms_loop_destroy(&vm->event_loop);
+```
+
+`run_until_complete(fut)` 原生函数按需初始化（lazy init），不调用 `ms_allocate`：
 
 ```c
 static MsValue native_run_until_complete(MsVM* vm, int argc, MsValue* argv) {
-    if (!vm->event_loop) {
-        vm->event_loop = ms_allocate(vm, sizeof(MsEventLoop));
-        ms_loop_init(vm->event_loop, vm);
+    if (!vm->loop_inited) {
+        ms_loop_init(&vm->event_loop, vm);
+        vm->loop_inited = true;
     }
     MsObjFuture* fut = MS_AS_FUTURE(argv[0]);
-    MsInterpretResult r = ms_loop_run_until_complete(vm->event_loop, fut);
-    return r == MS_INTERPRET_OK ? fut->value : MS_NIL_VAL();
+    MsInterpretResult r = ms_loop_run_until_complete(&vm->event_loop, fut);
+    return r == MS_INTERPRET_OK ? fut->result : MS_NIL_VAL();
 }
 ```
+
+所有内部调用处将 `vm->event_loop`（指针）改为 `&vm->event_loop`（取地址）。
 
 ## GC 根
 
 `vm_gc.c` 的 mark roots 需要 trace EventLoop 中的活跃对象：
 
 ```c
-if (vm->event_loop) {
-    // mark 就绪队列中的协程
-    for (int i = ...; i < ...; i++)
-        ms_mark_object(vm, (MsObject*)loop->ready[i]);
-    // mark timer heap 中的 future
-    for (int i = 0; i < loop->timer_count; i++)
-        ms_mark_object(vm, (MsObject*)loop->timers[i].future);
+if (vm->loop_inited) {
+    MsEventLoop* L = &vm->event_loop;
+    // 就绪队列是环形缓冲，需按 head..tail 模 cap 遍历
+    int i = L->ready_head;
+    while (i != L->ready_tail) {
+        ms_mark_object(vm, (MsObject*)L->ready[i]);
+        i = (i + 1) % L->ready_cap;
+    }
+    // Timer 堆是线性数组
+    for (int j = 0; j < L->timer_count; j++)
+        ms_mark_object(vm, (MsObject*)L->timers[j].future);
 }
 ```
 

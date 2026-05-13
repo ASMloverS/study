@@ -27,6 +27,41 @@ Reactor（src/reactor_*.c）
 OS IO（TCP socket、timer 等）
 ```
 
+## await 路径详图（与 OPT-05 ExecCtx 的协作）
+
+```
+调用 async fun foo()
+    ↓ call_value 检测 is_async=true
+    ↓ ms_obj_future_from_async → 创建 ObjFuture(state=PENDING, coro=NEW)
+    ↓ ms_loop_call_soon(coro)  → coro 入就绪队列
+    ↓ 调用方得到 ObjFuture，可立即 await 或稍后 await
+
+EventLoop run → ready_dequeue(coro)
+    ↓ ms_vm_coro_resume(coro)
+    ↓ OPT-05 指针交换：host ctx ↔ coro ctx（保存/恢复 frame/stack 指针）
+    ↓ coro 执行至 OP_AWAIT x
+         ├─ x 已 RESOLVED → frame->slots[A] = x.result；继续执行（零开销）
+         ├─ x 已 REJECTED → vm_throw(x.result)；return RUNTIME_ERROR
+         └─ x PENDING →
+              创建 MsWaiter { coro, frame_index, result_reg }
+              追加到 x.waiters
+              coro->state = SUSPENDED
+              return MS_INTERPRET_AWAIT
+                  ↓
+              OPT-05 指针交换回 host ctx（EventLoop 恢复）
+              EventLoop 继续 poll 其他就绪协程 / IO / Timer
+
+x resolve（来自 IO 回调 或 另一协程完成）
+    ↓ ms_future_resolve(vm, x, result)
+    ↓ 遍历 x.waiters：
+         w->coro->ctx.frames[w->frame_index].slots[w->result_reg] = result
+         ms_loop_call_soon(w->coro)
+    ↓ 下一轮 EventLoop → coro 出队 → ms_vm_coro_resume
+    ↓ OPT-05 切回 coro ctx，从 OP_AWAIT 后一条指令继续
+```
+
+"挂起"等价于 OPT-05 的 ExecCtx 指针交换（`MsObjCoroutine.ctx` ↔ EventLoop 持有的 host context），不是 `setjmp`/`longjmp`。
+
 ## 与现有协程的关系
 
 现有 `fun*` 生成器协程（T25）是**手动调度**的（用户显式 `resume`/`yield`）。  

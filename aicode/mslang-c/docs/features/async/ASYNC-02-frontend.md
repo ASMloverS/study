@@ -58,33 +58,76 @@ bool is_async;   // 或折入现有 flags bitmask
 
 ### async fun 调用路径
 
-`call_value`（`src/vm.c:490`）中，对 closure 的处理增加：
+async 函数可通过四种路径调用，统一抽出 helper：
+
+```c
+// src/vm_call.c
+static MsObjFuture* ms_make_async_future(MsVM* vm, MsObjClosure* closure,
+                                          int argc, MsValue* argv) {
+    if (!vm->loop_inited) { ms_loop_init(&vm->event_loop, vm); vm->loop_inited = true; }
+    MsObjFuture* fut = ms_obj_future_from_async(vm, closure, argc, argv);
+    ms_loop_call_soon(&vm->event_loop, fut->coro);
+    return fut;
+}
+```
+
+**路径 1：直接 closure 调用**（`call_value`，`src/vm.c:490`）：
 
 ```c
 if (closure->function->is_async) {
-    // 创建 ObjFuture，内部包裹一个 Coroutine
-    MsObjFuture* fut = ms_obj_future_from_async(vm, closure, argc, argv);
-    // 把 future 推入 EventLoop 就绪队列
-    ms_loop_call_soon(vm->event_loop, fut);
-    // 调用方得到 future（而非等待结果）
+    MsObjFuture* fut = ms_make_async_future(vm, closure, argc, argv);
     frame->slots[A] = MS_OBJECT_VAL((MsObject*)fut);
     break;
 }
 ```
 
-### await 表达式
-
-`parse_unary` 或专门的 `parse_await`（`src/compiler_expr.c`）：
+**路径 2：bound method 调用**（`OP_INVOKE` 中 `invoke_from_class`）：
 
 ```c
-if (match(TK_AWAIT)) {
-    // 只允许在 async fun 内使用
-    if (!current_compiler->in_async_fun) {
-        error("'await' can only be used inside an async function");
-    }
-    parse_expression();          // 编译 awaited 表达式 → 得到 future 在某寄存器
-    emit(OP_AWAIT, result_reg, future_reg, 0);
+// 取出 method closure 后与路径 1 相同
+if (method->function->is_async) {
+    // 把 receiver 追加为 argv[0]，再调 ms_make_async_future
+    MsObjFuture* fut = ms_make_async_future(vm, method, argc, argv);
+    frame->slots[A] = MS_OBJECT_VAL((MsObject*)fut);
+    return;
 }
+```
+
+**路径 3：super 方法调用**（`OP_SUPER_INVOKE`）：同路径 2，调 `ms_make_async_future`。
+
+**路径 4：原生函数返回 Future**：原生函数本身同步返回一个 `MsObjFuture*`（已处于 PENDING 或 RESOLVED 状态），调用方直接 `await` 即可，无需 EventLoop 介入创建协程。例：`tcp_connect` 返回 PENDING future，IO 就绪时由 Reactor 回调 resolve。
+
+```c
+// 不需要 is_async 标志；原生函数返回值若为 Future，await 路径自动处理
+```
+
+### await 表达式
+
+`parse_await`（`src/compiler_expr.c`）遵循 Pratt + ExprDesc 模型：
+
+```c
+static void parse_await(MsCompiler* c, ExprDesc* ed) {
+    if (!c->in_async_fun)
+        error(c, "'await' can only be used inside an async function");
+
+    ExprDesc futured;
+    parse_expr_prec(c, &futured, PREC_UNARY);   // 编译 awaited 表达式
+    int fr = discharge_to_reg(c, &futured);      // future 落到寄存器 fr
+    int rr = alloc_reg(c);                       // 分配结果寄存器 rr
+    emit_abc(c, MS_OP_AWAIT, rr, fr, 0);
+    // 结果以寄存器形式返回给上层表达式
+    ed->kind = EXPR_REG;
+    ed->reg  = rr;
+}
+```
+
+此函数作为 `TK_AWAIT` 的 prefix parse rule 注册到 Pratt 表，无需全局 `result_reg`/`future_reg` 变量。
+
+同时，编译器在 `parse_yield`（处理 `OP_YIELD`）中加检查：
+
+```c
+if (c->in_async_fun)
+    error(c, "'yield' inside async function");
 ```
 
 `OP_AWAIT` 语义（`src/vm.c` dispatch loop）：

@@ -11,6 +11,21 @@ Reactor 封装操作系统的 IO 就绪通知机制，向 EventLoop 提供统一
 EventLoop 调用 `ms_reactor_poll(reactor, timeout_ms)`，Reactor 返回就绪事件，  
 EventLoop 将对应的 future resolve，触发 waiter 协程进就绪队列。
 
+## 两层语义并存
+
+epoll / kqueue 是**就绪通知**（readiness）：fd 可读/可写时通知，应用自行 syscall。  
+IOCP 是**完成通知**（completion）：必须预先投递缓冲区，IO 完成后收到事件。
+
+两者不能共用一套接口，因此 Reactor 分两层 API：
+
+| 层 | 函数 | 适用平台 |
+|---|---|---|
+| Readiness | `ms_reactor_arm` | epoll / kqueue |
+| Completion | `ms_reactor_submit_read` / `ms_reactor_submit_write` | IOCP（也可在 epoll 上内部模拟） |
+
+POSIX 平台：`socket.read` 调用 `ms_reactor_arm(fd, READABLE)` 注册，就绪后执行 `recv`。  
+Windows 平台：`socket.read` 调用 `ms_reactor_submit_read(fd, buf, len)`，IOCP 完成时直接携带数据。
+
 ## 统一接口（`include/ms/reactor.h`）
 
 ```c
@@ -44,7 +59,16 @@ int ms_reactor_register(MsReactor* r, int fd, MsIOEvent events, void* user_data)
 int ms_reactor_modify(MsReactor* r, int fd, MsIOEvent events, void* user_data);
 int ms_reactor_unregister(MsReactor* r, int fd);
 
-// 等待 IO 就绪（阻塞最多 timeout_ms；0 = 立即返回；-1 = 永久等待）
+// === Readiness-style（epoll / kqueue 直接映射）===
+// arm：与 register 等价，fd 就绪时产生事件，应用再调 recv/send
+int ms_reactor_arm(MsReactor* r, int fd, MsIOEvent events, void* user_data);
+
+// === Completion-style（IOCP 必需；epoll 可内部模拟）===
+// 预投递 read/write 缓冲区；完成时事件携带实际传输字节数
+int ms_reactor_submit_read(MsReactor* r, int fd, void* buf, int len, void* user_data);
+int ms_reactor_submit_write(MsReactor* r, int fd, const void* buf, int len, void* user_data);
+
+// 等待 IO 就绪/完成（阻塞最多 timeout_ms；0 = 立即返回；-1 = 永久等待）
 // 就绪事件写入 out_events[0..out_count)
 int ms_reactor_poll(MsReactor* r, int64_t timeout_ms,
                     MsIOReadyEvent* out_events, int max_events, int* out_count);
@@ -68,9 +92,14 @@ int ms_reactor_register(MsReactor* r, int fd, MsIOEvent events, void* user_data)
     struct epoll_event ev = {0};
     if (events & MS_IO_READABLE) ev.events |= EPOLLIN;
     if (events & MS_IO_WRITABLE) ev.events |= EPOLLOUT;
-    ev.events |= EPOLLET;  // 边沿触发
+    // 使用水平触发（LT，默认）而非边沿触发（ET）：
+    // ET 要求循环读至 EAGAIN，单次 recv 会丢失剩余数据；LT 更安全，性能差异可接受。
     ev.data.ptr = user_data;
     return epoll_ctl(r->epfd, EPOLL_CTL_ADD, fd, &ev);
+}
+
+int ms_reactor_unregister(MsReactor* r, int fd) {
+    return epoll_ctl(r->epfd, EPOLL_CTL_DEL, fd, NULL);
 }
 
 int ms_reactor_poll(MsReactor* r, int64_t timeout_ms,
@@ -96,7 +125,14 @@ int ms_reactor_poll(MsReactor* r, int64_t timeout_ms,
 ```c
 struct MsReactor { int kqfd; };
 
-// kqueue kevent 注册 EVFILT_READ / EVFILT_WRITE，udata = user_data
+// 注册：EV_SET + kevent(kqfd, &kev, 1, NULL, 0, NULL)
+// 注销：EV_SET(kev, fd, EVFILT_READ|EVFILT_WRITE, EV_DELETE, ...)
+int ms_reactor_unregister(MsReactor* r, int fd) {
+    struct kevent kev[2];
+    EV_SET(&kev[0], fd, EVFILT_READ,  EV_DELETE, 0, 0, NULL);
+    EV_SET(&kev[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+    return kevent(r->kqfd, kev, 2, NULL, 0, NULL);
+}
 // kevent() 返回就绪事件
 ```
 
@@ -109,10 +145,10 @@ struct MsReactor { HANDLE iocp; };
 // user_data 藏在 OVERLAPPED 扩展结构的 first 字段
 ```
 
-> IOCP 与 epoll/kqueue 的语义差异：IOCP 是完成通知（IO 已完成），  
-> epoll/kqueue 是就绪通知（IO 可以开始）。  
-> 统一接口时在 `reactor_iocp.c` 内部把 IOCP 完成事件映射为"可读/可写就绪"，  
-> socket 层用 `WSARecv`/`WSASend` + overlapped 预投递，完成即触发。
+> IOCP 完成通知要求调用方在操作前预先投递缓冲区（`WSARecv`/`WSASend` + OVERLAPPED）；  
+> 完成后 `GetQueuedCompletionStatusEx` 返回，携带实际传输字节数。  
+> POSIX 路径调 `ms_reactor_arm`，Windows 路径调 `ms_reactor_submit_read/write`；  
+> `reactor_iocp.c` **不**尝试把完成事件伪装成就绪事件，两路径语义清晰分离。
 
 ## CMake 平台选择（`CMakeLists.txt`）
 
