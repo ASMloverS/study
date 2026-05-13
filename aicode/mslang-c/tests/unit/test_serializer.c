@@ -5,7 +5,6 @@
 #include "ms/vm.h"
 #include "ms/compiler.h"
 #include "ms/serializer.h"
-#include "ms/module.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -213,10 +212,17 @@ static void test_mtime_fastpath_miss_on_mtime_change(void) {
     TEST_ASSERT(fn2 != NULL);
     ms_vm_free(&vm2);
 
-    MsFileMeta cm2;
-    ms_fs_stat("__mscache__/_t03_stale.msc", &cm2);
-    /* Cache was rewritten -> file size changed (new source is bigger) */
-    TEST_ASSERT(cm2.size != cm1.size || cm2.mtime_ns != cm1.mtime_ns);
+    /* Cache was rewritten -> header now records the new source size (20 bytes).
+       Do NOT rely on .msc file size or mtime: the compiled bytecode for these
+       two sources is the same size, and Windows NTFS mtime granularity can be
+       too coarse when tests run back-to-back.  Reading the stored header is the
+       only reliable way to confirm the cache was actually rewritten. */
+    FILE* hf = fopen("__mscache__/_t03_stale.msc", "rb");
+    TEST_ASSERT(hf != NULL);
+    MsMscHeader hdr2;
+    TEST_ASSERT(fread(&hdr2, sizeof(hdr2), 1, hf) == 1);
+    fclose(hf);
+    TEST_ASSERT(hdr2.src_size == 20);
 
     remove("_t03_stale.ms");
     remove("__mscache__/_t03_stale.msc");
