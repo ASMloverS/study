@@ -16,8 +16,8 @@ typedef enum {
 } MsICKind;
 ```
 
-IC 的分配（`vm.c:52-65` `ensure_ic`）、查表（`vm.c:68-77` `ic_get_field_slot`）、  
-megamorphic 短路（`vm.c:86-88`）已完整，只需在 INVOKE 处补写入和查表路径。
+IC 的分配（`ensure_ic`，见 `vm.c`）、查表（`ic_get_field_slot`）、  
+megamorphic 短路（`ic->megamorphic` 标志，位于 `MsInlineCache` 顶层）已完整，只需在 INVOKE 处补写入和查表路径。
 
 ## 目标
 
@@ -25,39 +25,31 @@ megamorphic 短路（`vm.c:86-88`）已完整，只需在 INVOKE 处补写入和
 - cache miss：走现有 shape 查找 → 填缓存 → 执行
 - megamorphic：直接走 shape 查找，不再写缓存
 
-## 数据结构扩展
+## 数据结构确认（无需修改）
 
-`MsICEntry`（`include/ms/shape.h:57-66`）现有字段：
-
-```c
-typedef struct {
-    MsICKind kind;
-    uint32_t shape_id;
-    int slot_index;      // 字段偏移
-    bool megamorphic;
-} MsICEntry;
-```
-
-方法缓存不需要 `slot_index`，需要 `closure` 指针。  
-两种方式：
-
-**方案 A（推荐）**：union 复用
+`MsICEntry`（`include/ms/shape.h:55-60`）实际定义：
 
 ```c
 typedef struct {
-    MsICKind kind;
-    uint32_t shape_id;
-    union {
-        int slot_index;               // MS_IC_FIELD
-        MsObjClosure* method_closure; // MS_IC_METHOD
-    };
-    bool megamorphic;
+    uint32_t  shape_id;
+    uint32_t  slot_index;
+    MsICKind  kind;
+    MsValue   cached;   /* cached method value (for MS_IC_METHOD) */
 } MsICEntry;
 ```
 
-**方案 B**：单独 `MsMethodICEntry` 数组（侵入更少，但要改 `ensure_ic` 分配逻辑）。
+`cached` 字段**已存在**，专为 `MS_IC_METHOD` 设计，类型为 `MsValue`（可直接存 closure 的 `MsValue`）。
+**无需改动 `MsICEntry` 结构**，只需在 INVOKE 路径中启用 `cached` 的写入和读取。
 
-推荐方案 A，改动最小，union 不增加结构体大小。
+`megamorphic` 标志位于 `MsInlineCache` 顶层（`include/ms/shape.h:62-66`）：
+
+```c
+typedef struct MsInlineCache {
+    MsICEntry entries[MS_IC_PIC_SIZE];
+    uint8_t   count;
+    bool      megamorphic;   /* ← 顶层，不在 MsICEntry 内 */
+} MsInlineCache;
+```
 
 ## VM 修改（src/vm.c）
 
@@ -74,53 +66,59 @@ case MS_OP_INVOKE: {
 
     // 1. 查 IC
     MsIC* ic = ensure_ic(vm, frame->closure->function, (int)(ip - frame->closure->function->chunk.code.data - 1));
-    MsObjClosure* cached = NULL;
-    if (!ic->entries[0].megamorphic) {
+    MsValue cached_val = MS_NIL_VAL();
+    if (!ic->megamorphic) {                             /* ← ic->megamorphic，不是 entries[0].megamorphic */
         for (int i = 0; i < ic->count; i++) {
             MsICEntry* e = &ic->entries[i];
             if (e->kind == MS_IC_METHOD && e->shape_id == inst->shape->id) {
-                cached = e->method_closure;
+                cached_val = e->cached;                 /* ← 使用已有的 cached 字段（MsValue） */
                 break;
             }
         }
     }
 
-    if (cached) {
-        // 2a. 命中：直接调用
-        call_closure(vm, cached, receiver, argc);
+    if (MS_IS_CLOSURE(cached_val)) {
+        // 2a. 命中：直接调用（跳过外层 MS_IS_CLOSURE 检查）
+        MsInterpretResult cr = call_value(vm, cached_val, argc, A); /* call_value 是实际 API */
+        if (cr != MS_INTERPRET_OK) return cr;
+        frame = &vm->frames[vm->frame_count - 1];
     } else {
-        // 2b. Miss：shape 查找
+        // 2b. Miss：shape 查找（字段优先，然后类方法表）
         int slot = ms_shape_find_slot(inst->shape, name);
-        MsValue method_val = /* 从 slot 读值 */;
-        if (!MS_IS_CLOSURE(method_val)) { /* 报错 */ break; }
-        MsObjClosure* closure = MS_AS_CLOSURE(method_val);
+        MsValue method_val = (slot >= 0) ? inst_get_by_slot(inst, slot) : MS_NIL_VAL();
+        if (!MS_IS_CLOSURE(method_val)) {
+            if (!ms_table_get(&inst->klass->methods, name, &method_val) ||
+                !MS_IS_CLOSURE(method_val)) { /* 报错 */ break; }
+        }
 
         // 3. 填缓存（非 megamorphic）
         if (ic->count < MS_IC_PIC_SIZE) {
             MsICEntry* e = &ic->entries[ic->count++];
-            e->kind = MS_IC_METHOD;
+            e->kind     = MS_IC_METHOD;
             e->shape_id = inst->shape->id;
-            e->method_closure = closure;
+            e->cached   = method_val;                   /* ← 写入 cached 字段 */
         } else {
-            ic->entries[0].megamorphic = true;
+            ic->megamorphic = true;                     /* ← ic->megamorphic */
         }
 
-        call_closure(vm, closure, receiver, argc);
+        MsInterpretResult cr = call_value(vm, method_val, argc, A);
+        if (cr != MS_INTERPRET_OK) return cr;
+        frame = &vm->frames[vm->frame_count - 1];
     }
     break;
 }
 ```
 
-> `call_closure` 复用现有的 `call_value` 入口，传入 closure 直接进入已知路径，
-> 跳过外层 `MS_IS_CLOSURE` 检查以减少 1 次 branch。
+> `call_value`（`src/vm.c:485`）是实际 API，直接传入 closure 的 `MsValue` 即可。
+> 不存在 `call_closure` 函数，无需新增。
 
 ## 关键路径改动文件
 
 | 文件 | 修改 |
 |---|---|
-| `include/ms/shape.h:57-66` | `MsICEntry` 加 union |
-| `src/vm.c:1413` 起 | `MS_OP_INVOKE` 处理逻辑 |
-| `src/vm.c:68-77` `ic_get_field_slot` | 可提取为通用 `ic_lookup`，被 GETPROP + INVOKE 共用 |
+| `include/ms/shape.h` | **无需改动**；`MsICEntry.cached` 和 `MsInlineCache.megamorphic` 已就位 |
+| `src/vm.c` (`MS_OP_INVOKE`) | 补写 IC 查表 + 写缓存路径（见上伪码） |
+| `src/vm.c` `ic_get_field_slot` | 可提取为通用 `ic_lookup`，被 GETPROP + INVOKE 共用（可选重构） |
 
 ## 验证
 

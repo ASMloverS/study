@@ -101,9 +101,12 @@ if (right_is_const) {
 }
 ```
 
-> 现有 quickening（`vm.c:798+`）已有 `ADD` → `ADD_II/FF` 的自重写；  
-> `ADD_RK` 可作为一个中间层：类型未知时先用 `ADD_RK`，quicken 后再变成 `ADD_RK_II` 等。  
-> v1 可以先只做 `ADD_RK`（免 RK 分支），不做进一步类型特化，留给 quickening 路径。
+> **quickening 协议**：现有 quickening（`vm.c:798+`）对 `MS_OP_ADD` 做自重写（`ADD` → `ADD_II/FF`）。
+> 引入 `ADD_RK` 后需明确状态机：
+> - `ADD_RK` 作为中间层：编译器在右操作数为常量时发射；运行时类型未知。
+> - quicken 后 `ADD_RK` → `ADD_RK_II`（int + const_int）或 `ADD_RK_FF`（float + const_float）。
+> - deopt 时 opcode 回退到 `ADD_RK`（不是 `ADD`），保留 RK 信息。
+> - **v1 简化**：先只实现 `ADD_RK`（免 RK 分支），不实现 `ADD_RK_II/FF`，留给后续 quickening PR。
 
 ### VM 实现（`src/vm.c`）
 
@@ -118,7 +121,12 @@ CASE(MS_OP_ADD_RK) {
 
 ### .msc 兼容性
 
-新增 opcode 改变枚举值，`.msc` 缓存需 version bump（见 OPT-04，两者可合并为一次 bump）。
+新增 opcode 改变枚举值，`.msc` 缓存需 version bump。
+
+**版本号管理（与 OPT-04 协调）**：
+- OPT-03（新 opcode）和 OPT-04（NaN-boxing 改变 `MsValue` 序列化布局）都需要 bump `MSC_FORMAT_VERSION`。
+- **推荐合并为一次 bump**：在同一 PR 中将版本从 v1 升至 v2，避免两个分支各自 bump 产生冲突。
+- 若分批实现：先落 OPT-03（v1→v2），再落 OPT-04（v2→v3）；不得两个分支同时写 v2。
 
 ## 预期收益
 

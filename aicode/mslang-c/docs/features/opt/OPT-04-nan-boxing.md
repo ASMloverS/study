@@ -64,9 +64,14 @@ typedef uint64_t MsValue;
 
 static inline bool MS_IS_DOUBLE(MsValue v) { return (v & MS_NAN_MASK) != MS_NAN_MASK; }
 static inline bool MS_IS_NIL(MsValue v)    { return v == MS_TAG_NIL; }
-static inline bool MS_IS_BOOL(MsValue v)   { return (v & ~1) == MS_TAG_FALSE; }
+static inline bool MS_IS_BOOL(MsValue v)   { return (v & ~(uint64_t)1) == MS_TAG_FALSE; }
 static inline bool MS_IS_TRUE(MsValue v)   { return v == MS_TAG_TRUE; }
+/* MS_IS_INT：高 32 位 == 0x7FFE0000。
+   安全性：0x7FFE 在指数全1（0x7FF）+ bit51=1 区域，是 quiet NaN 空间，
+   普通有限 double 的指数 ≤ 0x7FE，不会产生假阳性。
+   算术 NaN 被 MS_DOUBLE_VAL 归一化后只有 MS_QNAN（0x7FF8...），同样不冲突。 */
 static inline bool MS_IS_INT(MsValue v)    { return (v >> 32) == (MS_TAG_INT >> 32); }
+/* MS_IS_OBJECT：高 16 位 == 0x7FFF，与 INT（0x7FFE）区分明确，!MS_IS_INT 可去除但保留做防御。 */
 static inline bool MS_IS_OBJECT(MsValue v) { return (v & MS_TAG_OBJ) == MS_TAG_OBJ && !MS_IS_INT(v); }
 
 static inline double      MS_AS_DOUBLE(MsValue v) { double d; memcpy(&d, &v, 8); return d; }
@@ -76,8 +81,20 @@ static inline bool        MS_AS_BOOL(MsValue v)   { return (bool)(v & 1); }
 
 static inline MsValue MS_NIL_VAL()          { return MS_TAG_NIL; }
 static inline MsValue MS_BOOL_VAL(bool b)   { return b ? MS_TAG_TRUE : MS_TAG_FALSE; }
-static inline MsValue MS_DOUBLE_VAL(double d){ uint64_t v; memcpy(&v, &d, 8); return v; }
-static inline MsValue MS_INT_VAL(ms_i64 n)  { return MS_TAG_INT | (uint32_t)(int32_t)n; }
+/* NaN 归一化：double 运算可能产生各种 NaN 位模式；统一归一到 MS_QNAN，
+   防止算术 NaN 的位模式与标签空间（0x7FFC..~0x7FFF..）碰撞。 */
+static inline MsValue MS_DOUBLE_VAL(double d) {
+    uint64_t v; memcpy(&v, &d, 8);
+    if ((v & MS_NAN_MASK) == MS_NAN_MASK) return MS_QNAN; /* 归一化 NaN */
+    return v;
+}
+/* MS_INT_VAL 仅支持 ±2^31 范围（payload 限 32 位）。
+   超出范围调用方应改用 MS_DOUBLE_VAL 降级（精度损失说明见下方）。 */
+static inline MsValue MS_INT_VAL(ms_i64 n) {
+    if (n >= INT32_MIN && n <= INT32_MAX)
+        return MS_TAG_INT | (uint32_t)(int32_t)n;
+    return MS_DOUBLE_VAL((double)n); /* 降级：>2^31 时精度可能损失，见下注 */
+}
 static inline MsValue MS_OBJECT_VAL(MsObject* p) { return MS_TAG_OBJ | (uintptr_t)p; }
 
 #else  // fallback: tagged union
@@ -117,16 +134,22 @@ endif()
 
 所有使用 `MS_IS_*` / `MS_AS_*` / `MS_*_VAL` 的调用方，只要宏定义正确即可。
 
-### 大整数路径（i64 超出 32 位）
+### 大整数路径（i64 超出 ±2^31）
 
-`MS_INT_VAL` 只能表示 ±2^31 范围。若 `ms_i64` 超出，需 box 为 `ObjBoxedInt`（新增轻量对象）或改用 double 降级。
+`MS_INT_VAL` payload 限 32 位，仅表示 `[INT32_MIN, INT32_MAX]`。
 
-**推荐 v1**：超出范围自动降级为 double（与现有 `ms_as_double` 行为一致），加 `#if MS_NAN_BOXING` 注释说明限制。完整 i64 box 留后续。
+**v1 策略（已内置于 `MS_INT_VAL` 实现）**：超出范围自动降级为 `double`。  
+**精度损失说明**：`double` 尾数 53 位，可精确表示 `±2^53` 以内的整数；`> 2^53` 会静默丢精度（无运行时警告）。  
+完整 `ms_i64` box（`ObjBoxedInt`）留后续迭代，v1 不实现。
 
 ## .msc 版本 Bump
 
-`src/serializer.c` 文件头中将 `MSC_FORMAT_VERSION` 从 1 改为 2。  
+`src/serializer.c` 文件头中将 `MSC_FORMAT_VERSION` 从当前版本加 1。  
 旧缓存读取时 `version != MSC_FORMAT_VERSION` 直接返回失败 → 重新编译。
+
+> **与 OPT-03 协调**：OPT-03（新 opcode）和本优化都需要 bump 版本号。
+> 推荐合并为一次 bump 避免冲突；若分批实现，各自各加一个版本号，不得两分支并行写同一版本值。
+> 详见 OPT-03 §.msc 兼容性。
 
 ## 验证
 
