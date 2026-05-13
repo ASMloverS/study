@@ -26,6 +26,7 @@ coc-setting.json
 Makefile
 build
 build_asan
+build_clang
 build_debug
 build_ninja
 build_nostats
