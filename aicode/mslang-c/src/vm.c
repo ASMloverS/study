@@ -736,6 +736,48 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
 #define RK(n)   (MS_RK_IS_K(n) ? K(MS_RK_TO_K(n)) : frame->slots[n])
 #define R(n)    (frame->slots[n])
 
+/* Computed-goto dispatch: GCC/Clang use a jump table; MSVC falls back to switch. */
+#if defined(__GNUC__) || defined(__clang__)
+#  define USE_COMPUTED_GOTO 1
+#endif
+
+#ifdef USE_COMPUTED_GOTO
+    static const void* const dispatch_table[MS_OP_COUNT] = {
+        &&L_MS_OP_LOADK, &&L_MS_OP_LOADNIL, &&L_MS_OP_LOADTRUE, &&L_MS_OP_LOADFALSE, &&L_MS_OP_MOVE,
+        &&L_MS_OP_GETGLOBAL, &&L_MS_OP_SETGLOBAL, &&L_MS_OP_DEFGLOBAL,
+        &&L_MS_OP_GETUPVAL, &&L_MS_OP_SETUPVAL,
+        &&L_MS_OP_GETPROP, &&L_MS_OP_SETPROP, &&L_MS_OP_GETSUPER, &&L_MS_OP_EXTRAARG,
+        &&L_MS_OP_ADD, &&L_MS_OP_SUB, &&L_MS_OP_MUL, &&L_MS_OP_DIV, &&L_MS_OP_MOD,
+        &&L_MS_OP_EQ, &&L_MS_OP_LT, &&L_MS_OP_LE,
+        &&L_MS_OP_NEG, &&L_MS_OP_NOT, &&L_MS_OP_STR,
+        &&L_MS_OP_BAND, &&L_MS_OP_BOR, &&L_MS_OP_BXOR, &&L_MS_OP_BNOT, &&L_MS_OP_SHL, &&L_MS_OP_SHR,
+        &&L_MS_OP_JMP, &&L_MS_OP_TEST, &&L_MS_OP_TESTSET,
+        &&L_MS_OP_CALL, &&L_MS_OP_INVOKE, &&L_MS_OP_SUPERINV, &&L_MS_OP_RETURN,
+        &&L_MS_OP_CLOSURE, &&L_MS_OP_CLOSE,
+        &&L_MS_OP_CLASS, &&L_MS_OP_INHERIT, &&L_MS_OP_METHOD, &&L_MS_OP_STATICMETH,
+        &&L_MS_OP_GETTER, &&L_MS_OP_SETTER, &&L_MS_OP_ABSTMETH,
+        &&L_MS_OP_NEWLIST, &&L_MS_OP_NEWMAP, &&L_MS_OP_NEWTUPLE, &&L_MS_OP_GETIDX, &&L_MS_OP_SETIDX,
+        &&L_MS_OP_IMPORT, &&L_MS_OP_IMPFROM, &&L_MS_OP_IMPALIAS,
+        &&L_MS_OP_FORITER,
+        &&L_MS_OP_THROW, &&L_MS_OP_TRY, &&L_MS_OP_ENDTRY,
+        &&L_MS_OP_DEFER,
+        &&L_MS_OP_YIELD, &&L_MS_OP_RESUME,
+        &&L_MS_OP_ADD_II, &&L_MS_OP_ADD_FF, &&L_MS_OP_ADD_SS,
+        &&L_MS_OP_SUB_II, &&L_MS_OP_SUB_FF,
+        &&L_MS_OP_MUL_II, &&L_MS_OP_MUL_FF,
+        &&L_MS_OP_DIV_FF,
+        &&L_MS_OP_LT_II, &&L_MS_OP_LT_FF,
+        &&L_MS_OP_EQ_II,
+        &&L_MS_OP_NOP,
+        &&L_MS_OP_ADD_RK, &&L_MS_OP_SUB_RK, &&L_MS_OP_MUL_RK, &&L_MS_OP_DIV_RK,
+        &&L_MS_OP_LT_RK, &&L_MS_OP_LE_RK, &&L_MS_OP_EQ_RK,
+        &&L_MS_OP_GETGLOBAL_CACHED,
+    };
+#  define VM_CASE(op) L_##op: case op:
+#else
+#  define VM_CASE(op) case op:
+#endif
+
     for (;;) {
         MsInstruction instr = READ_INSTR();
         int op = MS_GET_OP(instr);
@@ -746,24 +788,28 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         vm->stats.instruction_count++;
 #endif
 
+#ifdef USE_COMPUTED_GOTO
+        goto *dispatch_table[op];
+#endif
         switch (op) {
-        case MS_OP_NOP: break;
+        VM_CASE(MS_OP_NOP) break;
 
-        case MS_OP_LOADK:
+        VM_CASE(MS_OP_LOADK)
             R(A) = K(MS_GET_Bx(instr));
             break;
 
-        case MS_OP_LOADNIL: {
+        VM_CASE(MS_OP_LOADNIL) {
             int last = A + B;
             for (int i = A; i <= last; i++) frame->slots[i] = MS_NIL_VAL();
             break;
         }
 
-        case MS_OP_LOADTRUE:  R(A) = MS_BOOL_VAL(true);  break;
-        case MS_OP_LOADFALSE: R(A) = MS_BOOL_VAL(false); break;
-        case MS_OP_MOVE:      R(A) = R(B);                break;
+        VM_CASE(MS_OP_LOADTRUE)  R(A) = MS_BOOL_VAL(true);  break;
+        VM_CASE(MS_OP_LOADFALSE) R(A) = MS_BOOL_VAL(false); break;
+        VM_CASE(MS_OP_MOVE)      R(A) = R(B);                break;
 
-        case MS_OP_GETGLOBAL: {
+        VM_CASE(MS_OP_GETGLOBAL_CACHED)  /* v1: no caching; fall through to GETGLOBAL */
+        VM_CASE(MS_OP_GETGLOBAL) {
             MsObjString* name = MS_AS_STRING(K(MS_GET_Bx(instr)));
             MsValue val;
             if (!ms_table_get(&vm->globals, name, &val)) {
@@ -773,24 +819,24 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_DEFGLOBAL:
-        case MS_OP_SETGLOBAL: {
+        VM_CASE(MS_OP_DEFGLOBAL)
+        VM_CASE(MS_OP_SETGLOBAL) {
             MsObjString* name = MS_AS_STRING(K(MS_GET_Bx(instr)));
             ms_table_set(&vm->globals, name, R(A));
             break;
         }
 
-        case MS_OP_GETUPVAL:
+        VM_CASE(MS_OP_GETUPVAL)
             R(A) = *frame->closure->upvalues[MS_GET_Bx(instr)]->location;
             break;
 
-        case MS_OP_SETUPVAL:
+        VM_CASE(MS_OP_SETUPVAL)
             *frame->closure->upvalues[MS_GET_Bx(instr)]->location = R(A);
             ms_write_barrier(vm, (MsObject*)frame->closure, R(A));
             break;
 
         /* ---- generic arithmetic: execute + quicken ---- */
-        case MS_OP_ADD: {
+        VM_CASE(MS_OP_ADD) {
             MsValue bv = RK(B), cv = RK(C);
             MsValue result = MS_NIL_VAL();
             if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
@@ -809,7 +855,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = result;
             break;
         }
-        case MS_OP_SUB: {
+        VM_CASE(MS_OP_SUB) {
             MsValue bv = RK(B), cv = RK(C);
             MsValue result = MS_NIL_VAL();
             if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
@@ -824,7 +870,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = result;
             break;
         }
-        case MS_OP_MUL: {
+        VM_CASE(MS_OP_MUL) {
             MsValue bv = RK(B), cv = RK(C);
             MsValue result = MS_NIL_VAL();
             if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
@@ -839,7 +885,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = result;
             break;
         }
-        case MS_OP_DIV: {
+        VM_CASE(MS_OP_DIV) {
             MsValue bv = RK(B), cv = RK(C);
             MsValue result = MS_NIL_VAL();
             if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
@@ -851,7 +897,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = result;
             break;
         }
-        case MS_OP_MOD: {
+        VM_CASE(MS_OP_MOD) {
             MsValue bv = RK(B), cv = RK(C);
             MsValue result = MS_NIL_VAL();
             if (!numeric_binop(bv, cv, MS_OP_MOD, &result)) {
@@ -880,7 +926,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             STATS_TRACK_DEOPT(vm); \
         }
 
-        case MS_OP_ADD_II: {
+        VM_CASE(MS_OP_ADD_II) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
                 R(A) = MS_INT_VAL(MS_AS_INT(bv) + MS_AS_INT(cv));
@@ -895,7 +941,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_ADD_FF: {
+        VM_CASE(MS_OP_ADD_FF) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
                 R(A) = MS_NUMBER_VAL(ms_as_double(bv) + ms_as_double(cv));
@@ -910,7 +956,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_ADD_SS: {
+        VM_CASE(MS_OP_ADD_SS) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_STRING(bv) && MS_IS_STRING(cv))) {
                 R(A) = MS_OBJ_VAL(ms_obj_string_concat(vm, MS_AS_STRING(bv), MS_AS_STRING(cv)));
@@ -933,7 +979,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_SUB_II: {
+        VM_CASE(MS_OP_SUB_II) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
                 R(A) = MS_INT_VAL(MS_AS_INT(bv) - MS_AS_INT(cv));
@@ -946,7 +992,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_SUB_FF: {
+        VM_CASE(MS_OP_SUB_FF) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
                 R(A) = MS_NUMBER_VAL(ms_as_double(bv) - ms_as_double(cv));
@@ -959,7 +1005,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_MUL_II: {
+        VM_CASE(MS_OP_MUL_II) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
                 R(A) = MS_INT_VAL(MS_AS_INT(bv) * MS_AS_INT(cv));
@@ -972,7 +1018,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_MUL_FF: {
+        VM_CASE(MS_OP_MUL_FF) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
                 R(A) = MS_NUMBER_VAL(ms_as_double(bv) * ms_as_double(cv));
@@ -985,7 +1031,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_DIV_FF: {
+        VM_CASE(MS_OP_DIV_FF) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
                 R(A) = MS_NUMBER_VAL(ms_as_double(bv) / ms_as_double(cv));
@@ -1004,7 +1050,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_LT_II: {
+        VM_CASE(MS_OP_LT_II) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
                 R(A) = MS_BOOL_VAL(MS_AS_INT(bv) < MS_AS_INT(cv));
@@ -1023,7 +1069,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_LT_FF: {
+        VM_CASE(MS_OP_LT_FF) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv))) {
                 R(A) = MS_BOOL_VAL(ms_as_double(bv) < ms_as_double(cv));
@@ -1042,7 +1088,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             break;
         }
-        case MS_OP_EQ_II: {
+        VM_CASE(MS_OP_EQ_II) {
             MsValue bv = RK(B), cv = RK(C);
             if (MS_LIKELY(MS_IS_INT(bv) && MS_IS_INT(cv))) {
                 R(A) = MS_BOOL_VAL(MS_AS_INT(bv) == MS_AS_INT(cv));
@@ -1062,7 +1108,68 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         }
 #undef DEOPT_AND_RESPECIALIZE
 
-        case MS_OP_NEG:
+        /* RK-specialized opcodes: C is direct const-pool index, no RK_IS_K branch */
+        VM_CASE(MS_OP_ADD_RK) {
+            MsValue bv = R(B), cv = K(C);
+            if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
+                R(A) = MS_INT_VAL(MS_AS_INT(bv) + MS_AS_INT(cv));
+            } else if (MS_IS_NUMERIC(bv) && MS_IS_NUMERIC(cv)) {
+                R(A) = MS_NUMBER_VAL(ms_as_double(bv) + ms_as_double(cv));
+            } else if (MS_IS_STRING(bv) && MS_IS_STRING(cv)) {
+                R(A) = MS_OBJ_VAL(ms_obj_string_concat(vm, MS_AS_STRING(bv), MS_AS_STRING(cv)));
+            } else {
+                RUNTIME_ERROR(vm, "Operands must be numbers or strings for '+'.");
+            }
+            break;
+        }
+        VM_CASE(MS_OP_SUB_RK) {
+            MsValue bv = R(B), cv = K(C);
+            MsValue result = MS_NIL_VAL();
+            if (!numeric_binop(bv, cv, MS_OP_SUB, &result))
+                RUNTIME_ERROR(vm, "Operands must be numbers for '-'.");
+            R(A) = result;
+            break;
+        }
+        VM_CASE(MS_OP_MUL_RK) {
+            MsValue bv = R(B), cv = K(C);
+            MsValue result = MS_NIL_VAL();
+            if (!numeric_binop(bv, cv, MS_OP_MUL, &result))
+                RUNTIME_ERROR(vm, "Operands must be numbers for '*'.");
+            R(A) = result;
+            break;
+        }
+        VM_CASE(MS_OP_DIV_RK) {
+            MsValue bv = R(B), cv = K(C);
+            MsValue result = MS_NIL_VAL();
+            if (!numeric_binop(bv, cv, MS_OP_DIV, &result))
+                RUNTIME_ERROR(vm, "Operands must be numbers for '/'.");
+            R(A) = result;
+            break;
+        }
+        VM_CASE(MS_OP_LT_RK) {
+            MsValue bv = R(B), cv = K(C);
+            bool result = false;
+            if (!cmp_values(bv, cv, MS_OP_LT, &result))
+                RUNTIME_ERROR(vm, "Operands must be numbers for '<'.");
+            R(A) = MS_BOOL_VAL(result);
+            break;
+        }
+        VM_CASE(MS_OP_LE_RK) {
+            MsValue bv = R(B), cv = K(C);
+            bool result = false;
+            if (!cmp_values(bv, cv, MS_OP_LE, &result))
+                RUNTIME_ERROR(vm, "Operands must be numbers for '<='.");
+            R(A) = MS_BOOL_VAL(result);
+            break;
+        }
+        VM_CASE(MS_OP_EQ_RK) {
+            MsValue bv = R(B), cv = K(C);
+            bool result = false;
+            cmp_values(bv, cv, MS_OP_EQ, &result);
+            R(A) = MS_BOOL_VAL(result);
+            break;
+        }
+        VM_CASE(MS_OP_NEG)
             if (MS_IS_INT(RK(B)))
                 R(A) = MS_INT_VAL(-MS_AS_INT(RK(B)));
             else if (MS_IS_NUMBER(RK(B)))
@@ -1071,11 +1178,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 RUNTIME_ERROR(vm, "Operand must be a number.");
             break;
 
-        case MS_OP_NOT:
+        VM_CASE(MS_OP_NOT)
             R(A) = MS_BOOL_VAL(!ms_value_is_truthy(RK(B)));
             break;
 
-        case MS_OP_STR: {
+        VM_CASE(MS_OP_STR) {
             MsValue bv = RK(B);
             if (MS_IS_STRING(bv)) {
                 R(A) = bv;
@@ -1086,42 +1193,42 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_BAND: {
+        VM_CASE(MS_OP_BAND) {
             MsValue bv = RK(B), cv = RK(C);
             if (!MS_IS_INT(bv) || !MS_IS_INT(cv))
                 RUNTIME_ERROR(vm, "Bitwise operands must be integers.");
             R(A) = MS_INT_VAL(MS_AS_INT(bv) & MS_AS_INT(cv));
             break;
         }
-        case MS_OP_BOR: {
+        VM_CASE(MS_OP_BOR) {
             MsValue bv = RK(B), cv = RK(C);
             if (!MS_IS_INT(bv) || !MS_IS_INT(cv))
                 RUNTIME_ERROR(vm, "Bitwise operands must be integers.");
             R(A) = MS_INT_VAL(MS_AS_INT(bv) | MS_AS_INT(cv));
             break;
         }
-        case MS_OP_BXOR: {
+        VM_CASE(MS_OP_BXOR) {
             MsValue bv = RK(B), cv = RK(C);
             if (!MS_IS_INT(bv) || !MS_IS_INT(cv))
                 RUNTIME_ERROR(vm, "Bitwise operands must be integers.");
             R(A) = MS_INT_VAL(MS_AS_INT(bv) ^ MS_AS_INT(cv));
             break;
         }
-        case MS_OP_BNOT: {
+        VM_CASE(MS_OP_BNOT) {
             MsValue bv = RK(B);
             if (!MS_IS_INT(bv))
                 RUNTIME_ERROR(vm, "Bitwise operand must be integer.");
             R(A) = MS_INT_VAL(~MS_AS_INT(bv));
             break;
         }
-        case MS_OP_SHL: {
+        VM_CASE(MS_OP_SHL) {
             MsValue bv = RK(B), cv = RK(C);
             if (!MS_IS_INT(bv) || !MS_IS_INT(cv))
                 RUNTIME_ERROR(vm, "Shift operands must be integers.");
             R(A) = MS_INT_VAL(MS_AS_INT(bv) << MS_AS_INT(cv));
             break;
         }
-        case MS_OP_SHR: {
+        VM_CASE(MS_OP_SHR) {
             MsValue bv = RK(B), cv = RK(C);
             if (!MS_IS_INT(bv) || !MS_IS_INT(cv))
                 RUNTIME_ERROR(vm, "Shift operands must be integers.");
@@ -1129,7 +1236,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_EQ: {
+        VM_CASE(MS_OP_EQ) {
             MsValue bv = RK(B), cv = RK(C);
             bool result = false;
             if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
@@ -1141,7 +1248,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = MS_BOOL_VAL(result);
             break;
         }
-        case MS_OP_LT: {
+        VM_CASE(MS_OP_LT) {
             MsValue bv = RK(B), cv = RK(C);
             bool result = false;
             if (MS_IS_INT(bv) && MS_IS_INT(cv)) {
@@ -1157,7 +1264,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             R(A) = MS_BOOL_VAL(result);
             break;
         }
-        case MS_OP_LE: {
+        VM_CASE(MS_OP_LE) {
             bool result = false;
             if (!cmp_values(RK(B), RK(C), MS_OP_LE, &result))
                 RUNTIME_ERROR(vm, "Operands must be numbers for comparison.");
@@ -1165,20 +1272,20 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_JMP: {
+        VM_CASE(MS_OP_JMP) {
             int offset = MS_GET_sBx(instr);
             frame->ip += offset;
             break;
         }
 
-        case MS_OP_TEST: {
+        VM_CASE(MS_OP_TEST) {
             /* B=0: skip JMP when truthy (if/while/and); B=1: skip JMP when falsy (or) */
             bool truthy = ms_value_is_truthy(R(A));
             if ((bool)B != truthy) frame->ip++;
             break;
         }
 
-        case MS_OP_TESTSET: {
+        VM_CASE(MS_OP_TESTSET) {
             bool truthy = ms_value_is_truthy(R(B));
             if ((bool)C == truthy) {
                 R(A) = R(B);
@@ -1188,7 +1295,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_CALL: {
+        VM_CASE(MS_OP_CALL) {
             /* A=callee reg, B=argc, C=first_arg_reg (unused by VM, args follow A) */
             MsInterpretResult cr = call_value(vm, R(A), B, A);
             if (cr != MS_INTERPRET_OK) return cr;
@@ -1197,7 +1304,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_CLOSURE: {
+        VM_CASE(MS_OP_CLOSURE) {
             MsObjFunction* proto = MS_AS_FUNCTION(K(MS_GET_Bx(instr)));
             MsObjClosure*  cl    = ms_obj_closure_new(vm, proto);
             R(A) = MS_OBJ_VAL(cl);
@@ -1214,11 +1321,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_CLOSE:
+        VM_CASE(MS_OP_CLOSE)
             close_upvalues(vm, &frame->slots[A]);
             break;
 
-        case MS_OP_RETURN: {
+        VM_CASE(MS_OP_RETURN) {
             /* B=0: implicit nil, B=1: nil, B>=2: return R(A) */
             MsValue ret = (B >= 2) ? R(A) : MS_NIL_VAL();
             /* init() must return the instance (slot 0), not nil */
@@ -1251,17 +1358,17 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_EXTRAARG:
+        VM_CASE(MS_OP_EXTRAARG)
             /* consumed inline by CLOSURE; standalone is a no-op */
             break;
 
-        case MS_OP_CLASS: {
+        VM_CASE(MS_OP_CLASS) {
             MsObjString* name = MS_AS_STRING(K(MS_GET_Bx(instr)));
             R(A) = MS_OBJ_VAL(ms_obj_class_new(vm, name));
             break;
         }
 
-        case MS_OP_METHOD: {
+        VM_CASE(MS_OP_METHOD) {
             /* A=class_reg, B=closure_reg, C=name_k */
             MsObjClass* klass = MS_AS_CLASS(R(A));
             MsObjString* name = MS_AS_STRING(K(C));
@@ -1269,7 +1376,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_GETPROP: {
+        VM_CASE(MS_OP_GETPROP) {
             /* Read the EXTRAARG that follows (IC slot index) */
             MsInstruction ea = READ_INSTR();
             int ic_idx = MS_GET_Bx(ea);
@@ -1350,7 +1457,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_SETPROP: {
+        VM_CASE(MS_OP_SETPROP) {
             /* A=val_reg, B=obj_reg, C=name_rk; followed by EXTRAARG ic_slot */
             MsInstruction setprop_ea = READ_INSTR();
             int setprop_ic_idx = MS_GET_Bx(setprop_ea);
@@ -1410,7 +1517,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_INVOKE: {
+        VM_CASE(MS_OP_INVOKE) {
             /* A=obj_reg, B=name_k, C=argc; followed by EXTRAARG ic_slot */
             MsInstruction invoke_ea = READ_INSTR();
             int invoke_ic_idx = MS_GET_Bx(invoke_ea);
@@ -1526,7 +1633,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_INHERIT: {
+        VM_CASE(MS_OP_INHERIT) {
             /* A=subclass_reg, B=superclass_reg */
             MsValue super_val = R(B);
             if (!MS_IS_CLASS(super_val)) {
@@ -1539,7 +1646,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_GETSUPER: {
+        VM_CASE(MS_OP_GETSUPER) {
             /* A=result_reg, B=super_upval_idx, C=name_k */
             MsValue super_val = *frame->closure->upvalues[B]->location;
             if (!MS_IS_CLASS(super_val)) {
@@ -1558,7 +1665,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_SUPERINV: {
+        VM_CASE(MS_OP_SUPERINV) {
             /* A=this_reg, B=super_upval_idx, C=name_k; argc in EXTRAARG */
             MsInstruction ea = READ_INSTR();
             int argc = MS_GET_A(ea);
@@ -1590,7 +1697,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_STATICMETH: {
+        VM_CASE(MS_OP_STATICMETH) {
             /* A=class_reg, B=closure_reg, C=name_k */
             MsObjClass* klass = MS_AS_CLASS(R(A));
             MsObjString* name = MS_AS_STRING(K(C));
@@ -1602,7 +1709,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_GETTER: {
+        VM_CASE(MS_OP_GETTER) {
             /* A=class_reg, B=closure_reg, C=name_k */
             MsObjClass* klass = MS_AS_CLASS(R(A));
             MsObjString* name = MS_AS_STRING(K(C));
@@ -1614,7 +1721,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_SETTER: {
+        VM_CASE(MS_OP_SETTER) {
             /* A=class_reg, B=closure_reg, C=name_k */
             MsObjClass* klass = MS_AS_CLASS(R(A));
             MsObjString* name = MS_AS_STRING(K(C));
@@ -1626,7 +1733,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_ABSTMETH: {
+        VM_CASE(MS_OP_ABSTMETH) {
             /* A=class_reg, C=name_k: store nil sentinel in abstract_methods */
             MsObjClass* klass = MS_AS_CLASS(R(A));
             MsObjString* name = MS_AS_STRING(K(C));
@@ -1638,7 +1745,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_NEWLIST: {
+        VM_CASE(MS_OP_NEWLIST) {
             /* A=dest_reg, B=count; elements in R(A)..R(A+B-1) */
             int count = MS_GET_B(instr);
             MsObjList* list = ms_obj_list_new(vm);
@@ -1650,7 +1757,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_NEWMAP: {
+        VM_CASE(MS_OP_NEWMAP) {
             /* A=dest_reg, B=pair_count; pairs in R(A+1),R(A+2),R(A+3),R(A+4)... */
             int pairs = MS_GET_B(instr);
             MsObjMap* map = ms_obj_map_new(vm);
@@ -1663,7 +1770,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_NEWTUPLE: {
+        VM_CASE(MS_OP_NEWTUPLE) {
             /* A=dest_reg, B=count; elements in R(A+1)..R(A+B) */
             int count = MS_GET_B(instr);
             MsValue* items = &frame->slots[A + 1];
@@ -1672,7 +1779,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_GETIDX: {
+        VM_CASE(MS_OP_GETIDX) {
             /* A=dest, B=obj_reg, C=idx_reg_or_k */
             MsValue obj = R(B);
             MsValue idx = RK(C);
@@ -1708,7 +1815,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_SETIDX: {
+        VM_CASE(MS_OP_SETIDX) {
             /* A=obj_reg, B=idx_reg_or_k, C=val_reg */
             MsValue obj = R(A);
             MsValue idx = RK(B);
@@ -1728,7 +1835,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_TRY: {
+        VM_CASE(MS_OP_TRY) {
             if (vm->exception_count >= MS_MAX_EXCEPTION_HANDLERS) {
                 RUNTIME_ERROR(vm, "Exception handler stack overflow.");
             }
@@ -1741,11 +1848,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_ENDTRY:
+        VM_CASE(MS_OP_ENDTRY)
             if (vm->exception_count > 0) vm->exception_count--;
             break;
 
-        case MS_OP_THROW: {
+        VM_CASE(MS_OP_THROW) {
             MsValue error = R(A);
             if (!throw_exception(vm, error)) {
                 char* s = ms_value_to_cstring(error);
@@ -1758,7 +1865,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_DEFER: {
+        VM_CASE(MS_OP_DEFER) {
             MsObjClosure* cl = MS_AS_CLOSURE(R(A));
             if (frame->deferred_count >= frame->deferred_capacity) {
                 int cap = frame->deferred_capacity < 4 ? 4 : frame->deferred_capacity * 2;
@@ -1770,7 +1877,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_YIELD: {
+        VM_CASE(MS_OP_YIELD) {
             /* Must be inside a coroutine */
             MsObjCoroutine* co = vm->current_coroutine;
             if (!co) {
@@ -1789,7 +1896,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             return MS_INTERPRET_YIELD;
         }
 
-        case MS_OP_RESUME: {
+        VM_CASE(MS_OP_RESUME) {
             /* A=dst, B=coroutine_reg, C=sent_value_rk */
             MsValue coro_val = R(B);
             if (!MS_IS_COROUTINE(coro_val)) {
@@ -1812,7 +1919,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_IMPORT: {
+        VM_CASE(MS_OP_IMPORT) {
             /* A=dst_reg, Bx=path_const */
             MsObjString* path_str = MS_AS_STRING(K(MS_GET_Bx(instr)));
             /* from_path: the script path of the importing function */
@@ -1825,7 +1932,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_IMPFROM: {
+        VM_CASE(MS_OP_IMPFROM) {
             /* A=dst_reg, B=mod_reg, C=name_const */
             MsValue mod_val = R(B);
             if (!MS_IS_MODULE(mod_val)) {
@@ -1842,10 +1949,44 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             break;
         }
 
-        case MS_OP_IMPALIAS:
+        VM_CASE(MS_OP_IMPALIAS)
             /* A=dst_reg, B=src_reg: just a move; alias already in dst */
             R(A) = R(B);
             break;
+
+        VM_CASE(MS_OP_FORITER) {
+            /* iAsBx: R(A)=iterable, R(A+1)=int-index, R(A+2)=elem out; sBx=exit offset */
+            int sBx     = MS_GET_sBx(instr);
+            MsValue seq = R(A);
+            int     idx = (int)MS_AS_INT(R(A + 1));
+            if (MS_IS_LIST(seq)) {
+                MsObjList* list = MS_AS_LIST(seq);
+                if (idx >= list->items.count) { frame->ip += sBx; break; }
+                R(A + 2) = list->items.data[idx];
+                R(A + 1) = MS_INT_VAL(idx + 1);
+            } else if (MS_IS_TUPLE(seq)) {
+                MsObjTuple* tup = MS_AS_TUPLE(seq);
+                if (idx >= tup->count) { frame->ip += sBx; break; }
+                R(A + 2) = tup->items[idx];
+                R(A + 1) = MS_INT_VAL(idx + 1);
+            } else if (MS_IS_STRING(seq)) {
+                MsObjString* str = MS_AS_STRING(seq);
+                if (idx >= str->length) { frame->ip += sBx; break; }
+                R(A + 2) = MS_OBJ_VAL(ms_obj_string_copy(vm, &str->data[idx], 1));
+                R(A + 1) = MS_INT_VAL(idx + 1);
+            } else if (MS_IS_MAP(seq)) {
+                MsObjMap* map = MS_AS_MAP(seq);
+                while (idx < map->table.capacity &&
+                       (!map->table.entries[idx].used || map->table.entries[idx].tombstone))
+                    idx++;
+                if (idx >= map->table.capacity) { frame->ip += sBx; break; }
+                R(A + 2) = map->table.entries[idx].key;
+                R(A + 1) = MS_INT_VAL(idx + 1);
+            } else {
+                RUNTIME_ERROR(vm, "Can only iterate over list, tuple, string, or map.");
+            }
+            break;
+        }
 
         default:
             /* unimplemented opcode: store nil and continue */

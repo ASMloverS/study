@@ -57,6 +57,15 @@ typedef enum {
     MS_OP_LT_II, MS_OP_LT_FF,
     MS_OP_EQ_II,
     MS_OP_NOP,
+    /* RK-specialized opcodes: C field is a direct constant-pool index (no RK_IS_K branch) */
+    MS_OP_ADD_RK,
+    MS_OP_SUB_RK,
+    MS_OP_MUL_RK,
+    MS_OP_DIV_RK,
+    MS_OP_LT_RK,
+    MS_OP_LE_RK,
+    MS_OP_EQ_RK,
+    MS_OP_GETGLOBAL_CACHED,  /* placeholder for future quickening; behaves as GETGLOBAL */
     MS_OP_COUNT,
 } MsOpCode;
 

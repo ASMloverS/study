@@ -87,6 +87,9 @@ static const char* const k_opcode_names[MS_OP_COUNT] = {
     "LT_II", "LT_FF",
     "EQ_II",
     "NOP",
+    "ADD_RK", "SUB_RK", "MUL_RK", "DIV_RK",
+    "LT_RK", "LE_RK", "EQ_RK",
+    "GETGLOBAL_CACHED",
 };
 
 const char* ms_opcode_name(MsOpCode op) {

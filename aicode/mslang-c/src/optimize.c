@@ -45,12 +45,12 @@ static void pass_dead_code(MsChunk* chunk) {
 
     for (int i = 0; i < n; i++) {
         int op = MS_GET_OP(chunk->code[i]);
-        if (op == MS_OP_JMP || op == MS_OP_TRY) {
+        if (op == MS_OP_JMP || op == MS_OP_TRY || op == MS_OP_FORITER) {
             int target = i + 1 + MS_GET_sBx(chunk->code[i]);
             if (target >= 0 && target < n) is_target[target] = true;
         }
-        /* TEST/TESTSET/FORITER always skip the next instruction */
-        if (op == MS_OP_TEST || op == MS_OP_TESTSET || op == MS_OP_FORITER) {
+        /* TEST/TESTSET skip the next instruction (which is a JMP) */
+        if (op == MS_OP_TEST || op == MS_OP_TESTSET) {
             int target = i + 2;
             if (target < n) is_target[target] = true;
         }

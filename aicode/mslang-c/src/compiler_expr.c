@@ -269,8 +269,41 @@ static void parse_binary(MsCompiler* c, bool can_assign) {
         }
     }
 
-    /* Normal binary: emit op, result overwrites lhs register */
+    /* RK optimization: if RHS was a single LOADK, use *_RK opcode with direct const index.
+       Condition: rhs == lhs+1 and last emitted instr is LOADK targeting rhs. */
     int dr = lhs;
+    int ri = chunk->code_count - 1;
+    bool rhs_is_k = (rhs == lhs + 1) && (ri >= 0) &&
+                    (MS_GET_OP(chunk->code[ri]) == MS_OP_LOADK) &&
+                    (MS_GET_A(chunk->code[ri]) == rhs);
+    if (rhs_is_k) {
+        int k = MS_GET_Bx(chunk->code[ri]);
+        chunk->code_count--;  /* remove the LOADK */
+        c->next_reg--;        /* free rhs register */
+        switch (op) {
+        case MS_TK_PLUS:        emit(c, ms_enc_ABC(MS_OP_ADD_RK, dr, lhs, k)); break;
+        case MS_TK_MINUS:       emit(c, ms_enc_ABC(MS_OP_SUB_RK, dr, lhs, k)); break;
+        case MS_TK_STAR:        emit(c, ms_enc_ABC(MS_OP_MUL_RK, dr, lhs, k)); break;
+        case MS_TK_SLASH:       emit(c, ms_enc_ABC(MS_OP_DIV_RK, dr, lhs, k)); break;
+        case MS_TK_EQUAL_EQUAL: emit(c, ms_enc_ABC(MS_OP_EQ_RK,  dr, lhs, k)); break;
+        case MS_TK_BANG_EQUAL:
+            emit(c, ms_enc_ABC(MS_OP_EQ_RK, dr, lhs, k));
+            emit(c, ms_enc_ABC(MS_OP_NOT,   dr, dr,  0));
+            break;
+        case MS_TK_LESS:        emit(c, ms_enc_ABC(MS_OP_LT_RK, dr, lhs, k)); break;
+        case MS_TK_LESS_EQUAL:  emit(c, ms_enc_ABC(MS_OP_LE_RK, dr, lhs, k)); break;
+        default:
+            /* No RK variant for this op; re-emit LOADK and fall through to normal path */
+            chunk->code_count++;
+            c->next_reg++;
+            goto emit_normal;
+        }
+        c->next_reg = lhs + 1;
+        return;
+    }
+
+emit_normal:
+    /* Normal binary: emit op, result overwrites lhs register */
     switch (op) {
     case MS_TK_PLUS:            emit(c, ms_enc_ABC(MS_OP_ADD,  dr, lhs, rhs)); break;
     case MS_TK_MINUS:           emit(c, ms_enc_ABC(MS_OP_SUB,  dr, lhs, rhs)); break;
