@@ -114,10 +114,17 @@ MsObjNative* ms_obj_native_new(struct MsVM* vm, MsNativeFn fn,
 }
 
 MsObjUpvalue* ms_obj_upvalue_new(struct MsVM* vm, MsValue* slot) {
-    MsObjUpvalue* uv = MS_ALLOC_OBJ(vm, MS_OBJ_UPVALUE, MsObjUpvalue, 0);
+    MsObjUpvalue* uv = (MsObjUpvalue*)ms_pool_alloc(&vm->upvalue_pool);
+    uv->obj.type              = MS_OBJ_UPVALUE;
+    uv->obj.is_marked         = false;
+    uv->obj.in_remembered_set = false;
+    uv->obj.generation        = 0;
+    uv->obj.age               = 0;
+    uv->obj.next              = vm->young_objects;
+    vm->young_objects         = (MsObject*)uv;
     uv->location = slot;
-    uv->closed = MS_NIL_VAL();
-    uv->next = NULL;
+    uv->closed   = MS_NIL_VAL();
+    uv->next     = NULL;
     return uv;
 }
 
@@ -157,7 +164,14 @@ MsObjInstance* ms_obj_instance_new(struct MsVM* vm, MsObjClass* klass) {
 
 MsObjBoundMethod* ms_obj_bound_method_new(struct MsVM* vm, MsValue receiver,
                                            MsObjClosure* method) {
-    MsObjBoundMethod* bm = MS_ALLOC_OBJ(vm, MS_OBJ_BOUND_METHOD, MsObjBoundMethod, 0);
+    MsObjBoundMethod* bm = (MsObjBoundMethod*)ms_pool_alloc(&vm->bound_pool);
+    bm->obj.type              = MS_OBJ_BOUND_METHOD;
+    bm->obj.is_marked         = false;
+    bm->obj.in_remembered_set = false;
+    bm->obj.generation        = 0;
+    bm->obj.age               = 0;
+    bm->obj.next              = vm->young_objects;
+    vm->young_objects         = (MsObject*)bm;
     bm->receiver = receiver;
     bm->method   = method;
     return bm;
@@ -311,7 +325,7 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sizeof(MsObjNative), 0);
             break;
         case MS_OBJ_UPVALUE:
-            ms_reallocate(vm, obj, sizeof(MsObjUpvalue), 0);
+            ms_pool_free_obj(&vm->upvalue_pool, obj);
             break;
         case MS_OBJ_CLOSURE: {
             MsObjClosure* cl = (MsObjClosure*)obj;
@@ -343,7 +357,7 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             break;
         }
         case MS_OBJ_BOUND_METHOD:
-            ms_reallocate(vm, obj, sizeof(MsObjBoundMethod), 0);
+            ms_pool_free_obj(&vm->bound_pool, obj);
             break;
         case MS_OBJ_LIST: {
             MsObjList* list = (MsObjList*)obj;

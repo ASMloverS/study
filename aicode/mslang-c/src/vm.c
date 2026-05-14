@@ -157,7 +157,7 @@ void ms_vm_init(MsVM* vm) {
     vm->sweep_cursor = NULL;
     vm->sweep_prev   = NULL;
     ms_pool_init(&vm->upvalue_pool, sizeof(MsObjUpvalue));
-    ms_pool_init(&vm->bound_pool,   sizeof(void*) * 4); /* ObjBoundMethod size est.; resized in T18 */
+    ms_pool_init(&vm->bound_pool,   sizeof(MsObjBoundMethod));
     ms_table_init(&vm->globals);
     ms_table_init(&vm->strings);
     ms_table_init(&vm->module_cache);
