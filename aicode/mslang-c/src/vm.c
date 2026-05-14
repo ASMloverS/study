@@ -1411,7 +1411,9 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         }
 
         case MS_OP_INVOKE: {
-            /* A=obj_reg, B=name_k, C=argc */
+            /* A=obj_reg, B=name_k, C=argc; followed by EXTRAARG ic_slot */
+            MsInstruction invoke_ea = READ_INSTR();
+            int invoke_ic_idx = MS_GET_Bx(invoke_ea);
             MsValue obj = R(A);
             /* Handle class.staticMethod() calls */
             if (MS_IS_CLASS(obj)) {
@@ -1466,21 +1468,47 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             MsObjInstance* inst = MS_AS_INSTANCE(obj);
             MsObjString* name = MS_AS_STRING(K(B));
-            MsValue method;
-            /* Check field first (stored closure) via shape */
-            {
-                int fslot = ms_shape_find_slot(inst->shape, name);
-                if (fslot >= 0) {
-                    method = inst_get_by_slot(inst, fslot);
-                    if (MS_IS_CLOSURE(method)) {
-                        MsInterpretResult cr = call_value(vm, method, C, A);
-                        if (cr != MS_INTERPRET_OK) return cr;
-                        frame = &vm->frames[vm->frame_count - 1];
+            MsValue method = MS_NIL_VAL();
+            /* IC lookup for instance methods */
+            MsInlineCache* invoke_ic =
+                ensure_ic(vm, frame->closure->function, invoke_ic_idx);
+            if (!invoke_ic->megamorphic) {
+                for (int i = 0; i < invoke_ic->count; i++) {
+                    MsICEntry* e = &invoke_ic->entries[i];
+                    if (e->kind == MS_IC_METHOD &&
+                        e->shape_id == inst->shape->id) {
+                        method = e->cached;
                         break;
                     }
                 }
             }
-            if (ms_table_get(&inst->klass->methods, name, &method)) {
+            if (!MS_IS_CLOSURE(method)) {
+                /* IC miss: slow path - field first, then class methods */
+                int fslot = ms_shape_find_slot(inst->shape, name);
+                if (fslot >= 0) {
+                    method = inst_get_by_slot(inst, fslot);
+                }
+                if (!MS_IS_CLOSURE(method)) {
+                    ms_table_get(&inst->klass->methods, name, &method);
+                }
+                if (!MS_IS_CLOSURE(method)) {
+                    RUNTIME_ERROR(vm, "Undefined method '%s'.", name->data);
+                }
+                /* Fill IC cache */
+                if (!invoke_ic->megamorphic) {
+                    if (invoke_ic->count < MS_IC_PIC_SIZE) {
+                        MsICEntry* e = &invoke_ic->entries[invoke_ic->count++];
+                        e->kind       = MS_IC_METHOD;
+                        e->shape_id   = inst->shape->id;
+                        e->slot_index = 0; /* unused for METHOD kind */
+                        e->cached     = method;
+                    } else {
+                        invoke_ic->megamorphic = true;
+                    }
+                }
+            }
+            /* Dispatch: slot 0 = receiver (this), args in slots 1..argc */
+            {
                 MsObjClosure* cl = MS_AS_CLOSURE(method);
                 MsObjFunction* fn = cl->function;
                 if (vm->frame_count >= MS_FRAMES_MAX) {
@@ -1490,13 +1518,10 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = fn->chunk.code;
-                /* slot 0 = this (obj), args in slots 1..argc */
                 nf->slots   = frame->slots + A;
                 MsValue* ntop = nf->slots + fn->max_stack_size + 1;
                 if (ntop > vm->stack_top) vm->stack_top = ntop;
                 frame = &vm->frames[vm->frame_count - 1];
-            } else {
-                RUNTIME_ERROR(vm, "Undefined method '%s'.", name->data);
             }
             break;
         }

@@ -517,7 +517,10 @@ static void parse_dot(MsCompiler* c, bool can_assign) {
     } else if (check(c, MS_TK_LEFT_PAREN)) {
         advance(c);
         int argc = parse_args(c);
+        int ic_slot = c->function->ic_count++;
         emit(c, ms_enc_ABC(MS_OP_INVOKE, obj_reg, name_k, argc));
+        /* EXTRAARG: A=obj_reg (result dst), Bx=ic_slot */
+        emit(c, ms_enc_ABx(MS_OP_EXTRAARG, obj_reg, ic_slot));
         c->next_reg = obj_reg + 1;
     } else {
         int ic_slot = c->function->ic_count++;

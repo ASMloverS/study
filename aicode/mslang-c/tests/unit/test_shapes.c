@@ -130,6 +130,41 @@ static void test_sbo_fields(void) {
     ms_vm_free(&vm);
 }
 
+static void test_ic_method_dispatch(void) {
+    MsVM vm;
+    ms_vm_init(&vm);
+    /* Monomorphic: same class called multiple times -> IC hit on second+ call */
+    MsInterpretResult r = ms_vm_interpret(&vm,
+        "class Counter {\n"
+        "  init() { this.n = 0 }\n"
+        "  inc() { this.n = this.n + 1 }\n"
+        "  val() { return this.n }\n"
+        "}\n"
+        "var c = Counter()\n"
+        "c.inc() c.inc() c.inc()\n"
+        "print(c.val())\n",
+        "<test>");
+    TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
+    ms_vm_free(&vm);
+}
+
+static void test_ic_method_polymorphic(void) {
+    MsVM vm;
+    ms_vm_init(&vm);
+    /* Polymorphic: different shapes -> PIC entries; megamorphic after MS_IC_PIC_SIZE */
+    MsInterpretResult r = ms_vm_interpret(&vm,
+        "class A { speak() { return 1 } }\n"
+        "class B { speak() { return 2 } }\n"
+        "class C { speak() { return 3 } }\n"
+        "fun call_speak(obj) { return obj.speak() }\n"
+        "print(call_speak(A()))\n"
+        "print(call_speak(B()))\n"
+        "print(call_speak(C()))\n",
+        "<test>");
+    TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
+    ms_vm_free(&vm);
+}
+
 int main(void) {
     test_shape_root_empty();
     test_shape_transitions();
@@ -137,6 +172,8 @@ int main(void) {
     test_ic_field_access();
     test_ic_polymorphic();
     test_sbo_fields();
+    test_ic_method_dispatch();
+    test_ic_method_polymorphic();
     printf("test_shapes: all passed\n");
     return 0;
 }
