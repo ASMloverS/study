@@ -395,10 +395,10 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
         }
         case MS_OBJ_COROUTINE: {
             MsObjCoroutine* co = (MsObjCoroutine*)obj;
-            if (co->stack)
-                free(co->stack);
-            if (co->frames)
-                free(co->frames);
+            if (co->stack_buf)
+                free(co->stack_buf);
+            if (co->ctx.frames)
+                free(co->ctx.frames);
             ms_reallocate(vm, obj, sizeof(MsObjCoroutine), 0);
             break;
         }
@@ -453,17 +453,26 @@ MsObjString* ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb) {
 
 MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl) {
     MsObjCoroutine* co = MS_ALLOC_OBJ(vm, MS_OBJ_COROUTINE, MsObjCoroutine, 0);
-    co->state          = MS_CORO_CREATED;
-    co->closure        = cl;
-    co->open_upvalues  = NULL;
-    co->yield_value    = MS_NIL_VAL();
-    co->stack_size     = CORO_STACK_SIZE;
-    co->stack          = (MsValue*)malloc(sizeof(MsValue) * (size_t)CORO_STACK_SIZE);
-    if (!co->stack) abort();
-    co->stack_top      = co->stack;
-    co->frame_capacity = CORO_FRAME_CAP;
-    co->frames         = (struct MsCallFrame*)malloc(sizeof(struct MsCallFrame) * (size_t)CORO_FRAME_CAP);
-    if (!co->frames) abort();
-    co->frame_count    = 0;
+    co->state       = MS_CORO_CREATED;
+    co->closure     = cl;
+    co->yield_value = MS_NIL_VAL();
+
+    /* Allocate independent stack buffer */
+    co->stack_buf = (MsValue*)malloc(sizeof(MsValue) * (size_t)CORO_STACK_SIZE);
+    if (!co->stack_buf) abort();
+
+    /* Allocate independent frames buffer */
+    struct MsCallFrame* frames_buf =
+        (struct MsCallFrame*)malloc(sizeof(struct MsCallFrame) * (size_t)CORO_FRAME_CAP);
+    if (!frames_buf) abort();
+
+    /* Set up execution context */
+    co->ctx.stack          = co->stack_buf;
+    co->ctx.stack_top      = co->stack_buf;
+    co->ctx.frames         = frames_buf;
+    co->ctx.frame_count    = 0;
+    co->ctx.frame_capacity = CORO_FRAME_CAP;
+    co->ctx.stack_capacity = CORO_STACK_SIZE;
+    co->ctx.open_upvalues  = NULL;
     return co;
 }

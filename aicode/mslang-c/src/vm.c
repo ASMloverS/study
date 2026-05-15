@@ -104,7 +104,7 @@ void ms_vm_register_natives(MsVM* vm);
 
 static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
     MsObjUpvalue* prev = NULL;
-    MsObjUpvalue* uv   = vm->open_upvalues;
+    MsObjUpvalue* uv   = vm->ctx->open_upvalues;
     while (uv != NULL && uv->location > local) {
         prev = uv;
         uv   = uv->next;
@@ -113,28 +113,36 @@ static MsObjUpvalue* capture_upvalue(MsVM* vm, MsValue* local) {
     MsObjUpvalue* created = ms_obj_upvalue_new(vm, local);
     created->next = uv;
     if (prev) prev->next = created;
-    else      vm->open_upvalues = created;
+    else      vm->ctx->open_upvalues = created;
     return created;
 }
 
 static void close_upvalues(MsVM* vm, MsValue* last) {
-    if (vm->open_upvalues == NULL) return;
-    while (vm->open_upvalues->location >= last) {
-        MsObjUpvalue* uv = vm->open_upvalues;
+    if (vm->ctx->open_upvalues == NULL) return;
+    while (vm->ctx->open_upvalues->location >= last) {
+        MsObjUpvalue* uv = vm->ctx->open_upvalues;
         uv->closed   = *uv->location;
         uv->location = &uv->closed;
-        vm->open_upvalues = uv->next;
-        if (vm->open_upvalues == NULL) break;
+        vm->ctx->open_upvalues = uv->next;
+        if (vm->ctx->open_upvalues == NULL) break;
     }
 }
 
 /* ---- init / free ---- */
 
 void ms_vm_init(MsVM* vm) {
-    memset(vm->stack,  0, sizeof(vm->stack));
-    memset(vm->frames, 0, sizeof(vm->frames));
-    vm->stack_top            = vm->stack;
-    vm->frame_count          = 0;
+    /* Wire host execution context to the static buffers before any use of vm->ctx */
+    vm->host_ctx.stack          = vm->host_stack;
+    vm->host_ctx.stack_top      = vm->host_stack;
+    vm->host_ctx.frames         = vm->host_frames;
+    vm->host_ctx.frame_count    = 0;
+    vm->host_ctx.frame_capacity = MS_FRAMES_MAX;
+    vm->host_ctx.stack_capacity = MS_STACK_SIZE;
+    vm->host_ctx.open_upvalues  = NULL;
+    vm->ctx = &vm->host_ctx;
+
+    memset(vm->host_stack,  0, sizeof(vm->host_stack));
+    memset(vm->host_frames, 0, sizeof(vm->host_frames));
     vm->exception_count      = 0;
     vm->objects              = NULL;
     vm->young_objects        = NULL;
@@ -146,7 +154,6 @@ void ms_vm_init(MsVM* vm) {
     vm->bytes_allocated      = 0;
     vm->next_gc              = 1024 * 1024;
     vm->minor_count          = 0;
-    vm->open_upvalues        = NULL;
     vm->init_string          = NULL;
     vm->compiler             = NULL;
     vm->gray_stack           = NULL;
@@ -175,9 +182,9 @@ void ms_vm_init(MsVM* vm) {
 
 void ms_vm_free(MsVM* vm) {
     for (int i = 0; i < MS_FRAMES_MAX; i++) {
-        if (vm->frames[i].deferred) {
-            free(vm->frames[i].deferred);
-            vm->frames[i].deferred = NULL;
+        if (vm->host_frames[i].deferred) {
+            free(vm->host_frames[i].deferred);
+            vm->host_frames[i].deferred = NULL;
         }
     }
     ms_table_free(&vm->globals);
@@ -226,16 +233,16 @@ void ms_vm_runtime_error(MsVM* vm, const char* fmt, ...) {
     va_end(ap);
     fprintf(stderr, "\n");
 
-    for (int i = vm->frame_count - 1; i >= 0; i--) {
-        MsCallFrame* frame = &vm->frames[i];
+    for (int i = vm->ctx->frame_count - 1; i >= 0; i--) {
+        MsCallFrame* frame = &vm->ctx->frames[i];
         MsObjFunction* fn = frame->closure->function;
         ptrdiff_t offset = frame->ip - fn->chunk.code - 1;
         int line = ms_chunk_get_line(&fn->chunk, (int)offset);
         const char* name = fn->name ? fn->name->data : "<script>";
         fprintf(stderr, "  [line %d] in %s\n", line, name);
     }
-    vm->frame_count = 0;
-    vm->stack_top   = vm->stack;
+    vm->ctx->frame_count = 0;
+    vm->ctx->stack_top   = vm->ctx->stack;
 }
 
 /* ---- native define ---- */
@@ -263,14 +270,14 @@ MsInterpretResult ms_vm_interpret(MsVM* vm, const char* source, const char* path
         fn->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
 
     MsObjClosure* cl = ms_obj_closure_new(vm, fn);
-    MsCallFrame*  frame = &vm->frames[0];
+    MsCallFrame*  frame = &vm->ctx->frames[0];
     frame->closure = cl;
     frame->ip      = fn->chunk.code;
-    frame->slots   = vm->stack;
-    vm->frame_count = 1;
+    frame->slots   = vm->ctx->stack;
+    vm->ctx->frame_count = 1;
     int need = fn->max_stack_size + 1;
     if (need < 1) need = 1;
-    vm->stack_top = vm->stack + need;
+    vm->ctx->stack_top = vm->ctx->stack + need;
     return vm_run_inner(vm);
 }
 
@@ -280,30 +287,24 @@ MsInterpretResult ms_vm_run(MsVM* vm) {
 
 MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
                                      MsValue sent, MsValue* out) {
-    if (co->state == MS_CORO_DEAD)
+    if (co->state == MS_CORO_DEAD || co->state == MS_CORO_RUNNING)
         return MS_INTERPRET_RUNTIME_ERROR;
-    if (co->state == MS_CORO_RUNNING)
-        return MS_INTERPRET_RUNTIME_ERROR;
+
     bool first_resume = (co->state == MS_CORO_CREATED);
 
-    MsValue*        saved_stack_top  = vm->stack_top;
-    int             saved_fc         = vm->frame_count;
-    MsCallFrame     saved_frames[MS_FRAMES_MAX];
-    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->frames[i];
-    MsObjUpvalue*   saved_uv         = vm->open_upvalues;
-    int             saved_exc        = vm->exception_count;
-    MsObjCoroutine* saved_coro       = vm->current_coroutine;
+    /* O(1) context swap: save host ctx pointer, switch to coroutine ctx */
+    MsExecCtx*      saved_ctx  = vm->ctx;
+    int             saved_exc  = vm->exception_count;
+    MsObjCoroutine* saved_coro = vm->current_coroutine;
 
-    vm->stack_top         = co->stack_top;
-    vm->frame_count       = co->frame_count;
-    for (int i = 0; i < co->frame_count; i++) vm->frames[i] = co->frames[i];
-    vm->open_upvalues     = co->open_upvalues;
+    vm->ctx               = (MsExecCtx*)&co->ctx;  /* MsCoroCtx layout matches MsExecCtx */
     vm->exception_count   = 0;
     vm->current_coroutine = co;
     co->state             = MS_CORO_RUNNING;
 
     if (!first_resume) {
-        MsCallFrame* co_frame = &vm->frames[vm->frame_count - 1];
+        /* Inject sent value as the yield expression's result */
+        MsCallFrame* co_frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
         MsInstruction prev = *(co_frame->ip - 1);
         int yield_reg = MS_GET_A(prev);
         co_frame->slots[yield_reg] = sent;
@@ -311,23 +312,20 @@ MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
 
     MsInterpretResult cr = vm_run_inner(vm);
 
+    /* Restore host context (O(1)) */
+    vm->ctx               = saved_ctx;
+    vm->exception_count   = saved_exc;
+    vm->current_coroutine = saved_coro;
+
     *out = MS_NIL_VAL();
     if (cr == MS_INTERPRET_YIELD) {
         *out = co->yield_value;
-        /* save coroutine state (already done inside YIELD opcode) */
     } else if (cr == MS_INTERPRET_OK) {
         *out = vm->call_result;
         co->state = MS_CORO_DEAD;
     } else {
         co->state = MS_CORO_DEAD;
     }
-
-    vm->stack_top         = saved_stack_top;
-    vm->frame_count       = saved_fc;
-    for (int i = 0; i < saved_fc; i++) vm->frames[i] = saved_frames[i];
-    vm->open_upvalues     = saved_uv;
-    vm->exception_count   = saved_exc;
-    vm->current_coroutine = saved_coro;
 
     return (cr == MS_INTERPRET_YIELD || cr == MS_INTERPRET_OK)
            ? MS_INTERPRET_OK : MS_INTERPRET_RUNTIME_ERROR;
@@ -352,34 +350,39 @@ MsInterpretResult ms_vm_call_sync(MsVM* vm, MsValue callee,
     MsObjClosure* cl = MS_AS_CLOSURE(callee);
     MsObjFunction* fn = cl->function;
 
-    /* Save entire execution state. */
-    int saved_fc = vm->frame_count;
-    MsCallFrame saved_frames[MS_FRAMES_MAX];
-    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->frames[i];
-    MsValue*      saved_top = vm->stack_top;
-    MsObjUpvalue* saved_uv  = vm->open_upvalues;
+    /* Save active execution context pointer; switch to host ctx for the call. */
+    MsExecCtx* saved_ctx = vm->ctx;
+    vm->ctx = &vm->host_ctx;
 
-    /* Place args in upper half of stack (isolated from current execution). */
-    MsValue* base = vm->stack + MS_STACK_SIZE / 2;
+    /* Save host state */
+    int saved_fc = vm->ctx->frame_count;
+    MsCallFrame saved_frames[MS_FRAMES_MAX];
+    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->ctx->frames[i];
+    MsValue*      saved_top = vm->ctx->stack_top;
+    MsObjUpvalue* saved_uv  = vm->ctx->open_upvalues;
+
+    /* Place args in upper half of host stack (isolated from active execution). */
+    MsValue* base = vm->host_stack + MS_STACK_SIZE / 2;
     for (int i = 0; i < argc; i++) base[i] = argv[i];
 
     /* Run closure as sole frame; RETURN stores result in vm->call_result. */
-    vm->frame_count       = 1;
-    vm->open_upvalues     = NULL;
-    vm->frames[0].closure = cl;
-    vm->frames[0].ip      = fn->chunk.code;
-    vm->frames[0].slots   = base;
-    vm->stack_top         = base + fn->max_stack_size + 1;
+    vm->ctx->frame_count       = 1;
+    vm->ctx->open_upvalues     = NULL;
+    vm->ctx->frames[0].closure = cl;
+    vm->ctx->frames[0].ip      = fn->chunk.code;
+    vm->ctx->frames[0].slots   = base;
+    vm->ctx->stack_top         = base + fn->max_stack_size + 1;
 
     vm->call_result = MS_NIL_VAL();
     MsInterpretResult r = vm_run_inner(vm);
     if (r == MS_INTERPRET_OK) *out = vm->call_result;
 
-    /* Restore original execution state. */
-    vm->frame_count   = saved_fc;
-    vm->stack_top     = saved_top;
-    vm->open_upvalues = saved_uv;
-    for (int i = 0; i < saved_fc; i++) vm->frames[i] = saved_frames[i];
+    /* Restore host state and active context */
+    vm->ctx->frame_count   = saved_fc;
+    vm->ctx->stack_top     = saved_top;
+    vm->ctx->open_upvalues = saved_uv;
+    for (int i = 0; i < saved_fc; i++) vm->ctx->frames[i] = saved_frames[i];
+    vm->ctx = saved_ctx;
 
     return r;
 }
@@ -471,8 +474,8 @@ static int bump_deopt(MsObjFunction* fn, int offset) {
 
 #ifdef MSLANG_VM_STATS
 #  define STATS_TRACK_FRAME(vm) \
-    do { if ((vm)->frame_count > (vm)->stats.peak_frame_count) \
-             (vm)->stats.peak_frame_count = (vm)->frame_count; } while (0)
+    do { if ((vm)->ctx->frame_count > (vm)->stats.peak_frame_count) \
+             (vm)->stats.peak_frame_count = (vm)->ctx->frame_count; } while (0)
 #  define STATS_TRACK_DEOPT(vm) \
     do { (vm)->stats.deopt_event_count++; } while (0)
 #else
@@ -496,72 +499,71 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
         /* Generator closure: create coroutine, copy args into its stack */
         if (fn->is_generator) {
             MsObjCoroutine* co = ms_obj_coroutine_new(vm, cl);
-            /* Copy args into coroutine's stack */
-            MsCallFrame* caller = &vm->frames[vm->frame_count - 1];
+            /* Copy args into coroutine's stack buffer */
+            MsCallFrame* caller = &vm->ctx->frames[vm->ctx->frame_count - 1];
             MsValue* caller_args = caller->slots + ret_dst + 1;
             for (int i = 0; i < arg_count; i++)
-                co->stack[i] = caller_args[i];
-            /* Set up initial frame */
-            co->stack_top = co->stack + (fn->max_stack_size + 1);
-            if (co->stack_top > co->stack + co->stack_size)
-                co->stack_top = co->stack + co->stack_size;
-            MsCallFrame* f = &co->frames[0];
+                co->stack_buf[i] = caller_args[i];
+            /* Set up initial frame via ctx */
+            int need = fn->max_stack_size + 1;
+            co->ctx.stack_top = co->ctx.stack + need;
+            MsCallFrame* f = &co->ctx.frames[0];
             f->closure        = cl;
             f->ip             = fn->chunk.code;
-            f->slots          = co->stack;
+            f->slots          = co->ctx.stack;
             f->deferred       = NULL;
             f->deferred_count    = 0;
             f->deferred_capacity = 0;
-            co->frame_count = 1;
+            co->ctx.frame_count = 1;
             co->state = MS_CORO_CREATED;
             caller->slots[ret_dst] = MS_OBJ_VAL(co);
             return MS_INTERPRET_OK;
         }
-        if (vm->frame_count >= MS_FRAMES_MAX) {
+        if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
             ms_vm_runtime_error(vm, "Stack overflow.");
             return MS_INTERPRET_RUNTIME_ERROR;
         }
-        MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+        MsCallFrame* new_frame = &vm->ctx->frames[vm->ctx->frame_count++];
         STATS_TRACK_FRAME(vm);
         new_frame->closure = cl;
         new_frame->ip      = fn->chunk.code;
         /* args are in slots ret_dst+1 .. ret_dst+arg_count of caller frame */
-        new_frame->slots = vm->frames[vm->frame_count - 2].slots + ret_dst + 1;
+        new_frame->slots = vm->ctx->frames[vm->ctx->frame_count - 2].slots + ret_dst + 1;
         MsValue* new_top = new_frame->slots + fn->max_stack_size + 1;
-        if (new_top > vm->stack_top) vm->stack_top = new_top;
+        if (new_top > vm->ctx->stack_top) vm->ctx->stack_top = new_top;
         return MS_INTERPRET_OK;
     }
     if (MS_IS_NATIVE(callee)) {
         MsObjNative* nat = MS_AS_NATIVE(callee);
-        int saved_fc = vm->frame_count;
-        MsValue* argv = vm->frames[saved_fc - 1].slots + ret_dst + 1;
+        int saved_fc = vm->ctx->frame_count;
+        MsValue* argv = vm->ctx->frames[saved_fc - 1].slots + ret_dst + 1;
         MsValue result = nat->function(vm, arg_count, argv);
-        if (vm->frame_count == 0) return MS_INTERPRET_RUNTIME_ERROR;
-        vm->frames[vm->frame_count - 1].slots[ret_dst] = result;
+        if (vm->ctx->frame_count == 0) return MS_INTERPRET_RUNTIME_ERROR;
+        vm->ctx->frames[vm->ctx->frame_count - 1].slots[ret_dst] = result;
         return MS_INTERPRET_OK;
     }
     if (MS_IS_CLASS(callee)) {
         MsObjClass* klass = MS_AS_CLASS(callee);
         MsObjInstance* inst = ms_obj_instance_new(vm, klass);
         /* store instance in ret_dst */
-        vm->frames[vm->frame_count - 1].slots[ret_dst] = MS_OBJ_VAL(inst);
+        vm->ctx->frames[vm->ctx->frame_count - 1].slots[ret_dst] = MS_OBJ_VAL(inst);
         /* call init if it exists */
         MsValue init_val;
         if (vm->init_string &&
             ms_table_get(&klass->methods, vm->init_string, &init_val)) {
             MsObjClosure* init_cl = MS_AS_CLOSURE(init_val);
-            if (vm->frame_count >= MS_FRAMES_MAX) {
+            if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
                 ms_vm_runtime_error(vm, "Stack overflow.");
                 return MS_INTERPRET_RUNTIME_ERROR;
             }
-            MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+            MsCallFrame* new_frame = &vm->ctx->frames[vm->ctx->frame_count++];
             STATS_TRACK_FRAME(vm);
             new_frame->closure = init_cl;
             new_frame->ip      = init_cl->function->chunk.code;
             /* slot 0 = this (instance), then args */
-            new_frame->slots = vm->frames[vm->frame_count - 2].slots + ret_dst;
+            new_frame->slots = vm->ctx->frames[vm->ctx->frame_count - 2].slots + ret_dst;
             MsValue* new_top = new_frame->slots + init_cl->function->max_stack_size + 1;
-            if (new_top > vm->stack_top) vm->stack_top = new_top;
+            if (new_top > vm->ctx->stack_top) vm->ctx->stack_top = new_top;
         } else if (arg_count != 0) {
             ms_vm_runtime_error(vm, "Expected 0 arguments but got %d.", arg_count);
             return MS_INTERPRET_RUNTIME_ERROR;
@@ -577,19 +579,19 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
                                 fn->arity, arg_count);
             return MS_INTERPRET_RUNTIME_ERROR;
         }
-        if (vm->frame_count >= MS_FRAMES_MAX) {
+        if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
             ms_vm_runtime_error(vm, "Stack overflow.");
             return MS_INTERPRET_RUNTIME_ERROR;
         }
-        MsCallFrame* new_frame = &vm->frames[vm->frame_count++];
+        MsCallFrame* new_frame = &vm->ctx->frames[vm->ctx->frame_count++];
         STATS_TRACK_FRAME(vm);
         new_frame->closure = bm->method;
         new_frame->ip      = fn->chunk.code;
-        new_frame->slots   = vm->frames[vm->frame_count - 2].slots + ret_dst;
+        new_frame->slots   = vm->ctx->frames[vm->ctx->frame_count - 2].slots + ret_dst;
         /* slot 0 = receiver */
         new_frame->slots[0] = bm->receiver;
         MsValue* new_top = new_frame->slots + fn->max_stack_size + 1;
-        if (new_top > vm->stack_top) vm->stack_top = new_top;
+        if (new_top > vm->ctx->stack_top) vm->ctx->stack_top = new_top;
         return MS_INTERPRET_OK;
     }
     ms_vm_runtime_error(vm, "Can only call functions.");
@@ -605,32 +607,33 @@ static void run_deferred(MsVM* vm, MsCallFrame* f) {
     for (int i = f->deferred_count - 1; i >= 0; i--) {
         MsObjClosure* cl = f->deferred[i];
         /* Save all execution state */
-        int saved_fc  = vm->frame_count;
+        int saved_fc  = vm->ctx->frame_count;
         int saved_exc = vm->exception_count;
-        MsValue* saved_top = vm->stack_top;
-        MsCallFrame saved_frame0 = vm->frames[0];
+        MsValue* saved_top = vm->ctx->stack_top;
+        MsCallFrame saved_frame0 = vm->ctx->frames[0];
 
         /* Run deferred closure as sole frame (frame_count=1) */
-        MsValue* base = vm->stack_top;
+        MsValue* base = vm->ctx->stack_top;
         MsValue* new_top = base + cl->function->max_stack_size + 1;
-        if (new_top > vm->stack + MS_STACK_SIZE)
-            new_top = vm->stack + MS_STACK_SIZE;
-        vm->frame_count          = 1;
+        MsValue* stack_end = vm->ctx->stack + vm->ctx->stack_capacity;
+        if (new_top > stack_end)
+            new_top = stack_end;
+        vm->ctx->frame_count          = 1;
         vm->exception_count      = 0;
-        vm->stack_top            = new_top;
-        vm->frames[0].closure    = cl;
-        vm->frames[0].ip         = cl->function->chunk.code;
-        vm->frames[0].slots      = base;
-        vm->frames[0].deferred   = NULL;
-        vm->frames[0].deferred_count    = 0;
-        vm->frames[0].deferred_capacity = 0;
+        vm->ctx->stack_top            = new_top;
+        vm->ctx->frames[0].closure    = cl;
+        vm->ctx->frames[0].ip         = cl->function->chunk.code;
+        vm->ctx->frames[0].slots      = base;
+        vm->ctx->frames[0].deferred   = NULL;
+        vm->ctx->frames[0].deferred_count    = 0;
+        vm->ctx->frames[0].deferred_capacity = 0;
         vm_run_inner(vm);
 
         /* Restore all execution state */
-        vm->frame_count      = saved_fc;
+        vm->ctx->frame_count      = saved_fc;
         vm->exception_count  = saved_exc;
-        vm->stack_top        = saved_top;
-        vm->frames[0]        = saved_frame0;
+        vm->ctx->stack_top        = saved_top;
+        vm->ctx->frames[0]        = saved_frame0;
     }
     if (f->deferred) {
         free(f->deferred);
@@ -645,17 +648,17 @@ static bool throw_exception(MsVM* vm, MsValue error) {
     while (vm->exception_count > 0) {
         MsExceptionHandler* h = &vm->exception_handlers[vm->exception_count - 1];
         /* Unwind frames above the handler's frame */
-        while (vm->frame_count - 1 > h->frame_index) {
-            MsCallFrame* f = &vm->frames[vm->frame_count - 1];
+        while (vm->ctx->frame_count - 1 > h->frame_index) {
+            MsCallFrame* f = &vm->ctx->frames[vm->ctx->frame_count - 1];
             run_deferred(vm, f);
             close_upvalues(vm, f->slots);
-            vm->frame_count--;
+            vm->ctx->frame_count--;
         }
         vm->exception_count--;
-        MsCallFrame* target = &vm->frames[h->frame_index];
+        MsCallFrame* target = &vm->ctx->frames[h->frame_index];
         target->ip                    = h->handler_ip;
         target->slots[h->catch_reg]   = error;
-        vm->stack_top                 = h->stack_top;
+        vm->ctx->stack_top                 = h->stack_top;
         return true;
     }
     return false;
@@ -666,12 +669,17 @@ static bool throw_exception(MsVM* vm, MsValue error) {
 MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
                                         MsObjModule* mod) {
     MsObjClosure* cl = ms_obj_closure_new(vm, fn);
-    /* Save current VM execution state */
-    int saved_fc = vm->frame_count;
+
+    /* Always use host ctx for module execution (needs full host stack). */
+    MsExecCtx* saved_ctx = vm->ctx;
+    vm->ctx = &vm->host_ctx;
+
+    /* Save host execution state */
+    int saved_fc = vm->ctx->frame_count;
     MsCallFrame saved_frames[MS_FRAMES_MAX];
-    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->frames[i];
-    MsValue*      saved_top    = vm->stack_top;
-    MsObjUpvalue* saved_uv     = vm->open_upvalues;
+    for (int i = 0; i < saved_fc; i++) saved_frames[i] = vm->ctx->frames[i];
+    MsValue*      saved_top    = vm->ctx->stack_top;
+    MsObjUpvalue* saved_uv     = vm->ctx->open_upvalues;
     int           saved_exc    = vm->exception_count;
     MsTable       saved_globals = vm->globals;
 
@@ -685,18 +693,18 @@ MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
             ms_table_set(&vm->globals, e->key, e->value);
     }
 
-    /* Isolate module execution in the upper half of the stack */
-    MsValue* base = vm->stack + MS_STACK_SIZE / 2;
-    vm->frame_count              = 1;
-    vm->open_upvalues            = NULL;
+    /* Isolate module execution in the upper half of the host stack */
+    MsValue* base = vm->host_stack + MS_STACK_SIZE / 2;
+    vm->ctx->frame_count              = 1;
+    vm->ctx->open_upvalues            = NULL;
     vm->exception_count          = 0;
-    vm->frames[0].closure        = cl;
-    vm->frames[0].ip             = fn->chunk.code;
-    vm->frames[0].slots          = base;
-    vm->frames[0].deferred       = NULL;
-    vm->frames[0].deferred_count    = 0;
-    vm->frames[0].deferred_capacity = 0;
-    vm->stack_top = base + fn->max_stack_size + 1;
+    vm->ctx->frames[0].closure        = cl;
+    vm->ctx->frames[0].ip             = fn->chunk.code;
+    vm->ctx->frames[0].slots          = base;
+    vm->ctx->frames[0].deferred       = NULL;
+    vm->ctx->frames[0].deferred_count    = 0;
+    vm->ctx->frames[0].deferred_capacity = 0;
+    vm->ctx->stack_top = base + fn->max_stack_size + 1;
 
     MsInterpretResult r = vm_run_inner(vm);
 
@@ -711,13 +719,14 @@ MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
     }
     ms_table_free(&vm->globals);
 
-    /* Restore all VM state */
-    vm->globals       = saved_globals;
-    vm->frame_count   = saved_fc;
-    vm->stack_top     = saved_top;
-    vm->open_upvalues = saved_uv;
-    vm->exception_count = saved_exc;
-    for (int i = 0; i < saved_fc; i++) vm->frames[i] = saved_frames[i];
+    /* Restore host state and active context */
+    vm->globals           = saved_globals;
+    vm->ctx->frame_count   = saved_fc;
+    vm->ctx->stack_top     = saved_top;
+    vm->ctx->open_upvalues = saved_uv;
+    vm->exception_count    = saved_exc;
+    for (int i = 0; i < saved_fc; i++) vm->ctx->frames[i] = saved_frames[i];
+    vm->ctx = saved_ctx;
 
     return r;
 }
@@ -729,7 +738,7 @@ MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
          return MS_INTERPRET_RUNTIME_ERROR; } while (0)
 
 static MsInterpretResult vm_run_inner(MsVM* vm) {
-    MsCallFrame* frame = &vm->frames[vm->frame_count - 1];
+    MsCallFrame* frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
 
 #define READ_INSTR() (*frame->ip++)
 #define K(idx)  (frame->closure->function->chunk.constants.data[idx])
@@ -1300,7 +1309,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             MsInterpretResult cr = call_value(vm, R(A), B, A);
             if (cr != MS_INTERPRET_OK) return cr;
             /* refresh frame pointer after potential new frame push */
-            frame = &vm->frames[vm->frame_count - 1];
+            frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             break;
         }
 
@@ -1333,7 +1342,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             if (retfn->name == vm->init_string && MS_IS_NIL(ret)) {
                 ret = frame->slots[0];
             }
-            int cur_fi = vm->frame_count - 1;
+            int cur_fi = vm->ctx->frame_count - 1;
             /* Pop any exception handlers belonging to this frame */
             while (vm->exception_count > 0 &&
                    vm->exception_handlers[vm->exception_count - 1].frame_index == cur_fi) {
@@ -1342,15 +1351,15 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             /* Run deferred closures LIFO before closing upvalues */
             run_deferred(vm, frame);
             close_upvalues(vm, frame->slots);
-            vm->frame_count--;
-            if (vm->frame_count == 0) {
-                vm->stack_top    = vm->stack;
+            vm->ctx->frame_count--;
+            if (vm->ctx->frame_count == 0) {
+                vm->ctx->stack_top    = vm->ctx->stack;
                 vm->call_result  = ret;
                 return MS_INTERPRET_OK;
             }
 
             /* Recover caller CALL target register */
-            MsCallFrame* caller = &vm->frames[vm->frame_count - 1];
+            MsCallFrame* caller = &vm->ctx->frames[vm->ctx->frame_count - 1];
             MsInstruction call_instr = *(caller->ip - 1);
             int target = MS_GET_A(call_instr);
             caller->slots[target] = ret;
@@ -1435,18 +1444,18 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                        ms_table_get(inst->klass->getters, name, &val)) {
                 /* Call getter: 0 args, receiver = inst */
                 MsObjClosure* cl = MS_AS_CLOSURE(val);
-                if (vm->frame_count >= MS_FRAMES_MAX) {
+                if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
                     RUNTIME_ERROR(vm, "Stack overflow.");
                 }
-                MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                MsCallFrame* nf = &vm->ctx->frames[vm->ctx->frame_count++];
                 STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = cl->function->chunk.code;
                 nf->slots   = frame->slots + A;
                 nf->slots[0] = obj;
                 MsValue* ntop = nf->slots + cl->function->max_stack_size + 1;
-                if (ntop > vm->stack_top) vm->stack_top = ntop;
-                frame = &vm->frames[vm->frame_count - 1];
+                if (ntop > vm->ctx->stack_top) vm->ctx->stack_top = ntop;
+                frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             } else if (ms_table_get(&inst->klass->methods, name, &val)) {
                 MsObjBoundMethod* bm = ms_obj_bound_method_new(
                     vm, obj, MS_AS_CLOSURE(val));
@@ -1472,11 +1481,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 ms_table_get(inst->klass->setters, name, &setter_fn)) {
                 /* Call setter with val as arg */
                 MsObjClosure* cl = MS_AS_CLOSURE(setter_fn);
-                if (vm->frame_count >= MS_FRAMES_MAX) {
+                if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
                     RUNTIME_ERROR(vm, "Stack overflow.");
                 }
                 MsValue val = R(A);
-                MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                MsCallFrame* nf = &vm->ctx->frames[vm->ctx->frame_count++];
                 STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = cl->function->chunk.code;
@@ -1484,8 +1493,8 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 nf->slots[0] = obj;
                 nf->slots[1] = val;
                 MsValue* ntop = nf->slots + cl->function->max_stack_size + 1;
-                if (ntop > vm->stack_top) vm->stack_top = ntop;
-                frame = &vm->frames[vm->frame_count - 1];
+                if (ntop > vm->ctx->stack_top) vm->ctx->stack_top = ntop;
+                frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             } else {
                 /* IC-aware field set with shape transition */
                 MsInlineCache* setprop_ic =
@@ -1531,18 +1540,18 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                     ms_table_get(klass->static_methods, name, &smethod)) {
                     MsObjClosure* cl = MS_AS_CLOSURE(smethod);
                     MsObjFunction* fn = cl->function;
-                    if (vm->frame_count >= MS_FRAMES_MAX) {
+                    if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
                         RUNTIME_ERROR(vm, "Stack overflow.");
                     }
-                    MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                    MsCallFrame* nf = &vm->ctx->frames[vm->ctx->frame_count++];
                     STATS_TRACK_FRAME(vm);
                     nf->closure = cl;
                     nf->ip      = fn->chunk.code;
                     /* slot 0 = class (this), args in slots 1..argc */
                     nf->slots   = frame->slots + A;
                     MsValue* ntop = nf->slots + fn->max_stack_size + 1;
-                    if (ntop > vm->stack_top) vm->stack_top = ntop;
-                    frame = &vm->frames[vm->frame_count - 1];
+                    if (ntop > vm->ctx->stack_top) vm->ctx->stack_top = ntop;
+                    frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
                 } else {
                     RUNTIME_ERROR(vm, "Undefined static method '%s'.", name->data);
                 }
@@ -1559,7 +1568,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 }
                 MsInterpretResult cr = call_value(vm, fn_val, C, A);
                 if (cr != MS_INTERPRET_OK) return cr;
-                frame = &vm->frames[vm->frame_count - 1];
+                frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
                 break;
             }
             if (!MS_IS_INSTANCE(obj)) {
@@ -1618,17 +1627,17 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             {
                 MsObjClosure* cl = MS_AS_CLOSURE(method);
                 MsObjFunction* fn = cl->function;
-                if (vm->frame_count >= MS_FRAMES_MAX) {
+                if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
                     RUNTIME_ERROR(vm, "Stack overflow.");
                 }
-                MsCallFrame* nf = &vm->frames[vm->frame_count++];
+                MsCallFrame* nf = &vm->ctx->frames[vm->ctx->frame_count++];
                 STATS_TRACK_FRAME(vm);
                 nf->closure = cl;
                 nf->ip      = fn->chunk.code;
                 nf->slots   = frame->slots + A;
                 MsValue* ntop = nf->slots + fn->max_stack_size + 1;
-                if (ntop > vm->stack_top) vm->stack_top = ntop;
-                frame = &vm->frames[vm->frame_count - 1];
+                if (ntop > vm->ctx->stack_top) vm->ctx->stack_top = ntop;
+                frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             }
             break;
         }
@@ -1681,19 +1690,19 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             }
             MsObjClosure* cl = MS_AS_CLOSURE(method);
             MsObjFunction* fn = cl->function;
-            if (vm->frame_count >= MS_FRAMES_MAX) {
+            if (vm->ctx->frame_count >= MS_FRAMES_MAX) {
                 RUNTIME_ERROR(vm, "Stack overflow.");
             }
-            MsCallFrame* nf = &vm->frames[vm->frame_count++];
+            MsCallFrame* nf = &vm->ctx->frames[vm->ctx->frame_count++];
             STATS_TRACK_FRAME(vm);
             nf->closure = cl;
             nf->ip      = fn->chunk.code;
             nf->slots   = frame->slots + A;
             /* slot 0 is already 'this' (R(A)) */
             MsValue* ntop = nf->slots + fn->max_stack_size + 1;
-            if (ntop > vm->stack_top) vm->stack_top = ntop;
+            if (ntop > vm->ctx->stack_top) vm->ctx->stack_top = ntop;
             (void)argc;
-            frame = &vm->frames[vm->frame_count - 1];
+            frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             break;
         }
 
@@ -1842,9 +1851,9 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             int offset = MS_GET_sBx(instr);
             MsExceptionHandler* h = &vm->exception_handlers[vm->exception_count++];
             h->handler_ip  = frame->ip + offset;
-            h->frame_index = vm->frame_count - 1;
+            h->frame_index = vm->ctx->frame_count - 1;
             h->catch_reg   = A;
-            h->stack_top   = vm->stack_top;
+            h->stack_top   = vm->ctx->stack_top;
             break;
         }
 
@@ -1861,7 +1870,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 return MS_INTERPRET_RUNTIME_ERROR;
             }
             /* throw_exception updated frame/ip; refresh frame pointer */
-            frame = &vm->frames[vm->frame_count - 1];
+            frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             break;
         }
 
@@ -1883,16 +1892,10 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             if (!co) {
                 RUNTIME_ERROR(vm, "yield outside coroutine.");
             }
-            MsValue val = (B >= 2) ? R(A) : MS_NIL_VAL();
-            /* Save coroutine execution state */
-            co->yield_value   = val;
-            co->stack_top     = vm->stack_top;
-            co->frame_count   = vm->frame_count;
-            /* Save current frame (with updated ip) back into co->frames */
-            for (int i = 0; i < vm->frame_count; i++)
-                co->frames[i] = vm->frames[i];
-            co->open_upvalues = vm->open_upvalues;
-            co->state         = MS_CORO_SUSPENDED;
+            /* vm->ctx == &co->ctx; state is already live in co->ctx.
+               Just record the yield value and mark suspended. */
+            co->yield_value = (B >= 2) ? R(A) : MS_NIL_VAL();
+            co->state       = MS_CORO_SUSPENDED;
             return MS_INTERPRET_YIELD;
         }
 
@@ -1914,7 +1917,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             MsInterpretResult cr = ms_vm_coro_resume(vm, co, sent, &result);
             if (cr != MS_INTERPRET_OK) return MS_INTERPRET_RUNTIME_ERROR;
             /* Refresh frame pointer after state restore */
-            frame = &vm->frames[vm->frame_count - 1];
+            frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             R(A) = result;
             break;
         }

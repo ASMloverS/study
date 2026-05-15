@@ -129,11 +129,11 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
         MsObjCoroutine* co = (MsObjCoroutine*)obj;
         ms_mark_object(vm, (MsObject*)co->closure);
         ms_mark_value(vm, co->yield_value);
-        for (MsValue* v = co->stack; v < co->stack_top; v++)
+        for (MsValue* v = co->ctx.stack; v < co->ctx.stack_top; v++)
             ms_mark_value(vm, *v);
-        for (int i = 0; i < co->frame_count; i++)
-            ms_mark_object(vm, (MsObject*)co->frames[i].closure);
-        for (MsObjUpvalue* uv = co->open_upvalues; uv; uv = uv->next)
+        for (int i = 0; i < co->ctx.frame_count; i++)
+            ms_mark_object(vm, (MsObject*)co->ctx.frames[i].closure);
+        for (MsObjUpvalue* uv = co->ctx.open_upvalues; uv; uv = uv->next)
             ms_mark_object(vm, (MsObject*)uv);
         break;
     }
@@ -162,11 +162,12 @@ static void mark_compiler_roots(MsVM* vm) {
 /* ---- Phase 1: mark roots ---- */
 
 static void mark_roots(MsVM* vm) {
-    for (MsValue* slot = vm->stack; slot < vm->stack_top; slot++)
+    MsExecCtx* ctx = vm->ctx;
+    for (MsValue* slot = ctx->stack; slot < ctx->stack_top; slot++)
         ms_mark_value(vm, *slot);
-    for (int i = 0; i < vm->frame_count; i++)
-        ms_mark_object(vm, (MsObject*)vm->frames[i].closure);
-    for (MsObjUpvalue* uv = vm->open_upvalues; uv; uv = uv->next)
+    for (int i = 0; i < ctx->frame_count; i++)
+        ms_mark_object(vm, (MsObject*)ctx->frames[i].closure);
+    for (MsObjUpvalue* uv = ctx->open_upvalues; uv; uv = uv->next)
         ms_mark_object(vm, (MsObject*)uv);
     ms_mark_table(vm, &vm->globals);
     ms_mark_table(vm, &vm->module_cache);

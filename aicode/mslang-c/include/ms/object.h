@@ -222,23 +222,30 @@ typedef enum {
     MS_CORO_DEAD,       /* execution complete */
 } MsCoroState;
 
-/* Forward-declare MsCallFrame to avoid circular include with vm.h */
+/* MsExecCtx is defined in vm.h; forward-declare MsCallFrame to avoid
+   circular include (object.h is included by vm.h). */
 struct MsCallFrame;
+
+/* Execution context embedded in each coroutine (mirrors MsExecCtx in vm.h).
+   Duplicated here to avoid the object.h→vm.h include cycle. */
+typedef struct {
+    MsValue*            stack;
+    MsValue*            stack_top;
+    struct MsCallFrame* frames;
+    int                 frame_count;
+    int                 frame_capacity;
+    int                 stack_capacity;
+    MsObjUpvalue*       open_upvalues;
+} MsCoroCtx;
 
 typedef struct {
     MsObject        obj;
     MsCoroState     state;
     MsObjClosure*   closure;
-    /* Independent stack */
-    MsValue*        stack;
-    int             stack_size;  /* allocated slots */
-    MsValue*        stack_top;
-    /* Independent call frames */
-    struct MsCallFrame* frames;
-    int             frame_count;
-    int             frame_capacity;
-    /* Open upvalues chain */
-    MsObjUpvalue*   open_upvalues;
+    /* Independent execution context (heap-allocated buffers) */
+    MsCoroCtx       ctx;
+    /* Heap-allocated stack buffer (ctx.stack points here) */
+    MsValue*        stack_buf;
     /* Value last yielded or sent */
     MsValue         yield_value;
 } MsObjCoroutine;

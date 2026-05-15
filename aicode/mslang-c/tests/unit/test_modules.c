@@ -172,13 +172,13 @@ static void test_import_writes_cache(void) {
     TEST_ASSERT(fn != NULL);
 
     MsObjClosure* cl = ms_obj_closure_new(&vm2, fn);
-    vm2.frames[0].closure = cl;
-    vm2.frames[0].ip      = fn->chunk.code;
-    vm2.frames[0].slots   = vm2.stack;
-    vm2.frame_count       = 1;
+    vm2.ctx->frames[0].closure = cl;
+    vm2.ctx->frames[0].ip      = fn->chunk.code;
+    vm2.ctx->frames[0].slots   = vm2.ctx->stack;
+    vm2.ctx->frame_count       = 1;
     int need = fn->max_stack_size + 1;
     if (need < 1) need = 1;
-    vm2.stack_top = vm2.stack + need;
+    vm2.ctx->stack_top = vm2.ctx->stack + need;
     TEST_ASSERT(ms_vm_run(&vm2) == MS_INTERPRET_OK);
     ms_vm_free(&vm2);
 

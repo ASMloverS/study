@@ -15,6 +15,19 @@ typedef struct MsCallFrame {
     int             deferred_capacity;
 } MsCallFrame;
 
+/* Execution context: pointers to the active stack/frames.
+   Host VM owns static buffers; each coroutine owns heap-allocated buffers.
+   yield/resume swaps vm->ctx (O(1)), eliminating the per-context memcpy. */
+typedef struct {
+    MsValue*        stack;
+    MsValue*        stack_top;
+    MsCallFrame*    frames;
+    int             frame_count;
+    int             frame_capacity;
+    int             stack_capacity; /* total slots in stack buffer */
+    MsObjUpvalue*   open_upvalues;
+} MsExecCtx;
+
 #define MS_MAX_EXCEPTION_HANDLERS 16
 
 typedef struct {
@@ -51,11 +64,15 @@ typedef struct {
 #endif
 
 typedef struct MsVM {
-    MsValue         stack[MS_STACK_SIZE];
-    MsValue*        stack_top;
+    /* Host (main thread) static buffers */
+    MsValue         host_stack[MS_STACK_SIZE];
+    MsCallFrame     host_frames[MS_FRAMES_MAX];
+    /* Host execution context - always points into host_stack/host_frames */
+    MsExecCtx       host_ctx;
+    /* Active execution context - host_ctx normally; swapped to coro->ctx on resume */
+    MsExecCtx*      ctx;
+
     MsValue         call_result;     /* captures return value from ms_vm_call_sync */
-    MsCallFrame     frames[MS_FRAMES_MAX];
-    int             frame_count;
     MsTable         globals;
     MsTable         strings;
     MsObject*       objects;      /* legacy: unified list (used by major GC) */
@@ -68,7 +85,6 @@ typedef struct MsVM {
     size_t          bytes_allocated;
     size_t          next_gc;
     int             minor_count;  /* minor GCs since last major */
-    MsObjUpvalue*   open_upvalues;
     MsObjString*    init_string;
     MsTable         module_cache;  /* canonical path -> MsObjModule */
     struct MsCompiler* compiler;

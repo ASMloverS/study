@@ -180,13 +180,13 @@ static MsInterpretResult run_one_cached(const char* path, uint32_t cache_flags,
         res = MS_INTERPRET_COMPILE_ERROR;
     } else {
         MsObjClosure* cl = ms_obj_closure_new(vm, fn);
-        vm->frames[0].closure = cl;
-        vm->frames[0].ip      = fn->chunk.code;
-        vm->frames[0].slots   = vm->stack;
-        vm->frame_count = 1;
+        vm->ctx->frames[0].closure = cl;
+        vm->ctx->frames[0].ip      = fn->chunk.code;
+        vm->ctx->frames[0].slots   = vm->ctx->stack;
+        vm->ctx->frame_count = 1;
         int need = fn->max_stack_size + 1;
         if (need < 1) need = 1;
-        vm->stack_top = vm->stack + need;
+        vm->ctx->stack_top = vm->ctx->stack + need;
         /* fn is now rooted via frames[0]; safe to allocate script_path string */
         if (!fn->script_path)
             fn->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
@@ -231,13 +231,13 @@ static MsInterpretResult run_one_msc(const char* path, RunSample* s
         res = MS_INTERPRET_COMPILE_ERROR;
     } else {
         MsObjClosure* cl = ms_obj_closure_new(vm, fn);
-        vm->frames[0].closure = cl;
-        vm->frames[0].ip      = fn->chunk.code;
-        vm->frames[0].slots   = vm->stack;
-        vm->frame_count = 1;
+        vm->ctx->frames[0].closure = cl;
+        vm->ctx->frames[0].ip      = fn->chunk.code;
+        vm->ctx->frames[0].slots   = vm->ctx->stack;
+        vm->ctx->frame_count = 1;
         int need = fn->max_stack_size + 1;
         if (need < 1) need = 1;
-        vm->stack_top = vm->stack + need;
+        vm->ctx->stack_top = vm->ctx->stack + need;
         if (!fn->script_path)
             fn->script_path = ms_obj_string_copy(vm, path, (int)strlen(path));
         res = ms_vm_run(vm);
@@ -330,13 +330,13 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             MsObjClosure* cl = ms_obj_closure_new(&vm, fn);
-            vm.frames[0].closure = cl;
-            vm.frames[0].ip      = fn->chunk.code;
-            vm.frames[0].slots   = vm.stack;
-            vm.frame_count       = 1;
+            vm.ctx->frames[0].closure = cl;
+            vm.ctx->frames[0].ip      = fn->chunk.code;
+            vm.ctx->frames[0].slots   = vm.ctx->stack;
+            vm.ctx->frame_count       = 1;
             int need = fn->max_stack_size + 1;
             if (need < 1) need = 1;
-            vm.stack_top = vm.stack + need;
+            vm.ctx->stack_top = vm.ctx->stack + need;
             if (!fn->script_path)
                 fn->script_path = ms_obj_string_copy(&vm, script, (int)strlen(script));
             result = ms_vm_run(&vm);
@@ -349,13 +349,13 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             MsObjClosure* cl = ms_obj_closure_new(&vm, fn);
-            vm.frames[0].closure = cl;
-            vm.frames[0].ip      = fn->chunk.code;
-            vm.frames[0].slots   = vm.stack;
-            vm.frame_count       = 1;
+            vm.ctx->frames[0].closure = cl;
+            vm.ctx->frames[0].ip      = fn->chunk.code;
+            vm.ctx->frames[0].slots   = vm.ctx->stack;
+            vm.ctx->frame_count       = 1;
             int need = fn->max_stack_size + 1;
             if (need < 1) need = 1;
-            vm.stack_top = vm.stack + need;
+            vm.ctx->stack_top = vm.ctx->stack + need;
             /* fn is now rooted via frames[0]; safe to allocate script_path string */
             if (!fn->script_path)
                 fn->script_path = ms_obj_string_copy(&vm, script, (int)strlen(script));
