@@ -4,25 +4,22 @@
 #include <string.h>
 
 static uint32_t hash_value(MsValue v) {
-    switch (v.type) {
-    case MS_VAL_NIL:    return 2u;  /* distinct from bool 0/1 */
-    case MS_VAL_BOOL:   return MS_AS_BOOL(v) ? 1u : 0u;
-    case MS_VAL_INT:
-    case MS_VAL_NUMBER: {
+    if (MS_IS_NIL(v))  return 2u;  /* distinct from bool 0/1 */
+    if (MS_IS_BOOL(v)) return MS_AS_BOOL(v) ? 1u : 0u;
+    if (MS_IS_NUMERIC(v)) {
         /* Normalize so int(n) == float(n) hash identically.
            Also maps -0.0 to 0u (since -0.0 == 0.0 in IEEE 754). */
-        double d = MS_IS_INT(v) ? (double)MS_AS_INT(v) : MS_AS_NUMBER(v);
+        double d = ms_as_double(v);
         if (d == 0.0) return 0u;
         union { double d; uint64_t u; } cv;
         cv.d = d;
         return (uint32_t)(cv.u ^ (cv.u >> 32));
     }
-    case MS_VAL_OBJECT: {
+    if (MS_IS_OBJECT(v)) {
         MsObject* obj = MS_AS_OBJECT(v);
         if (obj->type == MS_OBJ_STRING) return ((MsObjString*)obj)->hash;
         if (obj->type == MS_OBJ_TUPLE)  return ((MsObjTuple*)obj)->hash;
         return (uint32_t)(uintptr_t)obj;
-    }
     }
     return 0u;
 }

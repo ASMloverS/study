@@ -85,11 +85,19 @@ target_link_libraries(mslang-c PRIVATE ms_frontend)
 
 option(MSLANG_BUILD_BENCHMARKS "Build mslang-c benchmark suite" OFF)
 option(MSLANG_VM_STATS         "Enable VM stats counters"        OFF)
+option(MS_NAN_BOXING           "Enable NaN-boxing for MsValue (8 bytes instead of 16)" OFF)
 
 if(MSLANG_VM_STATS)
     target_compile_definitions(ms_memory PUBLIC MSLANG_VM_STATS)
     target_compile_definitions(ms_vm PUBLIC MSLANG_VM_STATS)
     target_compile_definitions(mslang-c PRIVATE MSLANG_VM_STATS)
+endif()
+
+if(MS_NAN_BOXING AND (CMAKE_SIZEOF_VOID_P EQUAL 8))
+    # Propagate via ms_support so every library that links it picks up the flag.
+    target_compile_definitions(ms_support PUBLIC MS_NAN_BOXING=1)
+else()
+    target_compile_definitions(ms_support PUBLIC MS_NAN_BOXING=0)
 endif()
 
 if(MSLANG_BUILD_BENCHMARKS)

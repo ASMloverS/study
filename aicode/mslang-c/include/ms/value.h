@@ -1,6 +1,16 @@
 #pragma once
 #include "ms/common.h"
 
+#if MS_NAN_BOXING
+
+/* ---- NaN-boxing path ---- */
+typedef struct MsObject MsObject;
+#include "ms/value_nan.h"
+
+#else
+
+/* ---- Tagged-union path (default / MSVC fallback) ---- */
+
 typedef enum {
     MS_VAL_NIL,
     MS_VAL_BOOL,
@@ -45,6 +55,10 @@ MS_INLINE bool ms_is_numeric(MsValue v) {
 MS_INLINE double ms_as_double(MsValue v) {
     return MS_IS_INT(v) ? (double)MS_AS_INT(v) : MS_AS_NUMBER(v);
 }
+
+#endif /* MS_NAN_BOXING */
+
+/* ---- MsValueArray (shared, layout-independent) ---- */
 
 typedef struct {
     MsValue* data;

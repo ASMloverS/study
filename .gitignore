@@ -28,6 +28,7 @@ build
 build_asan
 build_clang
 build_debug
+build_nan
 build_ninja
 build_nostats
 build_rel

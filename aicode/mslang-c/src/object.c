@@ -197,8 +197,12 @@ MsObjTuple* ms_obj_tuple_new(struct MsVM* vm, MsValue* items, int count) {
     uint32_t h = 2166136261u;
     for (int i = 0; i < count; i++) {
         t->items[i] = items[i];
-        /* mix in type + raw bits */
+        /* mix in raw bits (works for both tagged-union and NaN-boxing) */
+#if MS_NAN_BOXING
+        h ^= (uint32_t)(items[i] >> 48); /* top 16 bits encode the tag */
+#else
         h ^= (uint32_t)items[i].type;
+#endif
         h *= 16777619u;
         if (MS_IS_INT(items[i]))    h ^= (uint32_t)(ms_u64)MS_AS_INT(items[i]);
         else if (MS_IS_NUMBER(items[i])) { union { double d; uint64_t u; } cv;

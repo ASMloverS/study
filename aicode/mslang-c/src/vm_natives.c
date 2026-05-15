@@ -31,11 +31,10 @@ static MsValue native_type(MsVM* vm, int argc, MsValue* argv) {
     if (argc < 1) return MS_OBJ_VAL(ms_obj_string_copy(vm, "nil", 3));
     const char* t = "nil";
     MsValue val = argv[0];
-    switch (val.type) {
-    case MS_VAL_BOOL:   t = "bool";   break;
-    case MS_VAL_NUMBER: t = "number"; break;
-    case MS_VAL_INT:    t = "int";    break;
-    case MS_VAL_OBJECT:
+    if (MS_IS_BOOL(val))        { t = "bool"; }
+    else if (MS_IS_NUMBER(val)) { t = "number"; }
+    else if (MS_IS_INT(val))    { t = "int"; }
+    else if (MS_IS_OBJECT(val)) {
         switch (MS_OBJ_TYPE(val)) {
         case MS_OBJ_STRING:   t = "string";   break;
         case MS_OBJ_FUNCTION:
@@ -48,8 +47,6 @@ static MsValue native_type(MsVM* vm, int argc, MsValue* argv) {
         case MS_OBJ_TUPLE:    t = "tuple";    break;
         default:              t = "object";   break;
         }
-        break;
-    default: break;
     }
     return MS_OBJ_VAL(ms_obj_string_copy(vm, t, (int)strlen(t)));
 }
