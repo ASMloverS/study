@@ -200,6 +200,84 @@ add_test(NAME mscache.cli.unknown_option
 set_tests_properties(mscache.cli.unknown_option PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
 
+add_test(NAME mscache.cli.direct_create_reuse
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_create_reuse"
+    -DMODE=direct_create_reuse
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_create_reuse PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_runtime_error
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_runtime_error"
+    -DMODE=direct_runtime_error
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_runtime_error.ms"
+    -DEXPECT_STDERR_CONTAINS="phase=runtime;code=MS4004;direct_runtime_error.ms:1:1"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_runtime_error PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_no_cache
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_no_cache"
+    -DMODE=direct_no_cache
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_no_cache PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_corrupt
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_corrupt"
+    -DMODE=direct_corrupt
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_corrupt PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_incompatible_version
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_incompatible_version"
+    -DMODE=direct_incompatible_version
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_incompatible_version PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_incompatible_abi
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_incompatible_abi"
+    -DMODE=direct_incompatible_abi
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_incompatible_abi PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_import_moved_cache
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_import_moved_cache"
+    -DMODE=direct_import_moved_cache
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cache.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modules"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/import_cache.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_import_moved_cache PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
 add_subdirectory(unit)
 
 mslangc_add_e2e_basic_test(e2e_basic.smoke smoke.ms)

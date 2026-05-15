@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "ms/cache/cache_file.h"
 #include "ms/cache/source_loader.h"
 #include "ms/diag.h"
 #include "ms/frontend/lowering.h"
@@ -34,6 +35,27 @@ static const char* mslangc_string_or_unknown(const char* text) {
 
 static int mslangc_is_path_separator(char ch) {
   return ch == '/' || ch == '\\';
+}
+
+static int mslangc_has_suffix(const char *text, const char *suffix) {
+  size_t text_length;
+  size_t suffix_length;
+
+  if (text == NULL || suffix == NULL) {
+    return 0;
+  }
+
+  text_length = strlen(text);
+  suffix_length = strlen(suffix);
+  if (text_length < suffix_length) {
+    return 0;
+  }
+
+  return strcmp(text + text_length - suffix_length, suffix) == 0;
+}
+
+static int mslangc_is_cache_file(const char *path) {
+  return mslangc_has_suffix(path, ".msc");
 }
 
 static void mslangc_print_help(FILE *stream) {
@@ -101,6 +123,55 @@ static int mslangc_run_source(const char *file,
                               int cache_enabled,
                               const char *source,
                               FILE *error_stream);
+
+static int mslangc_execute_chunk(const char *file,
+                                 int cache_enabled,
+                                 const MsChunk *chunk,
+                                 FILE *error_stream);
+
+static int mslangc_run_cache_file(const char *file,
+                                  int cache_enabled,
+                                  FILE *error_stream) {
+  MsCacheFileReadInfo read_info;
+  MsChunk chunk;
+  MsCacheFileStatus status;
+  int exit_code = 0;
+  const char *display_path;
+
+  ms_cache_file_read_info_init(&read_info);
+  ms_chunk_init(&chunk);
+  status = ms_cache_file_read(file, NULL, &read_info, &chunk);
+  if (status != MS_CACHE_FILE_STATUS_OK) {
+    switch (status) {
+      case MS_CACHE_FILE_STATUS_NOT_FOUND:
+      case MS_CACHE_FILE_STATUS_IO_ERROR:
+      case MS_CACHE_FILE_STATUS_DIRECTORY_ERROR:
+      case MS_CACHE_FILE_STATUS_WRITE_ERROR:
+        fprintf(error_stream, "error: failed to read cache: %s\n", file);
+        break;
+      case MS_CACHE_FILE_STATUS_INCOMPATIBLE_VERSION:
+        fprintf(error_stream, "error: incompatible cache file: %s\n", file);
+        break;
+      case MS_CACHE_FILE_STATUS_FORMAT_ERROR:
+        fprintf(error_stream, "error: corrupt cache file: %s\n", file);
+        break;
+      case MS_CACHE_FILE_STATUS_INVALID_ARGUMENT:
+      case MS_CACHE_FILE_STATUS_STALE_SOURCE:
+      default:
+        fprintf(error_stream, "error: invalid cache file: %s\n", file);
+        break;
+    }
+    ms_cache_file_read_info_destroy(&read_info);
+    ms_chunk_destroy(&chunk);
+    return kExitIo;
+  }
+
+  display_path = read_info.display_path != NULL ? read_info.display_path : file;
+  exit_code = mslangc_execute_chunk(display_path, cache_enabled, &chunk, error_stream);
+  ms_cache_file_read_info_destroy(&read_info);
+  ms_chunk_destroy(&chunk);
+  return exit_code;
+}
 
 static char *mslangc_dirname(const char *path) {
   const char *last_separator = NULL;
@@ -253,6 +324,10 @@ static int mslangc_execute_chunk(const char *file,
 static int mslangc_run_script_file(const char *file,
                                    int cache_enabled,
                                    FILE *error_stream) {
+  if (mslangc_is_cache_file(file)) {
+    return mslangc_run_cache_file(file, cache_enabled, error_stream);
+  }
+
   MsSourceLoadOptions options;
   MsSourceLoadResult result;
   MsDiagnosticList diagnostics;
