@@ -118,8 +118,17 @@ static MsTokenType check_keyword(const char* start, int len,
 static MsTokenType identifier_type(const char* start, int len) {
     switch (start[0]) {
     case 'a':
-        if (len > 1 && start[1] == 'n') return check_keyword(start, len, "nd", 2, MS_TK_AND);
-        if (len > 1 && start[1] == 's') return (len == 2) ? MS_TK_AS : MS_TK_IDENTIFIER;
+        if (len > 1) switch (start[1]) {
+        case 'n': return check_keyword(start, len, "nd",    2, MS_TK_AND);
+        case 's': {
+            /* "as" keyword vs "async" (a-s-y-n-c) */
+            if (len == 2) return MS_TK_AS;
+            if (len == 5 && memcmp(start, "async", 5) == 0) return MS_TK_ASYNC;
+            return MS_TK_IDENTIFIER;
+        }
+        case 'w': return check_keyword(start, len, "wait",  4, MS_TK_AWAIT);
+        default: break;
+        }
         break;
     case 'b': return check_keyword(start, len, "reak",     4, MS_TK_BREAK);
     case 'c':
@@ -168,6 +177,7 @@ static MsTokenType identifier_type(const char* start, int len) {
     case 'r': return check_keyword(start, len, "eturn",    5, MS_TK_RETURN);
     case 's':
         if (len > 1) switch (start[1]) {
+        case 'p': return check_keyword(start, len, "pawn",   4, MS_TK_SPAWN);
         case 'u': return check_keyword(start, len, "uper",   4, MS_TK_SUPER);
         case 't': return check_keyword(start, len, "tatic",  5, MS_TK_STATIC);
         case 'w': return check_keyword(start, len, "witch",  5, MS_TK_SWITCH);

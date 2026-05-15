@@ -21,6 +21,7 @@ typedef enum {
     MS_OBJ_FILE,
     MS_OBJ_WEAK_REF,
     MS_OBJ_COROUTINE,
+    MS_OBJ_FUTURE,
 } MsObjectType;
 
 struct MsObject {

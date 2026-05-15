@@ -27,6 +27,7 @@
     X(TRUE) X(FALSE) X(NIL) \
     X(PRINT) X(IMPORT) X(FROM) X(AS) \
     X(TRY) X(CATCH) X(THROW) X(DEFER) X(YIELD) \
+    X(ASYNC) X(AWAIT) X(SPAWN) \
     X(SWITCH) X(CASE) X(DEFAULT) X(ENUM) \
     /* Virtual / special */ \
     X(NEWLINE) \
