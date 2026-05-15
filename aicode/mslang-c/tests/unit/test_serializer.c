@@ -5,6 +5,7 @@
 #include "ms/vm.h"
 #include "ms/compiler.h"
 #include "ms/serializer.h"
+#include "ms/fs_util.h"
 #include <stdio.h>
 #include <string.h>
 
