@@ -10,4 +10,4 @@
 | Done | [06 - CLI Cache Policy](06-task-cli-cache-policy.md) |
 | Done | [07 - Import Cache Integration](07-task-import-cache-integration.md) |
 | Done | [08 - Direct MSC Execution](08-task-direct-msc-execution.md) |
-| Planned | [09 - Direct MSC Imports and Release Gate](09-task-direct-msc-imports-and-release-gate.md) |
+| Done | [09 - Direct MSC Imports and Release Gate](09-task-direct-msc-imports-and-release-gate.md) |
