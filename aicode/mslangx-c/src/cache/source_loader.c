@@ -158,6 +158,7 @@ void ms_source_load_options_init(MsSourceLoadOptions *options) {
   }
 
   options->cache_enabled = 1;
+  options->allow_cache_without_source = 0;
   options->entry_kind = MS_CACHE_ENTRY_KIND_SOURCE;
 }
 
@@ -189,7 +190,7 @@ static int ms_source_loader_try_cache_read(const char *cache_path,
   MsCacheFileReadInfo read_info;
   MsCacheFileStatus status;
 
-  if (cache_path == NULL || source == NULL || out_result == NULL) {
+  if (cache_path == NULL || out_result == NULL) {
     return 0;
   }
 
@@ -260,6 +261,14 @@ MsSourceLoadStatus ms_source_load_source(const char *source_path,
           ms_source_loader_try_cache_read(cache_path,
                                           options->entry_kind,
                                           &source,
+                                          out_result)) {
+        out_result->cache_path = cache_path;
+        return MS_SOURCE_LOAD_STATUS_OK;
+      }
+      if (!have_source_metadata && options->allow_cache_without_source &&
+          ms_source_loader_try_cache_read(cache_path,
+                                          options->entry_kind,
+                                          NULL,
                                           out_result)) {
         out_result->cache_path = cache_path;
         return MS_SOURCE_LOAD_STATUS_OK;

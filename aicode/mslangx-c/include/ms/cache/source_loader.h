@@ -16,6 +16,7 @@ typedef enum MsSourceLoadStatus {
 
 typedef struct MsSourceLoadOptions {
   int cache_enabled;
+  int allow_cache_without_source;
   MsCacheEntryKind entry_kind;
 } MsSourceLoadOptions;
 

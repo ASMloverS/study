@@ -2040,6 +2040,9 @@ void ms_module_init(MsModule* module, const char* name) {
 
   if (name != NULL) {
     canonical_path = ms_vm_normalize_path(name);
+    if (canonical_path == NULL) {
+      canonical_path = ms_vm_strdup(name);
+    }
   }
 
   ms_object_init(&module->object, MS_OBJ_MODULE);
@@ -2109,6 +2112,7 @@ void ms_vm_init(MsVM* vm) {
   ms_diag_list_init(&vm->diagnostics);
   vm->write_fn = NULL;
   vm->write_user_data = NULL;
+  vm->direct_cache_entry = 0;
 }
 
 void ms_vm_destroy(MsVM* vm) {
@@ -2161,6 +2165,7 @@ void ms_vm_destroy(MsVM* vm) {
   ms_diag_list_destroy(&vm->diagnostics);
   vm->write_fn = NULL;
   vm->write_user_data = NULL;
+  vm->direct_cache_entry = 0;
 }
 
 void ms_vm_set_current_module(MsVM* vm, MsModule* module) {
@@ -2177,6 +2182,14 @@ void ms_vm_set_cache_enabled(MsVM* vm, int cache_enabled) {
   }
 
   vm->cache_enabled = cache_enabled ? 1 : 0;
+}
+
+void ms_vm_set_direct_cache_entry(MsVM* vm, int direct_cache_entry) {
+  if (vm == NULL) {
+    return;
+  }
+
+  vm->direct_cache_entry = direct_cache_entry ? 1 : 0;
 }
 
 void ms_vm_set_source_load_callback(MsVM* vm,
@@ -2247,11 +2260,19 @@ int ms_vm_resolve_module_path(const MsVM* vm,
   for (i = 0; i < vm->module_search_root_count; ++i) {
     char* candidate_path = ms_vm_join_path(vm->module_search_roots[i], relative_path);
     char* normalized_path = NULL;
+    char* cache_path = NULL;
 
     if (candidate_path != NULL && ms_vm_file_exists(candidate_path)) {
       normalized_path = ms_vm_normalize_path(candidate_path);
     }
+    if (normalized_path == NULL && vm->direct_cache_entry &&
+        candidate_path != NULL && ms_cache_derive_path(candidate_path, &cache_path) &&
+        ms_vm_file_exists(cache_path)) {
+      normalized_path = candidate_path;
+      candidate_path = NULL;
+    }
     free(candidate_path);
+    free(cache_path);
     if (normalized_path != NULL) {
       *out_canonical_path = normalized_path;
       free(relative_path);
@@ -2278,6 +2299,9 @@ MsModule* ms_vm_get_or_create_module(MsVM* vm,
   }
 
   canonical_path = ms_vm_normalize_path(path);
+  if (canonical_path == NULL) {
+    canonical_path = ms_vm_strdup(path);
+  }
   if (canonical_path == NULL) {
     return NULL;
   }
@@ -2530,6 +2554,7 @@ static MsVmResult ms_vm_load_module(MsVM* vm,
 
   ms_source_load_options_init(&load_options);
   load_options.cache_enabled = vm->cache_enabled;
+  load_options.allow_cache_without_source = vm->direct_cache_entry;
   load_options.entry_kind = MS_CACHE_ENTRY_KIND_MODULE;
   ms_source_load_result_init(&load_result);
   ms_diag_list_init(&diagnostics);

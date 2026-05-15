@@ -126,6 +126,7 @@ static int mslangc_run_source(const char *file,
 
 static int mslangc_execute_chunk(const char *file,
                                  int cache_enabled,
+                                 int direct_cache_entry,
                                  const MsChunk *chunk,
                                  FILE *error_stream);
 
@@ -167,7 +168,11 @@ static int mslangc_run_cache_file(const char *file,
   }
 
   display_path = read_info.display_path != NULL ? read_info.display_path : file;
-  exit_code = mslangc_execute_chunk(display_path, cache_enabled, &chunk, error_stream);
+  exit_code = mslangc_execute_chunk(display_path,
+                                    cache_enabled,
+                                    1,
+                                    &chunk,
+                                    error_stream);
   ms_cache_file_read_info_destroy(&read_info);
   ms_chunk_destroy(&chunk);
   return exit_code;
@@ -299,6 +304,7 @@ static void mslangc_add_module_search_roots(MsVM *vm, const char *file) {
 
 static int mslangc_execute_chunk(const char *file,
                                  int cache_enabled,
+                                 int direct_cache_entry,
                                  const MsChunk *chunk,
                                  FILE *error_stream) {
   MsVM vm;
@@ -307,6 +313,7 @@ static int mslangc_execute_chunk(const char *file,
 
   ms_vm_init(&vm);
   ms_vm_set_cache_enabled(&vm, cache_enabled);
+  ms_vm_set_direct_cache_entry(&vm, direct_cache_entry);
   mslangc_add_module_search_roots(&vm, file);
   ms_module_init(&module, file);
   ms_vm_set_current_module(&vm, &module);
@@ -363,6 +370,7 @@ static int mslangc_run_script_file(const char *file,
                                         ? result.source.display_path
                                         : file,
                                     cache_enabled,
+                                    0,
                                     &result.chunk,
                                     error_stream);
   ms_source_load_result_destroy(&result);
@@ -390,7 +398,7 @@ static int mslangc_run_source(const char *file,
   }
   ms_diag_list_destroy(&diagnostics);
 
-  exit_code = mslangc_execute_chunk(file, cache_enabled, &chunk, error_stream);
+  exit_code = mslangc_execute_chunk(file, cache_enabled, 0, &chunk, error_stream);
   ms_chunk_destroy(&chunk);
   return exit_code;
 }

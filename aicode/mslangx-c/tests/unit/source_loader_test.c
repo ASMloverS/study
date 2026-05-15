@@ -264,6 +264,47 @@ static int test_corrupt_cache_falls_back_to_source(void) {
   return 0;
 }
 
+static int test_cache_load_without_source_metadata(void) {
+  MsSourceLoadOptions options;
+  MsSourceLoadResult first;
+  MsSourceLoadResult second;
+  MsDiagnosticList diagnostics;
+  char source_path[256];
+  char cache_path[256];
+  MsSourceLoadStatus status;
+  const char *source = "var answer = 84\nprint answer\n";
+
+  TEST_ASSERT(build_source_paths(source_path, sizeof(source_path), cache_path,
+                                 sizeof(cache_path), "source_free") == 0);
+  TEST_ASSERT(write_text_file(source_path, source) == 0);
+
+  ms_source_load_options_init(&options);
+  ms_source_load_result_init(&first);
+  ms_source_load_result_init(&second);
+  ms_diag_list_init(&diagnostics);
+
+  status = ms_source_load_source(source_path, &options, &diagnostics, &first);
+  TEST_ASSERT(status == MS_SOURCE_LOAD_STATUS_OK);
+  TEST_ASSERT(first.loaded_from_cache == 0);
+  TEST_ASSERT(file_exists(cache_path));
+  TEST_ASSERT(remove(source_path) == 0);
+
+  options.allow_cache_without_source = 1;
+  status = ms_source_load_source(source_path, &options, &diagnostics, &second);
+  TEST_ASSERT(status == MS_SOURCE_LOAD_STATUS_OK);
+  TEST_ASSERT(second.loaded_from_cache == 1);
+  TEST_ASSERT(second.source.display_path != NULL);
+  TEST_ASSERT(strcmp(second.source.display_path, source_path) == 0);
+  TEST_ASSERT(second.cache_path != NULL);
+  TEST_ASSERT(strcmp(second.cache_path, cache_path) == 0);
+  TEST_ASSERT(compare_chunks(&first.chunk, &second.chunk) == 0);
+
+  ms_source_load_result_destroy(&first);
+  ms_source_load_result_destroy(&second);
+  ms_diag_list_destroy(&diagnostics);
+  return 0;
+}
+
 static int test_cache_disabled_skips_write(void) {
   MsSourceLoadOptions options;
   MsSourceLoadResult result;
@@ -325,6 +366,7 @@ static int test_non_ms_path_rejected(void) {
 int main(void) {
   TEST_ASSERT(test_cache_write_and_hit() == 0);
   TEST_ASSERT(test_corrupt_cache_falls_back_to_source() == 0);
+  TEST_ASSERT(test_cache_load_without_source_metadata() == 0);
   TEST_ASSERT(test_cache_disabled_skips_write() == 0);
   TEST_ASSERT(test_non_ms_path_rejected() == 0);
   return 0;

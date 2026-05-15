@@ -278,6 +278,32 @@ add_test(NAME mscache.cli.direct_import_moved_cache
 set_tests_properties(mscache.cli.direct_import_moved_cache PROPERTIES
   LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
 
+add_test(NAME mscache.cli.direct_import_source_free
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_import_source_free"
+    -DMODE=direct_import_source_free
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_import.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/mscache/modules"
+    -DMODULE_SOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/mscache/modules/cache/dep.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_import.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_import_source_free PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
+add_test(NAME mscache.cli.direct_import_fallback_source
+  COMMAND "${CMAKE_COMMAND}"
+    -DMSLANGC_EXE="$<TARGET_FILE:mslangc>"
+    -DWORK_DIR="${CMAKE_CURRENT_BINARY_DIR}/mscache/mscache.cli.direct_import_fallback_source"
+    -DMODE=direct_import_fallback_source
+    -DSOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_import.ms"
+    -DMODULE_FIXTURE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/mscache/modules"
+    -DMODULE_SOURCE_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/mscache/modules/cache/dep.ms"
+    -DEXPECT_STDOUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/e2e/mscache/direct_import.ms.out"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_mslangc_direct_cache.cmake")
+set_tests_properties(mscache.cli.direct_import_fallback_source PROPERTIES
+  LABELS "${MSLANGC_TEST_LABEL_INTEGRATION};${MSLANGC_TEST_LABEL_CONFORMANCE};cli;mscache")
+
 add_subdirectory(unit)
 
 mslangc_add_e2e_basic_test(e2e_basic.smoke smoke.ms)

@@ -86,6 +86,7 @@ typedef struct MsVM {
   MsDiagnosticList diagnostics;
   MsVmWriteFn write_fn;
   void* write_user_data;
+  int direct_cache_entry;
 } MsVM;
 
 void ms_module_init(MsModule* module, const char* name);
@@ -101,6 +102,7 @@ void ms_vm_gc_mark_roots(MsVM* vm);
 void ms_vm_gc_collect(MsVM* vm);
 void ms_vm_set_current_module(MsVM* vm, MsModule* module);
 void ms_vm_set_cache_enabled(MsVM* vm, int cache_enabled);
+void ms_vm_set_direct_cache_entry(MsVM* vm, int direct_cache_entry);
 void ms_vm_set_source_load_callback(MsVM* vm,
                                     MsVmSourceLoadFn source_load_fn,
                                     void* source_load_user_data);

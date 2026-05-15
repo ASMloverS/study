@@ -137,6 +137,38 @@ if(DEFINED SOURCE_FIXTURE)
     cache_path)
 endif()
 
+if(MODE STREQUAL "direct_import_source_free" OR
+   MODE STREQUAL "direct_import_fallback_source")
+  if(NOT DEFINED MODULE_FIXTURE_ROOT)
+    message(FATAL_ERROR "MODULE_FIXTURE_ROOT is required")
+  endif()
+  mslangc_unquote(actual_module_fixture_root "${MODULE_FIXTURE_ROOT}")
+  if(NOT EXISTS "${actual_module_fixture_root}")
+    message(FATAL_ERROR "Module fixture root not found: ${actual_module_fixture_root}")
+  endif()
+endif()
+
+if(MODE STREQUAL "direct_import_source_free" OR
+   MODE STREQUAL "direct_import_fallback_source")
+  if(NOT DEFINED MODULE_SOURCE_FIXTURE)
+    message(FATAL_ERROR "MODULE_SOURCE_FIXTURE is required")
+  endif()
+  mslangc_unquote(actual_module_source_fixture "${MODULE_SOURCE_FIXTURE}")
+  if(NOT EXISTS "${actual_module_source_fixture}")
+    message(FATAL_ERROR "Module source fixture not found: ${actual_module_source_fixture}")
+  endif()
+
+  file(RELATIVE_PATH module_relative_path
+    "${actual_module_fixture_root}"
+    "${actual_module_source_fixture}")
+  get_filename_component(module_relative_dir "${module_relative_path}" DIRECTORY)
+  get_filename_component(module_source_name_we "${actual_module_source_fixture}" NAME_WE)
+  set(module_source_path
+    "${actual_work_dir}/tests/fixtures/modules/${module_relative_path}")
+  set(module_cache_path
+    "${actual_work_dir}/tests/fixtures/modules/${module_relative_dir}/__mscache__/${module_source_name_we}.msc")
+endif()
+
 if(MODE STREQUAL "direct_create_reuse")
   mslangc_expect_run(
     COMMAND "${actual_mslangc_exe}" "${script_path}"
@@ -234,6 +266,60 @@ elseif(MODE STREQUAL "direct_import_moved_cache")
   file(REMOVE "${script_path}")
   mslangc_expect_run(
     COMMAND "${actual_mslangc_exe}" "${relocated_cache_path}"
+    EXPECT_EXIT 0
+    EXPECT_STDOUT_FILE "${EXPECT_STDOUT_FILE}")
+elseif(MODE STREQUAL "direct_import_source_free")
+  if(NOT DEFINED MODULE_FIXTURE_ROOT)
+    message(FATAL_ERROR "MODULE_FIXTURE_ROOT is required")
+  endif()
+  mslangc_unquote(actual_module_fixture_root "${MODULE_FIXTURE_ROOT}")
+  if(NOT EXISTS "${actual_module_fixture_root}")
+    message(FATAL_ERROR "Module fixture root not found: ${actual_module_fixture_root}")
+  endif()
+
+  file(MAKE_DIRECTORY "${actual_work_dir}/tests/e2e/mscache")
+  mslangc_copy_source_fixture("${actual_work_dir}/tests/e2e/mscache"
+    "${actual_source_fixture}"
+    script_path
+    cache_path)
+  mslangc_copy_module_fixture_root("${actual_work_dir}"
+    "${actual_module_fixture_root}")
+
+  mslangc_expect_run(
+    COMMAND "${actual_mslangc_exe}" "${script_path}"
+    EXPECT_EXIT 0
+    EXPECT_STDOUT_FILE "${EXPECT_STDOUT_FILE}")
+  file(REMOVE "${script_path}")
+  file(REMOVE "${module_source_path}")
+  mslangc_expect_run(
+    COMMAND "${actual_mslangc_exe}" "${cache_path}"
+    EXPECT_EXIT 0
+    EXPECT_STDOUT_FILE "${EXPECT_STDOUT_FILE}")
+elseif(MODE STREQUAL "direct_import_fallback_source")
+  if(NOT DEFINED MODULE_FIXTURE_ROOT)
+    message(FATAL_ERROR "MODULE_FIXTURE_ROOT is required")
+  endif()
+  mslangc_unquote(actual_module_fixture_root "${MODULE_FIXTURE_ROOT}")
+  if(NOT EXISTS "${actual_module_fixture_root}")
+    message(FATAL_ERROR "Module fixture root not found: ${actual_module_fixture_root}")
+  endif()
+
+  file(MAKE_DIRECTORY "${actual_work_dir}/tests/e2e/mscache")
+  mslangc_copy_source_fixture("${actual_work_dir}/tests/e2e/mscache"
+    "${actual_source_fixture}"
+    script_path
+    cache_path)
+  mslangc_copy_module_fixture_root("${actual_work_dir}"
+    "${actual_module_fixture_root}")
+
+  mslangc_expect_run(
+    COMMAND "${actual_mslangc_exe}" "${script_path}"
+    EXPECT_EXIT 0
+    EXPECT_STDOUT_FILE "${EXPECT_STDOUT_FILE}")
+  file(REMOVE "${script_path}")
+  file(REMOVE "${module_cache_path}")
+  mslangc_expect_run(
+    COMMAND "${actual_mslangc_exe}" "${cache_path}"
     EXPECT_EXIT 0
     EXPECT_STDOUT_FILE "${EXPECT_STDOUT_FILE}")
 else()
