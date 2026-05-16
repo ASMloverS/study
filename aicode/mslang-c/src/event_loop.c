@@ -225,8 +225,12 @@ int ms_loop_run_until_complete(MsEventLoop* loop, MsObjFuture* root) {
 
         /* 4. Poll IO if ready queue is still empty */
         if (ready_is_empty(loop)) {
-            uint64_t timeout = next_timer_timeout(loop, ms_monotonic_ms());
-            ms_reactor_poll(&loop->reactor, timeout);
+            int64_t timeout = (int64_t)next_timer_timeout(loop, ms_monotonic_ms());
+            MsIOReadyEvent io_evs[64];
+            int io_count = 0;
+            ms_reactor_poll(&loop->reactor, timeout, io_evs, 64, &io_count);
+            /* io_evs processing (future resolve) is handled by ASYNC-06 socket layer;
+               here we only need the sleep/wakeup behaviour. */
         }
     }
 

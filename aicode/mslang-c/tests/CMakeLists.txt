@@ -103,3 +103,6 @@ target_link_libraries(test_future PRIVATE ms_frontend)
 
 ms_add_test(test_event_loop unit/test_event_loop.c)
 target_link_libraries(test_event_loop PRIVATE ms_frontend ms_event_loop)
+
+ms_add_test(test_reactor unit/test_reactor.c)
+target_link_libraries(test_reactor PRIVATE ms_reactor)

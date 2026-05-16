@@ -29,6 +29,7 @@ static void cleanup_cache(void) {
 
 static void test_cache_path_for(void) {
     char out[512];
+    char tiny[10];
 
     /* script with directory and .ms extension */
     TEST_ASSERT(ms_cache_path_for("tests/foo.ms", out, sizeof(out)));
@@ -43,8 +44,7 @@ static void test_cache_path_for(void) {
     TEST_ASSERT_STR_EQ(out, "__mscache__/baz.msc");
 
     /* buffer too small -> false */
-    char small[10];
-    TEST_ASSERT(!ms_cache_path_for("some/long/path/script.ms", small, sizeof(small)));
+    TEST_ASSERT(!ms_cache_path_for("some/long/path/script.ms", tiny, sizeof(tiny)));
 }
 
 static void test_roundtrip_hash_mode(void) {
