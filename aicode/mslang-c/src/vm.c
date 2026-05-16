@@ -771,6 +771,7 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         &&L_MS_OP_THROW, &&L_MS_OP_TRY, &&L_MS_OP_ENDTRY,
         &&L_MS_OP_DEFER,
         &&L_MS_OP_YIELD, &&L_MS_OP_RESUME,
+        &&L_MS_OP_AWAIT,
         &&L_MS_OP_ADD_II, &&L_MS_OP_ADD_FF, &&L_MS_OP_ADD_SS,
         &&L_MS_OP_SUB_II, &&L_MS_OP_SUB_FF,
         &&L_MS_OP_MUL_II, &&L_MS_OP_MUL_FF,
@@ -1920,6 +1921,41 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
             frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             R(A) = result;
             break;
+        }
+
+        VM_CASE(MS_OP_AWAIT) {
+            /* A=result_reg, B=future_reg */
+            MsValue fval = R(B);
+            if (!MS_IS_FUTURE(fval)) {
+                RUNTIME_ERROR(vm, "await: expected Future.");
+            }
+            MsObjFuture* fut = MS_AS_FUTURE(fval);
+            if (fut->state == MS_FUTURE_RESOLVED) {
+                R(A) = fut->result;   /* fast path: already resolved */
+                break;
+            }
+            if (fut->state == MS_FUTURE_REJECTED) {
+                if (!throw_exception(vm, fut->result))
+                    return MS_INTERPRET_RUNTIME_ERROR;
+                /* Refresh frame after exception dispatch */
+                frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
+                break;
+            }
+            /* PENDING: register waiter, suspend coroutine */
+            MsObjCoroutine* coro = vm->current_coroutine;
+            if (!coro) {
+                RUNTIME_ERROR(vm, "await outside async context.");
+            }
+            MsWaiter* w = (MsWaiter*)malloc(sizeof(MsWaiter));
+            if (!w) { RUNTIME_ERROR(vm, "out of memory in await."); }
+            w->type               = MS_WAITER_CORO;
+            w->u.coro.coro        = coro;
+            w->u.coro.frame_index = coro->ctx.frame_count - 1;
+            w->u.coro.result_reg  = A;
+            w->next               = fut->waiters;
+            fut->waiters          = w;
+            coro->state           = MS_CORO_SUSPENDED;
+            return MS_INTERPRET_AWAIT;
         }
 
         VM_CASE(MS_OP_IMPORT) {

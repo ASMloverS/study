@@ -306,6 +306,14 @@ void ms_object_print(MsObject* obj) {
             printf("<coroutine %s>", state);
             break;
         }
+        case MS_OBJ_FUTURE: {
+            MsObjFuture* f = (MsObjFuture*)obj;
+            const char* s = "pending";
+            if (f->state == MS_FUTURE_RESOLVED) s = "resolved";
+            if (f->state == MS_FUTURE_REJECTED)  s = "rejected";
+            printf("<future %s>", s);
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -403,6 +411,18 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             ms_reallocate(vm, obj, sizeof(MsObjCoroutine), 0);
             break;
         }
+        case MS_OBJ_FUTURE: {
+            MsObjFuture* f = (MsObjFuture*)obj;
+            /* Free any remaining waiters (future died before resolution) */
+            MsWaiter* w = f->waiters;
+            while (w) {
+                MsWaiter* next = w->next;
+                free(w);
+                w = next;
+            }
+            ms_reallocate(vm, obj, sizeof(MsObjFuture), 0);
+            break;
+        }
         default:
             /* Unhandled object type: abort to catch missing free cases early. */
             abort();
@@ -451,6 +471,88 @@ MsObjString* ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb) {
 
 #define CORO_STACK_SIZE 256
 #define CORO_FRAME_CAP  16
+
+/* ---- Future ---- */
+
+MsObjFuture* ms_obj_future_new(struct MsVM* vm) {
+    MsObjFuture* f = MS_ALLOC_OBJ(vm, MS_OBJ_FUTURE, MsObjFuture, 0);
+    f->state   = MS_FUTURE_PENDING;
+    f->coro    = NULL;
+    f->result  = MS_NIL_VAL();
+    f->waiters = NULL;
+    return f;
+}
+
+void ms_future_resolve(struct MsVM* vm, MsObjFuture* fut, MsValue result) {
+    if (fut->state != MS_FUTURE_PENDING) return;
+    fut->state  = MS_FUTURE_RESOLVED;
+    fut->coro   = NULL;
+    fut->result = result;
+    for (MsWaiter* w = fut->waiters; w; w = w->next) {
+        if (w->type == MS_WAITER_CORO) {
+            MsObjCoroutine* co = w->u.coro.coro;
+            co->ctx.frames[w->u.coro.frame_index].slots[w->u.coro.result_reg] = result;
+            co->state = MS_CORO_SUSPENDED;
+        } else {
+            w->u.cb.on_resolve(vm, w->u.cb.userdata, w->u.cb.index, result);
+        }
+    }
+    /* Free waiter list */
+    MsWaiter* w = fut->waiters;
+    while (w) {
+        MsWaiter* next = w->next;
+        free(w);
+        w = next;
+    }
+    fut->waiters = NULL;
+}
+
+void ms_future_reject(struct MsVM* vm, MsObjFuture* fut, MsValue error) {
+    if (fut->state != MS_FUTURE_PENDING) return;
+    fut->state  = MS_FUTURE_REJECTED;
+    fut->coro   = NULL;
+    fut->result = error;
+    for (MsWaiter* w = fut->waiters; w; w = w->next) {
+        if (w->type == MS_WAITER_CORO) {
+            /* Mark coroutine dead; error propagation handled by VM on resume */
+            w->u.coro.coro->state = MS_CORO_DEAD;
+        } else {
+            w->u.cb.on_reject(vm, w->u.cb.userdata, error);
+        }
+    }
+    MsWaiter* w = fut->waiters;
+    while (w) {
+        MsWaiter* next = w->next;
+        free(w);
+        w = next;
+    }
+    fut->waiters = NULL;
+}
+
+void ms_future_add_cb_waiter(struct MsVM* vm, MsObjFuture* fut,
+                              MsWaiterResolveFn on_resolve,
+                              MsWaiterRejectFn  on_reject,
+                              void* userdata, int index) {
+    MS_UNUSED(vm);
+    MsWaiter* w = (MsWaiter*)malloc(sizeof(MsWaiter));
+    if (!w) abort();
+    w->type            = MS_WAITER_CB;
+    w->u.cb.on_resolve = on_resolve;
+    w->u.cb.on_reject  = on_reject;
+    w->u.cb.userdata   = userdata;
+    w->u.cb.index      = index;
+    w->next            = fut->waiters;
+    fut->waiters       = w;
+}
+
+MsObjList* ms_obj_list_from_array(struct MsVM* vm, MsValue* items, int count) {
+    MsObjList* list = ms_obj_list_new(vm);
+    for (int i = 0; i < count; i++)
+        ms_value_array_push(&list->items, items[i]);
+    return list;
+}
+
+/* ---- Coroutine ---- */
 
 MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl) {
     MsObjCoroutine* co = MS_ALLOC_OBJ(vm, MS_OBJ_COROUTINE, MsObjCoroutine, 0);

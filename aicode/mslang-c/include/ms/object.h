@@ -257,6 +257,68 @@ typedef struct {
 
 MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl);
 
+/* ---- Future ---- */
+
+typedef enum {
+    MS_FUTURE_PENDING,
+    MS_FUTURE_RESOLVED,
+    MS_FUTURE_REJECTED,
+} MsFutureState;
+
+/* Generic resolve/reject callbacks for non-coroutine waiters (e.g. gather). */
+typedef void (*MsWaiterResolveFn)(struct MsVM* vm, void* userdata,
+                                   int index, MsValue result);
+typedef void (*MsWaiterRejectFn)(struct MsVM* vm, void* userdata, MsValue error);
+
+/* Waiter types: ordinary coroutine await vs. gather callback */
+typedef enum {
+    MS_WAITER_CORO,    /* normal await: resume a coroutine */
+    MS_WAITER_CB,      /* callback waiter: used by gather */
+} MsWaiterType;
+
+typedef struct MsWaiter {
+    MsWaiterType type;
+    union {
+        struct {
+            MsObjCoroutine* coro;
+            int             frame_index;
+            int             result_reg;
+        } coro;
+        struct {
+            MsWaiterResolveFn on_resolve;
+            MsWaiterRejectFn  on_reject;
+            void*             userdata;
+            int               index;
+        } cb;
+    } u;
+    struct MsWaiter* next;
+} MsWaiter;
+
+typedef struct {
+    MsObject        obj;   /* GC header, type = MS_OBJ_FUTURE */
+    MsFutureState   state;
+    MsObjCoroutine* coro;      /* PENDING: held coroutine; NULL after resolution */
+    MsValue         result;    /* RESOLVED→return value; REJECTED→error value */
+    MsWaiter*       waiters;   /* linked list of waiting coroutines/gathers */
+} MsObjFuture;
+
+#define MS_IS_FUTURE(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_FUTURE)
+#define MS_AS_FUTURE(v)  ((MsObjFuture*)MS_AS_OBJECT(v))
+
+MsObjFuture* ms_obj_future_new(struct MsVM* vm);
+void         ms_future_resolve(struct MsVM* vm, MsObjFuture* fut, MsValue result);
+void         ms_future_reject(struct MsVM* vm, MsObjFuture* fut, MsValue error);
+
+/* Add a callback waiter to a pending future.
+   on_resolve/on_reject are called when the future completes. */
+void ms_future_add_cb_waiter(struct MsVM* vm, MsObjFuture* fut,
+                              MsWaiterResolveFn on_resolve,
+                              MsWaiterRejectFn  on_reject,
+                              void* userdata, int index);
+
+/* Build an ObjList from a C array of MsValue (used by gather). */
+MsObjList* ms_obj_list_from_array(struct MsVM* vm, MsValue* items, int count);
+
 /* ---- StringBuilder ---- */
 
 typedef struct {

@@ -41,7 +41,8 @@ typedef enum {
     MS_INTERPRET_OK,
     MS_INTERPRET_COMPILE_ERROR,
     MS_INTERPRET_RUNTIME_ERROR,
-    MS_INTERPRET_YIELD,  /* internal: coroutine suspended at yield */
+    MS_INTERPRET_YIELD,   /* internal: coroutine suspended at yield */
+    MS_INTERPRET_AWAIT,   /* internal: async coroutine awaiting a future */
 } MsInterpretResult;
 
 typedef enum {
