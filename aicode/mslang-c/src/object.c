@@ -94,6 +94,7 @@ MsObjFunction* ms_obj_function_new(struct MsVM* vm) {
     fn->upvalue_count = 0;
     fn->max_stack_size = 0;
     fn->is_generator = false;
+    fn->is_async     = false;
     fn->name = NULL;
     fn->script_path = NULL;
     fn->ic = NULL;

@@ -19,6 +19,7 @@ static void parse_dot(MsCompiler* c, bool can_assign);
 static void parse_print_stmt(MsCompiler* c, bool can_assign);
 static void parse_fun_expr(MsCompiler* c, bool can_assign);
 static void parse_yield_expr(MsCompiler* c, bool can_assign);
+static void parse_await_expr(MsCompiler* c, bool can_assign);
 static void parse_this(MsCompiler* c, bool can_assign);
 static void parse_super(MsCompiler* c, bool can_assign);
 static void parse_list(MsCompiler* c, bool can_assign);
@@ -595,6 +596,19 @@ static void parse_yield_expr(MsCompiler* c, bool can_assign) {
     }
 }
 
+static void parse_await_expr(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    if (!c->in_async_fun) {
+        error_at(c, &c->previous, "'await' can only be used inside an async function.");
+        return;
+    }
+    parse_precedence(c, PREC_UNARY);
+    int fut_reg = c->next_reg - 1;
+    /* OP_AWAIT A=result_reg B=future_reg: overwrites fut_reg with resolved value */
+    emit(c, ms_enc_ABC(MS_OP_AWAIT, fut_reg, fut_reg, 0));
+    /* next_reg stays as fut_reg+1; result is in fut_reg */
+}
+
 /* ---- collection literals ---- */
 
 static void parse_list(MsCompiler* c, bool can_assign) {
@@ -796,6 +810,9 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* THROW */           RULE(NO, NO, PREC_NONE),
     /* DEFER */           RULE(NO, NO, PREC_NONE),
     /* YIELD */           RULE(parse_yield_expr, NO, PREC_NONE),
+    /* ASYNC */           RULE(NO, NO, PREC_NONE),
+    /* AWAIT */           RULE(parse_await_expr, NO, PREC_NONE),
+    /* SPAWN */           RULE(NO, NO, PREC_NONE),
     /* SWITCH */          RULE(NO, NO, PREC_NONE),
     /* CASE */            RULE(NO, NO, PREC_NONE),
     /* DEFAULT */         RULE(NO, NO, PREC_NONE),

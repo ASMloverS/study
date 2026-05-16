@@ -1,4 +1,5 @@
 #include "compiler_impl.h"
+#include "ms/table.h"
 #include "ms/opcode.h"
 #include "ms/optimize.h"
 #include <stdio.h>
@@ -227,8 +228,9 @@ static void compiler_init(MsCompiler* c, MsVM* vm, const char* source,
     c->scope_depth = 0;
     c->next_reg    = 0;
     c->max_reg     = 0;
-    c->loop        = NULL;
-    c->klass       = NULL;
+    c->loop          = NULL;
+    c->klass         = NULL;
+    c->in_async_fun  = false;
     ms_table_init(&c->string_cache);
     advance(c);
 }
@@ -680,6 +682,10 @@ static void parse_defer_stmt(MsCompiler* c) {
 /* ---- yield ---- */
 
 static void parse_yield_stmt(MsCompiler* c) {
+    if (c->in_async_fun) {
+        error_current(c, "'yield' inside async function.");
+        return;
+    }
     if (check(c, MS_TK_NEWLINE) || check(c, MS_TK_SEMICOLON) ||
         check(c, MS_TK_RIGHT_BRACE) || check(c, MS_TK_EOF_TOKEN)) {
         /* yield with no value: yields nil, returns sent value */
@@ -729,8 +735,9 @@ void compile_function(MsCompiler* outer, const char* fname, int flen) {
     inner.next_reg    = 0;
     inner.max_reg     = 0;
     inner.loop        = NULL;
-    inner.klass       = outer->klass;
+    inner.klass        = outer->klass;
     inner.is_generator = false;
+    inner.in_async_fun = false;
     ms_table_init(&inner.string_cache);
 
     if (flen > 0)
@@ -830,8 +837,9 @@ void compile_generator_function(MsCompiler* outer, const char* fname, int flen) 
     inner.next_reg    = 0;
     inner.max_reg     = 0;
     inner.loop        = NULL;
-    inner.klass       = outer->klass;
+    inner.klass        = outer->klass;
     inner.is_generator = true;
+    inner.in_async_fun = false;
     ms_table_init(&inner.string_cache);
 
     inner.function->is_generator = true;
@@ -892,12 +900,98 @@ void compile_generator_function(MsCompiler* outer, const char* fname, int flen) 
     }
 }
 
-static void parse_fun_decl(MsCompiler* c) {
-    bool is_gen = match_tok(c, MS_TK_STAR);
+void compile_async_function(MsCompiler* outer, const char* fname, int flen) {
+    MsCompiler inner;
+    ms_scanner_init(&inner.scanner, outer->scanner.source);
+    inner.scanner    = outer->scanner;
+    inner.current    = outer->current;
+    inner.previous   = outer->previous;
+    inner.had_error  = false;
+    inner.panic_mode = false;
+    inner.diags      = outer->diags;
+    inner.diag_count = outer->diag_count;
+    inner.max_diags  = outer->max_diags;
+    inner.vm         = outer->vm;
+    inner.function   = ms_obj_function_new(outer->vm);
+    inner.enclosing  = outer;
+    inner.local_count = 0;
+    inner.scope_depth = 1;
+    inner.next_reg    = 0;
+    inner.max_reg     = 0;
+    inner.loop        = NULL;
+    inner.klass       = outer->klass;
+    inner.is_generator = false;
+    inner.in_async_fun = true;
+    ms_table_init(&inner.string_cache);
+
+    inner.function->is_async = true;
+    if (flen > 0)
+        inner.function->name = ms_obj_string_copy(outer->vm, fname, flen);
+
+    inner.function->arity = 0;
+    if (match_tok(&inner, MS_TK_LEFT_PAREN)) {
+        if (!check(&inner, MS_TK_RIGHT_PAREN)) {
+            do {
+                consume(&inner, MS_TK_IDENTIFIER, "Expected parameter name.");
+                MsToken pname = inner.previous;
+                if (inner.local_count >= 256) {
+                    error_at(&inner, &pname, "Too many parameters.");
+                    break;
+                }
+                int slot = inner.next_reg++;
+                if (slot > inner.max_reg) inner.max_reg = slot;
+                MsLocal* loc = &inner.locals[inner.local_count++];
+                loc->name        = pname;
+                loc->depth       = 1;
+                loc->is_captured = false;
+                loc->slot        = slot;
+                inner.function->arity++;
+                inner.function->min_arity = inner.function->arity;
+            } while (match_tok(&inner, MS_TK_COMMA));
+        }
+        consume(&inner, MS_TK_RIGHT_PAREN, "Expected ')' after parameters.");
+    }
+    consume(&inner, MS_TK_LEFT_BRACE, "Expected '{' before function body.");
+
+    while (!check(&inner, MS_TK_RIGHT_BRACE) && !check(&inner, MS_TK_EOF_TOKEN)) {
+        if (match_tok(&inner, MS_TK_NEWLINE) || match_tok(&inner, MS_TK_SEMICOLON))
+            continue;
+        compile_statement(&inner);
+    }
+    consume(&inner, MS_TK_RIGHT_BRACE, "Expected '}' after function body.");
+
+    emit(&inner, ms_enc_ABC(MS_OP_RETURN, 0, 1, 0));
+    inner.function->max_stack_size = inner.max_reg;
+
+    outer->scanner  = inner.scanner;
+    outer->current  = inner.current;
+    outer->previous = inner.previous;
+    if (inner.had_error) outer->had_error = true;
+
+    ms_table_free(&inner.string_cache);
+
+    MsObjFunction* proto = inner.function;
+    int k = add_constant(outer, MS_OBJ_VAL(proto));
+    int r = alloc_reg(outer);
+    emit(outer, ms_enc_ABx(MS_OP_CLOSURE, r, k));
+
+    for (int i = 0; i < proto->upvalue_count; i++) {
+        emit(outer, ms_enc_ABx(MS_OP_EXTRAARG,
+                               inner.upvalues[i].is_local ? 1 : 0,
+                               inner.upvalues[i].index));
+    }
+}
+
+/* parse_fun_decl: called after TK_FUN is consumed.
+   is_async: true if 'async' keyword preceded 'fun'. */
+static void parse_fun_decl_impl(MsCompiler* c, bool is_async) {
+    bool is_gen = !is_async && match_tok(c, MS_TK_STAR);
     consume(c, MS_TK_IDENTIFIER, "Expected function name.");
     MsToken name = c->previous;
     int reg_before = c->next_reg;
-    if (is_gen)
+    if (is_async)
+        compile_async_function(c, name.start, name.length);
+    else if (is_gen)
         compile_generator_function(c, name.start, name.length);
     else
         compile_function(c, name.start, name.length);
@@ -1096,8 +1190,12 @@ static void compile_statement(MsCompiler* c) {
     } else if (match_tok(c, MS_TK_SWITCH)) {
         parse_switch_stmt(c);
         return;
+    } else if (match_tok(c, MS_TK_ASYNC)) {
+        consume(c, MS_TK_FUN, "Expected 'fun' after 'async'.");
+        parse_fun_decl_impl(c, true);
+        return;
     } else if (match_tok(c, MS_TK_FUN)) {
-        parse_fun_decl(c);
+        parse_fun_decl_impl(c, false);
         return;
     } else if (match_tok(c, MS_TK_CLASS)) {
         parse_class_decl(c);

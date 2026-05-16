@@ -61,6 +61,7 @@ typedef struct {
     int           upvalue_count;
     int           max_stack_size;
     bool          is_generator;
+    bool          is_async;
     MsChunk       chunk;
     MsObjString*  name;
     MsObjString*  script_path;   /* canonical path of source file (for module imports) */

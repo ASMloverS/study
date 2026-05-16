@@ -80,6 +80,7 @@ static const char* const k_opcode_names[MS_OP_COUNT] = {
     "THROW", "TRY", "ENDTRY",
     "DEFER",
     "YIELD", "RESUME",
+    "AWAIT",
     "ADD_II", "ADD_FF", "ADD_SS",
     "SUB_II", "SUB_FF",
     "MUL_II", "MUL_FF",

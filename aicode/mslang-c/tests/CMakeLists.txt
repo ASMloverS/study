@@ -94,3 +94,6 @@ target_link_libraries(test_fs_util PRIVATE ms_fs_util)
 
 ms_add_test(test_async_scaffold unit/test_async_scaffold.c)
 target_link_libraries(test_async_scaffold PRIVATE ms_scanner ms_support)
+
+ms_add_test(test_async_frontend unit/test_async_frontend.c)
+target_link_libraries(test_async_frontend PRIVATE ms_frontend)

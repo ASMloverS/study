@@ -1,7 +1,6 @@
 #pragma once
 #include "ms/compiler.h"
 #include "ms/scanner.h"
-#include "ms/table.h"
 
 typedef enum {
     EDESC_VOID, EDESC_NIL, EDESC_TRUE, EDESC_FALSE,
@@ -85,6 +84,7 @@ typedef struct MsCompiler {
     MsClassCompiler* klass;
     MsTable          string_cache;
     bool             is_generator;   /* compiling a fun* body */
+    bool             in_async_fun;   /* compiling an async fun body */
 } MsCompiler;
 
 /* Declared in compiler.c, used by compiler_expr.c */
@@ -110,3 +110,4 @@ const MsParseRule* get_rule(MsTokenType t);   /* alias for rule_at, external use
 int           resolve_upvalue(MsCompiler* c, const char* name, int len);
 void          compile_function(MsCompiler* outer, const char* fname, int flen);
 void          compile_generator_function(MsCompiler* outer, const char* fname, int flen);
+void          compile_async_function(MsCompiler* outer, const char* fname, int flen);
