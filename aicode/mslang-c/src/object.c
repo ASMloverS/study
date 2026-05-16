@@ -2,6 +2,7 @@
 #include "ms/table.h"
 #include "ms/vtable.h"
 #include "ms/vm.h"
+#include "ms/event_loop.h"
 #include "ms/memory.h"
 #include "ms/consts.h"
 #include <limits.h>
@@ -493,6 +494,9 @@ void ms_future_resolve(struct MsVM* vm, MsObjFuture* fut, MsValue result) {
             MsObjCoroutine* co = w->u.coro.coro;
             co->ctx.frames[w->u.coro.frame_index].slots[w->u.coro.result_reg] = result;
             co->state = MS_CORO_SUSPENDED;
+            /* Push the now-runnable coroutine onto the event loop ready queue */
+            if (vm->loop_inited)
+                ms_loop_call_soon(&vm->event_loop, co);
         } else {
             w->u.cb.on_resolve(vm, w->u.cb.userdata, w->u.cb.index, result);
         }

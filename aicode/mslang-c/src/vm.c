@@ -174,6 +174,7 @@ void ms_vm_init(MsVM* vm) {
         char c = (char)i;
         vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
     }
+    vm->loop_inited = false;
     ms_vm_register_natives(vm);
 #ifdef MSLANG_VM_STATS
     memset(&vm->stats, 0, sizeof(vm->stats));
@@ -210,6 +211,10 @@ void ms_vm_free(MsVM* vm) {
     vm->objects = NULL;
     ms_pool_destroy(&vm->upvalue_pool);
     ms_pool_destroy(&vm->bound_pool);
+    if (vm->loop_inited) {
+        ms_loop_destroy(&vm->event_loop);
+        vm->loop_inited = false;
+    }
 }
 
 /* ---- stats API ---- */

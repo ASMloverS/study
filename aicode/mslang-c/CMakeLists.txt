@@ -54,10 +54,15 @@ target_include_directories(ms_object PUBLIC include)
 target_compile_options(ms_object PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_object PUBLIC ms_table ms_vtable ms_memory ms_chunk)
 
+add_library(ms_event_loop STATIC src/event_loop.c)
+target_include_directories(ms_event_loop PUBLIC include)
+target_compile_options(ms_event_loop PRIVATE ${MSLANG_COMPILE_OPTIONS})
+target_link_libraries(ms_event_loop PUBLIC ms_object)
+
 add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c)
 target_include_directories(ms_vm PUBLIC include)
 target_compile_options(ms_vm PRIVATE ${MSLANG_COMPILE_OPTIONS})
-target_link_libraries(ms_vm PUBLIC ms_object)
+target_link_libraries(ms_vm PUBLIC ms_object ms_event_loop)
 
 add_library(ms_optimize STATIC src/optimize.c)
 target_include_directories(ms_optimize PUBLIC include)

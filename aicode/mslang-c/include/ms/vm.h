@@ -2,6 +2,7 @@
 #include "ms/object.h"
 #include "ms/consts.h"
 #include "ms/memory.h"
+#include "ms/event_loop.h"
 #include <stdint.h>
 
 #define MS_STACK_SIZE (MS_FRAMES_MAX * MS_STACK_MAX)
@@ -104,6 +105,9 @@ typedef struct MsVM {
     MsGcPhase       gc_phase;
     MsObject*       sweep_cursor;
     MsObject**      sweep_prev;
+    /* Async event loop (lazy-initialised; always embedded, never heap-allocated) */
+    MsEventLoop     event_loop;
+    bool            loop_inited;
 #ifdef MSLANG_VM_STATS
     MsVMStats       stats;
 #endif

@@ -100,3 +100,6 @@ target_link_libraries(test_async_frontend PRIVATE ms_frontend)
 
 ms_add_test(test_future unit/test_future.c)
 target_link_libraries(test_future PRIVATE ms_frontend)
+
+ms_add_test(test_event_loop unit/test_event_loop.c)
+target_link_libraries(test_event_loop PRIVATE ms_frontend ms_event_loop)

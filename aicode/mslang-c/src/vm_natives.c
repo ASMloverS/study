@@ -1,4 +1,5 @@
 #include "ms/vm.h"
+#include "ms/event_loop.h"
 #include "ms/value.h"
 #include "ms/object.h"
 #include "ms/table.h"
@@ -263,6 +264,42 @@ static MsValue native_resume(MsVM* vm, int argc, MsValue* argv) {
     return result;
 }
 
+/* ---- sleep(ms) - returns a Future resolved after delay_ms ---- */
+
+static MsValue native_sleep(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || (!MS_IS_INT(argv[0]) && !MS_IS_NUMBER(argv[0]))) {
+        ms_vm_runtime_error(vm, "sleep() requires a numeric argument.");
+        return MS_NIL_VAL();
+    }
+    uint64_t delay = MS_IS_INT(argv[0])
+                     ? (uint64_t)MS_AS_INT(argv[0])
+                     : (uint64_t)MS_AS_NUMBER(argv[0]);
+    if (!vm->loop_inited) {
+        ms_loop_init(&vm->event_loop, vm);
+        vm->loop_inited = true;
+    }
+    MsObjFuture* fut = ms_obj_future_new(vm);
+    ms_loop_call_later(&vm->event_loop, delay, fut);
+    return MS_OBJ_VAL((MsObject*)fut);
+}
+
+/* ---- run_until_complete(future) - drives EventLoop until future done ---- */
+
+static MsValue native_run_until_complete(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || !MS_IS_FUTURE(argv[0])) {
+        ms_vm_runtime_error(vm, "run_until_complete() requires a Future argument.");
+        return MS_NIL_VAL();
+    }
+    if (!vm->loop_inited) {
+        ms_loop_init(&vm->event_loop, vm);
+        vm->loop_inited = true;
+    }
+    MsObjFuture* fut = MS_AS_FUTURE(argv[0]);
+    int r = ms_loop_run_until_complete(&vm->event_loop, fut);
+    if (r != 0 /* MS_INTERPRET_OK */) return MS_NIL_VAL();
+    return fut->result;
+}
+
 void ms_vm_register_natives(MsVM* vm) {
     ms_vm_define_native(vm, "clock",   native_clock,    0);
     ms_vm_define_native(vm, "print",   native_print,   -1);
@@ -279,6 +316,8 @@ void ms_vm_register_natives(MsVM* vm) {
     ms_vm_define_native(vm, "setattr", native_setattr,  3);
     ms_vm_define_native(vm, "resume",  native_resume,  -1);
     ms_vm_define_native(vm, "gather",  native_gather,   1);
+    ms_vm_define_native(vm, "sleep",              native_sleep,              1);
+    ms_vm_define_native(vm, "run_until_complete", native_run_until_complete, 1);
     /* legacy aliases */
     ms_vm_define_native(vm, "tostring", native_str,     1);
     ms_vm_define_native(vm, "toint",    native_int,     1);

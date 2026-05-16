@@ -1,5 +1,6 @@
 #include "ms/memory.h"
 #include "ms/vm.h"
+#include "ms/event_loop.h"
 #include "ms/object.h"
 #include "ms/table.h"
 #include "ms/vtable.h"
@@ -184,6 +185,17 @@ static void mark_roots(MsVM* vm) {
     if (vm->init_string) ms_mark_object(vm, (MsObject*)vm->init_string);
     for (int i = 0; i < 128; i++) {
         if (vm->ascii_cache[i]) ms_mark_object(vm, (MsObject*)vm->ascii_cache[i]);
+    }
+    /* Trace EventLoop roots (ready queue + timer heap) */
+    if (vm->loop_inited) {
+        MsEventLoop* L = &vm->event_loop;
+        int i = L->ready_head;
+        while (i != L->ready_tail) {
+            ms_mark_object(vm, (MsObject*)L->ready[i]);
+            i = (i + 1) % L->ready_cap;
+        }
+        for (int j = 0; j < L->timer_count; j++)
+            ms_mark_object(vm, (MsObject*)L->timers[j].future);
     }
 }
 
