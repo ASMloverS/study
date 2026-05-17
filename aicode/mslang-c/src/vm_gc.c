@@ -147,6 +147,12 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
                 ms_mark_object(vm, (MsObject*)w->u.coro.coro);
         break;
     }
+    case MS_OBJ_SOCKET: {
+        MsObjSocket* s = (MsObjSocket*)obj;
+        if (s->read_future)  ms_mark_object(vm, (MsObject*)s->read_future);
+        if (s->write_future) ms_mark_object(vm, (MsObject*)s->write_future);
+        break;
+    }
     case MS_OBJ_MODULE: {
         MsObjModule* mod = (MsObjModule*)obj;
         ms_mark_object(vm, (MsObject*)mod->name);

@@ -22,6 +22,7 @@ typedef enum {
     MS_OBJ_WEAK_REF,
     MS_OBJ_COROUTINE,
     MS_OBJ_FUTURE,
+    MS_OBJ_SOCKET,
 } MsObjectType;
 
 struct MsObject {
@@ -334,3 +335,24 @@ typedef struct {
 MsObjStringBuilder* ms_obj_sb_new(struct MsVM* vm);
 void                ms_obj_sb_append(MsObjStringBuilder* sb, const char* str, int len);
 MsObjString*        ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb);
+
+/* ---- Socket (ASYNC-06) ---- */
+
+/* On Windows, fd is a SOCKET (uintptr_t) cast to int.
+ * On POSIX, fd is a plain int file descriptor. */
+typedef struct {
+    MsObject     obj;           /* GC header, type = MS_OBJ_SOCKET */
+    int          fd;            /* -1 when closed */
+    bool         connected;
+    bool         listening;
+    bool         closed;
+    MsObjFuture* read_future;   /* pending read/accept future (NULL if none) */
+    MsObjFuture* write_future;  /* pending write/connect future (NULL if none) */
+} MsObjSocket;
+
+#define MS_IS_SOCKET(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_SOCKET)
+#define MS_AS_SOCKET(v)  ((MsObjSocket*)MS_AS_OBJECT(v))
+
+MsObjSocket* ms_obj_socket_new(struct MsVM* vm, int fd);
+/* Close the socket: unregister from reactor, close fd, reject pending futures. */
+void         ms_obj_socket_close(struct MsVM* vm, MsObjSocket* sock);

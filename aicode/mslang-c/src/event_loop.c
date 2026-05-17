@@ -5,6 +5,105 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Platform socket recv/accept -- winsock2.h already in via reactor.h on Windows */
+#if defined(_WIN32)
+#  include <ws2tcpip.h>
+#  define MS_SOCK(fd)          ((SOCKET)(uintptr_t)(unsigned)(fd))
+#  define MS_RECV(fd, buf, n)  recv(MS_SOCK(fd), (buf), (n), 0)
+#  define MS_ACCEPT(fd, a, l)  accept(MS_SOCK(fd), (a), (l))
+#  define MS_EAGAIN_           WSAEWOULDBLOCK
+#  define ms_el_errno()        WSAGetLastError()
+#else
+#  include <sys/socket.h>
+#  include <unistd.h>
+#  include <errno.h>
+#  define MS_SOCK(fd)          (fd)
+#  define MS_RECV(fd, buf, n)  recv((fd), (buf), (size_t)(n), 0)
+#  define MS_ACCEPT(fd, a, l)  accept((fd), (a), (l))
+#  define MS_EAGAIN_           EAGAIN
+#  define ms_el_errno()        errno
+#endif
+
+/* Build an error string from the last socket error. */
+static MsValue make_errno_string(struct MsVM* vm) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "socket error %d", ms_el_errno());
+    return MS_OBJ_VAL((MsObject*)ms_obj_string_copy(vm, buf, (int)strlen(buf)));
+}
+
+/* Handle READABLE on a server socket (accept). */
+static void do_socket_accept(struct MsVM* vm, MsObjSocket* srv) {
+    MsObjFuture* fut = srv->read_future;
+    if (!fut) return;
+    srv->read_future = NULL;
+    ms_reactor_unregister(&vm->event_loop.reactor, srv->fd);
+
+    struct sockaddr_in addr;
+    int addrlen = (int)sizeof(addr);
+    int cfd = (int)MS_ACCEPT(srv->fd, (struct sockaddr*)&addr, &addrlen);
+    if (cfd < 0) {
+        ms_future_reject(vm, fut, make_errno_string(vm));
+        return;
+    }
+    MsObjSocket* client = ms_obj_socket_new(vm, cfd);
+    client->connected = true;
+    ms_future_resolve(vm, fut, MS_OBJ_VAL((MsObject*)client));
+}
+
+/* Handle READABLE on a connected socket (recv). */
+static void do_socket_recv(struct MsVM* vm, MsObjSocket* sock) {
+    MsObjFuture* fut = sock->read_future;
+    if (!fut) return;
+    sock->read_future = NULL;
+    ms_reactor_unregister(&vm->event_loop.reactor, sock->fd);
+
+    char buf[4096];
+    int n = (int)MS_RECV(sock->fd, buf, (int)sizeof(buf));
+    if (n == 0) {
+        ms_future_resolve(vm, fut,
+            MS_OBJ_VAL((MsObject*)ms_obj_string_copy(vm, "", 0)));
+        return;
+    }
+    if (n < 0) {
+        int err = ms_el_errno();
+        if (err == MS_EAGAIN_) {
+            sock->read_future = fut;
+            ms_reactor_register(&vm->event_loop.reactor, sock->fd,
+                                MS_IO_READABLE, sock);
+            return;
+        }
+        ms_future_reject(vm, fut, make_errno_string(vm));
+        return;
+    }
+    ms_future_resolve(vm, fut,
+        MS_OBJ_VAL((MsObject*)ms_obj_string_copy(vm, buf, n)));
+}
+
+/* Handle WRITABLE: pending connect check, or send back-pressure retry. */
+static void do_socket_send(struct MsVM* vm, MsObjSocket* sock) {
+    MsObjFuture* fut = sock->write_future;
+    if (!fut) return;
+    sock->write_future = NULL;
+    ms_reactor_unregister(&vm->event_loop.reactor, sock->fd);
+
+    if (!sock->connected) {
+        int so_err = 0;
+        int opt_len = (int)sizeof(so_err);
+        getsockopt(MS_SOCK(sock->fd), SOL_SOCKET, SO_ERROR,
+                   (char*)&so_err, &opt_len);
+        if (so_err != 0) {
+            ms_future_reject(vm, fut, make_errno_string(vm));
+            return;
+        }
+        sock->connected = true;
+        ms_future_resolve(vm, fut, MS_OBJ_VAL((MsObject*)sock));
+        return;
+    }
+
+    /* Back-pressure retry: v1 resolves with 0; caller retries send. */
+    ms_future_resolve(vm, fut, MS_INT_VAL(0));
+}
+
 /* ---- Platform time + sleep ---- */
 
 #if defined(_WIN32)
@@ -229,8 +328,25 @@ int ms_loop_run_until_complete(MsEventLoop* loop, MsObjFuture* root) {
             MsIOReadyEvent io_evs[64];
             int io_count = 0;
             ms_reactor_poll(&loop->reactor, timeout, io_evs, 64, &io_count);
-            /* io_evs processing (future resolve) is handled by ASYNC-06 socket layer;
-               here we only need the sleep/wakeup behaviour. */
+            /* Dispatch IO events to socket callbacks (ASYNC-06). */
+            for (int i = 0; i < io_count; i++) {
+                MsObjSocket* sock = (MsObjSocket*)io_evs[i].user_data;
+                if (!sock) continue;
+                if (io_evs[i].events & MS_IO_ERROR) {
+                    MsValue err = make_errno_string(vm);
+                    if (sock->read_future)  { ms_future_reject(vm, sock->read_future,  err); sock->read_future  = NULL; }
+                    if (sock->write_future) { ms_future_reject(vm, sock->write_future, err); sock->write_future = NULL; }
+                    continue;
+                }
+                if (io_evs[i].events & MS_IO_READABLE) {
+                    if (sock->listening)
+                        do_socket_accept(vm, sock);
+                    else
+                        do_socket_recv(vm, sock);
+                }
+                if (io_evs[i].events & MS_IO_WRITABLE)
+                    do_socket_send(vm, sock);
+            }
         }
     }
 

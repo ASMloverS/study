@@ -24,7 +24,11 @@ typedef struct {
 /* Concrete MsReactor struct - platform fields selected at compile time.
  * MsEventLoop embeds this by value, so it must be a complete type. */
 #if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
 #  include <windows.h>
+#  include <winsock2.h>
 #  define MS_REACTOR_MAX_WATCH 64
 typedef struct {
     bool      active;

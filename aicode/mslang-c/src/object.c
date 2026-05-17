@@ -10,6 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* winsock2.h is included via object.h -> event_loop.h -> reactor.h on Windows */
+#if defined(_WIN32)
+#  define MS_CLOSE_SOCKET(fd) closesocket((SOCKET)(uintptr_t)(fd))
+#else
+#  include <unistd.h>
+#  define MS_CLOSE_SOCKET(fd) close(fd)
+#endif
+
 MsObject* ms_alloc_object(struct MsVM* vm, size_t size, MsObjectType type) {
     /* Trigger minor GC before allocation so the new object doesn't exist during sweep */
     if (vm->young_bytes > MS_GC_NURSERY_SIZE)
@@ -315,6 +323,14 @@ void ms_object_print(MsObject* obj) {
             printf("<future %s>", s);
             break;
         }
+        case MS_OBJ_SOCKET: {
+            MsObjSocket* sock = (MsObjSocket*)obj;
+            const char* st = sock->closed    ? "closed"
+                           : sock->listening ? "listening"
+                           : sock->connected ? "connected" : "open";
+            printf("<Socket fd=%d %s>", sock->fd, st);
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -422,6 +438,15 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
                 w = next;
             }
             ms_reallocate(vm, obj, sizeof(MsObjFuture), 0);
+            break;
+        }
+        case MS_OBJ_SOCKET: {
+            MsObjSocket* sock = (MsObjSocket*)obj;
+            if (!sock->closed && sock->fd >= 0) {
+                MS_CLOSE_SOCKET(sock->fd);
+                sock->fd = -1;
+            }
+            ms_reallocate(vm, obj, sizeof(MsObjSocket), 0);
             break;
         }
         default:
@@ -554,6 +579,41 @@ MsObjList* ms_obj_list_from_array(struct MsVM* vm, MsValue* items, int count) {
     for (int i = 0; i < count; i++)
         ms_value_array_push(&list->items, items[i]);
     return list;
+}
+
+/* ---- Socket (ASYNC-06) ---- */
+
+MsObjSocket* ms_obj_socket_new(struct MsVM* vm, int fd) {
+    MsObjSocket* sock = MS_ALLOC_OBJ(vm, MS_OBJ_SOCKET, MsObjSocket, 0);
+    sock->fd            = fd;
+    sock->connected     = false;
+    sock->listening     = false;
+    sock->closed        = false;
+    sock->read_future   = NULL;
+    sock->write_future  = NULL;
+    return sock;
+}
+
+void ms_obj_socket_close(struct MsVM* vm, MsObjSocket* sock) {
+    if (sock->closed) return;
+    /* Unregister before close: fd may be reused after close. */
+    if (vm->loop_inited && sock->fd >= 0)
+        ms_reactor_unregister(&vm->event_loop.reactor, sock->fd);
+    if (sock->fd >= 0) {
+        MS_CLOSE_SOCKET(sock->fd);
+        sock->fd = -1;
+    }
+    sock->closed = true;
+    MsObjString* err = ms_obj_string_copy(vm, "socket closed", 13);
+    MsValue err_val  = MS_OBJ_VAL((MsObject*)err);
+    if (sock->read_future) {
+        ms_future_reject(vm, sock->read_future, err_val);
+        sock->read_future = NULL;
+    }
+    if (sock->write_future) {
+        ms_future_reject(vm, sock->write_future, err_val);
+        sock->write_future = NULL;
+    }
 }
 
 /* ---- Coroutine ---- */
