@@ -29,14 +29,7 @@ typedef struct {
     MsObjUpvalue*   open_upvalues;
 } MsExecCtx;
 
-#define MS_MAX_EXCEPTION_HANDLERS 16
-
-typedef struct {
-    MsInstruction*  handler_ip;
-    int             frame_index;
-    int             catch_reg;
-    MsValue*        stack_top;
-} MsExceptionHandler;
+/* MS_MAX_EXCEPTION_HANDLERS and MsExceptionHandler are defined in object.h */
 
 typedef enum {
     MS_INTERPRET_OK,
@@ -126,10 +119,14 @@ void              ms_vm_define_native(MsVM* vm, const char* name, MsNativeFn fn,
 MsInterpretResult ms_vm_call_sync(MsVM* vm, MsValue callee,
                                    MsValue* argv, int argc, MsValue* out);
 
-/* Built-in method dispatch for non-instance receivers (string/list/map/tuple).
+/* Built-in method dispatch for non-instance receivers (string/list/map/tuple/socket).
    Returns true if method was handled; result stored in *out. */
 bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
                         int argc, MsValue* argv, MsValue* out);
+
+/* Socket method dispatch (accept/read/write/close). */
+bool ms_socket_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
+                      int argc, MsValue* argv, MsValue* out);
 
 /* Resume a coroutine, passing sent value. Result in *out (yield or return value).
    Returns MS_INTERPRET_OK (coroutine returned), MS_INTERPRET_YIELD (suspended),

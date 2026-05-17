@@ -300,26 +300,40 @@ MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
     /* O(1) context swap: save host ctx pointer, switch to coroutine ctx */
     MsExecCtx*      saved_ctx  = vm->ctx;
     int             saved_exc  = vm->exception_count;
+    MsExceptionHandler saved_handlers[MS_MAX_EXCEPTION_HANDLERS];
+    memcpy(saved_handlers, vm->exception_handlers, sizeof(MsExceptionHandler) * (size_t)saved_exc);
     MsObjCoroutine* saved_coro = vm->current_coroutine;
 
     vm->ctx               = (MsExecCtx*)&co->ctx;  /* MsCoroCtx layout matches MsExecCtx */
-    vm->exception_count   = 0;
+    vm->exception_count   = co->ctx.exception_count;
+    memcpy(vm->exception_handlers, co->ctx.exception_handlers,
+           sizeof(MsExceptionHandler) * (size_t)co->ctx.exception_count);
     vm->current_coroutine = co;
     co->state             = MS_CORO_RUNNING;
 
     if (!first_resume) {
-        /* Inject sent value as the yield expression's result */
         MsCallFrame* co_frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
         MsInstruction prev = *(co_frame->ip - 1);
-        int yield_reg = MS_GET_A(prev);
-        co_frame->slots[yield_reg] = sent;
+        if (MS_GET_OP(prev) == MS_OP_YIELD) {
+            /* Inject sent value as the yield expression's result */
+            int yield_reg = MS_GET_A(prev);
+            co_frame->slots[yield_reg] = sent;
+        }
+        /* MS_OP_AWAIT: result was already written by ms_future_resolve;
+           rejection re-points ip to OP_AWAIT so it re-executes. */
     }
 
     MsInterpretResult cr = vm_run_inner(vm);
 
+    /* Save coroutine's current exception state before restoring host */
+    co->ctx.exception_count = vm->exception_count;
+    memcpy(co->ctx.exception_handlers, vm->exception_handlers,
+           sizeof(MsExceptionHandler) * (size_t)vm->exception_count);
+
     /* Restore host context (O(1)) */
     vm->ctx               = saved_ctx;
     vm->exception_count   = saved_exc;
+    memcpy(vm->exception_handlers, saved_handlers, sizeof(MsExceptionHandler) * (size_t)saved_exc);
     vm->current_coroutine = saved_coro;
 
     *out = MS_NIL_VAL();
@@ -328,11 +342,13 @@ MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
     } else if (cr == MS_INTERPRET_OK) {
         *out = vm->call_result;
         co->state = MS_CORO_DEAD;
+    } else if (cr == MS_INTERPRET_AWAIT) {
+        /* Coroutine suspended on await; state already set to SUSPENDED by OP_AWAIT */
     } else {
         co->state = MS_CORO_DEAD;
     }
 
-    return (cr == MS_INTERPRET_YIELD || cr == MS_INTERPRET_OK)
+    return (cr == MS_INTERPRET_YIELD || cr == MS_INTERPRET_OK || cr == MS_INTERPRET_AWAIT)
            ? MS_INTERPRET_OK : MS_INTERPRET_RUNTIME_ERROR;
 }
 
@@ -500,6 +516,40 @@ static MsInterpretResult call_value(MsVM* vm, MsValue callee,
             ms_vm_runtime_error(vm, "Expected %d args but got %d.",
                                 fn->arity, arg_count);
             return MS_INTERPRET_RUNTIME_ERROR;
+        }
+        /* Async closure: create coroutine + Future, schedule, return Future */
+        if (fn->is_async) {
+            MsCallFrame* caller = &vm->ctx->frames[vm->ctx->frame_count - 1];
+            MsValue* caller_args = caller->slots + ret_dst + 1;
+            MsObjCoroutine* co = ms_obj_coroutine_new(vm, cl);
+            /* Root co in ret_dst before future alloc (prevents GC loss) */
+            caller->slots[ret_dst] = MS_OBJ_VAL(co);
+            int need = fn->max_stack_size + 1;
+            co->ctx.stack_top = co->ctx.stack + need;
+            for (int i = 0; i < arg_count; i++)
+                co->stack_buf[i] = caller_args[i];
+            MsCallFrame* f = &co->ctx.frames[0];
+            f->closure        = cl;
+            f->ip             = fn->chunk.code;
+            f->slots          = co->ctx.stack;
+            f->deferred       = NULL;
+            f->deferred_count    = 0;
+            f->deferred_capacity = 0;
+            co->ctx.frame_count = 1;
+            co->state = MS_CORO_CREATED;
+            if (!vm->loop_inited) {
+                ms_loop_init(&vm->event_loop, vm);
+                vm->loop_inited = true;
+            }
+            MsObjFuture* fut = ms_obj_future_new(vm);
+            /* Re-read caller after potential GC during future alloc */
+            caller = &vm->ctx->frames[vm->ctx->frame_count - 1];
+            co = MS_AS_COROUTINE(caller->slots[ret_dst]);
+            co->async_future = fut;
+            fut->coro = co;
+            ms_loop_call_soon(&vm->event_loop, co);
+            caller->slots[ret_dst] = MS_OBJ_VAL((MsObject*)fut);
+            return MS_INTERPRET_OK;
         }
         /* Generator closure: create coroutine, copy args into its stack */
         if (fn->is_generator) {
@@ -1870,6 +1920,13 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
         VM_CASE(MS_OP_THROW) {
             MsValue error = R(A);
             if (!throw_exception(vm, error)) {
+                MsObjCoroutine* throw_coro = vm->current_coroutine;
+                if (throw_coro && throw_coro->async_future) {
+                    MsObjFuture* af = throw_coro->async_future;
+                    throw_coro->async_future = NULL;
+                    ms_future_reject(vm, af, error);
+                    return MS_INTERPRET_RUNTIME_ERROR;
+                }
                 char* s = ms_value_to_cstring(error);
                 ms_vm_runtime_error(vm, "Uncaught exception: %s", s);
                 free(s);

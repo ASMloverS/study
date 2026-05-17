@@ -216,6 +216,9 @@ typedef struct {
 
 MsObjModule* ms_obj_module_new(struct MsVM* vm, MsObjString* name, MsObjString* path);
 
+/* Forward declaration so MsObjCoroutine can reference MsObjFuture */
+typedef struct MsObjFuture MsObjFuture;
+
 /* ---- Coroutine ---- */
 
 typedef enum {
@@ -229,6 +232,15 @@ typedef enum {
    circular include (object.h is included by vm.h). */
 struct MsCallFrame;
 
+/* Exception handler - duplicated from vm.h to break the circular include. */
+#define MS_MAX_EXCEPTION_HANDLERS 16
+typedef struct {
+    MsInstruction*  handler_ip;
+    int             frame_index;
+    int             catch_reg;
+    MsValue*        stack_top;
+} MsExceptionHandler;
+
 /* Execution context embedded in each coroutine (mirrors MsExecCtx in vm.h).
    Duplicated here to avoid the object.h→vm.h include cycle. */
 typedef struct {
@@ -239,6 +251,8 @@ typedef struct {
     int                 frame_capacity;
     int                 stack_capacity;
     MsObjUpvalue*       open_upvalues;
+    MsExceptionHandler  exception_handlers[MS_MAX_EXCEPTION_HANDLERS];
+    int                 exception_count;
 } MsCoroCtx;
 
 typedef struct {
@@ -251,6 +265,8 @@ typedef struct {
     MsValue*        stack_buf;
     /* Value last yielded or sent */
     MsValue         yield_value;
+    /* Non-NULL for async-function coroutines: resolved/rejected on completion */
+    struct MsObjFuture* async_future;
 } MsObjCoroutine;
 
 #define MS_IS_COROUTINE(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_COROUTINE)
@@ -295,13 +311,13 @@ typedef struct MsWaiter {
     struct MsWaiter* next;
 } MsWaiter;
 
-typedef struct {
+struct MsObjFuture {
     MsObject        obj;   /* GC header, type = MS_OBJ_FUTURE */
     MsFutureState   state;
     MsObjCoroutine* coro;      /* PENDING: held coroutine; NULL after resolution */
     MsValue         result;    /* RESOLVED→return value; REJECTED→error value */
     MsWaiter*       waiters;   /* linked list of waiting coroutines/gathers */
-} MsObjFuture;
+};
 
 #define MS_IS_FUTURE(v)  MS_IS_OBJ_TYPE(v, MS_OBJ_FUTURE)
 #define MS_AS_FUTURE(v)  ((MsObjFuture*)MS_AS_OBJECT(v))

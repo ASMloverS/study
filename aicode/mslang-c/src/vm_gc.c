@@ -130,6 +130,7 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
         MsObjCoroutine* co = (MsObjCoroutine*)obj;
         ms_mark_object(vm, (MsObject*)co->closure);
         ms_mark_value(vm, co->yield_value);
+        if (co->async_future) ms_mark_object(vm, (MsObject*)co->async_future);
         for (MsValue* v = co->ctx.stack; v < co->ctx.stack_top; v++)
             ms_mark_value(vm, *v);
         for (int i = 0; i < co->ctx.frame_count; i++)

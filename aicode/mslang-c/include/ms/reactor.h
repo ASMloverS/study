@@ -32,7 +32,8 @@ typedef struct {
 #  define MS_REACTOR_MAX_WATCH 64
 typedef struct {
     bool      active;
-    void*     handle;     /* HANDLE stored as void* to avoid type issues */
+    bool      is_socket;  /* true: Winsock SOCKET (use select); false: HANDLE (use WaitForMultipleObjects) */
+    void*     handle;     /* HANDLE or SOCKET stored as void* */
     MsIOEvent watch_events;
     void*     user_data;
 } MsWatchEntry;

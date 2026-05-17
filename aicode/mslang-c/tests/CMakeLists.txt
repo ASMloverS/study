@@ -109,3 +109,23 @@ target_link_libraries(test_reactor PRIVATE ms_reactor)
 
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
+
+# Async fixture tests -- run .ms scripts via the interpreter and compare output
+set(_async_fixtures
+    async_basic
+    async_await_resolved
+    async_chain
+    async_gather
+    async_gather_empty
+    async_multi_waiter
+    async_reject_catch
+    async_sleep_seq
+    async_tcp_close
+    async_tcp_echo
+)
+foreach(_f IN LISTS _async_fixtures)
+    ms_add_fixture_test(
+        "${PROJECT_SOURCE_DIR}/tests/fixtures/${_f}.ms"
+        TIMEOUT 15
+    )
+endforeach()

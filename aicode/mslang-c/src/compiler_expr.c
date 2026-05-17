@@ -609,6 +609,12 @@ static void parse_await_expr(MsCompiler* c, bool can_assign) {
     /* next_reg stays as fut_reg+1; result is in fut_reg */
 }
 
+static void parse_spawn_expr(MsCompiler* c, bool can_assign) {
+    MS_UNUSED(can_assign);
+    /* spawn expr: evaluates expr, expected to be an async fn call returning a Future */
+    parse_precedence(c, PREC_UNARY);
+}
+
 /* ---- collection literals ---- */
 
 static void parse_list(MsCompiler* c, bool can_assign) {
@@ -812,7 +818,7 @@ static const MsParseRule k_rules[MS_TK_COUNT] = {
     /* YIELD */           RULE(parse_yield_expr, NO, PREC_NONE),
     /* ASYNC */           RULE(NO, NO, PREC_NONE),
     /* AWAIT */           RULE(parse_await_expr, NO, PREC_NONE),
-    /* SPAWN */           RULE(NO, NO, PREC_NONE),
+    /* SPAWN */           RULE(parse_spawn_expr, NO, PREC_NONE),
     /* SWITCH */          RULE(NO, NO, PREC_NONE),
     /* CASE */            RULE(NO, NO, PREC_NONE),
     /* DEFAULT */         RULE(NO, NO, PREC_NONE),

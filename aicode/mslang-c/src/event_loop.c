@@ -303,11 +303,15 @@ int ms_loop_run_until_complete(MsEventLoop* loop, MsObjFuture* root) {
         while (!ready_is_empty(loop)) {
             MsObjCoroutine* coro = ready_dequeue(loop);
             MsValue out = MS_NIL_VAL();
-            ms_vm_coro_resume(vm, coro, MS_NIL_VAL(), &out);
-            /* MS_INTERPRET_RUNTIME_ERROR: error printed by vm; coro is dead.
-               MS_INTERPRET_AWAIT: coro registered as waiter; re-queued on
-               resolve (see ms_future_resolve in object.c).
-               MS_INTERPRET_OK: coro returned normally. */
+            MsInterpretResult cr = ms_vm_coro_resume(vm, coro, MS_NIL_VAL(), &out);
+            if (coro->async_future && coro->state == MS_CORO_DEAD) {
+                MsObjFuture* af = coro->async_future;
+                coro->async_future = NULL;
+                if (cr == MS_INTERPRET_OK)
+                    ms_future_resolve(vm, af, out);
+                else
+                    ms_future_reject(vm, af, MS_NIL_VAL());
+            }
         }
 
         /* 2. Fire expired timers */

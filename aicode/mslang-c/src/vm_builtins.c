@@ -363,5 +363,7 @@ bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
         return map_invoke(vm, MS_AS_MAP(receiver), method, argc, argv, out);
     if (MS_IS_TUPLE(receiver))
         return tuple_invoke(vm, MS_AS_TUPLE(receiver), method, argc, argv, out);
+    if (MS_IS_SOCKET(receiver))
+        return ms_socket_invoke(vm, receiver, method, argc, argv, out);
     return false;
 }

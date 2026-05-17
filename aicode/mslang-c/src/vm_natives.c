@@ -558,6 +558,30 @@ static MsValue native_socket_close(MsVM* vm, int argc, MsValue* argv) {
     return MS_NIL_VAL();
 }
 
+bool ms_socket_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
+                      int argc, MsValue* argv, MsValue* out) {
+    if (!MS_IS_SOCKET(receiver)) return false;
+    MsValue call_argv[2] = { receiver, argc >= 1 ? argv[0] : MS_NIL_VAL() };
+    const char* name = method->data;
+    if (strcmp(name, "accept") == 0) {
+        *out = native_socket_accept(vm, 1, call_argv);
+        return true;
+    }
+    if (strcmp(name, "read") == 0) {
+        *out = native_socket_read(vm, argc + 1, call_argv);
+        return true;
+    }
+    if (strcmp(name, "write") == 0) {
+        *out = native_socket_write(vm, argc + 1, call_argv);
+        return true;
+    }
+    if (strcmp(name, "close") == 0) {
+        *out = native_socket_close(vm, 1, call_argv);
+        return true;
+    }
+    return false;
+}
+
 void ms_vm_register_natives(MsVM* vm) {
     ms_vm_define_native(vm, "clock",   native_clock,    0);
     ms_vm_define_native(vm, "print",   native_print,   -1);

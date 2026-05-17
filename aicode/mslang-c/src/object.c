@@ -543,8 +543,14 @@ void ms_future_reject(struct MsVM* vm, MsObjFuture* fut, MsValue error) {
     fut->result = error;
     for (MsWaiter* w = fut->waiters; w; w = w->next) {
         if (w->type == MS_WAITER_CORO) {
-            /* Mark coroutine dead; error propagation handled by VM on resume */
-            w->u.coro.coro->state = MS_CORO_DEAD;
+            MsObjCoroutine* co = w->u.coro.coro;
+            /* Back ip up to OP_AWAIT so it re-executes and sees REJECTED */
+            co->ctx.frames[w->u.coro.frame_index].ip--;
+            co->state = MS_CORO_SUSPENDED;
+            if (vm->loop_inited)
+                ms_loop_call_soon(&vm->event_loop, co);
+            else
+                co->state = MS_CORO_DEAD;
         } else {
             w->u.cb.on_reject(vm, w->u.cb.userdata, error);
         }
@@ -641,5 +647,7 @@ MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl) {
     co->ctx.frame_capacity = CORO_FRAME_CAP;
     co->ctx.stack_capacity = CORO_STACK_SIZE;
     co->ctx.open_upvalues  = NULL;
+    co->ctx.exception_count = 0;
+    co->async_future       = NULL;
     return co;
 }

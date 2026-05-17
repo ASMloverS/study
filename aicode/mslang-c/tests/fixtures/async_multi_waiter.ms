@@ -13,6 +13,6 @@ async fun main() {
     print("end")
 }
 run_until_complete(main())
-// expect: w1
 // expect: w2
+// expect: w1
 // expect: end

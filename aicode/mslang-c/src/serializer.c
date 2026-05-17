@@ -89,6 +89,7 @@ static void write_fn(FILE* f, MsObjFunction* fn, FnArray* fns) {
     W4(f, fn->arity); W4S(f, fn->min_arity);
     W4(f, fn->upvalue_count); W4(f, fn->max_stack_size);
     W1(f, fn->is_generator ? 1 : 0);
+    W1(f, fn->is_async ? 1 : 0);
     W4(f, (uint32_t)fn->ic_count);
     W4(f, fn->chunk.code_count);
     fwrite(fn->chunk.code, sizeof(MsInstruction),
@@ -123,6 +124,7 @@ static MsObjFunction* read_fn(FILE* f, MsVM* vm,
     R4(f, tmp4); fn->upvalue_count = (int)tmp4;
     R4(f, tmp4); fn->max_stack_size = (int)tmp4;
     R1(f, tmp1); fn->is_generator = tmp1 != 0;
+    R1(f, tmp1); fn->is_async = tmp1 != 0;
     R4(f, tmp4); fn->ic_count = (int)tmp4;
     R4(f, tmp4);
     if (tmp4 > 0) {
