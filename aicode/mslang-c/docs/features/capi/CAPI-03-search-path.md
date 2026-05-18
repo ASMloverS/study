@@ -67,22 +67,27 @@ void ms_vm_prepend_search_path(MsVM* vm, const char* path);
 
 ```c
 static void load_mslang_path(MsVM* vm) {
-    const char* env = getenv("MSLANG_PATH");
-    if (!env) return;
-
-    char* copy = strdup(env);
-    char* saveptr = NULL;
 #ifdef _WIN32
-    const char delim[] = ";";
+    char* env = NULL;
+    size_t env_len = 0;
+    if (_dupenv_s(&env, &env_len, "MSLANG_PATH") != 0 || !env) return;
+    char delim = ';';
 #else
-    const char delim[] = ":";
+    const char* env_raw = getenv("MSLANG_PATH");
+    if (!env_raw) return;
+    char* env = strdup(env_raw);
+    char delim = ':';
 #endif
-    char* tok = strtok_r(copy, delim, &saveptr);
-    while (tok) {
-        ms_vm_add_search_path(vm, tok);
-        tok = strtok_r(NULL, delim, &saveptr);
+    /* ms_string_split (src/fs_util.c): splits s by delim, returns count,
+       writes malloc'd array of strdup'd tokens to *out_parts. */
+    char** parts = NULL;
+    int count = ms_string_split(env, delim, &parts);
+    for (int i = 0; i < count; i++) {
+        ms_vm_add_search_path(vm, parts[i]);
+        free(parts[i]);
     }
-    free(copy);
+    free(parts);
+    free(env);
 }
 ```
 
@@ -100,7 +105,7 @@ static void load_mslang_path(MsVM* vm) {
 | macOS | `lib{name}.dylib` |
 | Windows | `{name}.dll` |
 
-文件系统路径解析（`ms_resolve_path`）不使用 `module_search_paths`——它仍沿用 `from_dir` 相对路径，保持现有行为。`module_search_paths` 只影响动态加载查找。
+`module_search_paths` 同时影响**动态加载**（CAPI-04）和 **`.ms` 文件系统加载**（当 `import` 的裸名在 `from_dir` 下找不到对应 `.ms` 文件时，依次尝试 `search_paths` 中各目录）。这样 `--module-path` 对 `.ms` 模块和 `.so/.dll` 扩展均生效，避免用户体验割裂。`ms_resolve_path` 的 `from_dir` 回退逻辑保持不变（优先级最低）。
 
 ---
 
@@ -115,6 +120,8 @@ static void load_mslang_path(MsVM* vm) {
 | `src/vm.c` | `ms_vm_init` 末尾调 `load_mslang_path`；`ms_vm_free` 释放路径 |
 
 ---
+
+> **`module_loader.c` vs `module.c` 边界**：`module.c` 负责 `ms_module_load` 主流程和 builtin 注册表；`module_loader.c` 负责 `MSLANG_PATH` 初始化和动态加载路径拼装（`find_dynlib`）。两文件通过 `include/ms/module.h` 中的公共 API 调用，不互相 `#include` 对方的 `.c`。
 
 ## 测试要点
 

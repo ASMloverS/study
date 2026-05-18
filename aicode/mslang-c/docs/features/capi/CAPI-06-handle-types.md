@@ -36,7 +36,7 @@ MsObjFile*  ms_obj_file_new(MsVM* vm, FILE* fp, MsFileMode mode);
 MsObjFile*  ms_obj_file_from_fd(MsVM* vm, int fd, const char* open_mode);
 /* 方法分发入口（被 ms_builtin_invoke 调用）*/
 bool        ms_objfile_invoke(MsVM* vm, MsObjFile* f,
-                              const char* method,
+                              MsObjString* method,
                               int argc, MsValue* argv,
                               MsValue* out);
 
@@ -82,14 +82,14 @@ File 不持有其他 GC 对象，trace 为空。
 typedef struct {
     MsObject obj;      /* type = MS_OBJ_BUFFER */
     uint8_t* data;
-    int      len;
-    int      cap;
+    size_t   len;
+    size_t   cap;
 } MsObjBuffer;
 
-MsObjBuffer* ms_obj_buffer_new(MsVM* vm, int initial_cap);
-MsObjBuffer* ms_obj_buffer_from_bytes(MsVM* vm, const uint8_t* bytes, int len);
+MsObjBuffer* ms_obj_buffer_new(MsVM* vm, size_t initial_cap);
+MsObjBuffer* ms_obj_buffer_from_bytes(MsVM* vm, const uint8_t* bytes, size_t len);
 bool         ms_objbuffer_invoke(MsVM* vm, MsObjBuffer* b,
-                                 const char* method,
+                                 MsObjString* method,
                                  int argc, MsValue* argv,
                                  MsValue* out);
 
@@ -100,13 +100,11 @@ bool         ms_objbuffer_invoke(MsVM* vm, MsObjBuffer* b,
 
 ```c
 /* 确保 cap >= needed，采用 2x 增长 */
-static void buf_ensure(MsVM* vm, MsObjBuffer* b, int needed) {
+static void buf_ensure(MsVM* vm, MsObjBuffer* b, size_t needed) {
     if (b->cap >= needed) return;
-    int new_cap = b->cap < 8 ? 8 : b->cap;
+    size_t new_cap = b->cap < 8 ? 8 : b->cap;
     while (new_cap < needed) new_cap *= 2;
-    b->data = (uint8_t*)ms_reallocate(vm, b->data,
-                                       (size_t)b->cap,
-                                       (size_t)new_cap);
+    b->data = (uint8_t*)ms_reallocate(vm, b->data, b->cap, new_cap);
     b->cap = new_cap;
 }
 ```
@@ -134,7 +132,7 @@ static void buf_ensure(MsVM* vm, MsObjBuffer* b, int needed) {
 ## `ms_builtin_invoke` 修改（`src/vm_builtins.c`）
 
 ```c
-bool ms_builtin_invoke(MsVM* vm, MsValue receiver, const char* method,
+bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
                        int argc, MsValue* argv, MsValue* out) {
     if (!MS_IS_OBJ(receiver)) return false;
     switch (MS_OBJ_TYPE(receiver)) {
@@ -146,25 +144,25 @@ bool ms_builtin_invoke(MsVM* vm, MsValue receiver, const char* method,
         /* ★ 新增 */
         case MS_OBJ_FILE:    return ms_objfile_invoke(vm, MS_AS_FILE(receiver), method, argc, argv, out);
         case MS_OBJ_BUFFER:  return ms_objbuffer_invoke(vm, MS_AS_BUFFER(receiver), method, argc, argv, out);
-        case MS_OBJ_USERDATA: return ms_userdata_invoke(vm, receiver, method, argc, argv, out);
+        /* v1: MS_OBJ_USERDATA 不支持方法调用；通过模块函数访问（如 hash.update(h, data)） */
         default: return false;
     }
 }
 ```
 
-`ms_userdata_invoke`：通过 `type_tag` 查注册的方法表（v1 简化：每种 userdata 必须在 `type_tag` 上 dispatch，或不支持方法调用，直接返回 false）。
-
 ---
 
 ## `object.h` 修改
+
+> **注意**：`MS_OBJ_FILE` 已在 `include/ms/object.h` 中占位（stub），此处仅需补全 `MsObjFile` 结构体定义；不可重新声明该枚举值。`MS_OBJ_BUFFER` 和 `MS_OBJ_USERDATA` 为新增枚举值。
 
 ```c
 typedef enum {
     // ... 已有 ...
     MS_OBJ_SOCKET,
-    MS_OBJ_FILE,     /* ★ */
-    MS_OBJ_BUFFER,   /* ★ */
-    MS_OBJ_USERDATA, /* ★ */
+    MS_OBJ_FILE,     /* 已占位，补全结构体定义 */
+    MS_OBJ_BUFFER,   /* ★ 新增 */
+    MS_OBJ_USERDATA, /* ★ 新增 */
 } MsObjectType;
 
 /* 访问宏 */

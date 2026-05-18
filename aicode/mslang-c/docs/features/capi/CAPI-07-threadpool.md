@@ -62,7 +62,7 @@ typedef struct {
     /* 工作队列（mutex + condvar）*/
     MsJob*      head;
     MsJob*      tail;
-    /* 完成队列（无锁，仅 push from worker, pop from main）*/
+    /* 完成队列（与工作队列共用 mutex_opaque；push from worker, pop from main）*/
     MsJob*      done_head;
     MsJob*      done_tail;
 
@@ -129,7 +129,7 @@ static void* worker_fn(void* arg) {
         }
 
         /* 推入完成队列 + 唤醒主线程 */
-        push_done(tp, job);    // done_head/tail（atomic CAS 或 mutex）
+        push_done(tp, job);    // done_head/tail（持 mutex_opaque 加锁）
         wakeup_main(tp);       // Unix: write(wakeup_w, "\x01", 1)
     }
     return NULL;
@@ -170,6 +170,7 @@ static void on_wakeup_cb(MsVM* vm, int fd, MsIOEvent ev) {
             }
             ms_future_resolve(vm, fut, result);
         }
+        ms_vm_unpin_future(vm, fut);  /* remove from pending_futures root set */
         free(job->path);
         free(job->write_buf);
         free(job);
@@ -185,6 +186,9 @@ static void on_wakeup_cb(MsVM* vm, int fd, MsIOEvent ev) {
 static MsValue ms_io_read_file_async(MsVM* vm, int argc, MsValue* argv) {
     const char* path = MS_AS_CSTRING(argv[0]);
     MsObjFuture* fut = ms_obj_future_new(vm);
+    /* Pin future as GC root until worker completes; prevents collection
+       if the script drops the awaitable before the worker finishes. */
+    ms_vm_pin_future(vm, fut);   /* adds fut to vm->pending_futures root set */
 
     MsJob* job = calloc(1, sizeof(MsJob));
     job->kind           = MS_JOB_READ_FILE;
@@ -200,14 +204,11 @@ static MsValue ms_io_read_file_async(MsVM* vm, int argc, MsValue* argv) {
 
 ## Windows 路径
 
-Windows 上 `ms_threadpool_init` 不创建 worker 线程和 pipe；`io.read_file_async` 改为：
-
-```c
-// Windows: CreateFile(OVERLAPPED) + reactor IOCP
-// 复用 ms_reactor_submit_read，回调中 ms_future_resolve
-```
+**v1**：Windows 与 Unix 实现相同——均走线程池阻塞 C 库（`fread`/`fwrite`）。区别仅在唤醒机制：以 `CreateEvent` / `SetEvent` 替代 Unix 的 `pipe(wakeup_r, wakeup_w)`，将事件句柄注册到 IOCP reactor 上。
 
 条件编译：`#ifdef _WIN32 ... #else ... #endif`
+
+OVERLAPPED/IOCP 直接文件异步路径留 v2 优化。
 
 ---
 
@@ -226,7 +227,7 @@ Windows 上 `ms_threadpool_init` 不创建 worker 线程和 pipe；`io.read_file
 
 ## v1 不做
 
-- Windows OVERLAPPED 文件路径（留给后续）
-- 动态调整 worker 数量
+- Windows OVERLAPPED 文件路径（留给后续，已改为阻塞线程池）
+- 动态调整 worker 数量（可读 `MSLANG_IO_THREADS` 环境变量，v1 硬编码 4）
 - Job 取消
 - 超时

@@ -17,7 +17,7 @@
 typedef struct {
     const char* name;   // 导出名，NULL 表示结束哨兵
     MsNativeFn  fn;     // 函数指针（MsValue(*)(MsVM*, int, MsValue*)）
-    int         arity;  // 期望参数数；-1 = 可变参
+    int         arity;  // 期望参数数；-1 = 可变参；哨兵行中此值被忽略
 } MsNativeDef;
 ```
 
@@ -27,17 +27,20 @@ typedef struct {
 
 ```c
 /* 风格 B — 底层原语 */
-void ms_module_def_native(MsObjModule* mod,
+void ms_module_def_native(MsVM*        vm,
+                          MsObjModule* mod,
                           const char*  name,
                           MsNativeFn   fn,
                           int          arity);
 
 /* 风格 A — 表式便利包装（遍历直到 name == NULL） */
-void ms_module_register_natives(MsObjModule*       mod,
+void ms_module_register_natives(MsVM*              vm,
+                                MsObjModule*       mod,
                                 const MsNativeDef* defs);
 
 /* 导出任意 MsValue（常量、ObjFile、...） */
-void ms_module_export_value(MsObjModule* mod,
+void ms_module_export_value(MsVM*        vm,
+                            MsObjModule* mod,
                             const char*  name,
                             MsValue      value);
 ```
@@ -47,16 +50,11 @@ void ms_module_export_value(MsObjModule* mod,
 ## 实现（`src/module.c`）
 
 ```c
-void ms_module_def_native(MsObjModule* mod,
-                          const char* name,
-                          MsNativeFn fn,
-                          int arity) {
-    /* MsVM 通过 mod->obj 的 next 链可到达；
-       但 mod 自身存着 vm 引用吗？—— 不存。
-       需要 vm 指针来创建 ObjString / ObjNative。
-       方案：通过 (MsVM*)mod->obj.vm 访问（在 MsObject header 中加 vm* 字段）
-       或者改签名为 ms_module_def_native(vm, mod, ...) ——
-       此处选后者，与现有 ms_vm_define_native 对齐，避免侵入 MsObject。 */
+void ms_module_def_native(MsVM*        vm,
+                          MsObjModule* mod,
+                          const char*  name,
+                          MsNativeFn   fn,
+                          int          arity) {
     MsObjString* key = ms_obj_string_copy(vm, name, (int)strlen(name));
     MsObjNative* nat = ms_obj_native_new(vm, fn, key, arity);
     ms_table_set(&mod->exports, key, MS_OBJ_VAL(nat));

@@ -62,6 +62,16 @@ typedef struct MsModuleApi {
     double  (*val_to_number)(MsValue v);
     const char* (*val_to_cstring)(MsValue v);  /* 指向内部 chars，只读 */
     int         (*string_len)(MsValue v);
+
+    /* ── 容器/反射（只读）──────────────────────────────── */
+    bool    (*is_list)(MsValue v);
+    bool    (*is_map)(MsValue v);
+    bool    (*is_tuple)(MsValue v);
+    bool    (*is_function)(MsValue v);
+    bool    (*is_userdata)(MsValue v, const char* tag);
+    int     (*list_len)(MsValue v);
+    MsValue (*list_get)(MsValue v, int idx);
+    bool    (*map_get)(MsValue v, MsValue key, MsValue* out);
 } MsModuleApi;
 ```
 
@@ -118,6 +128,24 @@ const MsModuleApi* ms_module_api_get(void) { return &k_api; }
 ```c
 const MsModuleApi* ms_module_api_get(void);
 ```
+
+---
+
+## Exception protocol
+
+`api->raise` 内部调用 `ms_vm_runtime_error`；调用后扩展函数**必须立即 `return MS_NIL_VAL()`**，VM 在控制权返回时检查错误状态并展开调用栈。**不要**在 raise 之后继续访问 MsValue / MsObject。
+
+```c
+// 正确用法
+if (argc < 1) return api->raise(vm, "expected 1 argument, got 0");
+// 只有未 raise 时才执行到这里
+```
+
+若需在函数中提前返回并检查是否已出错，可使用：
+```c
+bool (*has_error)(MsVM* vm);  /* 检查 vm->had_runtime_error */
+```
+（此字段在 `MsModuleApi.version >= 2` 中加入；v1 扩展直接 return 即可。）
 
 ---
 

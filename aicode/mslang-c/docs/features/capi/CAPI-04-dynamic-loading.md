@@ -62,6 +62,7 @@ void      ms_dynlib_close(MsDynlib l) { FreeLibrary((HMODULE)l); }
 #else
 #  include <dlfcn.h>
 MsDynlib  ms_dynlib_open(const char* p) { return dlopen(p, RTLD_NOW | RTLD_LOCAL); }
+/* Unix: 失败时 dlerror() 返回错误字符串；建议在 verbose/debug 模式下记录 */
 void*     ms_dynlib_sym(MsDynlib l, const char* n) { return dlsym(l, n); }
 void      ms_dynlib_close(MsDynlib l) { dlclose(l); }
 #endif
@@ -74,18 +75,21 @@ void      ms_dynlib_close(MsDynlib l) { dlclose(l); }
 ```c
 typedef void (*MsModuleInitFn)(const MsModuleApi*, MsVM*, MsObjModule*);
 
-/* 按搜索路径逐一尝试 lib{name}.so / {name}.dll / lib{name}.dylib */
+/* 按搜索路径逐一尝试 lib{name}.so / {name}.dll / lib{name}.dylib
+   MS_PATH_MAX 在 include/ms/consts.h 定义：#define MS_PATH_MAX 4096 */
 static MsDynlib find_dynlib(MsVM* vm, const char* name, char* out_path) {
     for (int i = 0; i < vm->module_search_count; i++) {
         const char* dir = vm->module_search_paths[i];
-        /* 拼装候选路径 */
+        /* 拼装候选路径；检查截断 */
+        int written;
 #ifdef _WIN32
-        snprintf(out_path, MS_PATH_MAX, "%s/%s.dll", dir, name);
+        written = snprintf(out_path, MS_PATH_MAX, "%s/%s.dll", dir, name);
 #elif defined(__APPLE__)
-        snprintf(out_path, MS_PATH_MAX, "%s/lib%s.dylib", dir, name);
+        written = snprintf(out_path, MS_PATH_MAX, "%s/lib%s.dylib", dir, name);
 #else
-        snprintf(out_path, MS_PATH_MAX, "%s/lib%s.so", dir, name);
+        written = snprintf(out_path, MS_PATH_MAX, "%s/lib%s.so", dir, name);
 #endif
+        if (written < 0 || written >= MS_PATH_MAX) continue; /* 路径过长，跳过 */
         MsDynlib lib = ms_dynlib_open(out_path);
         if (lib) return lib;
     }
@@ -118,8 +122,15 @@ if (lib) {
     const MsModuleApi* api = ms_module_api_get();
     init_fn(api, vm, mod);
 
+    if (vm->had_runtime_error) {
+        /* init 失败：标记 module 为失败态，关闭 lib，不追踪句柄 */
+        mod->state = MS_MOD_FAILED;
+        ms_dynlib_close(lib);
+        return NULL;
+    }
+
     mod->state = MS_MOD_INITIALIZED;
-    ms_vm_track_dynlib(vm, lib);  // 记录句柄，vm_free 时 dlclose
+    ms_vm_track_dynlib(vm, lib);  /* 仅 init 成功后才追踪，vm_free 时 dlclose */
     return mod;
 }
 return NULL;  // 未找到
@@ -154,6 +165,7 @@ v1 主进程不强制校验版本；扩展侧读取后决定降级行为。当 A
 | 文件 | 操作 |
 |---|---|
 | `include/ms/common.h` | 增 `MS_EXPORT` 宏 |
+| `include/ms/consts.h` | 增 `#define MS_PATH_MAX 4096` |
 | `include/ms/dynlib.h` | 新建；`MsDynlib`、三个函数 |
 | `include/ms/vm.h` | `MsVM` 增 `dynlib_handles`/count/cap |
 | `src/dynlib.c` | 新建；跨平台实现 |
@@ -171,6 +183,8 @@ tests/fixtures/stdlib_ext/
     sample_ext.c       # 实现 hello() 函数
     CMakeLists.txt     # 独立 add_library(sample_ext SHARED sample_ext.c)
 ```
+
+> **MSVC 注意**：MSVC 默认不导出 C 符号。`MS_EXPORT`（`__declspec(dllexport)`）已正确标注 `ms_module_init`，可用 `dumpbin /exports sample_ext.dll` 验证符号名无 C++ mangling。若出现链接问题，在 `CMakeLists.txt` 中加 `set_target_properties(sample_ext PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)`，并依赖 `MS_EXPORT` 显式导出。
 
 `tests/unit/test_capi_dynamic.c`：
 ```c

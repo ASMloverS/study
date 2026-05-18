@@ -56,7 +56,7 @@ MsBuiltinModuleInit ms_vm_find_builtin_module(MsVM* vm, const char* name);
 
 ## `ms_module_load` 修改（`src/module.c`）
 
-在现有逻辑前插入注册表检查：
+在现有逻辑前插入注册表检查。**关键约束：步骤 1、2 必须在 `ms_resolve_path`（步骤 3）之前执行；只有步骤 1+2 均未命中才进入步骤 3。** 这样可以避免 `import io` 先触发不存在文件的路径解析失败，或内置模块与同名文件系统模块的 cache key 混淆。
 
 ```c
 MsObjModule* ms_module_load(MsVM* vm,
@@ -105,7 +105,20 @@ MsObjModule* ms_module_load(MsVM* vm,
 
 ---
 
-## `ms_stdlib_register_all`（`include/ms/stdlib.h`，`src/stdlib/*.c`）
+## Cache key namespace
+
+`vm->module_cache` 中共存两种 key：
+
+| 类型 | key 格式 | 示例 |
+|---|---|---|
+| 内置模块 | `<builtin:name>` | `<builtin:math>` |
+| 文件系统模块 | 绝对路径 | `/home/user/proj/math.ms` |
+
+**冲突检测**：若用户以裸名（如 `import math`）加载模块，步骤 2 命中内置后直接返回；文件系统路径（`import "./math.ms"`）绕过步骤 2，仅走步骤 3，两者 key 不同，不互相干扰。禁止用户以裸名覆盖内置模块（如本地存在 `math.ms` 但裸 `import math` 始终走内置）。
+
+---
+
+## `ms_stdlib_register_all`（`include/ms/stdlib_register.h`，`src/stdlib/*.c`）
 
 在 `ms_vm_init` 末尾调用：
 
@@ -134,7 +147,7 @@ void ms_stdlib_register_all(MsVM* vm) {
 |---|---|
 | `include/ms/module.h` | 增 `MsBuiltinModuleEntry`、`ms_vm_register_builtin_module`、`ms_vm_find_builtin_module` |
 | `include/ms/vm.h` | `MsVM` 增 `builtin_registry`/`builtin_count`/`builtin_cap` |
-| `include/ms/stdlib.h` | 新建；声明 `ms_stdlib_register_all` 与各 `ms_module_*_init` |
+| `include/ms/stdlib_register.h` | 新建；声明 `ms_stdlib_register_all` 与各 `ms_module_*_init` |
 | `src/module.c` | `ms_module_load` 插入步骤 2；新增 `ms_vm_register_builtin_module`/`find` |
 | `src/vm.c` | `ms_vm_init` 末尾调 `ms_stdlib_register_all`；`ms_vm_free` 释放 registry |
 

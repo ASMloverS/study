@@ -25,12 +25,14 @@
 | `resume` | `time.resume` | `src/stdlib/time.c` | 移除全局 |
 | `tcp_listen` | `net.listen` | `src/stdlib/net.c` | 移除全局 |
 | `tcp_connect` | `net.connect` | `src/stdlib/net.c` | 移除全局 |
-| `_socket_accept` | `net.accept`（+ ObjSocket 方法 `s.accept()`）| `src/stdlib/net.c` | 移出全局；方法保留 |
-| `_socket_read` | `net.read`（+ `s.read()`）| `src/stdlib/net.c` | 同上 |
-| `_socket_write` | `net.write`（+ `s.write()`）| `src/stdlib/net.c` | 同上 |
-| `_socket_close` | `net.close`（+ `s.close()`）| `src/stdlib/net.c` | 同上 |
+| `_socket_accept` | ObjSocket 方法 `s.accept()` | `src/stdlib/net.c` | 移出全局；仅方法风格（与 ObjString/List 约定一致） |
+| `_socket_read` | ObjSocket 方法 `s.read(n)` | `src/stdlib/net.c` | 同上 |
+| `_socket_write` | ObjSocket 方法 `s.write(data)` | `src/stdlib/net.c` | 同上 |
+| `_socket_close` | ObjSocket 方法 `s.close()` | `src/stdlib/net.c` | 同上 |
 
 **保留全局的原则**：无模块前缀仍有语义（`print`、`len`）或是类型系统基础（`type`、`str`）。
+
+**`net` 模块职责划分**：`net` 仅提供工厂函数（`net.listen`、`net.connect`、`net.resolve`）；socket 实例操作（accept/read/write/close）统一通过 ObjSocket 方法调用，避免双入口造成测试矩阵膨胀和社区风格分裂。
 
 ---
 
@@ -96,12 +98,7 @@ void ms_vm_register_natives(MsVM* vm) {
 | `tests/fixtures/native_clock.ms` | `clock()` → `import time; time.clock()` |
 | （其他引用 `_socket_*` 的 fixture）| 改为方法调用 `s.read()` 或 `net.read(s, n)` |
 
-批量替换命令参考：
-```bash
-sed -i 's/tcp_listen(/import net\nnet.listen(/g' tests/fixtures/async_*.ms
-```
-
-实际操作建议逐文件手动确认，sed 替换后运行 ctest 验证。
+逐文件手动确认替换内容，完成后运行 `ctest --output-on-failure` 验证。
 
 ---
 
