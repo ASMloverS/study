@@ -13,12 +13,14 @@
 | 函数 | 参数 | 返回 | 描述 |
 |---|---|---|---|
 | `math.abs(x)` | num | num | 绝对值（浮点） |
-| `math.floor(x)` | num | int | 下取整 |
-| `math.ceil(x)` | num | int | 上取整 |
-| `math.round(x)` | num | int | 四舍五入（half-even/ties-to-even）|
-| `math.trunc(x)` | num | int | 向零截断 |
+| `math.floor(x)` | num | num（double）| 下取整 |
+| `math.ceil(x)` | num | num（double）| 上取整 |
+| `math.round(x)` | num | num（double）| 四舍五入（half-even/ties-to-even）|
+| `math.trunc(x)` | num | num（double）| 向零截断 |
 | `math.sign(x)` | num | int | -1 / 0 / 1 |
 | `math.fmod(x, y)` | num,num | num | 浮点余数（同 C `fmod`）|
+
+> 底层 C 实现为 `MS_NUMBER_VAL(floor(x))`，返回值类型为 `num`（double），不截断为整数。如需整数可显式转换：`int(math.floor(x))`。
 
 ### 幂与对数
 
@@ -70,6 +72,18 @@
 | `math.randint(lo, hi)` | int,int | int | [lo, hi] 整数均匀分布 |
 | `math.seed(n)` | int | nil | 设随机种子（`srand`）|
 
+### 限制
+
+- 底层使用 `rand()/RAND_MAX`，熵约 15–31 bit（因平台而异），不适用于密码学或安全敏感场景。
+- `randint(lo, hi)` 采用**拒绝采样**消除取模偏置：
+  ```c
+  int range = hi - lo + 1;
+  int x;
+  do { x = rand(); } while (x >= RAND_MAX - (RAND_MAX % range));
+  return lo + x % range;
+  ```
+- v2 计划迁移至 PCG32 算法。
+
 ### 常量（`export_value` 导出）
 
 | 名称 | 值 |
@@ -79,6 +93,8 @@
 | `math.TAU` | `2 * M_PI` |
 | `math.INF` | `INFINITY` |
 | `math.NAN` | `NAN` |
+
+> **注**：NaN ≠ NaN（IEEE-754），判断 NaN 须用 `math.is_nan(x)`，勿用 `x == math.NAN`。
 
 ---
 

@@ -98,6 +98,14 @@ static struct {
 
 > `g_log.sink == NULL` 时等价于 `stderr`，避免与 io 模块初始化顺序产生循环依赖。
 
+### 并发模型
+
+`log.*` 函数（`log.info`、`log.warn`、`log.error` 等）只能在**主线程**调用。
+
+- `g_log` 全局结构无互斥锁，多线程并发写会产生数据竞争。
+- Worker 线程（CAPI-07 §线程池）禁止直接调用 `log.*`；如需记录，须将日志请求投递回主线程（通过完成回调）。
+- `g_log.sink == FILE*` 路径下的 `fprintf(stderr, ...)` 同样不加锁；若未来引入多 worker 直接写文件，须在此加 `pthread_mutex_t` 或等价机制。
+
 ---
 
 ## 格式化输出（核心逻辑）
@@ -121,6 +129,16 @@ static void emit(int level, const char* tag,
     if (level == 5 && g_log.fatal_exits) exit(1);
 }
 ```
+
+### 缓冲策略
+
+`emit` 改用 `MsObjStringBuilder`，无固定字节上限：
+
+1. 调 `ms_obj_sb_new(vm)` 创建动态缓冲。
+2. `%v` 占位符调用 `ms_value_to_string(vm, val)` 字符串化任意值；对 List/Map 限制递归深度为 **4**，超出部分输出 `<...>`。
+3. 格式化完成后调 `ms_obj_sb_to_string(vm, sb)` 得到 `ObjString*`，再写入 sink。
+
+旧代码的 `char line[2048]` / `char msg[1024]` 在超长消息时会被 `snprintf` 静默截断，改用 StringBuilder 后消除此问题。
 
 ---
 

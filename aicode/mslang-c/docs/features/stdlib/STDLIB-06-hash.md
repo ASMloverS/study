@@ -23,10 +23,26 @@
 | 函数/方法 | 参数 | 返回 | 描述 |
 |---|---|---|---|
 | `hash.new(algo)` | str | Hasher | algo ∈ `{"md5","sha1","sha256"}` |
-| `h.update(data)` | str\|Buffer | nil | 追加数据 |
-| `h.digest()` | – | Buffer | 返回摘要（不 reset；调用后不可再 update）|
-| `h.hexdigest()` | – | str | `digest().to_hex()` 快捷方式 |
-| `h.reset()` | – | nil | 重置到初始状态（可重新 update）|
+| `hash.update(h, data)` | Hasher,str\|Buffer | nil | 追加数据（v1 函数式；v2 见下）|
+| `hash.digest(h)` | Hasher | Buffer | 返回摘要（不 reset；调用后不可再 update）|
+| `hash.hexdigest(h)` | Hasher | str | `digest(h).to_hex()` 快捷方式 |
+| `hash.reset(h)` | Hasher | nil | 重置到初始状态（可重新 update）|
+
+> **v2（CAPI-06 后）**：方法语法糖 `h.update(data)` / `h.digest()` / `h.reset()` 在引入 userdata 方法分发后启用。
+
+### 设计决策：函数式 API（v1）
+
+CAPI-05 v1 不支持 `MsObjUserdata` 方法调用（`ms_userdata_invoke` 未在 v1 引入）。
+因此 hash 模块 v1 采用**函数式 API**：
+
+```ms
+local h = hash.new("sha256")
+hash.update(h, data)          // 函数调用，非方法
+local digest = hash.digest(h) // 函数调用，非方法
+hash.reset(h)
+```
+
+方法语法糖（`h.update(data)`）推迟至 CAPI-06 v2 引入 userdata 方法分发后启用。
 
 ---
 
@@ -65,7 +81,22 @@ static MsValue ms_hash_new(MsVM* vm, int argc, MsValue* argv) {
 }
 ```
 
-`Hasher` 方法通过 `ms_builtin_invoke` → `ms_userdata_invoke`（CAPI-06）分发：按 `type_tag == "MsHasher"` 识别，`strcmp(method, "update")` 等分发到对应函数。
+`Hasher` 句柄在 v1 通过模块函数（`hash.update(h, data)` 等）操作。
+// v2: ms_userdata_invoke — 仅在 CAPI-06 v2 引入后启用
+// v2 分发策略：ms_builtin_invoke → ms_userdata_invoke，按 type_tag == "MsHasher" 识别，
+//              strcmp(method, "update") 等分发到对应函数。
+
+### Hasher 状态机
+
+```
+初始 → update* → digest → finalized
+                   ↑
+              reset() 重置为初始
+```
+
+- `digest()` 后 `h` 进入 `finalized` 状态（内部 `bool finalized = true`）。
+- `finalized` 状态下再调 `update()` 抛运行时错误：`hash: hasher already finalized, call reset() first`。
+- `reset()` 将状态归零，可重新开始 `update` 序列。
 
 ---
 

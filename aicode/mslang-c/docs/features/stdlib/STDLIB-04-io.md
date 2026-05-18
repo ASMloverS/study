@@ -27,6 +27,19 @@
 |---|---|---|---|
 | `io.open(path, mode)` | str,str | File | 模式：`"r"` `"w"` `"a"` `"rb"` `"wb"` `"ab"` `"r+"` `"w+"` |
 
+> **注**：使用 `r+`/`w+` 模式时，read 与 write 操作切换前须显式调用 `f.flush()` 或 `f.seek(current_pos)`（等价于 `f.seek(0, 1)`）。C89 标准要求在读写方向切换时执行一次定位操作，否则行为未定义（UB）。v2 计划在底层自动插入 `fseek` 隔离操作，目前为 known-issue。
+
+### 补充 API（v2）
+
+| 函数 | 描述 |
+|---|---|
+| `io.copy(src_path, dst_path)` | 复制文件内容，返回写入字节数 |
+| `io.tempfile() → (File, str)` | 创建临时文件，返回 (文件句柄, 临时路径) |
+| `io.tempdir() → str`          | 创建临时目录，返回目录路径 |
+| `io.exists(path) → bool`      | 判断路径是否存在（与 `os.exists` 择一保留，建议统一到 io）|
+
+> `io.exists` 与 `os.exists`（如有）语义相同，最终实现时择一保留，避免重复。
+
 ### 标准流（export_value，在 init 时构造）
 
 | 名称 | 描述 |
@@ -95,7 +108,7 @@ static MsValue ms_io_open(MsVM* vm, int argc, MsValue* argv) {
         ms_vm_runtime_error(vm, "io.open: cannot open '%s': %s", path, strerror(errno));
         return MS_NIL_VAL();
     }
-    return MS_OBJ_VAL(ms_obj_file_new(vm, fp, fm));
+    return MS_OBJ_VAL(ms_obj_file_new(vm, fp, fm, true));
 }
 
 static const MsNativeDef ms_io_defs[] = {
@@ -113,19 +126,37 @@ static const MsNativeDef ms_io_defs[] = {
 
 void ms_module_io_init(MsVM* vm, MsObjModule* mod) {
     ms_module_register_natives(vm, mod, ms_io_defs);
-    /* 标准流句柄（不被 GC 关闭：finalize 时检查 fp==stdin/stdout/stderr）*/
+    /* 标准流句柄（owns_fp=false，GC 回收时不关闭）*/
     ms_module_export_value(vm, mod, "stdin",
-        MS_OBJ_VAL(ms_obj_file_new(vm, stdin, MS_FILE_TEXT)));
+        MS_OBJ_VAL(ms_obj_file_new(vm, stdin,  MS_FILE_TEXT, false)));
     ms_module_export_value(vm, mod, "stdout",
-        MS_OBJ_VAL(ms_obj_file_new(vm, stdout, MS_FILE_TEXT)));
+        MS_OBJ_VAL(ms_obj_file_new(vm, stdout, MS_FILE_TEXT, false)));
     ms_module_export_value(vm, mod, "stderr",
-        MS_OBJ_VAL(ms_obj_file_new(vm, stderr, MS_FILE_TEXT)));
+        MS_OBJ_VAL(ms_obj_file_new(vm, stderr, MS_FILE_TEXT, false)));
 }
 ```
 
 ### 标准流保护
 
-`ms_obj_file_new` 接受一个 `is_std` 标志（或在 GC free 时检查 `fp == stdin || fp == stdout || fp == stderr`），标准流不执行 `fclose`。
+`ObjFile` 结构新增字段 `bool owns_fp;`：
+
+```c
+ms_obj_file_new(MsVM* vm, FILE* fp, MsFileMode mode, bool owns_fp)
+```
+
+GC free 时：
+```c
+if (f->owns_fp && f->fp) { fclose(f->fp); f->fp = NULL; }
+```
+
+标准流以 `owns_fp = false` 构造，GC 回收时不关闭：
+```c
+vm->io_stdin  = ms_obj_file_new(vm, stdin,  MS_FILE_TEXT, false);
+vm->io_stdout = ms_obj_file_new(vm, stdout, MS_FILE_TEXT, false);
+vm->io_stderr = ms_obj_file_new(vm, stderr, MS_FILE_TEXT, false);
+```
+
+> **注**：`CAPI-06 §MsObjFile` 需同步加入 `owns_fp` 字段与更新后的构造函数签名（本模块为前置变更需求方）。
 
 ---
 
@@ -172,3 +203,9 @@ time.run_until_complete(main())
 // 3. io.lines 行数正确
 // 4. 打开不存在文件抛运行时错误
 ```
+
+> **待补充 fixture（错误路径）**：
+> - 连接被拒绝（连接不存在的端口，断言 Future 状态为 error）
+> - 读到 EOF（对端 close，断言返回空 Buffer 或 nil）
+> - 部分写入触发 EAGAIN（大数据写入，断言正确重试或回调）
+> - 超时（若 EventLoop 支持 deadline，断言 Future 被 kill 后状态）

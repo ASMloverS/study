@@ -30,6 +30,28 @@
 
 ---
 
+## 先决条件
+
+本模块依赖以下 VM 字段（当前 `MsVM` 中尚不存在）：
+
+```c
+bool   gc_paused;      // gc.pause() / gc.resume() 控制
+size_t alive_count;    // gc.stats() 返回存活对象数
+```
+
+以及 `ms_maybe_collect` 的早返回判定：
+```c
+if (vm->gc_paused) return;
+```
+
+**这些字段须在独立提交中先行引入**（建议命名为 `vm-gc-controls`），不得与本模块功能代码混入同一 commit，以便 bisect 和 review。
+
+**实施顺序**：
+1. PR `vm-gc-controls`：仅加字段 + 早返回，无业务逻辑。
+2. PR `stdlib-gc`：在字段已存在的基础上实现本模块全部功能。
+
+---
+
 ## VM 侧新增字段（`include/ms/vm.h`）
 
 ```c

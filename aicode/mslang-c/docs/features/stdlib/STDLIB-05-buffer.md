@@ -12,10 +12,18 @@
 
 | 函数 | 参数 | 返回 | 描述 |
 |---|---|---|---|
-| `buffer.new(size=0, fill=0)` | int,int | Buffer | 分配 size 字节，全部填充为 fill（0..255）|
+| `buffer.new([size: int [, fill: int]])` | int?,int? | Buffer | 分配 size 字节，全部填充为 fill（0..255）；size/fill 缺省为 0 |
 | `buffer.from_str(s)` | str | Buffer | 字符串字节复制为 Buffer（不终止 NUL）|
 | `buffer.from_hex(hex)` | str | Buffer | 十六进制字符串解码（忽略空格，奇数长报错）|
 | `buffer.concat(a, b)` | Buffer,Buffer | Buffer | 两个 Buffer 拼接为新 Buffer |
+
+```c
+// buffer.new(size=0, fill=0) — arity=-1 表示可变参
+// 实现时按 argc 取默认值：
+//   size = argc >= 1 ? AS_INT(argv[0]) : 0;
+//   fill = argc >= 2 ? AS_INT(argv[1]) : 0;
+{"new", ms_buf_new, -1},
+```
 
 ### 方法（`ObjBuffer.invoke`）
 
@@ -46,12 +54,16 @@
 typedef struct {
     MsObject obj;    /* type = MS_OBJ_BUFFER */
     uint8_t* data;   /* GC 管理：ms_reallocate */
-    int      len;    /* 有效字节数 */
-    int      cap;    /* 分配容量 */
+    size_t   len;    /* 有效字节数 */
+    size_t   cap;    /* 分配容量 */
 } MsObjBuffer;
 ```
 
 容量增长策略：`new_cap = max(8, next_power_of_2(needed))`。
+
+> **注**：CAPI-06 §ObjBuffer 同步使用 size_t，STDLIB-05 与其保持一致。
+>
+> **注（MSVC /W4）**：将 `len`/`cap` 转回 `MsValue` 时须写 `MS_INT_VAL((int64_t)b->len)`，避免隐式截断警告。
 
 ---
 
@@ -68,13 +80,14 @@ MsObjBuffer* ms_obj_buffer_new(MsVM* vm, int initial_cap) {
     return b;
 }
 
-static void buf_ensure(MsVM* vm, MsObjBuffer* b, int needed) {
+static void buf_ensure(MsVM* vm, MsObjBuffer* b, size_t needed) {
     if (b->cap >= needed) return;
-    int new_cap = b->cap < 8 ? 8 : b->cap;
-    while (new_cap < needed) new_cap <<= 1;
-    b->data = (uint8_t*)ms_reallocate(vm, b->data,
-                                       (size_t)b->cap,
-                                       (size_t)new_cap);
+    size_t new_cap = b->cap < 8 ? 8 : b->cap;
+    while (new_cap < needed) {
+        new_cap <<= 1;
+        /* 防 size_t 翻转：若 new_cap < old_cap 则 overflow_error */
+    }
+    b->data = (uint8_t*)ms_reallocate(vm, b->data, b->cap, new_cap);
     b->cap = new_cap;
 }
 

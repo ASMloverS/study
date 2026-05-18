@@ -46,13 +46,21 @@
 | `os.join(a, b, ...)` | str... | str | 平台无关路径拼接 |
 | `os.basename(path)` | str | str | 最后一个路径分量 |
 | `os.dirname(path)` | str | str | 目录部分 |
-| `os.splitext(path)` | str | (str,str) | 返回 list\[stem, ext\] |
+| `os.splitext(path)` | str | (str, str) Tuple | 与 Python `os.path.splitext` 对齐，返回 `(stem, ext)` Tuple。 |
 
 ### 子进程
 
 | 函数 | 参数 | 返回 | 描述 |
 |---|---|---|---|
 | `os.exec(cmd)` | str | int | `system(cmd)`，返回退出码（v1 不支持重定向）|
+
+### 安全
+
+`os.exec` 将命令字符串直接传入 `system(cmd)`，会经由系统 shell 解析。
+
+**禁止**将外部不可信输入直接拼接进命令字符串，否则会产生**命令注入**漏洞（如 `; rm -rf /`、反引号替换、变量展开）。
+
+v2 计划：`os.spawn(argv: list[str], stdin?, stdout?) → exit_code`，底层改用 `posix_spawn`（POSIX）或 `CreateProcessW`（Windows）参数数组接口，绕过 shell。
 
 ### 常量（export_value）
 
@@ -86,7 +94,18 @@ static MsValue ms_os_listdir(MsVM* vm, int argc, MsValue* argv) {
     const char* path = MS_AS_CSTRING(argv[0]);
     MsValue list = MS_OBJ_VAL(ms_obj_list_new(vm));
 #ifdef _WIN32
-    /* FindFirstFile / FindNextFile */
+    // Windows 实现伪码（宽字符路径留 v2）
+    WIN32_FIND_DATAA fd;
+    char pat[MAX_PATH];
+    snprintf(pat, sizeof(pat), "%s\\*", path);   // 必须追加 \\* 后缀
+    HANDLE h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) { /* 返回空列表或抛错 */ }
+    do {
+        if (strcmp(fd.cFileName, ".") != 0 && strcmp(fd.cFileName, "..") != 0)
+            ms_list_push(vm, list, MS_STRING_VAL(fd.cFileName));
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    // 注：宽字符路径（中文等）留 v2 用 FindFirstFileW
 #else
     /* opendir / readdir */
     DIR* d = opendir(path);
@@ -114,6 +133,19 @@ static MsValue ms_os_listdir(MsVM* vm, int argc, MsValue* argv) {
 | `src/stdlib/os.c` | 新建 |
 | `include/ms/vm.h` | `MsVM` 增 `main_argc`、`main_argv`（指针，不 strdup）|
 | `src/main.c` | 解析脚本 index，写入 `vm.main_argc/argv` |
+
+### 先决条件
+
+`os.argv` 依赖 `MsVM` 新增以下字段：
+
+```c
+int main_argc;
+const char* const* main_argv;  // 生命周期由 main() 栈帧保证，无需 strdup
+```
+
+以及新增公开 API：`void ms_vm_set_argv(MsVM* vm, int argc, const char* const* argv);`
+
+该变更归入独立预备任务（建议编号 `CAPI-09` 或 `STDLIB-PRE-02`），须先于本模块落地。
 
 ---
 

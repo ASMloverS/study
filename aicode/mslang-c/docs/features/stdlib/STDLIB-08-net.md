@@ -37,6 +37,16 @@ TCP 网络：将全局 `tcp_listen`、`tcp_connect`、`_socket_*` 迁移为 `net
 
 Socket 句柄上的方法（`s.read(n)`、`s.write(data)`、`s.close()`、`s.accept()`）继续由 `ms_socket_invoke`（`src/vm_builtins.c`）处理，不在此更改。模块函数是其别名，两条路径调同一底层实现。
 
+### net.read 入口统一
+
+**唯一入口**：通过 `ObjSocket` 方法 `s.read(n)` 调用（由 `ms_socket_invoke` 路由）。
+
+- `s.read(n)` 返回 **Buffer**（与 buffer 模块统一）。
+- `net.read(sock, n)` 作为别名保留，等价于 `sock.read(n)`，行为相同。
+- `ms_socket_invoke` 中 `read` 分支同步修改为返回 `ObjBuffer`（原来返回 `ObjString`）；所有调用方需迁移。
+
+> 不保留 "read 返 str" 的旧路径，避免双语义。
+
 ---
 
 ## 迁移实现（`src/stdlib/net.c`）
@@ -141,6 +151,23 @@ static MsValue ms_net_listen(MsVM* vm, int argc, MsValue* argv) {
 ```
 
 同理对 `net.read`（n 默认 4096）等。
+
+### net.listen(host, port[, backlog]) → Socket
+
+**同步**返回已绑定监听的 `Socket` 对象。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| host | str  | —      | 绑定地址，如 `"0.0.0.0"` 或 `"127.0.0.1"` |
+| port | int  | —      | 监听端口（1–65535）|
+| backlog | int | 128  | 内核连接队列长度 |
+
+**实现要点**：
+- 旧 `native_tcp_listen(port)` arity=1、host 写死 `INADDR_ANY`、返回 Future — **废弃**，不迁移，改为本函数。
+- 新实现：`argc in [2,3]`；`inet_pton(AF_INET, host, ...)` 解析 host；返回 `ObjSocket`（同步，非 Future）。
+- accept/read/write/close 操作通过 Future 异步执行（不影响 listen）。
+
+> **注**：CAPI-08 §迁移前清单中 `tcp_listen, 2` 条目已过时，应标记为"已废弃，迁移至 net.listen（3 参）"。
 
 ---
 

@@ -92,6 +92,12 @@ include/ms/
 
 ---
 
+## 实施顺序
+
+> **注**：标签编号（STDLIB-01..10）表示功能序号，不等于实施顺序。推荐按依赖 DAG 构建：buffer → math → os → time → io → log → hash → net → debug → gc。
+
+---
+
 ## 模块一览
 
 | 模块 | 源文件 | 句柄类型 | 异步 |
@@ -106,6 +112,10 @@ include/ms/
 | net | `stdlib/net.c` | `ObjSocket`（已有）| connect/accept/read/write 返回 Future |
 | debug | `stdlib/debug.c` | 无 | 无 |
 | gc | `stdlib/gc.c` | 无 | 无 |
+
+> **注**：
+> - hash：依赖 CAPI-06 §userdata 方法分发（v1 引入）
+> - log：依赖 CAPI-06 §userdata 方法分发（v1 引入）
 
 ---
 

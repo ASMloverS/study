@@ -35,8 +35,7 @@
 static MsValue ms_debug_traceback(MsVM* vm, int argc, MsValue* argv) {
     int skip = (argc >= 1 && MS_IS_INT(argv[0])) ? (int)MS_AS_INT(argv[0]) : 0;
     /* 遍历 vm->frames[0..vm->frame_count-1-skip]，反向拼接字符串 */
-    MsObjStringBuilder sb;
-    ms_obj_sb_init(&sb);
+    MsObjStringBuilder* sb = ms_obj_sb_new(vm);
     for (int i = vm->frame_count - 1 - skip; i >= 0; i--) {
         MsCallFrame* frame = &vm->frames[i];
         MsObjFunction* fn  = frame->closure->function;
@@ -47,9 +46,9 @@ static MsValue ms_debug_traceback(MsVM* vm, int argc, MsValue* argv) {
                  fn->name ? fn->name->chars : "<script>",
                  fn->chunk.source ? fn->chunk.source->chars : "?",
                  line);
-        ms_obj_sb_append_cstr(&sb, buf);
+        ms_obj_sb_append(sb, buf, (int)strlen(buf));
     }
-    MsObjString* s = ms_obj_sb_finish(vm, &sb);
+    MsObjString* s = ms_obj_sb_to_string(vm, sb);
     return MS_OBJ_VAL(s);
 }
 
@@ -117,6 +116,21 @@ void ms_module_debug_init(MsVM* vm, MsObjModule* mod) {
 
 ## `ms_chunk_disassemble_str` 变体（`src/debug.c`）
 
+### 先决条件：ms_chunk_disassemble_str
+
+`debug.disasm` 依赖尚未公开的 API：
+
+```c
+MsObjString* ms_chunk_disassemble_str(MsVM* vm, MsChunk* chunk, const char* name);
+```
+
+此 API 需在本模块实施前新增，建议归入独立任务 **INFRA-DBG-01**：
+- 在 `include/ms/debug.h` 声明 `ms_chunk_disassemble_str`。
+- 在 `src/debug.c` 实现（内部复用现有 `ms_chunk_disassemble(FILE*)` 逻辑，改写入 StringBuilder 后返回 ObjString）。
+- 原 `ms_chunk_disassemble(FILE*)` 保留不动。
+
+同时确认 `MsChunk` 是否含 `source` 字段（`MsObjString* source`）及 `ms_chunk_get_line(chunk, offset)` 是否为公开 API；若无，INFRA-DBG-01 中一并补充。
+
 现有 `ms_chunk_disassemble` 输出到 `stdout`，需增加写到字符串的变体：
 
 ```c
@@ -126,7 +140,7 @@ MsObjString* ms_chunk_disassemble_str(MsVM* vm,
                                        const char* name);
 ```
 
-内部用 `ms_obj_sb_*` 拼接，不改变原 `ms_chunk_disassemble` 接口。
+内部用 `ms_obj_sb_new` / `ms_obj_sb_append` / `ms_obj_sb_to_string` 拼接，不改变原 `ms_chunk_disassemble` 接口。
 
 ---
 

@@ -1,5 +1,7 @@
 # 内置标准库索引
 
+> 前置依赖：[CAPI-01..08](../capi/) · [ASYNC-04..06](../async/)
+
 | 状态 | 文件 | 模块 | 说明 |
 |---|---|---|---|
 | ⬜ | [STDLIB-00-overview.md](STDLIB-00-overview.md) | — | 总体架构、依赖图、ms_stdlib_register_all |
@@ -15,6 +17,8 @@
 | ⬜ | [STDLIB-10-gc.md](STDLIB-10-gc.md) | `gc` | GC 手动控制与统计 |
 
 > ⬜ 待实现 · 🚧 进行中 · ✅ 完成
+
+> **注**：标签编号（STDLIB-01..10）表示功能序号，不等于实施顺序。实施时须按依赖 DAG 排序：buffer → math → os → time → io → log → hash → net → debug → gc。
 
 ## 实施顺序
 

@@ -32,6 +32,24 @@ var t = time.struct(time.now())
 print(t["year"], t["month"], t["day"])
 ```
 
+### Windows 子集（strptime 手动实现）
+
+Windows 无 `strptime`，v1 手动实现仅支持以下 conversion specifier：
+
+| 说明符 | 含义 |
+|--------|------|
+| `%Y`   | 四位年 |
+| `%m`   | 月（01–12）|
+| `%d`   | 日（01–31）|
+| `%H`   | 时（00–23）|
+| `%M`   | 分（00–59）|
+| `%S`   | 秒（00–60）|
+| `%j`   | 年内第几天（001–366）|
+
+- 其他说明符：抛出运行时错误 `time.parse: unsupported specifier '%X' on Windows`。
+- 时区：固定 UTC，不处理 DST。
+- 解析失败（格式不匹配）：抛出 `time.parse: invalid format`，不返回 nan。
+
 ### 睡眠
 
 | 函数 | 参数 | 返回 | async | 描述 |
