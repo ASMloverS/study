@@ -3,6 +3,7 @@
 #include "ms/consts.h"
 #include "ms/memory.h"
 #include "ms/event_loop.h"
+#include "ms/dynlib.h"
 #include <stdint.h>
 
 /* Forward type for builtin module registry entries (defined fully in module.h). */
@@ -109,6 +110,12 @@ typedef struct MsVM {
     char**           module_search_paths;
     int              module_search_count;
     int              module_search_cap;
+    /* Set to true by ms_vm_runtime_error; cleared at start of ms_vm_run. */
+    bool             had_runtime_error;
+    /* Dynamic library handles tracked for cleanup on vm_free (CAPI-04) */
+    MsDynlib*        dynlib_handles;
+    int              dynlib_count;
+    int              dynlib_cap;
     /* Async event loop (lazy-initialised; always embedded, never heap-allocated) */
     MsEventLoop     event_loop;
     bool            loop_inited;
@@ -149,6 +156,9 @@ MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
    with all top-level globals defined during execution. */
 MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
                                         MsObjModule* mod);
+
+/* Track a successfully-opened dynamic library handle; freed in ms_vm_free. */
+void ms_vm_track_dynlib(MsVM* vm, MsDynlib lib);
 
 #ifdef MSLANG_VM_STATS
 void ms_vm_get_stats(const MsVM* vm, MsVMStats* out);

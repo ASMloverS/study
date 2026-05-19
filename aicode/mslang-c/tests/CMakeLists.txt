@@ -1,5 +1,8 @@
 include(MslangTesting)
 
+# Build sample_ext shared library used by test_capi_dynamic
+add_subdirectory(fixtures/stdlib_ext)
+
 ms_add_test(test_smoke unit/test_smoke.c)
 
 ms_add_test(test_value unit/test_value.c)
@@ -85,6 +88,13 @@ target_link_libraries(test_capi_native_def PRIVATE ms_frontend)
 
 ms_add_test(test_capi_search_path unit/test_capi_search_path.c)
 target_link_libraries(test_capi_search_path PRIVATE ms_frontend ms_fs_util)
+
+ms_add_test(test_capi_dynamic unit/test_capi_dynamic.c)
+target_link_libraries(test_capi_dynamic PRIVATE ms_frontend ms_dynlib)
+target_compile_definitions(test_capi_dynamic PRIVATE
+    SAMPLE_EXT_DIR="$<TARGET_FILE_DIR:sample_ext>"
+)
+add_dependencies(test_capi_dynamic sample_ext)
 
 ms_add_test(test_natives unit/test_natives.c)
 target_link_libraries(test_natives PRIVATE ms_frontend)

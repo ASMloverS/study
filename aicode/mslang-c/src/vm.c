@@ -182,6 +182,10 @@ void ms_vm_init(MsVM* vm) {
     vm->module_search_paths  = NULL;
     vm->module_search_count  = 0;
     vm->module_search_cap    = 0;
+    vm->had_runtime_error    = false;
+    vm->dynlib_handles       = NULL;
+    vm->dynlib_count         = 0;
+    vm->dynlib_cap           = 0;
     ms_vm_register_natives(vm);
     ms_stdlib_register_all(vm);
     ms_load_mslang_path(vm);
@@ -235,6 +239,25 @@ void ms_vm_free(MsVM* vm) {
     vm->module_search_paths = NULL;
     vm->module_search_count = 0;
     vm->module_search_cap   = 0;
+    for (int i = 0; i < vm->dynlib_count; i++)
+        ms_dynlib_close(vm->dynlib_handles[i]);
+    free(vm->dynlib_handles);
+    vm->dynlib_handles = NULL;
+    vm->dynlib_count   = 0;
+    vm->dynlib_cap     = 0;
+}
+
+void ms_vm_track_dynlib(MsVM* vm, MsDynlib lib) {
+    if (!lib) return;
+    if (vm->dynlib_count >= vm->dynlib_cap) {
+        int new_cap = vm->dynlib_cap < 8 ? 8 : vm->dynlib_cap * 2;
+        MsDynlib* arr = (MsDynlib*)realloc(vm->dynlib_handles,
+                                            (size_t)new_cap * sizeof(MsDynlib));
+        if (!arr) return; /* OOM: leak rather than corrupt */
+        vm->dynlib_handles = arr;
+        vm->dynlib_cap     = new_cap;
+    }
+    vm->dynlib_handles[vm->dynlib_count++] = lib;
 }
 
 /* ---- stats API ---- */
@@ -266,8 +289,9 @@ void ms_vm_runtime_error(MsVM* vm, const char* fmt, ...) {
         const char* name = fn->name ? fn->name->data : "<script>";
         fprintf(stderr, "  [line %d] in %s\n", line, name);
     }
-    vm->ctx->frame_count = 0;
-    vm->ctx->stack_top   = vm->ctx->stack;
+    vm->ctx->frame_count  = 0;
+    vm->ctx->stack_top    = vm->ctx->stack;
+    vm->had_runtime_error = true;
 }
 
 /* ---- native define ---- */
@@ -307,6 +331,7 @@ MsInterpretResult ms_vm_interpret(MsVM* vm, const char* source, const char* path
 }
 
 MsInterpretResult ms_vm_run(MsVM* vm) {
+    vm->had_runtime_error = false;
     return vm_run_inner(vm);
 }
 

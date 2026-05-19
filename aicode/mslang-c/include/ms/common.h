@@ -33,3 +33,9 @@ typedef size_t   ms_sz;
   #define MS_UNLIKELY(x) (x)
   #define MS_INLINE      static inline
 #endif
+
+#ifdef _WIN32
+#  define MS_EXPORT __declspec(dllexport)
+#else
+#  define MS_EXPORT __attribute__((visibility("default")))
+#endif

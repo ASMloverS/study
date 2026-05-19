@@ -331,6 +331,11 @@ void ms_object_print(MsObject* obj) {
             printf("<Socket fd=%d %s>", sock->fd, st);
             break;
         }
+        case MS_OBJ_USERDATA: {
+            MsObjUserdata* ud = (MsObjUserdata*)obj;
+            printf("<userdata %s>", ud->type_tag ? ud->type_tag : "?");
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -447,6 +452,13 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
                 sock->fd = -1;
             }
             ms_reallocate(vm, obj, sizeof(MsObjSocket), 0);
+            break;
+        }
+        case MS_OBJ_USERDATA: {
+            MsObjUserdata* ud = (MsObjUserdata*)obj;
+            if (ud->finalize && ud->data) ud->finalize(ud->data);
+            free(ud->data);
+            ms_reallocate(vm, obj, sizeof(MsObjUserdata), 0);
             break;
         }
         default:
@@ -650,4 +662,19 @@ MsObjCoroutine* ms_obj_coroutine_new(struct MsVM* vm, MsObjClosure* cl) {
     co->ctx.exception_count = 0;
     co->async_future       = NULL;
     return co;
+}
+
+/* ---- Userdata ---- */
+
+MsObjUserdata* ms_obj_userdata_new(struct MsVM* vm, size_t bytes,
+                                   void (*finalize)(void* data),
+                                   void (*mark)(struct MsVM* vm, void* data),
+                                   const char* type_tag) {
+    MsObjUserdata* ud = MS_ALLOC_OBJ(vm, MS_OBJ_USERDATA, MsObjUserdata, 0);
+    ud->data      = bytes > 0 ? malloc(bytes) : NULL;
+    ud->data_size = bytes;
+    ud->finalize  = finalize;
+    ud->mark      = mark;
+    ud->type_tag  = type_tag;
+    return ud;
 }

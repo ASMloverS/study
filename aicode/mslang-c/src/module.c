@@ -3,6 +3,8 @@
 #include "ms/object.h"
 #include "ms/table.h"
 #include "ms/value.h"
+#include "ms/dynlib.h"
+#include "ms/consts.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,6 +142,29 @@ static const char* extract_module_name(const char* import_path) {
     return import_path + de + 1;
 }
 
+/* ---- dynamic library loader (CAPI-04) ---- */
+
+typedef void (*MsModuleInitFn)(const MsModuleApi*, MsVM*, MsObjModule*);
+
+/* Try each search path, building lib{name}.so / {name}.dll / lib{name}.dylib. */
+static MsDynlib find_dynlib(MsVM* vm, const char* name, char* out_path) {
+    for (int i = 0; i < vm->module_search_count; i++) {
+        const char* dir = vm->module_search_paths[i];
+        int written;
+#ifdef _WIN32
+        written = snprintf(out_path, (size_t)MS_PATH_MAX, "%s/%s.dll", dir, name);
+#elif defined(__APPLE__)
+        written = snprintf(out_path, (size_t)MS_PATH_MAX, "%s/lib%s.dylib", dir, name);
+#else
+        written = snprintf(out_path, (size_t)MS_PATH_MAX, "%s/lib%s.so", dir, name);
+#endif
+        if (written <= 0 || written >= MS_PATH_MAX) continue;
+        MsDynlib lib = ms_dynlib_open(out_path);
+        if (lib) return lib;
+    }
+    return NULL;
+}
+
 MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
                               const char* from_path) {
     /* 1. Extract bare module name (strips directory + .ms) */
@@ -234,11 +259,57 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
         }
     }
     if (!resolved) {
-        /* CWD fallback */
-        resolved = ms_resolve_path(import_path, NULL);
+        /* CWD fallback: only use if the file actually exists */
+        char* candidate = ms_resolve_path(import_path, NULL);
+        if (candidate) {
+            FILE* test = NULL;
+#ifdef _MSC_VER
+            fopen_s(&test, candidate, "rb");
+#else
+            test = fopen(candidate, "rb");
+#endif
+            if (test) { fclose(test); resolved = candidate; }
+            else free(candidate);
+        }
     }
     free(from_dir);
-    if (!resolved) return NULL;
+
+    /* Step 4: dynamic library fallback */
+    if (!resolved) {
+        char lib_path[MS_PATH_MAX];
+        MsDynlib lib = find_dynlib(vm, pure_name, lib_path);
+        if (lib) {
+            MsModuleInitFn init_fn =
+                (MsModuleInitFn)(uintptr_t)ms_dynlib_sym(lib, "ms_module_init");
+            if (!init_fn) {
+                ms_dynlib_close(lib);
+                return NULL;
+            }
+            MsObjString* dkey = ms_obj_string_copy(vm, lib_path,
+                                                    (int)strlen(lib_path));
+            MsValue dcached;
+            if (ms_table_get(&vm->module_cache, dkey, &dcached))
+                return MS_AS_MODULE(dcached);
+
+            MsObjString* dmod_name = ms_obj_string_copy(vm, pure_name, pure_len);
+            MsObjModule* dmod = ms_obj_module_new(vm, dmod_name, dkey);
+            dmod->state = MS_MOD_INITIALIZING;
+            ms_table_set(&vm->module_cache, dkey, MS_OBJ_VAL(dmod));
+
+            const MsModuleApi* api = ms_module_api_get();
+            init_fn(api, vm, dmod);
+
+            if (vm->had_runtime_error) {
+                dmod->state = MS_MOD_FAILED;
+                ms_dynlib_close(lib);
+                return NULL;
+            }
+            dmod->state = MS_MOD_INITIALIZED;
+            ms_vm_track_dynlib(vm, lib);
+            return dmod;
+        }
+        return NULL;
+    }
 
     /* Cache lookup by resolved path */
     MsObjString* key = ms_obj_string_copy(vm, resolved, (int)strlen(resolved));

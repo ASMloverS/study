@@ -1,5 +1,7 @@
 #pragma once
 #include "ms/vm.h"
+#include <stdint.h>
+#include <stddef.h>
 
 /* ---- NativeDef: table-style native registration (CAPI-02) ---- */
 
@@ -74,3 +76,67 @@ char* ms_read_file(const char* path);
    error already reported). Circular dependency -> returns MS_MOD_INITIALIZING module. */
 MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
                               const char* from_path);
+
+/* ---- MsModuleApi: stable function table for dynamic extensions (CAPI-05) ---- */
+
+#define MS_MODULE_API_VERSION 1
+
+typedef struct MsModuleApi {
+    uint32_t version; /* = MS_MODULE_API_VERSION */
+
+    /* registration */
+    void (*def_native)(MsVM* vm, MsObjModule* mod,
+                       const char* name, MsNativeFn fn, int arity);
+    void (*register_natives)(MsVM* vm, MsObjModule* mod,
+                             const MsNativeDef* defs);
+    void (*export_value)(MsVM* vm, MsObjModule* mod,
+                         const char* name, MsValue v);
+
+    /* value constructors */
+    MsValue (*make_nil)(void);
+    MsValue (*make_bool)(bool b);
+    MsValue (*make_int)(int64_t i);
+    MsValue (*make_number)(double d);
+    MsValue (*make_string)(MsVM* vm, const char* s, int len);
+    MsValue (*make_list)(MsVM* vm);
+    MsValue (*make_map)(MsVM* vm);
+    void    (*list_push)(MsVM* vm, MsValue list, MsValue v);
+    void    (*map_set)(MsVM* vm, MsValue map, MsValue key, MsValue val);
+
+    /* error */
+    MsValue (*raise)(MsVM* vm, const char* msg);
+
+    /* userdata */
+    MsValue     (*userdata_new)(MsVM* vm, size_t bytes,
+                                void (*finalize)(void* data),
+                                void (*mark)(MsVM* vm, void* data),
+                                const char* type_tag);
+    void*       (*userdata_data)(MsValue v);
+    const char* (*userdata_tag)(MsValue v);
+    bool        (*userdata_is)(MsValue v, const char* tag);
+
+    /* value inspection */
+    bool        (*is_nil)(MsValue v);
+    bool        (*is_bool)(MsValue v);
+    bool        (*is_int)(MsValue v);
+    bool        (*is_number)(MsValue v);
+    bool        (*is_string)(MsValue v);
+    bool        (*val_to_bool)(MsValue v);
+    int64_t     (*val_to_int)(MsValue v);
+    double      (*val_to_number)(MsValue v);
+    const char* (*val_to_cstring)(MsValue v);
+    int         (*string_len)(MsValue v);
+
+    /* container / reflection (read-only) */
+    bool    (*is_list)(MsValue v);
+    bool    (*is_map)(MsValue v);
+    bool    (*is_tuple)(MsValue v);
+    bool    (*is_function)(MsValue v);
+    bool    (*is_userdata)(MsValue v, const char* tag);
+    int     (*list_len)(MsValue v);
+    MsValue (*list_get)(MsValue v, int idx);
+    bool    (*map_get)(MsValue v, MsValue key, MsValue* out);
+} MsModuleApi;
+
+/* Returns a pointer to the singleton MsModuleApi instance. */
+const MsModuleApi* ms_module_api_get(void);

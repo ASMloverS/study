@@ -1,4 +1,5 @@
 #pragma once
+#define MS_PATH_MAX         4096
 #define MS_STACK_MAX        256
 #define MS_FRAMES_MAX        64
 #define MS_MAX_UPVALUES     256

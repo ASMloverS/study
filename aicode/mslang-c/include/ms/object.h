@@ -23,6 +23,7 @@ typedef enum {
     MS_OBJ_COROUTINE,
     MS_OBJ_FUTURE,
     MS_OBJ_SOCKET,
+    MS_OBJ_USERDATA,
 } MsObjectType;
 
 struct MsObject {
@@ -372,3 +373,22 @@ typedef struct {
 MsObjSocket* ms_obj_socket_new(struct MsVM* vm, int fd);
 /* Close the socket: unregister from reactor, close fd, reject pending futures. */
 void         ms_obj_socket_close(struct MsVM* vm, MsObjSocket* sock);
+
+/* ---- Userdata (CAPI-05/CAPI-04): opaque extension handle ---- */
+
+typedef struct {
+    MsObject     obj;           /* type = MS_OBJ_USERDATA */
+    void*        data;          /* extension-malloc'd payload; freed by finalize */
+    size_t       data_size;     /* informational */
+    void       (*finalize)(void* data);
+    void       (*mark)(struct MsVM* vm, void* data); /* NULL if no GC roots */
+    const char*  type_tag;      /* static lifetime; used for runtime type checks */
+} MsObjUserdata;
+
+#define MS_IS_USERDATA(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_USERDATA)
+#define MS_AS_USERDATA(v)   ((MsObjUserdata*)MS_AS_OBJECT(v))
+
+MsObjUserdata* ms_obj_userdata_new(struct MsVM* vm, size_t bytes,
+                                   void (*finalize)(void* data),
+                                   void (*mark)(struct MsVM* vm, void* data),
+                                   const char* type_tag);

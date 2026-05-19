@@ -161,6 +161,11 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
         ms_mark_table(vm, &mod->exports);
         break;
     }
+    case MS_OBJ_USERDATA: {
+        MsObjUserdata* ud = (MsObjUserdata*)obj;
+        if (ud->mark && ud->data) ud->mark(vm, ud->data);
+        break;
+    }
     default:
         break;
     }
