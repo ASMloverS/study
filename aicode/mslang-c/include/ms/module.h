@@ -46,6 +46,18 @@ void ms_vm_register_builtin_module(MsVM* vm, const char* name,
 /* Find a registered builtin init callback; returns NULL if not found. */
 MsBuiltinModuleInit ms_vm_find_builtin_module(MsVM* vm, const char* name);
 
+/* ---- Search path API (CAPI-03) ---- */
+
+/* Append path to the end of vm->module_search_paths (used for MSLANG_PATH). */
+void ms_vm_add_search_path(MsVM* vm, const char* path);
+
+/* Insert path at the front of vm->module_search_paths (used for --module-path). */
+void ms_vm_prepend_search_path(MsVM* vm, const char* path);
+
+/* Parse MSLANG_PATH env var and append each directory to vm->module_search_paths.
+   Called at end of ms_vm_init. Implemented in src/module_loader.c. */
+void ms_load_mslang_path(MsVM* vm);
+
 /* ---- Path & file helpers ---- */
 
 /* Resolve import_path relative to from_dir into an absolute canonical path.

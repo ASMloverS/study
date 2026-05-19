@@ -176,11 +176,15 @@ void ms_vm_init(MsVM* vm) {
         vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
     }
     vm->loop_inited = false;
-    vm->builtin_registry = NULL;
-    vm->builtin_count    = 0;
-    vm->builtin_cap      = 0;
+    vm->builtin_registry     = NULL;
+    vm->builtin_count        = 0;
+    vm->builtin_cap          = 0;
+    vm->module_search_paths  = NULL;
+    vm->module_search_count  = 0;
+    vm->module_search_cap    = 0;
     ms_vm_register_natives(vm);
     ms_stdlib_register_all(vm);
+    ms_load_mslang_path(vm);
 #ifdef MSLANG_VM_STATS
     memset(&vm->stats, 0, sizeof(vm->stats));
 #endif
@@ -224,6 +228,13 @@ void ms_vm_free(MsVM* vm) {
     vm->builtin_registry = NULL;
     vm->builtin_count    = 0;
     vm->builtin_cap      = 0;
+    for (int i = 0; i < vm->module_search_count; i++) {
+        free(vm->module_search_paths[i]);
+    }
+    free(vm->module_search_paths);
+    vm->module_search_paths = NULL;
+    vm->module_search_count = 0;
+    vm->module_search_cap   = 0;
 }
 
 /* ---- stats API ---- */

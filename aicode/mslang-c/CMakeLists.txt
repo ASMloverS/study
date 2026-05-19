@@ -74,10 +74,10 @@ target_include_directories(ms_event_loop PUBLIC include)
 target_compile_options(ms_event_loop PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_event_loop PUBLIC ms_object ms_reactor)
 
-add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c src/stdlib_register.c)
+add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c src/module_loader.c src/stdlib_register.c)
 target_include_directories(ms_vm PUBLIC include)
 target_compile_options(ms_vm PRIVATE ${MSLANG_COMPILE_OPTIONS})
-target_link_libraries(ms_vm PUBLIC ms_object ms_event_loop)
+target_link_libraries(ms_vm PUBLIC ms_object ms_event_loop ms_fs_util)
 
 add_library(ms_optimize STATIC src/optimize.c)
 target_include_directories(ms_optimize PUBLIC include)

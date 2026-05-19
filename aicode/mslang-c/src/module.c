@@ -181,7 +181,7 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
         return mod;
     }
 
-    /* 3. Filesystem path (original logic) */
+    /* 3. Filesystem path resolution with search path fallback */
 
     /* Derive from_dir from from_path */
     char* from_dir = NULL;
@@ -199,7 +199,44 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
         }
     }
 
-    char* resolved = ms_resolve_path(import_path, from_dir);
+    /* Try resolution in order:
+       1. from_dir (script directory)
+       2. each vm->module_search_paths entry
+       3. current working directory (NULL from_dir) */
+    char* resolved = NULL;
+    {
+        char* candidate = ms_resolve_path(import_path, from_dir);
+        if (candidate) {
+            FILE* test = NULL;
+#ifdef _MSC_VER
+            fopen_s(&test, candidate, "rb");
+#else
+            test = fopen(candidate, "rb");
+#endif
+            if (test) { fclose(test); resolved = candidate; }
+            else free(candidate);
+        }
+    }
+    if (!resolved) {
+        for (int si = 0; si < vm->module_search_count && !resolved; si++) {
+            char* candidate = ms_resolve_path(import_path,
+                                               vm->module_search_paths[si]);
+            if (candidate) {
+                FILE* test = NULL;
+#ifdef _MSC_VER
+                fopen_s(&test, candidate, "rb");
+#else
+                test = fopen(candidate, "rb");
+#endif
+                if (test) { fclose(test); resolved = candidate; }
+                else free(candidate);
+            }
+        }
+    }
+    if (!resolved) {
+        /* CWD fallback */
+        resolved = ms_resolve_path(import_path, NULL);
+    }
     free(from_dir);
     if (!resolved) return NULL;
 

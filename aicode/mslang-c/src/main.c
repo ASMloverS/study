@@ -1,6 +1,7 @@
 #include "ms/common.h"
 #include "ms/consts.h"
 #include "ms/vm.h"
+#include "ms/module.h"
 #include "ms/serializer.h"
 #include <inttypes.h>
 #include <stdio.h>
@@ -272,6 +273,9 @@ int main(int argc, char* argv[]) {
     bool  flag_no_cache = false;           /* --no-cache */
     uint32_t cache_flags = MS_CACHE_MTIME; /* --cache-mode=mtime|hash */
     const char* script = NULL;
+    /* --module-path= entries collected for non-benchmark runs */
+    const char* module_paths[64];
+    int         module_path_count = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--benchmark") == 0 && i + 1 < argc) {
@@ -292,6 +296,9 @@ int main(int argc, char* argv[]) {
                 fprintf(stderr, "Unknown cache mode: %s (use mtime or hash)\n", mode);
                 return 1;
             }
+        } else if (strncmp(argv[i], "--module-path=", 14) == 0) {
+            if (module_path_count < 64)
+                module_paths[module_path_count++] = argv[i] + 14;
         } else if (argv[i][0] != '-') {
             script = argv[i];
         } else {
@@ -304,7 +311,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr,
             "Usage: mslang-c [--benchmark N] [--stats] [--json]\n"
             "                [--no-cache] [--cache-mode=mtime|hash]\n"
-            "                [--version] <script>\n");
+            "                [--module-path=<dir>] [--version] <script>\n");
         return 1;
     }
 
@@ -319,6 +326,9 @@ int main(int argc, char* argv[]) {
     if (bench_n <= 0) {
         MsVM vm;
         ms_vm_init(&vm);
+        /* Apply --module-path entries (prepend in CLI order so first arg = highest priority) */
+        for (int i = module_path_count - 1; i >= 0; i--)
+            ms_vm_prepend_search_path(&vm, module_paths[i]);
         MsInterpretResult result;
 
         if (has_msc_ext(script)) {

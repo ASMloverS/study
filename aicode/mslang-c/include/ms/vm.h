@@ -105,6 +105,10 @@ typedef struct MsVM {
     MsBuiltinModuleEntry* builtin_registry;
     int                   builtin_count;
     int                   builtin_cap;
+    /* Module search paths (CAPI-03): --module-path / MSLANG_PATH */
+    char**           module_search_paths;
+    int              module_search_count;
+    int              module_search_cap;
     /* Async event loop (lazy-initialised; always embedded, never heap-allocated) */
     MsEventLoop     event_loop;
     bool            loop_inited;

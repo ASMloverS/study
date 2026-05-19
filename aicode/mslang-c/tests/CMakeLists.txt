@@ -83,6 +83,9 @@ target_link_libraries(test_capi_registry PRIVATE ms_frontend)
 ms_add_test(test_capi_native_def unit/test_capi_native_def.c)
 target_link_libraries(test_capi_native_def PRIVATE ms_frontend)
 
+ms_add_test(test_capi_search_path unit/test_capi_search_path.c)
+target_link_libraries(test_capi_search_path PRIVATE ms_frontend ms_fs_util)
+
 ms_add_test(test_natives unit/test_natives.c)
 target_link_libraries(test_natives PRIVATE ms_frontend)
 

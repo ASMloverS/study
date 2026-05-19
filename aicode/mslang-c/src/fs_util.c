@@ -1,5 +1,7 @@
 #include "ms/fs_util.h"
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -63,3 +65,43 @@ bool ms_fs_unlink(const char* path) {
     return unlink(path) == 0;
 }
 #endif
+
+/* ---- ms_string_split ---- */
+
+int ms_string_split(const char* s, char delim, char*** out_parts) {
+    *out_parts = NULL;
+    if (!s || !*s) return 0;
+
+    /* Count tokens */
+    int count = 1;
+    for (const char* p = s; *p; p++) {
+        if (*p == delim) count++;
+    }
+
+    char** parts = (char**)malloc((size_t)count * sizeof(char*));
+    if (!parts) return 0;
+
+    int idx = 0;
+    const char* start = s;
+    const char* p = s;
+    for (;;) {
+        if (*p == delim || *p == '\0') {
+            size_t len = (size_t)(p - start);
+            parts[idx] = (char*)malloc(len + 1);
+            if (!parts[idx]) {
+                /* cleanup on OOM */
+                for (int i = 0; i < idx; i++) free(parts[i]);
+                free(parts);
+                return 0;
+            }
+            memcpy(parts[idx], start, len);
+            parts[idx][len] = '\0';
+            idx++;
+            if (*p == '\0') break;
+            start = p + 1;
+        }
+        p++;
+    }
+    *out_parts = parts;
+    return idx;
+}
