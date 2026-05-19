@@ -7,6 +7,32 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ---- builtin registry ---- */
+
+void ms_vm_register_builtin_module(MsVM* vm, const char* name,
+                                    MsBuiltinModuleInit init) {
+    if (vm->builtin_count == vm->builtin_cap) {
+        int new_cap = vm->builtin_cap < 8 ? 8 : vm->builtin_cap * 2;
+        MsBuiltinModuleEntry* new_reg = (MsBuiltinModuleEntry*)realloc(
+            vm->builtin_registry,
+            (size_t)new_cap * sizeof(MsBuiltinModuleEntry));
+        if (!new_reg) return; /* OOM: drop registration rather than corrupt state */
+        vm->builtin_registry = new_reg;
+        vm->builtin_cap = new_cap;
+    }
+    vm->builtin_registry[vm->builtin_count].name = name;
+    vm->builtin_registry[vm->builtin_count].init = init;
+    vm->builtin_count++;
+}
+
+MsBuiltinModuleInit ms_vm_find_builtin_module(MsVM* vm, const char* name) {
+    for (int i = 0; i < vm->builtin_count; i++) {
+        if (strcmp(vm->builtin_registry[i].name, name) == 0)
+            return vm->builtin_registry[i].init;
+    }
+    return NULL;
+}
+
 /* ---- path helpers ---- */
 
 /* Return pointer to directory portion end (last '/' or '\\'). */
@@ -85,8 +111,56 @@ char* ms_read_file(const char* path) {
 
 /* ---- module load ---- */
 
+/* Extract the last path component from import_path (no allocation).
+   The caller is responsible for stripping the ".ms" suffix if needed. */
+static const char* extract_module_name(const char* import_path) {
+    int de = dir_end(import_path);
+    return import_path + de + 1;
+}
+
 MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
                               const char* from_path) {
+    /* 1. Extract bare module name (strips directory + .ms) */
+    const char* raw_name = extract_module_name(import_path);
+    int raw_len = (int)strlen(raw_name);
+    /* Strip ".ms" if present to get the pure name */
+    char pure_name[256];
+    int pure_len = raw_len;
+    if (pure_len > 3 &&
+        raw_name[pure_len - 3] == '.' &&
+        raw_name[pure_len - 2] == 'm' &&
+        raw_name[pure_len - 1] == 's') {
+        pure_len -= 3;
+    }
+    if (pure_len >= (int)sizeof(pure_name)) pure_len = (int)sizeof(pure_name) - 1;
+    memcpy(pure_name, raw_name, (size_t)pure_len);
+    pure_name[pure_len] = '\0';
+
+    /* 2. Builtin registry lookup (before any filesystem access) */
+    MsBuiltinModuleInit builtin_init = ms_vm_find_builtin_module(vm, pure_name);
+    if (builtin_init) {
+        char synth_path[280];
+        snprintf(synth_path, sizeof(synth_path), "<builtin:%s>", pure_name);
+
+        MsObjString* key = ms_obj_string_copy(vm, synth_path,
+                                               (int)strlen(synth_path));
+        MsValue cached;
+        if (ms_table_get(&vm->module_cache, key, &cached))
+            return MS_AS_MODULE(cached);
+
+        MsObjString* mod_name = ms_obj_string_copy(vm, pure_name, pure_len);
+        MsObjModule* mod = ms_obj_module_new(vm, mod_name, key);
+        mod->state = MS_MOD_INITIALIZING;
+        ms_table_set(&vm->module_cache, key, MS_OBJ_VAL(mod));
+
+        builtin_init(vm, mod);
+
+        mod->state = MS_MOD_INITIALIZED;
+        return mod;
+    }
+
+    /* 3. Filesystem path (original logic) */
+
     /* Derive from_dir from from_path */
     char* from_dir = NULL;
     if (from_path) {
@@ -107,18 +181,6 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
     free(from_dir);
     if (!resolved) return NULL;
 
-    /* Derive module name from import_path (last component, no extension) */
-    int de = dir_end(import_path);
-    const char* name_start = import_path + de + 1;
-    int name_len = (int)strlen(name_start);
-    /* Strip ".ms" suffix if present */
-    if (name_len > 3 &&
-        name_start[name_len - 3] == '.' &&
-        name_start[name_len - 2] == 'm' &&
-        name_start[name_len - 1] == 's') {
-        name_len -= 3;
-    }
-
     /* Cache lookup by resolved path */
     MsObjString* key = ms_obj_string_copy(vm, resolved, (int)strlen(resolved));
     MsValue cached;
@@ -128,7 +190,7 @@ MsObjModule* ms_module_load(MsVM* vm, const char* import_path,
     }
 
     /* Create module, mark as initializing to detect circular deps */
-    MsObjString* mod_name = ms_obj_string_copy(vm, name_start, name_len);
+    MsObjString* mod_name = ms_obj_string_copy(vm, pure_name, pure_len);
     MsObjModule* mod = ms_obj_module_new(vm, mod_name, key);
     mod->state = MS_MOD_INITIALIZING;
     ms_table_set(&vm->module_cache, key, MS_OBJ_VAL(mod));

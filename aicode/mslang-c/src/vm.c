@@ -1,6 +1,7 @@
 #include "ms/vm.h"
 #include "ms/compiler.h"
 #include "ms/module.h"
+#include "ms/stdlib_register.h"
 #include "ms/opcode.h"
 #include "ms/object.h"
 #include "ms/table.h"
@@ -175,7 +176,11 @@ void ms_vm_init(MsVM* vm) {
         vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
     }
     vm->loop_inited = false;
+    vm->builtin_registry = NULL;
+    vm->builtin_count    = 0;
+    vm->builtin_cap      = 0;
     ms_vm_register_natives(vm);
+    ms_stdlib_register_all(vm);
 #ifdef MSLANG_VM_STATS
     memset(&vm->stats, 0, sizeof(vm->stats));
 #endif
@@ -215,6 +220,10 @@ void ms_vm_free(MsVM* vm) {
         ms_loop_destroy(&vm->event_loop);
         vm->loop_inited = false;
     }
+    free(vm->builtin_registry);
+    vm->builtin_registry = NULL;
+    vm->builtin_count    = 0;
+    vm->builtin_cap      = 0;
 }
 
 /* ---- stats API ---- */

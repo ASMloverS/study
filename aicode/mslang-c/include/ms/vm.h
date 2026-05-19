@@ -5,7 +5,10 @@
 #include "ms/event_loop.h"
 #include <stdint.h>
 
-#define MS_STACK_SIZE (MS_FRAMES_MAX * MS_STACK_MAX)
+/* Forward type for builtin module registry entries (defined fully in module.h). */
+struct MsBuiltinModuleEntry_tag;
+typedef struct MsBuiltinModuleEntry_tag MsBuiltinModuleEntry;
+
 
 typedef struct MsCallFrame {
     MsObjClosure*   closure;
@@ -98,6 +101,10 @@ typedef struct MsVM {
     MsGcPhase       gc_phase;
     MsObject*       sweep_cursor;
     MsObject**      sweep_prev;
+    /* Builtin module registry (lazy-allocated, linear scan) */
+    MsBuiltinModuleEntry* builtin_registry;
+    int                   builtin_count;
+    int                   builtin_cap;
     /* Async event loop (lazy-initialised; always embedded, never heap-allocated) */
     MsEventLoop     event_loop;
     bool            loop_inited;

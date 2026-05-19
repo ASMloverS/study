@@ -9,5 +9,6 @@
 #define MS_IC_PIC_SIZE      4
 #define MS_SBO_FIELDS       8
 #define MS_POOL_SLAB_SIZE   64
+#define MS_STACK_SIZE       (MS_FRAMES_MAX * MS_STACK_MAX)
 #define MS_VERSION          "0.1.0"
 #define MS_MAX_INTERP_DEPTH 8

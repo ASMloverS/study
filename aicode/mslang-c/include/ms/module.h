@@ -1,6 +1,26 @@
 #pragma once
 #include "ms/vm.h"
 
+/* ---- Builtin module registry ---- */
+
+/* Callback invoked once, lazily, when the user first imports the module.
+   Implementations populate mod->exports via ms_table_set. */
+typedef void (*MsBuiltinModuleInit)(MsVM* vm, MsObjModule* mod);
+
+struct MsBuiltinModuleEntry_tag {
+    const char*         name; /* bare module name, e.g. "math" (static lifetime) */
+    MsBuiltinModuleInit init;
+};
+
+/* Register a builtin module.  name must have static (or VM-lifetime) storage. */
+void ms_vm_register_builtin_module(MsVM* vm, const char* name,
+                                   MsBuiltinModuleInit init);
+
+/* Find a registered builtin init callback; returns NULL if not found. */
+MsBuiltinModuleInit ms_vm_find_builtin_module(MsVM* vm, const char* name);
+
+/* ---- Path & file helpers ---- */
+
 /* Resolve import_path relative to from_dir into an absolute canonical path.
    Appends ".ms" if no extension is present. Returns heap-allocated string;
    caller must free(). Returns NULL on failure. */

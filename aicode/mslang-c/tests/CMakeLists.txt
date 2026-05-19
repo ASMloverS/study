@@ -77,6 +77,9 @@ target_link_libraries(test_coroutines PRIVATE ms_frontend)
 ms_add_test(test_modules unit/test_modules.c)
 target_link_libraries(test_modules PRIVATE ms_frontend)
 
+ms_add_test(test_capi_registry unit/test_capi_registry.c)
+target_link_libraries(test_capi_registry PRIVATE ms_frontend)
+
 ms_add_test(test_natives unit/test_natives.c)
 target_link_libraries(test_natives PRIVATE ms_frontend)
 
