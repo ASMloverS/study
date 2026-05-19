@@ -7,6 +7,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ---- CAPI-02: NativeDef registration ---- */
+
+void ms_module_def_native(MsVM* vm, MsObjModule* mod,
+                           const char* name, MsNativeFn fn, int arity) {
+    MsObjString* key = ms_obj_string_copy(vm, name, (int)strlen(name));
+    MsObjNative* nat = ms_obj_native_new(vm, fn, name, arity);
+    ms_table_set(&mod->exports, key, MS_OBJ_VAL(nat));
+}
+
+void ms_module_register_natives(MsVM* vm, MsObjModule* mod,
+                                 const MsNativeDef* defs) {
+    for (const MsNativeDef* d = defs; d->name != NULL; d++) {
+        ms_module_def_native(vm, mod, d->name, d->fn, d->arity);
+    }
+}
+
+void ms_module_export_value(MsVM* vm, MsObjModule* mod,
+                             const char* name, MsValue value) {
+    MsObjString* key = ms_obj_string_copy(vm, name, (int)strlen(name));
+    ms_table_set(&mod->exports, key, value);
+}
+
 /* ---- builtin registry ---- */
 
 void ms_vm_register_builtin_module(MsVM* vm, const char* name,

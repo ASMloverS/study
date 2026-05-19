@@ -1,6 +1,33 @@
 #pragma once
 #include "ms/vm.h"
 
+/* ---- NativeDef: table-style native registration (CAPI-02) ---- */
+
+/* One row in a MsNativeDef table.  Terminate with {NULL, NULL, 0}. */
+typedef struct {
+    const char* name;   /* export name; NULL sentinel terminates the table */
+    MsNativeFn  fn;     /* native function pointer */
+    int         arity;  /* expected arg count; -1 = variadic */
+} MsNativeDef;
+
+/* Style B - low-level primitive: register one native into mod->exports. */
+void ms_module_def_native(MsVM*        vm,
+                          MsObjModule* mod,
+                          const char*  name,
+                          MsNativeFn   fn,
+                          int          arity);
+
+/* Style A - table-style convenience wrapper (iterates until name == NULL). */
+void ms_module_register_natives(MsVM*              vm,
+                                MsObjModule*       mod,
+                                const MsNativeDef* defs);
+
+/* Export an arbitrary MsValue (constant, ObjFile, etc.) under name. */
+void ms_module_export_value(MsVM*        vm,
+                            MsObjModule* mod,
+                            const char*  name,
+                            MsValue      value);
+
 /* ---- Builtin module registry ---- */
 
 /* Callback invoked once, lazily, when the user first imports the module.
