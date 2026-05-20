@@ -59,9 +59,10 @@ static MsInterpretResult run_capture(const char* src, char* buf, int bufsz) {
 static void test_generator_basic(void) {
     char buf[128];
     MsInterpretResult r = run_capture(
+        "import \"time\"\n"
         "fun* count() { yield 1\n yield 2\n yield 3 }\n"
         "var g = count()\n"
-        "print(resume(g))\nprint(resume(g))\nprint(resume(g))",
+        "print(time.resume(g))\nprint(time.resume(g))\nprint(time.resume(g))",
         buf, sizeof(buf));
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
     TEST_ASSERT_STR_EQ(buf, "1\n2\n3\n");
@@ -70,15 +71,16 @@ static void test_generator_basic(void) {
 static void test_generator_with_loop(void) {
     char buf[128];
     MsInterpretResult r = run_capture(
+        "import \"time\"\n"
         "fun* count_to(n) {\n"
         "  for (var i = 1; i <= n; i = i + 1) {\n"
         "    yield i\n"
         "  }\n"
         "}\n"
         "var g = count_to(3)\n"
-        "print(resume(g))\n"
-        "print(resume(g))\n"
-        "print(resume(g))",
+        "print(time.resume(g))\n"
+        "print(time.resume(g))\n"
+        "print(time.resume(g))",
         buf, sizeof(buf));
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
     TEST_ASSERT_STR_EQ(buf, "1\n2\n3\n");
@@ -87,6 +89,7 @@ static void test_generator_with_loop(void) {
 static void test_generator_infinite(void) {
     char buf[64];
     MsInterpretResult r = run_capture(
+        "import \"time\"\n"
         "fun* naturals() {\n"
         "  var n = 0\n"
         "  while (true) {\n"
@@ -95,9 +98,9 @@ static void test_generator_infinite(void) {
         "  }\n"
         "}\n"
         "var g = naturals()\n"
-        "print(resume(g))\n"
-        "print(resume(g))\n"
-        "print(resume(g))",
+        "print(time.resume(g))\n"
+        "print(time.resume(g))\n"
+        "print(time.resume(g))",
         buf, sizeof(buf));
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
     TEST_ASSERT_STR_EQ(buf, "0\n1\n2\n");
@@ -106,6 +109,7 @@ static void test_generator_infinite(void) {
 static void test_generator_send(void) {
     char buf[64];
     MsInterpretResult r = run_capture(
+        "import \"time\"\n"
         "fun* accumulator() {\n"
         "  var total = 0\n"
         "  while (true) {\n"
@@ -114,10 +118,10 @@ static void test_generator_send(void) {
         "  }\n"
         "}\n"
         "var acc = accumulator()\n"
-        "resume(acc)\n"
-        "print(resume(acc, 10))\n"
-        "print(resume(acc, 20))\n"
-        "print(resume(acc, 5))",
+        "time.resume(acc)\n"
+        "print(time.resume(acc, 10))\n"
+        "print(time.resume(acc, 20))\n"
+        "print(time.resume(acc, 5))",
         buf, sizeof(buf));
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
     TEST_ASSERT_STR_EQ(buf, "10\n30\n35\n");
@@ -126,16 +130,17 @@ static void test_generator_send(void) {
 static void test_multiple_generators(void) {
     char buf[64];
     MsInterpretResult r = run_capture(
+        "import \"time\"\n"
         "fun* gen(start) {\n"
         "  yield start\n"
         "  yield start + 1\n"
         "}\n"
         "var a = gen(10)\n"
         "var b = gen(20)\n"
-        "print(resume(a))\n"
-        "print(resume(b))\n"
-        "print(resume(a))\n"
-        "print(resume(b))",
+        "print(time.resume(a))\n"
+        "print(time.resume(b))\n"
+        "print(time.resume(a))\n"
+        "print(time.resume(b))",
         buf, sizeof(buf));
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
     TEST_ASSERT_STR_EQ(buf, "10\n20\n11\n21\n");

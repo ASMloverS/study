@@ -9,7 +9,7 @@
 | ✅ | [CAPI-05-module-api.md](CAPI-05-module-api.md) | MsModuleApi 函数表 |
 | ✅ | [CAPI-06-handle-types.md](CAPI-06-handle-types.md) | ObjFile / ObjBuffer / MsObjUserdata |
 | ⬜ | [CAPI-07-threadpool.md](CAPI-07-threadpool.md) | Unix 文件异步线程池 |
-| ⬜ | [CAPI-08-globals-migration.md](CAPI-08-globals-migration.md) | 全局原生迁入模块 |
+| ✅ | [CAPI-08-globals-migration.md](CAPI-08-globals-migration.md) | 全局原生迁入模块 |
 
 > ⬜ 待实现 · 🚧 进行中 · ✅ 完成
 

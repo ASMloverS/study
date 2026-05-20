@@ -1,3 +1,4 @@
+import "time"
 async fun boom() {
     throw "kaboom"
 }
@@ -9,6 +10,6 @@ async fun main() {
     }
     print("recovered")
 }
-run_until_complete(main())
+time.run_until_complete(main())
 // expect: kaboom
 // expect: recovered

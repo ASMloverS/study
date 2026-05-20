@@ -162,10 +162,12 @@ static void test_socket_gc_trace(void) {
 static void test_native_tcp_listen_resolves(void) {
     MsVM* vm = make_vm();
 
-    /* Run script: var f = tcp_listen(0); run_until_complete(f) */
+    /* Use module-style: import net; var f = net.listen(0) */
     const char* src =
-        "var f = tcp_listen(0)\n"
-        "run_until_complete(f)\n";
+        "import \"net\"\n"
+        "import \"time\"\n"
+        "var f = net.listen(0)\n"
+        "time.run_until_complete(f)\n";
     MsInterpretResult r = ms_vm_interpret(vm, src, "<test>");
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
 

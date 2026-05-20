@@ -1,8 +1,9 @@
+import "time"
 async fun main() {
-    await sleep(0)
+    await time.sleep(0)
     print("after-await")
     return "ok"
 }
-print(run_until_complete(main()))
+print(time.run_until_complete(main()))
 // expect: after-await
 // expect: ok

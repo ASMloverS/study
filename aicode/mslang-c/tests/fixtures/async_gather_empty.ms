@@ -1,6 +1,7 @@
+import "time"
 async fun main() {
-    var r = await gather([])
+    var r = await time.gather([])
     print(len(r))
 }
-run_until_complete(main())
+time.run_until_complete(main())
 // expect: 0

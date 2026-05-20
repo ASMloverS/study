@@ -1,18 +1,15 @@
 #include "ms/stdlib_register.h"
 #include "ms/module.h"
 
-/* Stub implementations for builtin module init functions.
-   These will be replaced by real implementations in later CAPI tasks.
-   Each stub simply marks the module as having an empty exports table. */
+/* Stub implementations for builtin module init functions not yet implemented.
+   net and time have real implementations in src/stdlib/net.c and time.c. */
 
 void ms_module_math_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_os_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_time_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_io_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_buffer_init(MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_hash_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_log_init   (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_net_init   (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_debug_init (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_gc_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 

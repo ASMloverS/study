@@ -1,2 +1,3 @@
-var t = clock()
+import "time"
+var t = time.clock()
 print(type(t))

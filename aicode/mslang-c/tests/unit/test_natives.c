@@ -131,7 +131,7 @@ static void test_len(void) {
 static void test_clock(void) {
     char buf[256];
     MsInterpretResult r = run_capture(
-        "var t = clock()\nprint(type(t))",
+        "import \"time\"\nvar t = time.clock()\nprint(type(t))",
         buf, sizeof(buf));
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
     TEST_ASSERT(strstr(buf, "number") != NULL);

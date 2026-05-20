@@ -1,5 +1,6 @@
+import "time"
 async fun answer() {
     return 42
 }
-print(run_until_complete(answer()))
+print(time.run_until_complete(answer()))
 // expect: 42

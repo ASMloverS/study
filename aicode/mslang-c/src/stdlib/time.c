@@ -1,0 +1,150 @@
+#include "ms/module.h"
+#include "ms/vm.h"
+#include "ms/event_loop.h"
+#include "ms/value.h"
+#include "ms/object.h"
+#include <time.h>
+#include <stdlib.h>
+
+static void ensure_loop(MsVM* vm) {
+    if (!vm->loop_inited) {
+        ms_loop_init(&vm->event_loop, vm);
+        vm->loop_inited = true;
+    }
+}
+
+/* ---- time.clock() ---- */
+
+static MsValue native_time_clock(MsVM* vm, int argc, MsValue* argv) {
+    MS_UNUSED(vm); MS_UNUSED(argc); MS_UNUSED(argv);
+    return MS_NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+}
+
+/* ---- time.sleep(ms) -> Future ---- */
+
+static MsValue native_time_sleep(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || (!MS_IS_INT(argv[0]) && !MS_IS_NUMBER(argv[0]))) {
+        ms_vm_runtime_error(vm, "time.sleep() requires a numeric argument.");
+        return MS_NIL_VAL();
+    }
+    uint64_t delay = MS_IS_INT(argv[0])
+                     ? (uint64_t)MS_AS_INT(argv[0])
+                     : (uint64_t)MS_AS_NUMBER(argv[0]);
+    ensure_loop(vm);
+    MsObjFuture* fut = ms_obj_future_new(vm);
+    ms_loop_call_later(&vm->event_loop, delay, fut);
+    return MS_OBJ_VAL((MsObject*)fut);
+}
+
+/* ---- time.run_until_complete(future) ---- */
+
+static MsValue native_time_run_until_complete(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || !MS_IS_FUTURE(argv[0])) {
+        ms_vm_runtime_error(vm, "time.run_until_complete() requires a Future argument.");
+        return MS_NIL_VAL();
+    }
+    ensure_loop(vm);
+    MsObjFuture* fut = MS_AS_FUTURE(argv[0]);
+    int r = ms_loop_run_until_complete(&vm->event_loop, fut);
+    if (r != 0) return MS_NIL_VAL();
+    return fut->result;
+}
+
+/* ---- gather() helpers & time.gather(list) ---- */
+
+typedef struct MsGatherCtx {
+    MsObjFuture* parent;
+    MsValue*     results;
+    int          total;
+    int          remaining;
+} MsGatherCtx;
+
+static void gather_on_resolve(MsVM* vm, void* userdata, int index, MsValue result) {
+    MsGatherCtx* ctx = (MsGatherCtx*)userdata;
+    if (ctx->parent->state != MS_FUTURE_PENDING) return;
+    ctx->results[index] = result;
+    if (--ctx->remaining == 0) {
+        MsObjList* lst = ms_obj_list_from_array(vm, ctx->results, ctx->total);
+        ms_future_resolve(vm, ctx->parent, MS_OBJ_VAL((MsObject*)lst));
+        free(ctx->results);
+        free(ctx);
+    }
+}
+
+static void gather_on_reject(MsVM* vm, void* userdata, MsValue error) {
+    MsGatherCtx* ctx = (MsGatherCtx*)userdata;
+    if (ctx->parent->state != MS_FUTURE_PENDING) return;
+    ms_future_reject(vm, ctx->parent, error);
+}
+
+static MsValue native_time_gather(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || !MS_IS_LIST(argv[0])) {
+        ms_vm_runtime_error(vm, "time.gather() requires a list argument.");
+        return MS_NIL_VAL();
+    }
+    MsObjList* list = MS_AS_LIST(argv[0]);
+    int n = list->items.count;
+    MsObjFuture* parent = ms_obj_future_new(vm);
+    if (n == 0) {
+        MsObjList* empty = ms_obj_list_new(vm);
+        ms_future_resolve(vm, parent, MS_OBJ_VAL((MsObject*)empty));
+        return MS_OBJ_VAL((MsObject*)parent);
+    }
+    MsGatherCtx* ctx = (MsGatherCtx*)malloc(sizeof(MsGatherCtx));
+    if (!ctx) { ms_vm_runtime_error(vm, "time.gather: out of memory."); return MS_NIL_VAL(); }
+    ctx->parent    = parent;
+    ctx->results   = (MsValue*)malloc(sizeof(MsValue) * (size_t)n);
+    if (!ctx->results) {
+        free(ctx);
+        ms_vm_runtime_error(vm, "time.gather: out of memory.");
+        return MS_NIL_VAL();
+    }
+    ctx->total     = n;
+    ctx->remaining = n;
+    for (int i = 0; i < n; i++) ctx->results[i] = MS_NIL_VAL();
+    for (int i = 0; i < n; i++) {
+        MsValue v = list->items.data[i];
+        if (!MS_IS_FUTURE(v)) {
+            free(ctx->results); free(ctx);
+            ms_vm_runtime_error(vm, "time.gather: list must contain only Future objects.");
+            return MS_NIL_VAL();
+        }
+        MsObjFuture* f = MS_AS_FUTURE(v);
+        if (f->state == MS_FUTURE_RESOLVED) {
+            gather_on_resolve(vm, ctx, i, f->result);
+        } else if (f->state == MS_FUTURE_REJECTED) {
+            gather_on_reject(vm, ctx, f->result);
+            break;
+        } else {
+            ms_future_add_cb_waiter(vm, f, gather_on_resolve, gather_on_reject, ctx, i);
+        }
+    }
+    return MS_OBJ_VAL((MsObject*)parent);
+}
+
+/* ---- time.resume(coroutine, value) ---- */
+
+static MsValue native_time_resume(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || !MS_IS_COROUTINE(argv[0])) {
+        ms_vm_runtime_error(vm, "time.resume: expected coroutine as first argument.");
+        return MS_NIL_VAL();
+    }
+    MsObjCoroutine* co = MS_AS_COROUTINE(argv[0]);
+    MsValue sent = (argc >= 2) ? argv[1] : MS_NIL_VAL();
+    MsValue result = MS_NIL_VAL();
+    ms_vm_coro_resume(vm, co, sent, &result);
+    return result;
+}
+
+static const MsNativeDef time_defs[] = {
+    { "clock",              native_time_clock,              0  },
+    { "sleep",              native_time_sleep,              1  },
+    { "run_until_complete", native_time_run_until_complete, 1  },
+    { "gather",             native_time_gather,             1  },
+    { "resume",             native_time_resume,             -1 },
+    { NULL, NULL, 0 }
+};
+
+void ms_module_time_init(MsVM* vm, MsObjModule* mod) {
+    ms_module_register_natives(vm, mod, time_defs);
+}
