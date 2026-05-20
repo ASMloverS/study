@@ -96,6 +96,9 @@ target_compile_definitions(test_capi_dynamic PRIVATE
 )
 add_dependencies(test_capi_dynamic sample_ext)
 
+ms_add_test(test_capi_module_api unit/test_capi_module_api.c)
+target_link_libraries(test_capi_module_api PRIVATE ms_frontend)
+
 ms_add_test(test_natives unit/test_natives.c)
 target_link_libraries(test_natives PRIVATE ms_frontend)
 
