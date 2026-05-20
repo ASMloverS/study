@@ -8,6 +8,7 @@
 #include "ms/vtable.h"
 #include "ms/value.h"
 #include "ms/shape.h"
+#include "ms/threadpool.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -175,6 +176,10 @@ void ms_vm_init(MsVM* vm) {
         char c = (char)i;
         vm->ascii_cache[i] = ms_obj_string_copy(vm, &c, 1);
     }
+    ms_threadpool_init(&vm->threadpool, 4);
+    vm->pinned_futures = NULL;
+    vm->pinned_count   = 0;
+    vm->pinned_cap     = 0;
     vm->loop_inited = false;
     vm->builtin_registry     = NULL;
     vm->builtin_count        = 0;
@@ -224,6 +229,11 @@ void ms_vm_free(MsVM* vm) {
     vm->objects = NULL;
     ms_pool_destroy(&vm->upvalue_pool);
     ms_pool_destroy(&vm->bound_pool);
+    ms_threadpool_destroy(&vm->threadpool);
+    free(vm->pinned_futures);
+    vm->pinned_futures = NULL;
+    vm->pinned_count   = 0;
+    vm->pinned_cap     = 0;
     if (vm->loop_inited) {
         ms_loop_destroy(&vm->event_loop);
         vm->loop_inited = false;
@@ -245,6 +255,26 @@ void ms_vm_free(MsVM* vm) {
     vm->dynlib_handles = NULL;
     vm->dynlib_count   = 0;
     vm->dynlib_cap     = 0;
+}
+
+void ms_vm_pin_future(MsVM* vm, MsObjFuture* fut) {
+    if (vm->pinned_count >= vm->pinned_cap) {
+        int new_cap = vm->pinned_cap < 8 ? 8 : vm->pinned_cap * 2;
+        vm->pinned_futures = (MsObjFuture**)realloc(
+            vm->pinned_futures, sizeof(MsObjFuture*) * (size_t)new_cap);
+        if (!vm->pinned_futures) abort();
+        vm->pinned_cap = new_cap;
+    }
+    vm->pinned_futures[vm->pinned_count++] = fut;
+}
+
+void ms_vm_unpin_future(MsVM* vm, MsObjFuture* fut) {
+    for (int i = 0; i < vm->pinned_count; i++) {
+        if (vm->pinned_futures[i] == fut) {
+            vm->pinned_futures[i] = vm->pinned_futures[--vm->pinned_count];
+            return;
+        }
+    }
 }
 
 void ms_vm_track_dynlib(MsVM* vm, MsDynlib lib) {

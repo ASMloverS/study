@@ -2,8 +2,10 @@
 #include "ms/vm.h"
 #include "ms/object.h"
 #include "ms/value.h"
+#include "ms/threadpool.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 /* Platform socket recv/accept -- winsock2.h already in via reactor.h on Windows */
 #if defined(_WIN32)
@@ -246,6 +248,51 @@ static uint64_t next_timer_timeout(MsEventLoop* L, uint64_t now) {
     return deadline > now ? deadline - now : 0;
 }
 
+/* ---- Threadpool wakeup integration (CAPI-07) ---- */
+
+/* Sentinel user_data value that distinguishes threadpool wakeup events
+ * from socket events (which carry a valid MsObjSocket* pointer). */
+#define MS_THREADPOOL_WAKEUP_SENTINEL ((void*)(uintptr_t)2)
+
+/* Drain completed async IO jobs from the threadpool done queue and
+ * resolve/reject the associated futures on the main (GC-holding) thread. */
+static void drain_threadpool(struct MsVM* vm) {
+#ifndef _WIN32
+    /* Drain any wakeup bytes so the pipe doesn't fill up. */
+    char buf[64];
+    (void)read(vm->threadpool.wakeup_r, buf, sizeof(buf));
+#endif
+    MsJob* job;
+    while ((job = ms_threadpool_pop_done(&vm->threadpool)) != NULL) {
+        MsObjFuture* fut = (MsObjFuture*)job->future_opaque;
+        if (fut) {
+            if (job->error) {
+                char errmsg[128];
+                snprintf(errmsg, sizeof(errmsg), "IO error %d", job->error);
+                MsValue err = MS_OBJ_VAL((MsObject*)ms_obj_string_copy(
+                    vm, errmsg, (int)strlen(errmsg)));
+                ms_future_reject(vm, fut, err);
+            } else {
+                MsValue result;
+                if (job->kind == MS_JOB_READ_FILE) {
+                    result = MS_OBJ_VAL((MsObject*)ms_obj_string_copy(
+                        vm, job->result_buf, (int)job->result_len));
+                    free(job->result_buf);
+                } else {
+                    result = MS_NIL_VAL();
+                }
+                ms_future_resolve(vm, fut, result);
+            }
+            ms_vm_unpin_future(vm, fut);
+        } else {
+            free(job->result_buf);
+        }
+        free(job->path);
+        free(job->write_buf);
+        free(job);
+    }
+}
+
 /* ---- Lifecycle ---- */
 
 void ms_loop_init(MsEventLoop* loop, struct MsVM* vm) {
@@ -261,6 +308,20 @@ void ms_loop_init(MsEventLoop* loop, struct MsVM* vm) {
     ms_reactor_init(&loop->reactor);
     loop->stopped    = false;
     loop->vm         = vm;
+
+    /* Register threadpool wakeup with the reactor (CAPI-07) */
+#ifdef _WIN32
+    if (vm->threadpool.wakeup_event) {
+        /* Use register_handle to avoid int truncation of 64-bit HANDLE. */
+        ms_reactor_register_handle(&loop->reactor, vm->threadpool.wakeup_event,
+                                   MS_IO_READABLE, MS_THREADPOOL_WAKEUP_SENTINEL);
+    }
+#else
+    if (vm->threadpool.wakeup_r >= 0) {
+        ms_reactor_register(&loop->reactor, vm->threadpool.wakeup_r,
+                            MS_IO_READABLE, MS_THREADPOOL_WAKEUP_SENTINEL);
+    }
+#endif
 }
 
 void ms_loop_destroy(MsEventLoop* loop) {
@@ -332,8 +393,13 @@ int ms_loop_run_until_complete(MsEventLoop* loop, MsObjFuture* root) {
             MsIOReadyEvent io_evs[64];
             int io_count = 0;
             ms_reactor_poll(&loop->reactor, timeout, io_evs, 64, &io_count);
-            /* Dispatch IO events to socket callbacks (ASYNC-06). */
+            /* Dispatch IO events to socket callbacks (ASYNC-06) and
+             * threadpool wakeup (CAPI-07). */
             for (int i = 0; i < io_count; i++) {
+                if (io_evs[i].user_data == MS_THREADPOOL_WAKEUP_SENTINEL) {
+                    drain_threadpool(vm);
+                    continue;
+                }
                 MsObjSocket* sock = (MsObjSocket*)io_evs[i].user_data;
                 if (!sock) continue;
                 if (io_evs[i].events & MS_IO_ERROR) {

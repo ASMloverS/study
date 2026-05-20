@@ -70,6 +70,13 @@ int ms_reactor_register  (MsReactor* r, int fd, MsIOEvent events, void* user_dat
 int ms_reactor_modify    (MsReactor* r, int fd, MsIOEvent events, void* user_data);
 int ms_reactor_unregister(MsReactor* r, int fd);
 
+#ifdef _WIN32
+/* Register a kernel HANDLE (e.g. CreateEvent) directly without int truncation.
+ * handle is stored as void*; polled via WaitForMultipleObjects. */
+int ms_reactor_register_handle(MsReactor* r, void* handle,
+                                MsIOEvent events, void* user_data);
+#endif
+
 /* Readiness-style (epoll / kqueue): arm fd for watch */
 int ms_reactor_arm(MsReactor* r, int fd, MsIOEvent events, void* user_data);
 

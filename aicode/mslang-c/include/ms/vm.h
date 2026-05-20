@@ -4,6 +4,7 @@
 #include "ms/memory.h"
 #include "ms/event_loop.h"
 #include "ms/dynlib.h"
+#include "ms/threadpool.h"
 #include <stdint.h>
 
 /* Forward type for builtin module registry entries (defined fully in module.h). */
@@ -116,6 +117,12 @@ typedef struct MsVM {
     MsDynlib*        dynlib_handles;
     int              dynlib_count;
     int              dynlib_cap;
+    /* Thread pool for async file IO (CAPI-07) */
+    MsThreadPool    threadpool;
+    /* Pinned futures: GC roots for in-flight async jobs */
+    MsObjFuture**   pinned_futures;
+    int             pinned_count;
+    int             pinned_cap;
     /* Async event loop (lazy-initialised; always embedded, never heap-allocated) */
     MsEventLoop     event_loop;
     bool            loop_inited;
@@ -159,6 +166,10 @@ MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
 
 /* Track a successfully-opened dynamic library handle; freed in ms_vm_free. */
 void ms_vm_track_dynlib(MsVM* vm, MsDynlib lib);
+
+/* Pin/unpin a future as a GC root while an async IO job is in flight. */
+void ms_vm_pin_future  (MsVM* vm, MsObjFuture* fut);
+void ms_vm_unpin_future(MsVM* vm, MsObjFuture* fut);
 
 #ifdef MSLANG_VM_STATS
 void ms_vm_get_stats(const MsVM* vm, MsVMStats* out);

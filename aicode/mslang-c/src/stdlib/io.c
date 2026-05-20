@@ -3,8 +3,12 @@
 #include "ms/vm.h"
 #include "ms/object.h"
 #include "ms/memory.h"
+#include "ms/module.h"
+#include "ms/threadpool.h"
+#include "ms/common.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #ifdef _WIN32
 #  include <io.h>
@@ -159,4 +163,63 @@ bool ms_objfile_invoke(struct MsVM* vm, MsObjFile* f,
         return true;
     }
     return false;
+}
+
+/* ---- Async file IO (CAPI-07) ---- */
+
+static MsValue ms_io_read_file_async(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 1 || !MS_IS_STRING(argv[0])) {
+        ms_vm_runtime_error(vm, "read_file_async: expected string path");
+        return MS_NIL_VAL();
+    }
+    const char* path = MS_AS_CSTRING(argv[0]);
+    MsObjFuture* fut = ms_obj_future_new(vm);
+    ms_vm_pin_future(vm, fut);
+
+    MsJob* job = (MsJob*)calloc(1, sizeof(MsJob));
+    job->kind          = MS_JOB_READ_FILE;
+    job->path          = ms_strdup(path);
+    job->future_opaque = fut;
+    ms_threadpool_submit(&vm->threadpool, job);
+    return MS_OBJ_VAL((MsObject*)fut);
+}
+
+static MsValue ms_io_write_file_async(MsVM* vm, int argc, MsValue* argv) {
+    if (argc < 2 || !MS_IS_STRING(argv[0]) || !MS_IS_STRING(argv[1])) {
+        ms_vm_runtime_error(vm, "write_file_async: expected path and content strings");
+        return MS_NIL_VAL();
+    }
+    const char* path = MS_AS_CSTRING(argv[0]);
+    MsObjString* content = MS_AS_STRING(argv[1]);
+    MsObjFuture* fut = ms_obj_future_new(vm);
+    ms_vm_pin_future(vm, fut);
+
+    MsJob* job = (MsJob*)calloc(1, sizeof(MsJob));
+    job->kind      = MS_JOB_WRITE_FILE;
+    job->path      = ms_strdup(path);
+    job->write_len = (size_t)content->length;
+    if (content->length > 0) {
+        job->write_buf = (char*)malloc(job->write_len);
+        if (!job->write_buf) {
+            ms_vm_unpin_future(vm, fut);
+            free(job->path);
+            free(job);
+            ms_vm_runtime_error(vm, "write_file_async: out of memory");
+            return MS_NIL_VAL();
+        }
+        memcpy(job->write_buf, content->data, job->write_len);
+    }
+    job->future_opaque = fut;
+    ms_threadpool_submit(&vm->threadpool, job);
+    return MS_OBJ_VAL((MsObject*)fut);
+}
+
+static const MsNativeDef io_defs[] = {
+    { "read_file_async",  ms_io_read_file_async,  1 },
+    { "write_file_async", ms_io_write_file_async, 2 },
+    { NULL, NULL, 0 }
+};
+
+void ms_module_io_init(MsVM* vm, MsObjModule* mod) {
+    ms_module_register_natives(vm, mod, io_defs);
 }

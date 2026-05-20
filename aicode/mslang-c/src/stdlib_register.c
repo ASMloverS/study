@@ -6,7 +6,6 @@
 
 void ms_module_math_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_os_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_io_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_buffer_init(MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_hash_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
 void ms_module_log_init   (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }

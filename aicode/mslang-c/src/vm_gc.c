@@ -202,6 +202,9 @@ static void mark_roots(MsVM* vm) {
     for (int i = 0; i < 128; i++) {
         if (vm->ascii_cache[i]) ms_mark_object(vm, (MsObject*)vm->ascii_cache[i]);
     }
+    /* Pinned futures: GC roots for in-flight async IO jobs (CAPI-07) */
+    for (int i = 0; i < vm->pinned_count; i++)
+        ms_mark_object(vm, (MsObject*)vm->pinned_futures[i]);
     /* Trace EventLoop roots (ready queue + timer heap) */
     if (vm->loop_inited) {
         MsEventLoop* L = &vm->event_loop;

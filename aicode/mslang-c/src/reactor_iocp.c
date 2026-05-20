@@ -54,6 +54,23 @@ int ms_reactor_register(MsReactor* r, int fd, MsIOEvent events, void* user_data)
     return -1;
 }
 
+int ms_reactor_register_handle(MsReactor* r, void* handle,
+                                MsIOEvent events, void* user_data) {
+    if (r->watch_count >= MS_REACTOR_MAX_WATCH) return -1;
+    for (int i = 0; i < MS_REACTOR_MAX_WATCH; i++) {
+        if (!r->watches[i].active) {
+            r->watches[i].handle       = handle;
+            r->watches[i].watch_events = events;
+            r->watches[i].user_data    = user_data;
+            r->watches[i].active       = true;
+            r->watches[i].is_socket    = false; /* kernel HANDLE, not socket */
+            r->watch_count++;
+            return 0;
+        }
+    }
+    return -1;
+}
+
 int ms_reactor_modify(MsReactor* r, int fd, MsIOEvent events, void* user_data) {
     for (int i = 0; i < MS_REACTOR_MAX_WATCH; i++) {
         if (r->watches[i].active && handle_eq_fd(r->watches[i].handle, fd)) {
