@@ -19,6 +19,7 @@ typedef enum {
     MS_OBJ_STRING_BUILDER,
     MS_OBJ_TUPLE,
     MS_OBJ_FILE,
+    MS_OBJ_BUFFER,
     MS_OBJ_WEAK_REF,
     MS_OBJ_COROUTINE,
     MS_OBJ_FUTURE,
@@ -352,6 +353,16 @@ typedef struct {
 MsObjStringBuilder* ms_obj_sb_new(struct MsVM* vm);
 void                ms_obj_sb_append(MsObjStringBuilder* sb, const char* str, int len);
 MsObjString*        ms_obj_sb_to_string(struct MsVM* vm, MsObjStringBuilder* sb);
+
+/* ---- File / Buffer access macros (types defined in ms/stdlib/objfile.h, ms/stdlib/objbuffer.h) ---- */
+/* Forward declarations so macros compile without pulling in the stdlib headers here */
+typedef struct MsObjFile   MsObjFile;
+typedef struct MsObjBuffer MsObjBuffer;
+
+#define MS_IS_FILE(v)   MS_IS_OBJ_TYPE(v, MS_OBJ_FILE)
+#define MS_AS_FILE(v)   ((MsObjFile*)MS_AS_OBJECT(v))
+#define MS_IS_BUFFER(v) MS_IS_OBJ_TYPE(v, MS_OBJ_BUFFER)
+#define MS_AS_BUFFER(v) ((MsObjBuffer*)MS_AS_OBJECT(v))
 
 /* ---- Socket (ASYNC-06) ---- */
 

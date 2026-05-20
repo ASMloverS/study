@@ -7,7 +7,7 @@
 | ✅ | [CAPI-03-search-path.md](CAPI-03-search-path.md) | MSLANG_PATH + --module-path |
 | ✅ | [CAPI-04-dynamic-loading.md](CAPI-04-dynamic-loading.md) | dlopen/LoadLibrary + ms_module_init ABI |
 | ✅ | [CAPI-05-module-api.md](CAPI-05-module-api.md) | MsModuleApi 函数表 |
-| ⬜ | [CAPI-06-handle-types.md](CAPI-06-handle-types.md) | ObjFile / ObjBuffer / MsObjUserdata |
+| ✅ | [CAPI-06-handle-types.md](CAPI-06-handle-types.md) | ObjFile / ObjBuffer / MsObjUserdata |
 | ⬜ | [CAPI-07-threadpool.md](CAPI-07-threadpool.md) | Unix 文件异步线程池 |
 | ⬜ | [CAPI-08-globals-migration.md](CAPI-08-globals-migration.md) | 全局原生迁入模块 |
 

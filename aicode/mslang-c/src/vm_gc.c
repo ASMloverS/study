@@ -7,6 +7,8 @@
 #include "ms/value.h"
 #include "ms/chunk.h"
 #include "ms/consts.h"
+#include "ms/stdlib/objfile.h"
+#include "ms/stdlib/objbuffer.h"
 #include <stdlib.h>
 
 /* compiler_impl.h is a src-private header */
@@ -166,6 +168,8 @@ static void blacken_object(MsVM* vm, MsObject* obj) {
         if (ud->mark && ud->data) ud->mark(vm, ud->data);
         break;
     }
+    case MS_OBJ_FILE:   /* no GC refs */ break;
+    case MS_OBJ_BUFFER: /* no GC refs */ break;
     default:
         break;
     }

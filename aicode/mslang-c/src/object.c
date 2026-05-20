@@ -5,6 +5,8 @@
 #include "ms/event_loop.h"
 #include "ms/memory.h"
 #include "ms/consts.h"
+#include "ms/stdlib/objfile.h"
+#include "ms/stdlib/objbuffer.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -336,6 +338,16 @@ void ms_object_print(MsObject* obj) {
             printf("<userdata %s>", ud->type_tag ? ud->type_tag : "?");
             break;
         }
+        case MS_OBJ_FILE: {
+            MsObjFile* f = (MsObjFile*)obj;
+            printf("<File %s>", f->fp ? "open" : "closed");
+            break;
+        }
+        case MS_OBJ_BUFFER: {
+            MsObjBuffer* b = (MsObjBuffer*)obj;
+            printf("<Buffer len=%zu>", b->len);
+            break;
+        }
         default:
             printf("<object %d>", (int)obj->type);
             break;
@@ -459,6 +471,18 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
             if (ud->finalize && ud->data) ud->finalize(ud->data);
             free(ud->data);
             ms_reallocate(vm, obj, sizeof(MsObjUserdata), 0);
+            break;
+        }
+        case MS_OBJ_FILE: {
+            MsObjFile* f = (MsObjFile*)obj;
+            if (f->fp) { fclose(f->fp); f->fp = NULL; }
+            ms_reallocate(vm, obj, sizeof(MsObjFile), 0);
+            break;
+        }
+        case MS_OBJ_BUFFER: {
+            MsObjBuffer* b = (MsObjBuffer*)obj;
+            if (b->data) ms_reallocate(vm, b->data, b->cap, 0);
+            ms_reallocate(vm, obj, sizeof(MsObjBuffer), 0);
             break;
         }
         default:

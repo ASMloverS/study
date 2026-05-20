@@ -2,6 +2,8 @@
 #include "ms/object.h"
 #include "ms/value.h"
 #include "ms/vtable.h"
+#include "ms/stdlib/objfile.h"
+#include "ms/stdlib/objbuffer.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
@@ -365,5 +367,9 @@ bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
         return tuple_invoke(vm, MS_AS_TUPLE(receiver), method, argc, argv, out);
     if (MS_IS_SOCKET(receiver))
         return ms_socket_invoke(vm, receiver, method, argc, argv, out);
+    if (MS_IS_FILE(receiver))
+        return ms_objfile_invoke(vm, MS_AS_FILE(receiver), method, argc, argv, out);
+    if (MS_IS_BUFFER(receiver))
+        return ms_objbuffer_invoke(vm, MS_AS_BUFFER(receiver), method, argc, argv, out);
     return false;
 }
