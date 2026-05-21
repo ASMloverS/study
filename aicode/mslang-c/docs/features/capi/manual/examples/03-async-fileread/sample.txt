@@ -1,0 +1,2 @@
+Hello from fileread!
+This is the synchronous file-read example.

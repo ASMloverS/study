@@ -7,7 +7,7 @@
 | 00 | `00-hello/` | 03 — Hello 扩展教程 | ✅ |
 | 01 | `01-values-errors/` | 04 — 值与错误处理 | ✅ |
 | 02 | `02-userdata-hash/` | 05 — Userdata 句柄 | ✅ |
-| 03 | `03-async-fileread/` | 06 — 异步扩展 | ⬜ |
+| 03 | `03-async-fileread/` | 06 — 异步扩展 | ✅ |
 | 04 | `04-bytes-interop/` | 07 — 字节流互操（v1）| ⬜ |
 
 ## 构建
@@ -33,14 +33,14 @@ cmake --build docs/features/capi/manual/examples/build --config Release
 
 | 字段 | 00-hello | 01-values-errors | 02-userdata-hash | 03-async-fileread | 04-bytes-interop |
 |---|:---:|:---:|:---:|:---:|:---:|
-| `version` | ✓ | ✓ | ✓ | | |
-| `def_native` | ✓ | ✓ | ✓ | | |
+| `version` | ✓ | ✓ | ✓ | ✓ | |
+| `def_native` | ✓ | ✓ | ✓ | ✓ | |
 | `export_value` | ✓ | | | | |
 | `make_nil` | | | ✓ | | |
 | `make_bool` | | ✓ | | | |
 | `make_int` | ✓ | ✓ | ✓ | | |
 | `make_number` | | ✓ | | | |
-| `make_string` | ✓ | ✓ | | | |
+| `make_string` | ✓ | ✓ | | ✓ | |
 | `make_list` | | ✓ | | | |
 | `make_map` | | ✓ | | | |
 | `list_push` | | ✓ | | | |
@@ -49,14 +49,14 @@ cmake --build docs/features/capi/manual/examples/build --config Release
 | `is_bool` | | ✓ | | | |
 | `is_int` | | ✓ | | | |
 | `is_number` | | ✓ | | | |
-| `is_string` | ✓ | ✓ | ✓ | | |
+| `is_string` | ✓ | ✓ | ✓ | ✓ | |
 | `is_list` | | ✓ | | | |
 | `is_map` | | ✓ | | | |
 | `is_userdata` | | | ✓ | | |
 | `val_to_int` | | ✓ | | | |
 | `val_to_number` | | ✓ | | | |
-| `val_to_cstring` | ✓ | ✓ | ✓ | | |
+| `val_to_cstring` | ✓ | ✓ | ✓ | ✓ | |
 | `string_len` | | | ✓ | | |
 | `userdata_new` | | | ✓ | | |
 | `userdata_data` | | | ✓ | | |
-| `raise` | ✓ | ✓ | ✓ | | |
+| `raise` | ✓ | ✓ | ✓ | ✓ | |
