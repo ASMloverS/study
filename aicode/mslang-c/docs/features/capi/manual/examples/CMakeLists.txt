@@ -11,8 +11,8 @@ set(MSLANG_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../include"
     CACHE PATH "Path to mslang-c include/ directory")
 
 add_subdirectory(00-hello)
+add_subdirectory(01-values-errors)
 # Uncomment as each example is added:
-# add_subdirectory(01-values-errors)
 # add_subdirectory(02-userdata-hash)
 # add_subdirectory(03-async-fileread)
 # add_subdirectory(04-bytes-interop)
