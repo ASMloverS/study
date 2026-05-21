@@ -107,6 +107,7 @@ void ms_module_init(const MsModuleApi* api, MsVM* vm, MsObjModule* mod) {
 
 ## 进一步阅读
 
+- **如何在 `.ms` 中使用模块**：[02-using-modules.md](02-using-modules.md)
 - **MsModuleApi 完整定义**：[CAPI-05-module-api.md](../CAPI-05-module-api.md)
 - **动态加载 ABI**：[CAPI-04-dynamic-loading.md](../CAPI-04-dynamic-loading.md)
 - **从第一个扩展开始**：[03-hello-extension.md](03-hello-extension.md)
