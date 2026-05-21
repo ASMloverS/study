@@ -206,7 +206,7 @@ docs/features/capi/
 | 5 | ✅ | `examples/03-async-fileread/`（同步版）+ `06-async-extensions.md` |
 | 6 | ✅ | `examples/04-bytes-interop/` + `07-bytes-interop.md` |
 | 7 | ✅ | `08-builtin-module-author.md` + `09-packaging-and-distribution.md` |
-| 8 | ⬜ | `10-api-reference.md` |
+| 8 | ✅ | `10-api-reference.md` |
 | 9 | ⬜ | `02-using-modules.md` + 回填 `01-overview.md` 终稿 |
 
 > ⬜ 待实现 · 🚧 进行中 · ✅ 完成
