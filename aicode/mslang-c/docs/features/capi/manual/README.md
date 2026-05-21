@@ -204,7 +204,7 @@ docs/features/capi/
 | 3 | ✅ | `examples/01-values-errors/` + `04-values-and-errors.md` |
 | 4 | ✅ | `examples/02-userdata-hash/` + `05-userdata-handles.md` |
 | 5 | ✅ | `examples/03-async-fileread/`（同步版）+ `06-async-extensions.md` |
-| 6 | ⬜ | `examples/04-bytes-interop/` + `07-bytes-interop.md` |
+| 6 | ✅ | `examples/04-bytes-interop/` + `07-bytes-interop.md` |
 | 7 | ⬜ | `08-builtin-module-author.md` + `09-packaging-and-distribution.md` |
 | 8 | ⬜ | `10-api-reference.md` |
 | 9 | ⬜ | `02-using-modules.md` + 回填 `01-overview.md` 终稿 |
