@@ -10,6 +10,7 @@
 | ✅ | [CAPI-06-handle-types.md](CAPI-06-handle-types.md) | ObjFile / ObjBuffer / MsObjUserdata |
 | ✅ | [CAPI-07-threadpool.md](CAPI-07-threadpool.md) | Unix 文件异步线程池 |
 | ✅ | [CAPI-08-globals-migration.md](CAPI-08-globals-migration.md) | 全局原生迁入模块 |
+| 🚧 | [用户手册 →](manual/README.md) | 面向使用者的教程与 API 参考（实施中）|
 
 > ⬜ 待实现 · 🚧 进行中 · ✅ 完成
 

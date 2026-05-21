@@ -199,7 +199,7 @@ docs/features/capi/
 
 | # | 状态 | 产物 |
 |---|---|---|
-| 1 | ⬜ | `01-overview.md` 占位（读者地图 + 词汇表）+ `index.md` 加 manual 入口链接 |
+| 1 | ✅ | `01-overview.md` 占位（读者地图 + 词汇表）+ `index.md` 加 manual 入口链接 |
 | 2 | ⬜ | `examples/00-hello/` + `03-hello-extension.md`（跑通最小路径） |
 | 3 | ⬜ | `examples/01-values-errors/` + `04-values-and-errors.md` |
 | 4 | ⬜ | `examples/02-userdata-hash/` + `05-userdata-handles.md` |
