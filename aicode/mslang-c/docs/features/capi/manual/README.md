@@ -86,7 +86,7 @@ docs/features/capi/
 4. 编译 → 放进 `MSLANG_PATH` → 跑 `run.ms`
 5. 跨平台产物名：`lib*.so` / `*.dll` / `lib*.dylib`
 
-**全局符号与 export_value（CAPI-08）**：`ms_module_init` 内通过 `api->export_value(module, "name", val)` 将任意 `MsValue` 挂到模块作用域，即 `.ms` 侧 `import mod; mod.name` 的查找入口；与 `def_native` 的区别是前者可挂任意值（常量、表、Userdata）。详见 CAPI-08-globals-migration.md。
+**全局符号与 export_value（CAPI-08）**：`ms_module_init` 内通过 `api->export_value(vm, mod, "name", val)` 将任意 `MsValue` 挂到模块作用域，即 `.ms` 侧 `import mod; mod.name` 的查找入口；与 `def_native` 的区别是前者可挂任意值（常量、表、Userdata）。详见 CAPI-08-globals-migration.md。
 
 ### 04 — 值与错误处理（~150 行）
 
@@ -101,7 +101,7 @@ docs/features/capi/
 - 为什么需要 Userdata（包装 C 句柄，不新增 `MS_OBJ_*` 枚举）
 - 完整签名：`userdata_new(vm, bytes, finalize, mark, type_tag)`
 - `finalize`：GC 标记-清除阶段由 VM 主线程调用；禁止在 finalize 内调用任何 `api->*`（GC 临界区）；适合释放 fd / 私有内存
-- `mark`：仅当 userdata 内部持有 MsValue 引用时需实现，调用 `api->mark_value(v)` 将引用标活；否则传 `NULL`
+- `mark`：仅当 userdata 内部持有 MsValue 引用时需实现（**v1 限制**：`MsModuleApi v1` 不导出 `mark_value`，v1 扩展数据不应嵌入 `MsValue` 引用）；否则传 `NULL`
 - `type_tag`：要求静态生存期字符串字面量；`userdata_is` 内部走指针相等（fastpath）+ `strcmp`（fallback）；跨 DLL 边界时 ptr 不保证相等，依赖 `strcmp` 兜底
 - 访问模式：v1 通过模块函数 `hash.update(h, data)`（非方法语法）
 
@@ -136,8 +136,9 @@ docs/features/capi/
 - ABI 版本协商模板（raise 拒绝版）：
   ```c
   if (api->version < 1) {
-      api->raise(vm, "requires MsModuleApi v1, got v%d", api->version);
+      api->raise(vm, "requires MsModuleApi v1");
       return;  // raise 后 VM 把 import 标为失败，向 .ms 端抛错
+              // raise 接受普通字符串，不支持 printf 格式参数
   }
   // v2 字段访问前再次检查
   if (api->version >= 2 && api->threadpool_submit) { /* 走异步路径 */ }

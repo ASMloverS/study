@@ -131,7 +131,7 @@ cmake -S docs/features/capi/manual/examples \
       -B docs/features/capi/manual/examples/build
 cmake --build docs/features/capi/manual/examples/build --config Release
 
-MSLANG_PATH=docs/features/capi/manual/examples/build/04-bytes-interop/Release \
+MSLANG_PATH=docs/features/capi/manual/examples/build/04-bytes-interop \
   ./build/mslang-c docs/features/capi/manual/examples/04-bytes-interop/run.ms
 ```
 
@@ -149,7 +149,7 @@ MSLANG-C!
 Windows（PowerShell）：
 
 ```powershell
-$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\04-bytes-interop\Release"
+$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\04-bytes-interop\Release"  # MSVC 多配置
 .\build\mslang-c.exe docs\features\capi\manual\examples\04-bytes-interop\run.ms
 ```
 

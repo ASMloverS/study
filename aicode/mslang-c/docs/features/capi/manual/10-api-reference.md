@@ -180,17 +180,15 @@ api->map_set(vm, m, api->make_string(vm, "k", 1), api->make_int(1));
 #### `api->raise`
 
 ```c
-MsValue raise(MsVM* vm, const char* fmt, ...);
+MsValue raise(MsVM* vm, const char* msg);
 ```
 
-以 `printf` 格式字符串向 VM 发出运行时错误信号，返回哨兵 `MsValue`（调用方不应使用此返回值）。调用后**必须立即 `return`**；禁止继续访问任何 `MsValue`/`MsObject`。
+向 VM 发出运行时错误信号，返回哨兵 `MsValue`（调用方不应使用此返回值）。调用后**必须立即 `return`**；禁止继续访问任何 `MsValue`/`MsObject`。`msg` 为普通 C 字符串，**不**支持 `printf` 格式参数；需要动态消息时请先用 `snprintf` 格式化到缓冲区再传入。
 
 ```c
 if (argc < 1)
     return api->raise(vm, "expected 1 argument, got 0");
 ```
-
-**边界**：格式化缓冲区上限约 512 字节；超出部分截断。
 
 ---
 

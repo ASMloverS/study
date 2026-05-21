@@ -179,7 +179,7 @@ static MsValue fn_summary(MsVM* vm, int argc, MsValue* argv) {
 ```bash
 cmake -S docs/features/capi/manual/examples \
       -B docs/features/capi/manual/examples/build
-cmake --build docs/features/capi/manual/examples/build
+cmake --build docs/features/capi/manual/examples/build --config Release
 
 MSLANG_PATH=docs/features/capi/manual/examples/build/01-values-errors \
   ./build/mslang-c docs/features/capi/manual/examples/01-values-errors/run.ms
@@ -200,6 +200,13 @@ Alice
 85
 true
 student
+```
+
+Windows（PowerShell，MSVC 多配置构建输出在 `Release\` 子目录）：
+
+```powershell
+$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\01-values-errors\Release"
+.\build\mslang-c.exe docs\features\capi\manual\examples\01-values-errors\run.ms
 ```
 
 ---

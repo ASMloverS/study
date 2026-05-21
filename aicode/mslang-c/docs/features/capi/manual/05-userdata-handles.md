@@ -82,7 +82,7 @@ static MsValue fn_create(MsVM* vm, int argc, MsValue* argv) {
 | 参数 | 何时传非 NULL | 典型用途 |
 |---|---|---|
 | `finalize` | 句柄持有外部资源（fd、锁、私有堆内存）| `fclose(fd)` / `free(private_buf)` |
-| `mark` | 句柄内部存储了 `MsValue` 引用 | 调用 `api->mark_value(v)` 防止引用被 GC 回收 |
+| `mark` | 句柄内部存储了 `MsValue` 引用时 | GC mark 阶段回调，用于将嵌入的引用标活（**v1 限制**：`MsModuleApi v1` 不导出 `mark_value`；v1 扩展数据中不应嵌入 `MsValue`，否则传 `NULL` 会导致引用被 GC 提前回收；需嵌入 `MsValue` 的场景等待 v2）|
 
 **重要**：`finalize` 在 GC 临界区被调用，**禁止在其中调用任何 `api->*` 函数**；
 VM 会在 `finalize` 返回后自动释放 `ud->data` 缓冲区，无需在 `finalize` 内 `free(data)`。
@@ -171,7 +171,7 @@ cmake -S docs/features/capi/manual/examples \
       -B docs/features/capi/manual/examples/build
 cmake --build docs/features/capi/manual/examples/build --config Release
 
-MSLANG_PATH=docs/features/capi/manual/examples/build/02-userdata-hash/Release \
+MSLANG_PATH=docs/features/capi/manual/examples/build/02-userdata-hash \
   ./build/mslang-c docs/features/capi/manual/examples/02-userdata-hash/run.ms
 ```
 
@@ -183,7 +183,7 @@ MSLANG_PATH=docs/features/capi/manual/examples/build/02-userdata-hash/Release \
 193409669
 ```
 
-Windows（PowerShell）：
+Windows（PowerShell，MSVC 多配置构建输出在 `Release\` 子目录）：
 
 ```powershell
 $env:MSLANG_PATH = "docs\features\capi\manual\examples\build\02-userdata-hash\Release"

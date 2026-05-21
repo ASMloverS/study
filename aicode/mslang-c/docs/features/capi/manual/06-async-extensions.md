@@ -184,7 +184,7 @@ cmake -S docs/features/capi/manual/examples \
       -B docs/features/capi/manual/examples/build
 cmake --build docs/features/capi/manual/examples/build --config Release
 
-MSLANG_PATH=docs/features/capi/manual/examples/build/03-async-fileread/Release \
+MSLANG_PATH=docs/features/capi/manual/examples/build/03-async-fileread \
   ./build/mslang-c docs/features/capi/manual/examples/03-async-fileread/run.ms
 ```
 
@@ -198,7 +198,7 @@ This is the synchronous file-read example.
 Windows（PowerShell）：
 
 ```powershell
-$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\03-async-fileread\Release"
+$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\03-async-fileread\Release"  # MSVC 多配置
 .\build\mslang-c.exe docs\features\capi\manual\examples\03-async-fileread\run.ms
 ```
 

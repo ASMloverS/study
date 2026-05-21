@@ -113,7 +113,7 @@ target_include_directories(hello PRIVATE ${MSLANG_INCLUDE_DIR})
 ```bash
 cmake -S docs/features/capi/manual/examples \
       -B docs/features/capi/manual/examples/build
-cmake --build docs/features/capi/manual/examples/build
+cmake --build docs/features/capi/manual/examples/build --config Release
 ```
 
 产物（平台相关）：
@@ -142,10 +142,10 @@ Hello, World!
 1
 ```
 
-Windows（PowerShell）：
+Windows（PowerShell，MSVC 多配置构建输出在 `Release\` 子目录）：
 
 ```powershell
-$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\00-hello"
+$env:MSLANG_PATH = "docs\features\capi\manual\examples\build\00-hello\Release"
 .\build\mslang-c.exe docs\features\capi\manual\examples\00-hello\run.ms
 ```
 

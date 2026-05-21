@@ -60,9 +60,10 @@ cmake --build build
 MS_EXPORT void ms_module_init(const MsModuleApi* api, MsVM* vm, MsObjModule* mod) {
     /* 拒绝低版本：raise 后 VM 将 import 标为失败，向 .ms 端抛错 */
     if (api->version < 1) {
-        api->raise(vm, "my_ext: requires MsModuleApi v1, got v%d", api->version);
+        api->raise(vm, "my_ext: requires MsModuleApi v1");
         return;
         /* ↑ 不 raise 直接 return → 空模块加载"成功"，调试极困难，避免 */
+        /* ↑ raise 不支持 printf 格式；需动态消息时先 snprintf 到缓冲区 */
     }
 
     /* 检测可选 v2 字段（向前兼容）*/

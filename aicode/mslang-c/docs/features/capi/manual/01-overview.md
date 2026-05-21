@@ -96,7 +96,7 @@ typedef struct MsModuleApi {
 ```c
 void ms_module_init(const MsModuleApi* api, MsVM* vm, MsObjModule* mod) {
     if (api->version < 1) {
-        api->raise(vm, "requires MsModuleApi v1, got v%d", api->version);
+        api->raise(vm, "requires MsModuleApi v1");
         return;
     }
     /* … */
