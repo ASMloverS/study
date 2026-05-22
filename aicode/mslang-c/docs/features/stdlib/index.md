@@ -11,7 +11,7 @@
 | ✅ | [STDLIB-04-io.md](STDLIB-04-io.md) | `io` | 文件 IO（同步 + 异步）+ ObjFile |
 | ✅ | [STDLIB-05-buffer.md](STDLIB-05-buffer.md) | `buffer` | 可变字节缓冲 ObjBuffer |
 | ✅ | [STDLIB-06-hash.md](STDLIB-06-hash.md) | `hash` | MD5/SHA/CRC32/FNV（无外部依赖）|
-| ⬜ | [STDLIB-07-log.md](STDLIB-07-log.md) | `log` | 分级日志 + sink + tag |
+| ✅ | [STDLIB-07-log.md](STDLIB-07-log.md) | `log` | 分级日志 + sink + tag |
 | ⬜ | [STDLIB-08-net.md](STDLIB-08-net.md) | `net` | TCP（迁全局）+ DNS resolve |
 | ⬜ | [STDLIB-09-debug.md](STDLIB-09-debug.md) | `debug` | 调用栈、反汇编、局部变量检查 |
 | ⬜ | [STDLIB-10-gc.md](STDLIB-10-gc.md) | `gc` | GC 手动控制与统计 |
