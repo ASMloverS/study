@@ -5,6 +5,7 @@
 #include "ms/object.h"
 #include "ms/table.h"
 #include "ms/shape.h"
+#include "ms/stdlib/objbuffer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,6 +118,7 @@ static MsValue native_len(MsVM* vm, int argc, MsValue* argv) {
     if (MS_IS_LIST(val))   return MS_INT_VAL(MS_AS_LIST(val)->items.count);
     if (MS_IS_MAP(val))    return MS_INT_VAL(MS_AS_MAP(val)->table.count);
     if (MS_IS_TUPLE(val))  return MS_INT_VAL(MS_AS_TUPLE(val)->count);
+    if (MS_IS_BUFFER(val)) return MS_INT_VAL((ms_i64)MS_AS_BUFFER(val)->len);
     ms_vm_runtime_error(vm, "len() not supported for this type.");
     return MS_NIL_VAL();
 }
@@ -245,11 +247,11 @@ static MsValue native_socket_read(MsVM* vm, int argc, MsValue* argv) {
     return MS_OBJ_VAL((MsObject*)fut);
 }
 
-/* ---- socket.write(bytes) -> Future<int> ---- */
+/* ---- socket.write(data) -> Future<int>; data: str | Buffer ---- */
 
 static MsValue native_socket_write(MsVM* vm, int argc, MsValue* argv) {
-    if (argc < 2 || !MS_IS_SOCKET(argv[0]) || !MS_IS_STRING(argv[1])) {
-        ms_vm_runtime_error(vm, "write() requires (socket, string).");
+    if (argc < 2 || !MS_IS_SOCKET(argv[0])) {
+        ms_vm_runtime_error(vm, "write() requires (socket, str|Buffer).");
         return MS_NIL_VAL();
     }
     MsObjSocket* sock = MS_AS_SOCKET(argv[0]);
@@ -257,13 +259,27 @@ static MsValue native_socket_write(MsVM* vm, int argc, MsValue* argv) {
         ms_vm_runtime_error(vm, "write() on closed socket.");
         return MS_NIL_VAL();
     }
-    MsObjString* data = MS_AS_STRING(argv[1]);
-    ensure_loop(vm);
 
+    const char* data_ptr = NULL;
+    int data_len = 0;
+    if (MS_IS_STRING(argv[1])) {
+        MsObjString* s = MS_AS_STRING(argv[1]);
+        data_ptr = s->data;
+        data_len = s->length;
+    } else if (MS_IS_BUFFER(argv[1])) {
+        MsObjBuffer* b = MS_AS_BUFFER(argv[1]);
+        data_ptr = (const char*)b->data;
+        data_len = (int)b->len;
+    } else {
+        ms_vm_runtime_error(vm, "write(): data must be str or Buffer.");
+        return MS_NIL_VAL();
+    }
+
+    ensure_loop(vm);
     MsObjFuture* fut = ms_obj_future_new(vm);
 
     int sent = (int)send((ms_sock_t)(uintptr_t)(unsigned)sock->fd,
-                         data->data, (size_t)data->length, 0);
+                         data_ptr, (size_t)data_len, 0);
     if (sent > 0) {
         ms_future_resolve(vm, fut, MS_INT_VAL((ms_i64)sent));
         return MS_OBJ_VAL((MsObject*)fut);

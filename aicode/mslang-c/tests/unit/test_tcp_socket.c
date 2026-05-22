@@ -157,17 +157,17 @@ static void test_socket_gc_trace(void) {
     free_vm(vm);
 }
 
-/* ---- test 8: native tcp_listen returns resolved Future<Socket> ---- */
+/* ---- test 8: net.listen returns a Socket synchronously ---- */
 
 static void test_native_tcp_listen_resolves(void) {
     MsVM* vm = make_vm();
 
-    /* Use module-style: import net; var f = net.listen(0) */
+    /* net.listen(host, port) is synchronous and returns a Socket */
     const char* src =
         "import \"net\"\n"
-        "import \"time\"\n"
-        "var f = net.listen(0)\n"
-        "time.run_until_complete(f)\n";
+        "var s = net.listen(\"127.0.0.1\", 0)\n"
+        "assert(s != nil)\n"
+        "s.close()\n";
     MsInterpretResult r = ms_vm_interpret(vm, src, "<test>");
     TEST_ASSERT_EQ(r, MS_INTERPRET_OK);
 

@@ -2,6 +2,7 @@
 #include "ms/vm.h"
 #include "ms/object.h"
 #include "ms/value.h"
+#include "ms/stdlib/objbuffer.h"
 #include "ms/threadpool.h"
 #include <stdlib.h>
 #include <string.h>
@@ -52,18 +53,19 @@ static void do_socket_accept(struct MsVM* vm, MsObjSocket* srv) {
     ms_future_resolve(vm, fut, MS_OBJ_VAL((MsObject*)client));
 }
 
-/* Handle READABLE on a connected socket (recv). */
+/* Handle READABLE on a connected socket (recv). Resolves with ObjBuffer. */
 static void do_socket_recv(struct MsVM* vm, MsObjSocket* sock) {
     MsObjFuture* fut = sock->read_future;
     if (!fut) return;
     sock->read_future = NULL;
     ms_reactor_unregister(&vm->event_loop.reactor, sock->fd);
 
-    char buf[4096];
-    int n = (int)MS_RECV(sock->fd, buf, (int)sizeof(buf));
+    uint8_t buf[4096];
+    int n = (int)MS_RECV(sock->fd, (char*)buf, (int)sizeof(buf));
     if (n == 0) {
+        /* EOF: resolve with empty Buffer */
         ms_future_resolve(vm, fut,
-            MS_OBJ_VAL((MsObject*)ms_obj_string_copy(vm, "", 0)));
+            MS_OBJ_VAL((MsObject*)ms_obj_buffer_from_bytes(vm, NULL, 0)));
         return;
     }
     if (n < 0) {
@@ -78,7 +80,7 @@ static void do_socket_recv(struct MsVM* vm, MsObjSocket* sock) {
         return;
     }
     ms_future_resolve(vm, fut,
-        MS_OBJ_VAL((MsObject*)ms_obj_string_copy(vm, buf, n)));
+        MS_OBJ_VAL((MsObject*)ms_obj_buffer_from_bytes(vm, buf, (size_t)n)));
 }
 
 /* Handle WRITABLE: pending connect check, or send back-pressure retry. */
