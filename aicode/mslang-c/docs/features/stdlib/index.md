@@ -8,7 +8,7 @@
 | ✅ | [STDLIB-01-math.md](STDLIB-01-math.md) | `math` | 数学函数与常量 |
 | ✅ | [STDLIB-02-os.md](STDLIB-02-os.md) | `os` | 操作系统接口（env/fs/proc）|
 | ✅ | [STDLIB-03-time.md](STDLIB-03-time.md) | `time` | 时间、睡眠、async 调度（迁全局）|
-| ⬜ | [STDLIB-04-io.md](STDLIB-04-io.md) | `io` | 文件 IO（同步 + 异步）+ ObjFile |
+| ✅ | [STDLIB-04-io.md](STDLIB-04-io.md) | `io` | 文件 IO（同步 + 异步）+ ObjFile |
 | ⬜ | [STDLIB-05-buffer.md](STDLIB-05-buffer.md) | `buffer` | 可变字节缓冲 ObjBuffer |
 | ⬜ | [STDLIB-06-hash.md](STDLIB-06-hash.md) | `hash` | MD5/SHA/CRC32/FNV（无外部依赖）|
 | ⬜ | [STDLIB-07-log.md](STDLIB-07-log.md) | `log` | 分级日志 + sink + tag |

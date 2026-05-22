@@ -147,6 +147,9 @@ target_link_libraries(test_stdlib_os PRIVATE ms_frontend)
 ms_add_test(test_stdlib_time unit/test_stdlib_time.c)
 target_link_libraries(test_stdlib_time PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_io unit/test_stdlib_io.c)
+target_link_libraries(test_stdlib_io PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 

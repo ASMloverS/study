@@ -475,7 +475,7 @@ void ms_object_free(struct MsVM* vm, MsObject* obj) {
         }
         case MS_OBJ_FILE: {
             MsObjFile* f = (MsObjFile*)obj;
-            if (f->fp) { fclose(f->fp); f->fp = NULL; }
+            if (f->fp && f->owns_fp) { fclose(f->fp); f->fp = NULL; }
             ms_reallocate(vm, obj, sizeof(MsObjFile), 0);
             break;
         }

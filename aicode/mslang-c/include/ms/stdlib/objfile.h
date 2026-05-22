@@ -10,10 +10,12 @@ typedef enum {
 } MsFileMode;
 
 struct MsObjFile {
-    MsObject   obj;   /* type = MS_OBJ_FILE */
-    FILE*      fp;    /* NULL when closed */
+    MsObject   obj;        /* type = MS_OBJ_FILE */
+    FILE*      fp;         /* NULL when closed */
     MsFileMode mode;
     bool       eof;
+    bool       owns_fp;    /* false for stdin/stdout/stderr */
+    char       mode_str[8]; /* mode string passed to fopen */
 };
 
 typedef struct MsObjFile MsObjFile;
@@ -21,7 +23,7 @@ typedef struct MsObjFile MsObjFile;
 struct MsVM;
 typedef struct MsObjString MsObjString;
 
-MsObjFile* ms_obj_file_new(struct MsVM* vm, FILE* fp, MsFileMode mode);
+MsObjFile* ms_obj_file_new(struct MsVM* vm, FILE* fp, MsFileMode mode, bool owns_fp);
 MsObjFile* ms_obj_file_from_fd(struct MsVM* vm, int fd, const char* open_mode);
 bool       ms_objfile_invoke(struct MsVM* vm, MsObjFile* f,
                               MsObjString* method,

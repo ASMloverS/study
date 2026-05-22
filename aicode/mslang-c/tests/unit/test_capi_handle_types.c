@@ -8,16 +8,26 @@
 #include <string.h>
 #include <stdlib.h>
 
+static FILE* open_tmpfile(void) {
+#ifdef _WIN32
+    FILE* fp = NULL;
+    tmpfile_s(&fp);
+    return fp;
+#else
+    return tmpfile();
+#endif
+}
+
 /* ── ObjFile tests ──────────────────────────────────────────────── */
 
 static void test_objfile_new(void) {
     MsVM vm;
     ms_vm_init(&vm);
 
-    FILE* fp = tmpfile();
+    FILE* fp = open_tmpfile();
     TEST_ASSERT(fp != NULL);
 
-    MsObjFile* f = ms_obj_file_new(&vm, fp, MS_FILE_TEXT);
+    MsObjFile* f = ms_obj_file_new(&vm, fp, MS_FILE_TEXT, true);
     TEST_ASSERT(f != NULL);
     TEST_ASSERT(f->obj.type == MS_OBJ_FILE);
     TEST_ASSERT(f->fp == fp);
@@ -36,8 +46,8 @@ static void test_objfile_methods_write_read(void) {
     MsVM vm;
     ms_vm_init(&vm);
 
-    FILE* fp = tmpfile();
-    MsObjFile* f = ms_obj_file_new(&vm, fp, MS_FILE_TEXT);
+    FILE* fp = open_tmpfile();
+    MsObjFile* f = ms_obj_file_new(&vm, fp, MS_FILE_TEXT, true);
 
     MsObjString* m_write = ms_obj_string_copy(&vm, "write", 5);
     MsObjString* m_flush = ms_obj_string_copy(&vm, "flush", 5);
@@ -189,8 +199,8 @@ static void test_builtin_invoke_dispatch(void) {
     ms_vm_init(&vm);
 
     /* ObjFile */
-    FILE* fp = tmpfile();
-    MsObjFile* f = ms_obj_file_new(&vm, fp, MS_FILE_TEXT);
+    FILE* fp = open_tmpfile();
+    MsObjFile* f = ms_obj_file_new(&vm, fp, MS_FILE_TEXT, true);
     MsValue fv = MS_OBJ_VAL(f);
     MsObjString* m_close = ms_obj_string_copy(&vm, "close", 5);
     MsValue out;
