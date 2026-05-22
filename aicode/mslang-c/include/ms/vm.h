@@ -111,6 +111,9 @@ typedef struct MsVM {
     char**           module_search_paths;
     int              module_search_count;
     int              module_search_cap;
+    /* GC control fields (STDLIB-10) */
+    bool             gc_paused;   /* true → ms_reallocate skips GC trigger */
+    int              alive_count; /* updated after each major sweep */
     /* Set to true by ms_vm_runtime_error; cleared at start of ms_vm_run. */
     bool             had_runtime_error;
     /* Script argv (set by ms_vm_set_argv; lifetime owned by main() stack) */

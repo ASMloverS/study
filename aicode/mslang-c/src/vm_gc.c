@@ -7,8 +7,6 @@
 #include "ms/value.h"
 #include "ms/chunk.h"
 #include "ms/consts.h"
-#include "ms/stdlib/objfile.h"
-#include "ms/stdlib/objbuffer.h"
 #include <stdlib.h>
 
 /* compiler_impl.h is a src-private header */
@@ -231,6 +229,7 @@ static void trace_references(MsVM* vm) {
 
 static void sweep_young(MsVM* vm) {
     MsObject** obj = &vm->young_objects;
+    int live_young = 0;
     while (*obj) {
         MsObject* cur = *obj;
         if (!cur->is_marked) {
@@ -239,6 +238,7 @@ static void sweep_young(MsVM* vm) {
         } else {
             cur->is_marked = false;
             cur->age++;
+            live_young++;
             if (cur->age >= MS_GC_PROMOTE_AGE) {
                 /* promote to old generation */
                 *obj = cur->next;
@@ -250,14 +250,24 @@ static void sweep_young(MsVM* vm) {
             }
         }
     }
+    /* Update alive_count: young survivors + existing old + legacy */
+    int live_old = 0;
+    MsObject* o = vm->old_objects;
+    while (o) { live_old++; o = o->next; }
+    int live_leg = 0;
+    o = vm->objects;
+    while (o) { live_leg++; o = o->next; }
+    vm->alive_count = live_young + live_old + live_leg;
 }
 
 /* ---- Phase 3: sweep one object list ---- */
 
-static void sweep_list(MsVM* vm, MsObject** head) {
+static int sweep_list(MsVM* vm, MsObject** head) {
+    int live = 0;
     while (*head) {
         if ((*head)->is_marked) {
             (*head)->is_marked = false;
+            live++;
             head = &(*head)->next;
         } else {
             MsObject* dead = *head;
@@ -265,12 +275,15 @@ static void sweep_list(MsVM* vm, MsObject** head) {
             ms_object_free(vm, dead);
         }
     }
+    return live;
 }
 
 static void sweep_all(MsVM* vm) {
-    sweep_list(vm, &vm->young_objects);
-    sweep_list(vm, &vm->old_objects);
-    sweep_list(vm, &vm->objects); /* legacy list from pre-generational allocs */
+    int live = 0;
+    live += sweep_list(vm, &vm->young_objects);
+    live += sweep_list(vm, &vm->old_objects);
+    live += sweep_list(vm, &vm->objects); /* legacy list from pre-generational allocs */
+    vm->alive_count = live;
 }
 
 /* ---- Incremental GC step ---- */

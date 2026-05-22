@@ -188,6 +188,8 @@ void ms_vm_init(MsVM* vm) {
     vm->module_search_count  = 0;
     vm->module_search_cap    = 0;
     vm->had_runtime_error    = false;
+    vm->gc_paused            = false;
+    vm->alive_count          = 0;
     vm->dynlib_handles       = NULL;
     vm->dynlib_count         = 0;
     vm->dynlib_cap           = 0;
