@@ -13,7 +13,7 @@
 | ✅ | [STDLIB-06-hash.md](STDLIB-06-hash.md) | `hash` | MD5/SHA/CRC32/FNV（无外部依赖）|
 | ✅ | [STDLIB-07-log.md](STDLIB-07-log.md) | `log` | 分级日志 + sink + tag |
 | ✅ | [STDLIB-08-net.md](STDLIB-08-net.md) | `net` | TCP（迁全局）+ DNS resolve |
-| ⬜ | [STDLIB-09-debug.md](STDLIB-09-debug.md) | `debug` | 调用栈、反汇编、局部变量检查 |
+| ✅ | [STDLIB-09-debug.md](STDLIB-09-debug.md) | `debug` | 调用栈、反汇编、局部变量检查 |
 | ⬜ | [STDLIB-10-gc.md](STDLIB-10-gc.md) | `gc` | GC 手动控制与统计 |
 
 > ⬜ 待实现 · 🚧 进行中 · ✅ 完成
