@@ -2,6 +2,8 @@
 #include "ms/opcode.h"
 #include "ms/value.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 static void print_rk(const MsChunk* chunk, int rk) {
     if (MS_RK_IS_K(rk)) {
@@ -186,4 +188,113 @@ void ms_disasm_chunk(const MsChunk* chunk, const char* name) {
     printf("=== %s ===\n", name);
     for (int i = 0; i < chunk->code_count; )
         i = ms_disasm_instr(chunk, i);
+}
+
+/* ---- String-building disassembler (for debug.disasm()) ---- */
+
+char* ms_chunk_disassemble_str(const MsChunk* chunk, const char* name) {
+    if (!chunk) {
+        char* empty = (char*)malloc(1);
+        if (empty) empty[0] = '\0';
+        return empty;
+    }
+
+    size_t cap  = 4096;
+    size_t used = 0;
+    char*  buf  = (char*)malloc(cap);
+    if (!buf) return NULL;
+
+#define SB_APPEND(str) do { \
+    size_t _n = strlen(str); \
+    if (used + _n + 1 > cap) { \
+        cap = (used + _n + 1) * 2; \
+        char* _r = (char*)realloc(buf, cap); \
+        if (!_r) { free(buf); return NULL; } \
+        buf = _r; \
+    } \
+    memcpy(buf + used, str, _n); \
+    used += _n; \
+} while (0)
+
+    char tmp[256];
+    snprintf(tmp, sizeof(tmp), "=== %s ===\n", name);
+    SB_APPEND(tmp);
+
+    for (int i = 0; i < chunk->code_count; i++) {
+        MsInstruction instr = chunk->code[i];
+        MsOpCode op = (MsOpCode)MS_GET_OP(instr);
+        int line = ms_chunk_get_line(chunk, i);
+        int prev = i > 0 ? ms_chunk_get_line(chunk, i - 1) : -1;
+
+        if (i == 0 || line != prev)
+            snprintf(tmp, sizeof(tmp), "%04d %4d %-12s ", i, line, ms_opcode_name(op));
+        else
+            snprintf(tmp, sizeof(tmp), "%04d    | %-12s ", i, ms_opcode_name(op));
+        SB_APPEND(tmp);
+
+        int A  = MS_GET_A(instr);
+        int B  = MS_GET_B(instr);
+        int C  = MS_GET_C(instr);
+        int Bx = MS_GET_Bx(instr);
+
+        switch (op) {
+            case MS_OP_LOADK:
+            case MS_OP_GETGLOBAL:
+            case MS_OP_SETGLOBAL:
+            case MS_OP_DEFGLOBAL:
+            case MS_OP_CLASS:
+            case MS_OP_IMPORT:
+            case MS_OP_IMPFROM:
+            case MS_OP_IMPALIAS:
+                snprintf(tmp, sizeof(tmp), "R(%d)  K(%d)\n", A, Bx);
+                SB_APPEND(tmp);
+                break;
+            case MS_OP_CLOSURE:
+                snprintf(tmp, sizeof(tmp), "R(%d)  proto[%d]\n", A, Bx);
+                SB_APPEND(tmp);
+                break;
+            case MS_OP_JMP:
+            case MS_OP_TRY: {
+                int sBx = MS_GET_sBx(instr);
+                if (sBx >= 0) snprintf(tmp, sizeof(tmp), "+%d\n", sBx);
+                else          snprintf(tmp, sizeof(tmp), "%d\n",  sBx);
+                SB_APPEND(tmp);
+                break;
+            }
+            case MS_OP_CALL:
+            case MS_OP_INVOKE:
+            case MS_OP_SUPERINV:
+                snprintf(tmp, sizeof(tmp), "R(%d)  args=%d rets=%d\n", A, B - 1, C - 1);
+                SB_APPEND(tmp);
+                break;
+            case MS_OP_RETURN:
+                snprintf(tmp, sizeof(tmp), "R(%d)  count=%d\n", A, B - 1);
+                SB_APPEND(tmp);
+                break;
+            case MS_OP_MOVE:
+            case MS_OP_GETUPVAL:
+            case MS_OP_SETUPVAL:
+            case MS_OP_INHERIT:
+            case MS_OP_METHOD:
+            case MS_OP_STATICMETH:
+            case MS_OP_GETTER:
+            case MS_OP_SETTER:
+            case MS_OP_ABSTMETH:
+            case MS_OP_FORITER:
+            case MS_OP_YIELD:
+            case MS_OP_RESUME:
+                snprintf(tmp, sizeof(tmp), "R(%d)  R(%d)\n", A, B);
+                SB_APPEND(tmp);
+                break;
+            default:
+                snprintf(tmp, sizeof(tmp), "R(%d)\n", A);
+                SB_APPEND(tmp);
+                break;
+        }
+    }
+
+#undef SB_APPEND
+
+    buf[used] = '\0';
+    return buf;
 }

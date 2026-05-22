@@ -162,6 +162,9 @@ target_link_libraries(test_stdlib_log PRIVATE ms_frontend)
 ms_add_test(test_stdlib_net unit/test_stdlib_net.c)
 target_link_libraries(test_stdlib_net PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_debug unit/test_stdlib_debug.c)
+target_link_libraries(test_stdlib_debug PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 
