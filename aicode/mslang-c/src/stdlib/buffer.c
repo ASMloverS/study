@@ -1,3 +1,4 @@
+#include "ms/stdlib_register.h"
 #include "ms/stdlib/objbuffer.h"
 #include "ms/vm.h"
 #include "ms/object.h"
@@ -134,4 +135,8 @@ bool ms_objbuffer_invoke(struct MsVM* vm, MsObjBuffer* b,
         return true;
     }
     return false;
+}
+
+void ms_module_buffer_init(MsVM* vm, MsObjModule* mod) {
+    (void)vm; (void)mod;
 }

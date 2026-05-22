@@ -4,7 +4,7 @@
 
 | 状态 | 文件 | 模块 | 说明 |
 |---|---|---|---|
-| ⬜ | [STDLIB-00-overview.md](STDLIB-00-overview.md) | — | 总体架构、依赖图、ms_stdlib_register_all |
+| ✅ | [STDLIB-00-overview.md](STDLIB-00-overview.md) | — | 总体架构、依赖图、ms_stdlib_register_all |
 | ⬜ | [STDLIB-01-math.md](STDLIB-01-math.md) | `math` | 数学函数与常量 |
 | ⬜ | [STDLIB-02-os.md](STDLIB-02-os.md) | `os` | 操作系统接口（env/fs/proc）|
 | ⬜ | [STDLIB-03-time.md](STDLIB-03-time.md) | `time` | 时间、睡眠、async 调度（迁全局）|

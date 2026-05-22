@@ -86,7 +86,7 @@ elseif(APPLE)
     # dlopen is in libc on macOS; no extra link needed
 endif()
 
-add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c src/module_loader.c src/stdlib_register.c src/module_api.c src/stdlib/io.c src/stdlib/buffer.c src/stdlib/net.c src/stdlib/time.c src/threadpool.c)
+add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c src/module_loader.c src/stdlib_register.c src/module_api.c src/stdlib/io.c src/stdlib/buffer.c src/stdlib/net.c src/stdlib/time.c src/stdlib/math.c src/stdlib/os.c src/stdlib/hash.c src/stdlib/log.c src/stdlib/debug.c src/stdlib/gc.c src/threadpool.c)
 target_include_directories(ms_vm PUBLIC include)
 target_compile_options(ms_vm PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_vm PUBLIC ms_object ms_event_loop ms_fs_util ms_dynlib Threads::Threads)

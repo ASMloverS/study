@@ -1,17 +1,6 @@
 #include "ms/stdlib_register.h"
 #include "ms/module.h"
 
-/* Stub implementations for builtin module init functions not yet implemented.
-   net and time have real implementations in src/stdlib/net.c and time.c. */
-
-void ms_module_math_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_os_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_buffer_init(MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_hash_init  (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_log_init   (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_debug_init (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-void ms_module_gc_init    (MsVM* vm, MsObjModule* mod) { (void)vm; (void)mod; }
-
 void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "math",   ms_module_math_init);
     ms_vm_register_builtin_module(vm, "os",     ms_module_os_init);

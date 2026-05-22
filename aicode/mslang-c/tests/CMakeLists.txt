@@ -135,6 +135,9 @@ target_link_libraries(test_event_loop PRIVATE ms_frontend ms_event_loop)
 ms_add_test(test_reactor unit/test_reactor.c)
 target_link_libraries(test_reactor PRIVATE ms_reactor)
 
+ms_add_test(test_stdlib_register unit/test_stdlib_register.c)
+target_link_libraries(test_stdlib_register PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 
