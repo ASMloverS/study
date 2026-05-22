@@ -3,7 +3,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const double kMsTableMaxLoad = 0.75;
+#include "ms/string.h"
+
+static const size_t kMsTableMinCapacity = 8;
+
+static size_t ms_table_index_mask(size_t capacity) {
+  return capacity - 1;
+}
+
+static size_t ms_table_max_entries(size_t capacity) {
+  return (capacity / 4) * 3;
+}
 
 static int ms_table_entry_is_empty(const MsTableEntry *entry) {
   return entry->key == NULL && ms_value_is_nil(entry->value);
@@ -19,7 +29,7 @@ static MsTableEntry *ms_table_find_entry(MsTableEntry *entries,
   MsTableEntry *tombstone = NULL;
   size_t index;
 
-  index = (size_t) (key->hash % capacity);
+  index = (size_t) key->hash & ms_table_index_mask(capacity);
   for (;;) {
     MsTableEntry *entry = &entries[index];
 
@@ -31,11 +41,11 @@ static MsTableEntry *ms_table_find_entry(MsTableEntry *entries,
       if (tombstone == NULL) {
         tombstone = entry;
       }
-    } else if (ms_table_keys_equal(entry->key, key)) {
+    } else if (entry->key == key || ms_table_keys_equal(entry->key, key)) {
       return entry;
     }
 
-    index = (index + 1) % capacity;
+    index = (index + 1) & ms_table_index_mask(capacity);
   }
 }
 
@@ -44,7 +54,7 @@ static const MsTableEntry *ms_table_find_entry_const(const MsTableEntry *entries
                                                      const MsString *key) {
   size_t index;
 
-  index = (size_t) (key->hash % capacity);
+  index = (size_t) key->hash & ms_table_index_mask(capacity);
   for (;;) {
     const MsTableEntry *entry = &entries[index];
 
@@ -52,12 +62,25 @@ static const MsTableEntry *ms_table_find_entry_const(const MsTableEntry *entries
       if (ms_table_entry_is_empty(entry)) {
         return NULL;
       }
-    } else if (ms_table_keys_equal(entry->key, key)) {
+    } else if (entry->key == key || ms_table_keys_equal(entry->key, key)) {
       return entry;
     }
 
-    index = (index + 1) % capacity;
+    index = (index + 1) & ms_table_index_mask(capacity);
   }
+}
+
+static size_t ms_table_capacity_for_entries(size_t min_entries) {
+  size_t capacity = kMsTableMinCapacity;
+
+  while (ms_table_max_entries(capacity) < min_entries) {
+    if (capacity > (SIZE_MAX / 2)) {
+      return 0;
+    }
+    capacity *= 2;
+  }
+
+  return capacity;
 }
 
 static int ms_table_adjust_capacity(MsTable *table, size_t capacity) {
@@ -122,6 +145,27 @@ size_t ms_table_capacity(const MsTable *table) {
   return table == NULL ? 0 : table->capacity;
 }
 
+int ms_table_reserve(MsTable *table, size_t min_entries) {
+  size_t capacity;
+
+  if (table == NULL) {
+    return 0;
+  }
+  if (min_entries == 0 || min_entries <= ms_table_max_entries(table->capacity)) {
+    return 1;
+  }
+
+  capacity = ms_table_capacity_for_entries(min_entries);
+  if (capacity == 0) {
+    return 0;
+  }
+  if (capacity <= table->capacity) {
+    return 1;
+  }
+
+  return ms_table_adjust_capacity(table, capacity);
+}
+
 int ms_table_set(MsTable *table,
                  MsString *key,
                  MsValue value,
@@ -133,9 +177,15 @@ int ms_table_set(MsTable *table,
     return 0;
   }
 
-  if ((table->count + 1) > (size_t) (table->capacity * kMsTableMaxLoad)) {
-    size_t capacity = table->capacity < 8 ? 8 : table->capacity * 2;
+  if ((table->count + 1) > ms_table_max_entries(table->capacity)) {
+    size_t capacity;
 
+    if (table->capacity >= kMsTableMinCapacity &&
+        table->capacity > (SIZE_MAX / 2)) {
+      return 0;
+    }
+    capacity = table->capacity < kMsTableMinCapacity ? kMsTableMinCapacity :
+                                                       table->capacity * 2;
     if (!ms_table_adjust_capacity(table, capacity)) {
       return 0;
     }
@@ -224,7 +274,7 @@ MsString *ms_table_find_string(const MsTable *table,
     return NULL;
   }
 
-  index = (size_t) (hash % table->capacity);
+  index = (size_t) hash & ms_table_index_mask(table->capacity);
   for (;;) {
     const MsTableEntry *entry = &table->entries[index];
 
@@ -237,6 +287,6 @@ MsString *ms_table_find_string(const MsTable *table,
       return entry->key;
     }
 
-    index = (index + 1) % table->capacity;
+    index = (index + 1) & ms_table_index_mask(table->capacity);
   }
 }

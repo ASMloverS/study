@@ -158,13 +158,7 @@ MsMap *ms_map_new(void) {
   }
 
   ms_object_init(&map->object, MS_OBJ_MAP);
-  map->entries = (MsTable *) calloc(1, sizeof(*map->entries));
-  if (map->entries == NULL) {
-    free(map);
-    return NULL;
-  }
-
-  ms_table_init(map->entries);
+  ms_table_init(&map->entries);
   return map;
 }
 
@@ -173,9 +167,6 @@ void ms_map_free(MsMap *map) {
     return;
   }
 
-  if (map->entries != NULL) {
-    ms_table_destroy(map->entries);
-  }
-  free(map->entries);
+  ms_table_destroy(&map->entries);
   free(map);
 }

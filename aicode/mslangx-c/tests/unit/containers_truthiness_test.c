@@ -77,21 +77,20 @@ int main(void) {
   TEST_ASSERT(tuple->elements.count == 0);
   TEST_ASSERT(tuple->elements.capacity == 0);
   TEST_ASSERT(tuple->elements.items == NULL);
-  TEST_ASSERT(map->entries != NULL);
-  TEST_ASSERT(ms_table_count(map->entries) == 0);
-  TEST_ASSERT(ms_table_capacity(map->entries) == 0);
-  TEST_ASSERT(map->entries->entries == NULL);
+  TEST_ASSERT(ms_table_count(&map->entries) == 0);
+  TEST_ASSERT(ms_table_capacity(&map->entries) == 0);
+  TEST_ASSERT(map->entries.entries == NULL);
 
   TEST_ASSERT(ms_value_array_append(&list->elements, ms_value_number(1.0)));
   TEST_ASSERT(ms_value_array_append(&list->elements, ms_value_bool(1)));
   TEST_ASSERT(ms_value_array_append(&tuple->elements, ms_value_number(2.0)));
   TEST_ASSERT(ms_value_array_append(&tuple->elements, ms_value_nil()));
-  TEST_ASSERT(ms_table_set(map->entries,
+  TEST_ASSERT(ms_table_set(&map->entries,
                            key,
                            ms_value_number(42.0),
                            &inserted_new));
   TEST_ASSERT(inserted_new);
-  TEST_ASSERT(ms_table_set(map->entries,
+  TEST_ASSERT(ms_table_set(&map->entries,
                            key,
                            ms_value_number(99.0),
                            &inserted_new));
@@ -109,7 +108,7 @@ int main(void) {
   TEST_ASSERT(ms_value_equals(tuple->elements.items[0], ms_value_number(2.0)));
   TEST_ASSERT(ms_value_equals(tuple->elements.items[1], ms_value_nil()));
 
-  TEST_ASSERT(ms_table_get(map->entries, key, &stored_value, &found));
+  TEST_ASSERT(ms_table_get(&map->entries, key, &stored_value, &found));
   TEST_ASSERT(found);
   TEST_ASSERT(ms_value_equals(stored_value, ms_value_number(99.0)));
 

@@ -3,9 +3,8 @@
 
 #include <stddef.h>
 
+#include "ms/table.h"
 #include "ms/value.h"
-
-typedef struct MsTable MsTable;
 
 typedef enum MsObjectType {
   MS_OBJ_STRING,
@@ -46,7 +45,7 @@ typedef struct MsTuple {
 
 typedef struct MsMap {
   MsObject object;
-  MsTable *entries;
+  MsTable entries;
 } MsMap;
 
 void ms_object_init(MsObject *object, MsObjectType type);

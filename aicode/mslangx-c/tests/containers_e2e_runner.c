@@ -233,12 +233,12 @@ static MsCallResult native_filled_map(MsVM *vm, int argc, const MsValue *argv) {
   first_key = ms_string_from_cstr("first");
   second_key = ms_string_from_cstr("second");
   if (map == NULL || first_key == NULL || second_key == NULL ||
-      !ms_table_set(map->entries,
+      !ms_table_set(&map->entries,
                     first_key,
                     ms_value_number(1.0),
                     &inserted_new) ||
       !inserted_new ||
-      !ms_table_set(map->entries,
+      !ms_table_set(&map->entries,
                     second_key,
                     ms_value_number(2.0),
                     &inserted_new) ||

@@ -81,8 +81,14 @@ int main(void) {
   TEST_ASSERT(ms_table_set(&table, seed, ms_value_nil(), &inserted_new));
   TEST_ASSERT(inserted_new);
 
+  TEST_ASSERT(ms_table_reserve(&table, 20));
+  TEST_ASSERT(ms_table_capacity(&table) >= 32);
+  TEST_ASSERT((ms_table_capacity(&table) &
+               (ms_table_capacity(&table) - 1)) == 0);
+
   capacity = ms_table_capacity(&table);
   TEST_ASSERT(capacity > 0);
+  TEST_ASSERT((capacity & (capacity - 1)) == 0);
   TEST_ASSERT(find_collision_triplet(capacity,
                                      first_name,
                                      second_name,
@@ -102,6 +108,8 @@ int main(void) {
   TEST_ASSERT(ms_table_set(&table, second, ms_value_number(2.0), &inserted_new));
   TEST_ASSERT(inserted_new);
   TEST_ASSERT(ms_table_count(&table) == 3);
+  TEST_ASSERT((ms_table_capacity(&table) &
+               (ms_table_capacity(&table) - 1)) == 0);
 
   TEST_ASSERT(ms_table_get(&table, first, &stored_value, &found));
   TEST_ASSERT(found);

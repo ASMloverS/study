@@ -516,7 +516,7 @@ static void ms_vm_gc_mark_object(MsVM* vm, MsObject* object) {
     case MS_OBJ_MAP: {
       MsMap* map = (MsMap*) object;
 
-      ms_vm_gc_mark_table(vm, map->entries);
+      ms_vm_gc_mark_table(vm, &map->entries);
       return;
     }
     case MS_OBJ_MODULE: {
@@ -840,7 +840,7 @@ static int ms_vm_read_byte(MsVM* vm,
   if (vm == NULL || frame == NULL || frame->chunk == NULL || out_byte == NULL) {
     return 0;
   }
-  if (!ms_chunk_read_byte(frame->chunk, frame->ip, out_byte)) {
+  if (frame->ip >= frame->chunk->code.length) {
     ms_vm_runtime_error(vm,
                         instruction_offset,
                         "MS4001",
@@ -848,6 +848,7 @@ static int ms_vm_read_byte(MsVM* vm,
     return 0;
   }
 
+  *out_byte = frame->chunk->code.data[frame->ip];
   frame->ip += 1;
   return 1;
 }
@@ -859,7 +860,8 @@ static int ms_vm_read_short(MsVM* vm,
   if (vm == NULL || frame == NULL || frame->chunk == NULL || out_value == NULL) {
     return 0;
   }
-  if (!ms_chunk_read_short(frame->chunk, frame->ip, out_value)) {
+  if (frame->ip > frame->chunk->code.length ||
+      frame->chunk->code.length - frame->ip < 2) {
     ms_vm_runtime_error(vm,
                         instruction_offset,
                         "MS4001",
@@ -867,7 +869,30 @@ static int ms_vm_read_short(MsVM* vm,
     return 0;
   }
 
+  *out_value = ((uint16_t) frame->chunk->code.data[frame->ip] << 8) |
+               (uint16_t) frame->chunk->code.data[frame->ip + 1];
   frame->ip += 2;
+  return 1;
+}
+
+static int ms_vm_get_constant(MsVM* vm,
+                              MsCallFrame* frame,
+                              size_t instruction_offset,
+                              uint8_t constant_index,
+                              MsValue* out_constant) {
+  if (vm == NULL || frame == NULL || out_constant == NULL ||
+      frame->chunk == NULL ||
+      (size_t) constant_index >= frame->chunk->constants_count) {
+    if (vm != NULL) {
+      ms_vm_runtime_error(vm,
+                          instruction_offset,
+                          "MS4001",
+                          "invalid opcode stream");
+    }
+    return 0;
+  }
+
+  *out_constant = frame->chunk->constants[constant_index];
   return 1;
 }
 
@@ -881,11 +906,8 @@ static int ms_vm_get_string_constant(MsVM* vm,
   if (vm == NULL || frame == NULL || out_name == NULL || frame->chunk == NULL) {
     return 0;
   }
-  if (!ms_chunk_get_constant(frame->chunk, constant_index, &constant)) {
-    ms_vm_runtime_error(vm,
-                        instruction_offset,
-                        "MS4001",
-                        "invalid opcode stream");
+  if (!ms_vm_get_constant(vm, frame, instruction_offset, constant_index,
+                          &constant)) {
     return 0;
   }
   if (!ms_value_get_string(constant, out_name)) {
@@ -909,11 +931,8 @@ static int ms_vm_get_function_constant(MsVM* vm,
   if (vm == NULL || frame == NULL || out_function == NULL || frame->chunk == NULL) {
     return 0;
   }
-  if (!ms_chunk_get_constant(frame->chunk, constant_index, &constant)) {
-    ms_vm_runtime_error(vm,
-                        instruction_offset,
-                        "MS4001",
-                        "invalid opcode stream");
+  if (!ms_vm_get_constant(vm, frame, instruction_offset, constant_index,
+                          &constant)) {
     return 0;
   }
   if (!ms_value_get_function(constant, out_function)) {
@@ -993,52 +1012,28 @@ static MsVmResult ms_vm_binary_number_op(MsVM* vm,
   vm->stack_count -= 2;
   switch (opcode) {
     case MS_OP_ADD:
-      if (!ms_vm_push(vm, ms_value_number(left_number + right_number))) {
-        return ms_vm_runtime_error(vm,
-                                   instruction_offset,
-                                   "MS4001",
-                                   "invalid opcode stream");
-      }
+      vm->stack[vm->stack_count] = ms_value_number(left_number + right_number);
+      vm->stack_count += 1;
       return MS_VM_RESULT_OK;
     case MS_OP_SUBTRACT:
-      if (!ms_vm_push(vm, ms_value_number(left_number - right_number))) {
-        return ms_vm_runtime_error(vm,
-                                   instruction_offset,
-                                   "MS4001",
-                                   "invalid opcode stream");
-      }
+      vm->stack[vm->stack_count] = ms_value_number(left_number - right_number);
+      vm->stack_count += 1;
       return MS_VM_RESULT_OK;
     case MS_OP_MULTIPLY:
-      if (!ms_vm_push(vm, ms_value_number(left_number * right_number))) {
-        return ms_vm_runtime_error(vm,
-                                   instruction_offset,
-                                   "MS4001",
-                                   "invalid opcode stream");
-      }
+      vm->stack[vm->stack_count] = ms_value_number(left_number * right_number);
+      vm->stack_count += 1;
       return MS_VM_RESULT_OK;
     case MS_OP_DIVIDE:
-      if (!ms_vm_push(vm, ms_value_number(left_number / right_number))) {
-        return ms_vm_runtime_error(vm,
-                                   instruction_offset,
-                                   "MS4001",
-                                   "invalid opcode stream");
-      }
+      vm->stack[vm->stack_count] = ms_value_number(left_number / right_number);
+      vm->stack_count += 1;
       return MS_VM_RESULT_OK;
     case MS_OP_GREATER:
-      if (!ms_vm_push(vm, ms_value_bool(left_number > right_number))) {
-        return ms_vm_runtime_error(vm,
-                                   instruction_offset,
-                                   "MS4001",
-                                   "invalid opcode stream");
-      }
+      vm->stack[vm->stack_count] = ms_value_bool(left_number > right_number);
+      vm->stack_count += 1;
       return MS_VM_RESULT_OK;
     case MS_OP_LESS:
-      if (!ms_vm_push(vm, ms_value_bool(left_number < right_number))) {
-        return ms_vm_runtime_error(vm,
-                                   instruction_offset,
-                                   "MS4001",
-                                   "invalid opcode stream");
-      }
+      vm->stack[vm->stack_count] = ms_value_bool(left_number < right_number);
+      vm->stack_count += 1;
       return MS_VM_RESULT_OK;
     default:
       return ms_vm_runtime_error(vm,
@@ -1698,6 +1693,13 @@ static MsVmResult ms_vm_build_list(MsVM* vm,
   }
 
   start = vm->stack_count - (size_t) element_count;
+  if (!ms_value_array_reserve(&list->elements, (size_t) element_count)) {
+    ms_list_free(list);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
   for (i = start; i < vm->stack_count; ++i) {
     if (!ms_value_array_append(&list->elements, vm->stack[i])) {
       ms_list_free(list);
@@ -1747,6 +1749,13 @@ static MsVmResult ms_vm_build_tuple(MsVM* vm,
   }
 
   start = vm->stack_count - (size_t) element_count;
+  if (!ms_value_array_reserve(&tuple->elements, (size_t) element_count)) {
+    ms_tuple_free(tuple);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
   for (i = start; i < vm->stack_count; ++i) {
     if (!ms_value_array_append(&tuple->elements, vm->stack[i])) {
       ms_tuple_free(tuple);
@@ -1799,6 +1808,13 @@ static MsVmResult ms_vm_build_map(MsVM* vm,
   }
 
   start = vm->stack_count - required_count;
+  if (!ms_table_reserve(&map->entries, (size_t) entry_count)) {
+    ms_map_free(map);
+    return ms_vm_runtime_error(vm,
+                               instruction_offset,
+                               "MS4001",
+                               "invalid opcode stream");
+  }
   for (i = start; i < vm->stack_count; i += 2) {
     MsString* key = NULL;
     MsValue entry_value = vm->stack[i + 1];
@@ -1811,7 +1827,7 @@ static MsVmResult ms_vm_build_map(MsVM* vm,
                                  "MS4011",
                                  "map keys must be strings");
     }
-    if (!ms_table_set(map->entries, key, entry_value, &inserted_new)) {
+    if (!ms_table_set(&map->entries, key, entry_value, &inserted_new)) {
       ms_map_free(map);
       return ms_vm_runtime_error(vm,
                                  instruction_offset,
@@ -1932,7 +1948,7 @@ static MsVmResult ms_vm_index_get(MsVM* vm, size_t instruction_offset) {
                               &key) != MS_VM_RESULT_OK) {
       return MS_VM_RESULT_RUNTIME_ERROR;
     }
-    if (!ms_table_get(map->entries, key, &result, &found)) {
+    if (!ms_table_get(&map->entries, key, &result, &found)) {
       return ms_vm_runtime_error(vm,
                                  instruction_offset,
                                  "MS4001",
@@ -2007,7 +2023,7 @@ static MsVmResult ms_vm_index_set(MsVM* vm, size_t instruction_offset) {
                               &key) != MS_VM_RESULT_OK) {
       return MS_VM_RESULT_RUNTIME_ERROR;
     }
-    if (!ms_table_set(map->entries, key, value, &inserted_new)) {
+    if (!ms_table_set(&map->entries, key, value, &inserted_new)) {
       return ms_vm_runtime_error(vm,
                                  instruction_offset,
                                  "MS4001",
@@ -2768,12 +2784,13 @@ static MsVmResult ms_vm_execute(MsVM* vm, size_t stop_frame_count) {
     }
 
     instruction_offset = frame->ip;
-    if (!ms_chunk_read_byte(frame->chunk, frame->ip, &opcode)) {
+    if (frame->ip >= frame->chunk->code.length) {
       return ms_vm_runtime_error(vm,
                                  instruction_offset,
                                  "MS4001",
                                  "invalid opcode stream");
     }
+    opcode = frame->chunk->code.data[frame->ip];
     frame->ip += 1;
 
     switch ((MsOpcode) opcode) {
@@ -2781,11 +2798,9 @@ static MsVmResult ms_vm_execute(MsVM* vm, size_t stop_frame_count) {
         if (!ms_vm_read_byte(vm, frame, instruction_offset, &operand)) {
           return MS_VM_RESULT_RUNTIME_ERROR;
         }
-        if (!ms_chunk_get_constant(frame->chunk, operand, &value)) {
-          return ms_vm_runtime_error(vm,
-                                     instruction_offset,
-                                     "MS4001",
-                                     "invalid opcode stream");
+        if (!ms_vm_get_constant(vm, frame, instruction_offset, operand,
+                                &value)) {
+          return MS_VM_RESULT_RUNTIME_ERROR;
         }
         if (!ms_vm_push(vm, value)) {
           return ms_vm_runtime_error(vm,

@@ -287,7 +287,7 @@ int ms_value_length(MsValue value, int* out_length) {
     return ms_value_size_to_int(tuple->elements.count, out_length);
   }
   if (ms_value_get_map(value, &map)) {
-    return ms_value_size_to_int(ms_table_count(map->entries), out_length);
+    return ms_value_size_to_int(ms_table_count(&map->entries), out_length);
   }
 
   return 0;

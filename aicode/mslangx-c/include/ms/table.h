@@ -4,8 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ms/string.h"
 #include "ms/value.h"
+
+typedef struct MsString MsString;
 
 typedef struct MsTableEntry {
   MsString *key;
@@ -23,6 +24,7 @@ void ms_table_init(MsTable *table);
 void ms_table_destroy(MsTable *table);
 size_t ms_table_count(const MsTable *table);
 size_t ms_table_capacity(const MsTable *table);
+int ms_table_reserve(MsTable *table, size_t min_entries);
 int ms_table_set(MsTable *table,
                  MsString *key,
                  MsValue value,
