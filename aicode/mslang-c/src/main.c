@@ -322,10 +322,17 @@ int main(int argc, char* argv[]) {
         if (!src) return 1;
     }
 
+    /* Locate script index in argv so os.argv() starts from script path. */
+    int script_idx = 0;
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] == script) { script_idx = i; break; }
+    }
+
     /* Non-benchmark: simple run */
     if (bench_n <= 0) {
         MsVM vm;
         ms_vm_init(&vm);
+        ms_vm_set_argv(&vm, argc - script_idx, (const char* const*)(argv + script_idx));
         /* Apply --module-path entries (prepend in CLI order so first arg = highest priority) */
         for (int i = module_path_count - 1; i >= 0; i--)
             ms_vm_prepend_search_path(&vm, module_paths[i]);

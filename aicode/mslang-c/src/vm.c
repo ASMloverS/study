@@ -277,6 +277,11 @@ void ms_vm_unpin_future(MsVM* vm, MsObjFuture* fut) {
     }
 }
 
+void ms_vm_set_argv(MsVM* vm, int argc, const char* const* argv) {
+    vm->main_argc = argc;
+    vm->main_argv = argv;
+}
+
 void ms_vm_track_dynlib(MsVM* vm, MsDynlib lib) {
     if (!lib) return;
     if (vm->dynlib_count >= vm->dynlib_cap) {

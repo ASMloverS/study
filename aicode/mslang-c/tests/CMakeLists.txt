@@ -141,6 +141,9 @@ target_link_libraries(test_stdlib_register PRIVATE ms_frontend)
 ms_add_test(test_stdlib_math unit/test_stdlib_math.c)
 target_link_libraries(test_stdlib_math PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_os unit/test_stdlib_os.c)
+target_link_libraries(test_stdlib_os PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 

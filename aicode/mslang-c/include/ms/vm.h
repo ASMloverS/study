@@ -113,6 +113,9 @@ typedef struct MsVM {
     int              module_search_cap;
     /* Set to true by ms_vm_runtime_error; cleared at start of ms_vm_run. */
     bool             had_runtime_error;
+    /* Script argv (set by ms_vm_set_argv; lifetime owned by main() stack) */
+    int              main_argc;
+    const char* const* main_argv;
     /* Dynamic library handles tracked for cleanup on vm_free (CAPI-04) */
     MsDynlib*        dynlib_handles;
     int              dynlib_count;
@@ -163,6 +166,10 @@ MsInterpretResult ms_vm_coro_resume(MsVM* vm, MsObjCoroutine* co,
    with all top-level globals defined during execution. */
 MsInterpretResult ms_vm_execute_module(MsVM* vm, MsObjFunction* fn,
                                         MsObjModule* mod);
+
+/* Set the script argv so os.argv() can retrieve it.
+   argc/argv must outlive the VM (typically the main() stack frame). */
+void ms_vm_set_argv(MsVM* vm, int argc, const char* const* argv);
 
 /* Track a successfully-opened dynamic library handle; freed in ms_vm_free. */
 void ms_vm_track_dynlib(MsVM* vm, MsDynlib lib);
