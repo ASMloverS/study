@@ -18,4 +18,5 @@ void ms_module_hash_init  (MsVM* vm, MsObjModule* mod);
 void ms_module_log_init   (MsVM* vm, MsObjModule* mod);
 void ms_module_net_init   (MsVM* vm, MsObjModule* mod);
 void ms_module_debug_init (MsVM* vm, MsObjModule* mod);
-void ms_module_gc_init    (MsVM* vm, MsObjModule* mod);
+void ms_module_gc_init      (MsVM* vm, MsObjModule* mod);
+void ms_module_strings_init (MsVM* vm, MsObjModule* mod);
