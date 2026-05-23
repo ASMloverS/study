@@ -1,5 +1,7 @@
 # 内置标准库索引
 
+> **用户手册（脚本示例）**：[manual/index.md](manual/index.md)
+
 > 前置依赖：[CAPI-01..08](../capi/) · [ASYNC-04..06](../async/)
 
 | 状态 | 文件 | 模块 | 说明 |
