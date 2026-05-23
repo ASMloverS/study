@@ -33,7 +33,7 @@
 | 状态 | 文件 | 模块 | 说明 |
 |---|---|---|---|
 | ✅ | [STDLIB-13](STDLIB-13-strings.md) | `strings` | 字符串工具函数（join/repeat/fields/字符类）|
-| 📐 | [STDLIB-14](STDLIB-14-strconv.md) | `strconv` | 字符串↔基本类型转换 |
+| ✅ | [STDLIB-14](STDLIB-14-strconv.md) | `strconv` | 字符串↔基本类型转换 |
 | 📐 | [STDLIB-15](STDLIB-15-fmt.md) | `fmt` | sprintf/printf/格式化 |
 | 📐 | [STDLIB-16](STDLIB-16-json.md) | `json` | JSON 编解码（纯 C）|
 | 📐 | [STDLIB-17](STDLIB-17-errors.md) | `errors` | 结构化错误值与链式检查 |

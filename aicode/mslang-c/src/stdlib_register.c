@@ -13,4 +13,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "debug",  ms_module_debug_init);
     ms_vm_register_builtin_module(vm, "gc",      ms_module_gc_init);
     ms_vm_register_builtin_module(vm, "strings", ms_module_strings_init);
+    ms_vm_register_builtin_module(vm, "strconv", ms_module_strconv_init);
 }

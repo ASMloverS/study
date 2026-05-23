@@ -171,6 +171,9 @@ target_link_libraries(test_stdlib_gc PRIVATE ms_frontend)
 ms_add_test(test_stdlib_strings unit/test_stdlib_strings.c)
 target_link_libraries(test_stdlib_strings PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_strconv unit/test_stdlib_strconv.c)
+target_link_libraries(test_stdlib_strconv PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 
