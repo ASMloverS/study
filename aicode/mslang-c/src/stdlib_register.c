@@ -19,4 +19,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "errors",  ms_module_errors_init);
     ms_vm_register_builtin_module(vm, "slices",  ms_module_slices_init);
     ms_vm_register_builtin_module(vm, "maps",    ms_module_maps_init);
+    ms_vm_register_builtin_module(vm, "sort",    ms_module_sort_init);
 }
