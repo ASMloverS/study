@@ -23,3 +23,4 @@ void ms_module_strings_init (MsVM* vm, MsObjModule* mod);
 void ms_module_strconv_init (MsVM* vm, MsObjModule* mod);
 void ms_module_fmt_init     (MsVM* vm, MsObjModule* mod);
 void ms_module_json_init    (MsVM* vm, MsObjModule* mod);
+void ms_module_errors_init  (MsVM* vm, MsObjModule* mod);
