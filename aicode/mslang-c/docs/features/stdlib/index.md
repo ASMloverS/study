@@ -41,7 +41,7 @@
 | ✅ | [STDLIB-19](STDLIB-19-maps.md) | `maps` | map 工具（keys/values/merge/…）|
 | ✅ | [STDLIB-20](STDLIB-20-sort.md) | `sort` | 排序与二分搜索 |
 | ✅ | [STDLIB-21](STDLIB-21-set.md) | `set` | 集合（并/交/差）|
-| 📐 | [STDLIB-22](STDLIB-22-heap.md) | `heap` | 优先队列 |
+| ✅ | [STDLIB-22](STDLIB-22-heap.md) | `heap` | 优先队列 |
 | 📐 | [STDLIB-23](STDLIB-23-itertools.md) | `itertools` | 惰性迭代器（基于 generator）|
 | 📐 | [STDLIB-24](STDLIB-24-random.md) | `random` | 高质量 PRNG + 分布操作 |
 | 📐 | [STDLIB-25](STDLIB-25-base64.md) | `base64` | Base64 编解码（纯 C）|
