@@ -183,6 +183,9 @@ target_link_libraries(test_stdlib_json PRIVATE ms_frontend)
 ms_add_test(test_stdlib_errors unit/test_stdlib_errors.c)
 target_link_libraries(test_stdlib_errors PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_slices unit/test_stdlib_slices.c)
+target_link_libraries(test_stdlib_slices PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 
