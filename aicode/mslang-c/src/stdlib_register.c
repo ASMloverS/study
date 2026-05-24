@@ -15,4 +15,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "strings", ms_module_strings_init);
     ms_vm_register_builtin_module(vm, "strconv", ms_module_strconv_init);
     ms_vm_register_builtin_module(vm, "fmt",     ms_module_fmt_init);
+    ms_vm_register_builtin_module(vm, "json",    ms_module_json_init);
 }
