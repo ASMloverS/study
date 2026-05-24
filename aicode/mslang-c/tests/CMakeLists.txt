@@ -192,6 +192,9 @@ target_link_libraries(test_stdlib_maps PRIVATE ms_frontend)
 ms_add_test(test_stdlib_sort unit/test_stdlib_sort.c)
 target_link_libraries(test_stdlib_sort PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_set unit/test_stdlib_set.c)
+target_link_libraries(test_stdlib_set PRIVATE ms_frontend)
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 

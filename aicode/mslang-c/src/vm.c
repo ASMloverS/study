@@ -1595,9 +1595,15 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 if (ntop > vm->ctx->stack_top) vm->ctx->stack_top = ntop;
                 frame = &vm->ctx->frames[vm->ctx->frame_count - 1];
             } else if (ms_table_get(&inst->klass->methods, name, &val)) {
-                MsObjBoundMethod* bm = ms_obj_bound_method_new(
-                    vm, obj, MS_AS_CLOSURE(val));
-                R(A) = MS_OBJ_VAL(bm);
+                if (MS_IS_NATIVE(val)) {
+                    /* Native class method: return the native directly.
+                       It will be called via call_value which handles natives. */
+                    R(A) = val;
+                } else {
+                    MsObjBoundMethod* bm = ms_obj_bound_method_new(
+                        vm, obj, MS_AS_CLOSURE(val));
+                    R(A) = MS_OBJ_VAL(bm);
+                }
             } else {
                 RUNTIME_ERROR(vm, "Undefined property '%s'.", name->data);
             }
@@ -1745,11 +1751,11 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 if (!MS_IS_CLOSURE(method)) {
                     ms_table_get(&inst->klass->methods, name, &method);
                 }
-                if (!MS_IS_CLOSURE(method)) {
+                if (!MS_IS_CLOSURE(method) && !MS_IS_NATIVE(method)) {
                     RUNTIME_ERROR(vm, "Undefined method '%s'.", name->data);
                 }
-                /* Fill IC cache */
-                if (!invoke_ic->megamorphic) {
+                /* Native methods are not cached in IC (no ip/closure ptr) */
+                if (MS_IS_CLOSURE(method) && !invoke_ic->megamorphic) {
                     if (invoke_ic->count < MS_IC_PIC_SIZE) {
                         MsICEntry* e = &invoke_ic->entries[invoke_ic->count++];
                         e->kind       = MS_IC_METHOD;
@@ -1762,6 +1768,14 @@ static MsInterpretResult vm_run_inner(MsVM* vm) {
                 }
             }
             /* Dispatch: slot 0 = receiver (this), args in slots 1..argc */
+            if (MS_IS_NATIVE(method)) {
+                /* Native class method: argv[0]=receiver, argv[1..C]=explicit args */
+                MsObjNative* nat = MS_AS_NATIVE(method);
+                MsValue result = nat->function(vm, C + 1, frame->slots + A);
+                if (vm->had_runtime_error) return MS_INTERPRET_RUNTIME_ERROR;
+                frame->slots[A] = result;
+                break;
+            }
             {
                 MsObjClosure* cl = MS_AS_CLOSURE(method);
                 MsObjFunction* fn = cl->function;
