@@ -25,3 +25,4 @@ void ms_module_fmt_init     (MsVM* vm, MsObjModule* mod);
 void ms_module_json_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_errors_init  (MsVM* vm, MsObjModule* mod);
 void ms_module_slices_init  (MsVM* vm, MsObjModule* mod);
+void ms_module_maps_init    (MsVM* vm, MsObjModule* mod);

@@ -38,7 +38,7 @@
 | ✅ | [STDLIB-16](STDLIB-16-json.md) | `json` | JSON 编解码（纯 C）|
 | ✅ | [STDLIB-17](STDLIB-17-errors.md) | `errors` | 结构化错误值与链式检查 |
 | ✅ | [STDLIB-18](STDLIB-18-slices.md) | `slices` | list 工具（map/filter/reduce/…）|
-| 📐 | [STDLIB-19](STDLIB-19-maps.md) | `maps` | map 工具（keys/values/merge/…）|
+| ✅ | [STDLIB-19](STDLIB-19-maps.md) | `maps` | map 工具（keys/values/merge/…）|
 | 📐 | [STDLIB-20](STDLIB-20-sort.md) | `sort` | 排序与二分搜索 |
 | 📐 | [STDLIB-21](STDLIB-21-set.md) | `set` | 集合（并/交/差）|
 | 📐 | [STDLIB-22](STDLIB-22-heap.md) | `heap` | 优先队列 |
