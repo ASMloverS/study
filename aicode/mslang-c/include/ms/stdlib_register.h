@@ -28,4 +28,5 @@ void ms_module_slices_init  (MsVM* vm, MsObjModule* mod);
 void ms_module_maps_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_sort_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_set_init     (MsVM* vm, MsObjModule* mod);
-void ms_module_heap_init    (MsVM* vm, MsObjModule* mod);
+void ms_module_heap_init      (MsVM* vm, MsObjModule* mod);
+void ms_module_itertools_init (MsVM* vm, MsObjModule* mod);
