@@ -201,6 +201,9 @@ target_link_libraries(test_stdlib_heap PRIVATE ms_frontend)
 ms_add_test(test_stdlib_itertools unit/test_stdlib_itertools.c)
 target_link_libraries(test_stdlib_itertools PRIVATE ms_frontend)
 
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_basic.ms")
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_gen.ms")
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 
