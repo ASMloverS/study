@@ -43,7 +43,7 @@
 | ✅ | [STDLIB-21](STDLIB-21-set.md) | `set` | 集合（并/交/差）|
 | ✅ | [STDLIB-22](STDLIB-22-heap.md) | `heap` | 优先队列 |
 | ✅ | [STDLIB-23](STDLIB-23-itertools.md) | `itertools` | 惰性迭代器（基于 generator）|
-| 📐 | [STDLIB-24](STDLIB-24-random.md) | `random` | 高质量 PRNG + 分布操作 |
+| ✅ | [STDLIB-24](STDLIB-24-random.md) | `random` | 高质量 PRNG + 分布操作 |
 | 📐 | [STDLIB-25](STDLIB-25-base64.md) | `base64` | Base64 编解码（纯 C）|
 | 📐 | [STDLIB-26](STDLIB-26-hex.md) | `hex` | 十六进制编解码 |
 | 📐 | [STDLIB-27](STDLIB-27-bytes.md) | `bytes` | 字节操作（基于 buffer）|
