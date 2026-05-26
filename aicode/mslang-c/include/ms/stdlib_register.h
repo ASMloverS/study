@@ -33,3 +33,4 @@ void ms_module_itertools_init (MsVM* vm, MsObjModule* mod);
 void ms_module_rand_init      (MsVM* vm, MsObjModule* mod);
 void ms_module_random_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_base64_init    (MsVM* vm, MsObjModule* mod);
+void ms_module_hex_init       (MsVM* vm, MsObjModule* mod);

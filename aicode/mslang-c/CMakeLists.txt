@@ -86,7 +86,7 @@ elseif(APPLE)
     # dlopen is in libc on macOS; no extra link needed
 endif()
 
-add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c src/module_loader.c src/stdlib_register.c src/module_api.c src/stdlib/io.c src/stdlib/buffer.c src/stdlib/net.c src/stdlib/time.c src/stdlib/math.c src/stdlib/os.c src/stdlib/hash.c src/stdlib/hash_impl.c src/stdlib/log.c src/stdlib/debug.c src/stdlib/gc.c src/stdlib/_strprim.c src/stdlib/_strconv.c src/stdlib/_fmt.c src/stdlib/json.c src/stdlib/errors.c src/stdlib/slices.c src/stdlib/maps.c src/stdlib/sort.c src/stdlib/set.c src/stdlib/heap.c src/stdlib/itertools.c src/stdlib/_rand.c src/stdlib/random.c src/stdlib/base64.c src/threadpool.c)
+add_library(ms_vm STATIC src/vm.c src/vm_call.c src/vm_natives.c src/vm_gc.c src/shape.c src/vm_builtins.c src/module.c src/module_loader.c src/stdlib_register.c src/module_api.c src/stdlib/io.c src/stdlib/buffer.c src/stdlib/net.c src/stdlib/time.c src/stdlib/math.c src/stdlib/os.c src/stdlib/hash.c src/stdlib/hash_impl.c src/stdlib/log.c src/stdlib/debug.c src/stdlib/gc.c src/stdlib/_strprim.c src/stdlib/_strconv.c src/stdlib/_fmt.c src/stdlib/json.c src/stdlib/errors.c src/stdlib/slices.c src/stdlib/maps.c src/stdlib/sort.c src/stdlib/set.c src/stdlib/heap.c src/stdlib/itertools.c src/stdlib/_rand.c src/stdlib/random.c src/stdlib/base64.c src/stdlib/hex.c src/threadpool.c)
 target_include_directories(ms_vm PUBLIC include)
 target_compile_options(ms_vm PRIVATE ${MSLANG_COMPILE_OPTIONS})
 target_link_libraries(ms_vm PUBLIC ms_object ms_event_loop ms_fs_util ms_dynlib Threads::Threads)
