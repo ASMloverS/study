@@ -27,4 +27,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "random",    ms_module_random_init);
     ms_vm_register_builtin_module(vm, "base64",    ms_module_base64_init);
     ms_vm_register_builtin_module(vm, "hex",       ms_module_hex_init);
+    ms_vm_register_builtin_module(vm, "bytes",     ms_module_bytes_init);
 }

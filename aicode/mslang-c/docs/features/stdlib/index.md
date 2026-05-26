@@ -46,7 +46,7 @@
 | ✅ | [STDLIB-24](STDLIB-24-random.md) | `random` | 高质量 PRNG + 分布操作 |
 | ✅ | [STDLIB-25](STDLIB-25-base64.md) | `base64` | Base64 编解码（纯 C）|
 | ✅ | [STDLIB-26](STDLIB-26-hex.md) | `hex` | 十六进制编解码 |
-| 📐 | [STDLIB-27](STDLIB-27-bytes.md) | `bytes` | 字节操作（基于 buffer）|
+| ✅ | [STDLIB-27](STDLIB-27-bytes.md) | `bytes` | 字节操作（基于 buffer）|
 | 📐 | [STDLIB-28](STDLIB-28-regexp.md) | `regexp` | 正则引擎（NFA，纯 C）|
 | 📐 | [STDLIB-29](STDLIB-29-path.md) | `path` | 路径字符串工具 |
 | 📐 | [STDLIB-30](STDLIB-30-bufio.md) | `bufio` | 缓冲 IO（基于 io + buffer）|
