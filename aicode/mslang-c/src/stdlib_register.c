@@ -25,4 +25,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "itertools", ms_module_itertools_init);
     ms_vm_register_builtin_module(vm, "_rand",     ms_module_rand_init);
     ms_vm_register_builtin_module(vm, "random",    ms_module_random_init);
+    ms_vm_register_builtin_module(vm, "base64",    ms_module_base64_init);
 }

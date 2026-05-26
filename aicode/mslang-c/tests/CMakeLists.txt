@@ -204,7 +204,11 @@ target_link_libraries(test_stdlib_itertools PRIVATE ms_frontend)
 ms_add_test(test_stdlib_random unit/test_stdlib_random.c)
 target_link_libraries(test_stdlib_random PRIVATE ms_frontend)
 
+ms_add_test(test_stdlib_base64 unit/test_stdlib_base64.c)
+target_link_libraries(test_stdlib_base64 PRIVATE ms_frontend)
+
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_random_basic.ms")
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_base64_basic.ms")
 
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_basic.ms")
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_gen.ms")
