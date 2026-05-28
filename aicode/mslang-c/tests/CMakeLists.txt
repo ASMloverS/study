@@ -219,6 +219,11 @@ target_link_libraries(test_stdlib_bytes PRIVATE ms_frontend)
 
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_bytes_basic.ms")
 
+ms_add_test(test_stdlib_regexp unit/test_stdlib_regexp.c)
+target_link_libraries(test_stdlib_regexp PRIVATE ms_frontend)
+
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_regexp_basic.ms")
+
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_basic.ms")
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_gen.ms")
 
