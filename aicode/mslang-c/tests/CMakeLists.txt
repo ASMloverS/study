@@ -229,6 +229,11 @@ target_link_libraries(test_stdlib_path PRIVATE ms_frontend)
 
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_path_basic.ms")
 
+ms_add_test(test_stdlib_bufio unit/test_stdlib_bufio.c)
+target_link_libraries(test_stdlib_bufio PRIVATE ms_frontend)
+
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_bufio_basic.ms")
+
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_basic.ms")
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_gen.ms")
 

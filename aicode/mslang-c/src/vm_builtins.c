@@ -355,10 +355,13 @@ static bool tuple_invoke(MsVM* vm, MsObjTuple* tup,
 
 /* ---- public dispatch ---- */
 
-/* Forward declaration: userdata method dispatch (log module MsLogger) */
+/* Forward declarations: userdata method dispatch */
 bool ms_logger_invoke(MsVM* vm, MsObjUserdata* ud,
                       MsObjString* method, int argc, MsValue* argv,
                       MsValue* out);
+bool ms_bufio_invoke(MsVM* vm, MsObjUserdata* ud,
+                     MsObjString* method, int argc, MsValue* argv,
+                     MsValue* out);
 
 bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
                         int argc, MsValue* argv, MsValue* out) {
@@ -376,7 +379,11 @@ bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
         return ms_objfile_invoke(vm, MS_AS_FILE(receiver), method, argc, argv, out);
     if (MS_IS_BUFFER(receiver))
         return ms_objbuffer_invoke(vm, MS_AS_BUFFER(receiver), method, argc, argv, out);
-    if (MS_IS_USERDATA(receiver))
-        return ms_logger_invoke(vm, MS_AS_USERDATA(receiver), method, argc, argv, out);
+    if (MS_IS_USERDATA(receiver)) {
+        MsObjUserdata* ud = MS_AS_USERDATA(receiver);
+        if (ms_logger_invoke(vm, ud, method, argc, argv, out)) return true;
+        if (ms_bufio_invoke(vm, ud, method, argc, argv, out))  return true;
+        return false;
+    }
     return false;
 }

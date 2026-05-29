@@ -30,4 +30,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "bytes",     ms_module_bytes_init);
     ms_vm_register_builtin_module(vm, "regexp",    ms_module_regexp_init);
     ms_vm_register_builtin_module(vm, "path",      ms_module_path_init);
+    ms_vm_register_builtin_module(vm, "bufio",     ms_module_bufio_init);
 }
