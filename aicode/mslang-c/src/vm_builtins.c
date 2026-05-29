@@ -362,6 +362,9 @@ bool ms_logger_invoke(MsVM* vm, MsObjUserdata* ud,
 bool ms_bufio_invoke(MsVM* vm, MsObjUserdata* ud,
                      MsObjString* method, int argc, MsValue* argv,
                      MsValue* out);
+bool ms_csv_invoke(MsVM* vm, MsObjUserdata* ud,
+                   MsObjString* method, int argc, MsValue* argv,
+                   MsValue* out);
 
 bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
                         int argc, MsValue* argv, MsValue* out) {
@@ -383,6 +386,7 @@ bool ms_builtin_invoke(MsVM* vm, MsValue receiver, MsObjString* method,
         MsObjUserdata* ud = MS_AS_USERDATA(receiver);
         if (ms_logger_invoke(vm, ud, method, argc, argv, out)) return true;
         if (ms_bufio_invoke(vm, ud, method, argc, argv, out))  return true;
+        if (ms_csv_invoke(vm, ud, method, argc, argv, out))    return true;
         return false;
     }
     return false;

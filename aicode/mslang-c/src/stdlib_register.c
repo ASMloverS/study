@@ -33,4 +33,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "bufio",     ms_module_bufio_init);
     ms_vm_register_builtin_module(vm, "unicode",   ms_module_unicode_init);
     ms_vm_register_builtin_module(vm, "binary",    ms_module_binary_init);
+    ms_vm_register_builtin_module(vm, "csv",       ms_module_csv_init);
 }
