@@ -237,6 +237,11 @@ ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_bufio_basic.ms"
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_basic.ms")
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_itertools_gen.ms")
 
+ms_add_test(test_stdlib_unicode unit/test_stdlib_unicode.c)
+target_link_libraries(test_stdlib_unicode PRIVATE ms_frontend)
+
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_unicode_basic.ms")
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 

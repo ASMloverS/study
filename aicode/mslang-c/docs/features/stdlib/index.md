@@ -55,7 +55,7 @@
 
 | 状态 | 文件 | 模块 | 说明 |
 |---|---|---|---|
-| 📐 | [STDLIB-31](STDLIB-31-unicode.md) | `unicode` | Unicode 属性/UTF-8 编解码（纯 C）|
+| ✅ | [STDLIB-31](STDLIB-31-unicode.md) | `unicode` | Unicode 属性/UTF-8 编解码（纯 C）|
 | 📐 | [STDLIB-32](STDLIB-32-binary.md) | `binary` | 大小端打包/varint（纯 C）|
 | 📐 | [STDLIB-33](STDLIB-33-csv.md) | `csv` | CSV 读写 |
 | 📐 | [STDLIB-34](STDLIB-34-base32.md) | `base32` | Base32 编解码 |

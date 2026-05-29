@@ -38,3 +38,4 @@ void ms_module_bytes_init     (MsVM* vm, MsObjModule* mod);
 void ms_module_regexp_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_path_init      (MsVM* vm, MsObjModule* mod);
 void ms_module_bufio_init     (MsVM* vm, MsObjModule* mod);
+void ms_module_unicode_init   (MsVM* vm, MsObjModule* mod);
