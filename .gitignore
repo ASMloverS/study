@@ -55,3 +55,8 @@ python/hfserver/uploads
 benchmarks/results
 package-lock.json
 package.json
+
+__bufio_fix2__.txt
+__bufio_fix3__.txt
+__bufio_fix4__.txt
+__bufio_fixture__.txt
