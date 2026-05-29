@@ -58,7 +58,7 @@
 | ✅ | [STDLIB-31](STDLIB-31-unicode.md) | `unicode` | Unicode 属性/UTF-8 编解码（纯 C）|
 | ✅ | [STDLIB-32](STDLIB-32-binary.md) | `binary` | 大小端打包/varint（纯 C）|
 | ✅ | [STDLIB-33](STDLIB-33-csv.md) | `csv` | CSV 读写 |
-| 📐 | [STDLIB-34](STDLIB-34-base32.md) | `base32` | Base32 编解码 |
+| ✅ | [STDLIB-34](STDLIB-34-base32.md) | `base32` | Base32 编解码 |
 | 📐 | [STDLIB-35](STDLIB-35-cmp.md) | `cmp` | 比较器组合器 |
 | 📐 | [STDLIB-36](STDLIB-36-deque.md) | `deque` | 双端队列 |
 | 📐 | [STDLIB-37](STDLIB-37-linkedlist.md) | `linkedlist` | 双向链表 |
