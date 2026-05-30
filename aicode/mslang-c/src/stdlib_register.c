@@ -36,5 +36,6 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "binary",    ms_module_binary_init);
     ms_vm_register_builtin_module(vm, "csv",       ms_module_csv_init);
     ms_vm_register_builtin_module(vm, "cmp",       ms_module_cmp_init);
-    ms_vm_register_builtin_module(vm, "deque",     ms_module_deque_init);
+    ms_vm_register_builtin_module(vm, "deque",      ms_module_deque_init);
+    ms_vm_register_builtin_module(vm, "linkedlist", ms_module_linkedlist_init);
 }

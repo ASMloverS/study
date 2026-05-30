@@ -61,7 +61,7 @@
 | ✅ | [STDLIB-34](STDLIB-34-base32.md) | `base32` | Base32 编解码 |
 | ✅ | [STDLIB-35](STDLIB-35-cmp.md) | `cmp` | 比较器组合器 |
 | ✅ | [STDLIB-36](STDLIB-36-deque.md) | `deque` | 双端队列 |
-| 📐 | [STDLIB-37](STDLIB-37-linkedlist.md) | `linkedlist` | 双向链表 |
+| ✅ | [STDLIB-37](STDLIB-37-linkedlist.md) | `linkedlist` | 双向链表 |
 | 📐 | [STDLIB-38](STDLIB-38-ring.md) | `ring` | 循环缓冲区 |
 | 📐 | [STDLIB-39](STDLIB-39-flag.md) | `flag` | 命令行参数解析 |
 | 📐 | [STDLIB-40](STDLIB-40-url.md) | `url` | URL 解析与编码 |
