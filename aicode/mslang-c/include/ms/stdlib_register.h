@@ -46,3 +46,4 @@ void ms_module_cmp_init       (MsVM* vm, MsObjModule* mod);
 void ms_module_deque_init      (MsVM* vm, MsObjModule* mod);
 void ms_module_linkedlist_init (MsVM* vm, MsObjModule* mod);
 void ms_module_ring_init       (MsVM* vm, MsObjModule* mod);
+void ms_module_flag_init       (MsVM* vm, MsObjModule* mod);
