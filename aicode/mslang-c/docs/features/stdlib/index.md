@@ -65,7 +65,7 @@
 | ✅ | [STDLIB-38](STDLIB-38-ring.md) | `ring` | 循环缓冲区 |
 | ✅ | [STDLIB-39](STDLIB-39-flag.md) | `flag` | 命令行参数解析 |
 | ✅ | [STDLIB-40](STDLIB-40-url.md) | `url` | URL 解析与编码 |
-| 📐 | [STDLIB-41](STDLIB-41-sync.md) | `sync` | 协程同步原语（Once/WaitGroup/Channel）|
+| ✅ | [STDLIB-41](STDLIB-41-sync.md) | `sync` | 协程同步原语（Once/WaitGroup/Channel）|
 | 📐 | [STDLIB-42](STDLIB-42-context.md) | `context` | 请求上下文（取消/截止）|
 | 📐 | [STDLIB-43](STDLIB-43-bits.md) | `bits` | 位操作（popcount/rotate/…，纯 C）|
 | 📐 | [STDLIB-44](STDLIB-44-hmac.md) | `hmac` | HMAC（基于 hash 模块）|
