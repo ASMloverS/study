@@ -43,3 +43,4 @@ void ms_module_unicode_init   (MsVM* vm, MsObjModule* mod);
 void ms_module_binary_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_csv_init       (MsVM* vm, MsObjModule* mod);
 void ms_module_cmp_init       (MsVM* vm, MsObjModule* mod);
+void ms_module_deque_init     (MsVM* vm, MsObjModule* mod);

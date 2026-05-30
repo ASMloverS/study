@@ -261,6 +261,11 @@ target_link_libraries(test_stdlib_cmp PRIVATE ms_frontend)
 
 ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_cmp_basic.ms")
 
+ms_add_test(test_stdlib_deque unit/test_stdlib_deque.c)
+target_link_libraries(test_stdlib_deque PRIVATE ms_frontend)
+
+ms_add_fixture_test("${PROJECT_SOURCE_DIR}/tests/fixtures/stdlib_deque_basic.ms")
+
 ms_add_test(test_tcp_socket unit/test_tcp_socket.c)
 target_link_libraries(test_tcp_socket PRIVATE ms_frontend)
 
