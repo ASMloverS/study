@@ -51,3 +51,4 @@ void ms_module_url_init        (MsVM* vm, MsObjModule* mod);
 void ms_module_sync_init       (MsVM* vm, MsObjModule* mod);
 void ms_module_context_init    (MsVM* vm, MsObjModule* mod);
 void ms_module_bits_init       (MsVM* vm, MsObjModule* mod);
+void ms_module_hmac_init       (MsVM* vm, MsObjModule* mod);
