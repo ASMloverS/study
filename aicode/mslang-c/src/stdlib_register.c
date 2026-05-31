@@ -43,4 +43,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "url",        ms_module_url_init);
     ms_vm_register_builtin_module(vm, "sync",       ms_module_sync_init);
     ms_vm_register_builtin_module(vm, "context",    ms_module_context_init);
+    ms_vm_register_builtin_module(vm, "bits",       ms_module_bits_init);
 }
