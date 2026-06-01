@@ -46,4 +46,5 @@ void ms_stdlib_register_all(MsVM* vm) {
     ms_vm_register_builtin_module(vm, "bits",       ms_module_bits_init);
     ms_vm_register_builtin_module(vm, "hmac",       ms_module_hmac_init);
     ms_vm_register_builtin_module(vm, "testing",    ms_module_testing_init);
+    ms_vm_register_builtin_module(vm, "template",   ms_module_template_init);
 }

@@ -70,7 +70,7 @@
 | ✅ | [STDLIB-43](STDLIB-43-bits.md) | `bits` | 位操作（popcount/rotate/…，纯 C）|
 | ✅ | [STDLIB-44](STDLIB-44-hmac.md) | `hmac` | HMAC（基于 hash 模块）|
 | ✅ | [STDLIB-45](STDLIB-45-testing.md) | `testing` | 测试框架（assert/run/bench）|
-| 📐 | [STDLIB-46](STDLIB-46-template.md) | `template` | 数据驱动文本模板 |
+| ✅ | [STDLIB-46](STDLIB-46-template.md) | `template` | 数据驱动文本模板 |
 
 ## 实施顺序
 
