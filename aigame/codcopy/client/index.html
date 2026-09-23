@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codcopy</title>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud">
+      <div id="crosshair">
+        <span class="arm top"></span><span class="arm bottom"></span>
+        <span class="arm left"></span><span class="arm right"></span>
+      </div>
+      <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
+      <div id="vignette"></div>
+      <div id="dmgdir"></div>
+      <div id="scope">
+        <div class="ring"></div>
+        <div class="hline"></div><div class="vline"></div>
+      </div>
+      <div id="bottomleft">
+        <div id="healthwrap"><div id="healthbar"></div></div>
+        <div id="healthtext">100</div>
+      </div>
+      <div id="bottomright">
+        <div id="ammo">30 / 30</div>
+        <div id="weapon">突击步枪</div>
+      </div>
+      <div id="score"></div>
+      <ul id="killfeed"></ul>
+      <div id="deathoverlay"><div id="deathtext"></div><div id="respawncount"></div></div>
+      <div id="killmsg"></div>
+      <canvas id="minimap" width="180" height="180"></canvas>
+      <div id="scoreboard">
+        <table>
+          <thead><tr><th>玩家</th><th>击杀</th><th>死亡</th><th>连杀</th><th>命中率</th></tr></thead>
+          <tbody id="scorebody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="endoverlay">
+      <div id="endtitle">比赛结束</div>
+      <table>
+        <thead><tr><th>#</th><th>玩家</th><th>击杀</th><th>死亡</th><th>连杀</th><th>命中率</th></tr></thead>
+        <tbody id="endbody"></tbody>
+      </table>
+      <div class="endrow">
+        <button id="restartbtn">再来一局</button>
+        <button id="menubtn">返回菜单</button>
+      </div>
+    </div>
+    <div id="startoverlay">
+      <h1>CODCOPY</h1>
+      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2/3 或滚轮切枪 · Tab 计分板</p>
+      <div class="setting"><label>模式</label>
+        <select id="modesel">
+          <option value="local" selected>单机（内嵌服务器）</option>
+          <option value="net">联机（WebSocket）</option>
+        </select>
+      </div>
+      <div class="setting netonly" style="display:none"><label>昵称</label><input id="nameinput" type="text" maxlength="16" value="玩家" /></div>
+      <div class="setting netonly" style="display:none"><label>服务器</label><input id="serverinput" type="text" value="ws://localhost:8080" /></div>
+      <div class="setting localonly"><label>AI 数量 <span id="botsval">7</span></label><input id="botsrange" type="range" min="0" max="7" step="1" value="7" /></div>
+      <div class="setting localonly"><label>AI 难度</label>
+        <select id="diffsel">
+          <option value="mixed" selected>混合</option>
+          <option value="easy">简单</option>
+          <option value="normal">普通</option>
+          <option value="hard">困难</option>
+        </select>
+      </div>
+      <div class="setting"><label>灵敏度 <span id="sensval">2.2</span></label><input id="sensrange" type="range" min="5" max="60" step="1" value="22" /></div>
+      <div class="setting"><label>音量 <span id="volval">70%</span></label><input id="volrange" type="range" min="0" max="100" step="1" value="70" /></div>
+      <div class="setting"><label>视场角 <span id="fovval">80</span></label><input id="fovrange" type="range" min="60" max="110" step="1" value="80" /></div>
+      <div class="setting"><label>阴影</label><input id="shadowcheck" type="checkbox" checked /></div>
+      <button id="playbtn">开始游戏</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

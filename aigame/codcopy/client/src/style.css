@@ -1,0 +1,62 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
+#game { width: 100%; height: 100%; display: block; }
+#hud { position: fixed; inset: 0; pointer-events: none; font-family: 'Segoe UI', sans-serif; color: #eee; }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+#crosshair .arm { position: absolute; background: rgba(255,255,255,0.9); box-shadow: 0 0 2px rgba(0,0,0,0.8); }
+#crosshair .top { width: 2px; height: 7px; left: -1px; top: -14px; }
+#crosshair .bottom { width: 2px; height: 7px; left: -1px; top: 7px; }
+#crosshair .left { width: 7px; height: 2px; left: -14px; top: -1px; }
+#crosshair .right { width: 7px; height: 2px; left: 7px; top: -1px; }
+#hitmarker { position: absolute; left: 50%; top: 50%; opacity: 0; }
+#hitmarker span { position: absolute; width: 10px; height: 2px; background: #fff; box-shadow: 0 0 2px #000; }
+#hitmarker span:nth-child(1) { transform: translate(-14px,-9px) rotate(45deg); }
+#hitmarker span:nth-child(2) { transform: translate(4px,-9px) rotate(-45deg); }
+#hitmarker span:nth-child(3) { transform: translate(-14px,7px) rotate(-45deg); }
+#hitmarker span:nth-child(4) { transform: translate(4px,7px) rotate(45deg); }
+#hitmarker.head span { background: #ff5252; }
+#vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(200,0,0,0.55) 100%); transition: opacity 0.15s; }
+#bottomleft { position: absolute; left: 24px; bottom: 24px; display: flex; align-items: center; gap: 10px; }
+#healthwrap { width: 220px; height: 14px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.35); }
+#healthbar { height: 100%; width: 100%; background: #7ec850; transition: width 0.15s; }
+#healthtext { font-size: 20px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+#bottomright { position: absolute; right: 24px; bottom: 24px; text-align: right; }
+#ammo { font-size: 26px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+#weapon { font-size: 14px; opacity: 0.85; }
+#score { position: absolute; top: 16px; right: 20px; font-size: 15px; text-shadow: 0 1px 2px #000; text-align: right; }
+#killfeed { position: absolute; top: 16px; right: 20px; margin-top: 28px; list-style: none; text-align: right; }
+#killfeed li { font-size: 13px; margin-bottom: 4px; text-shadow: 0 1px 2px #000; background: rgba(0,0,0,0.35); padding: 2px 8px; border-radius: 3px; }
+#deathoverlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: rgba(120,0,0,0.35); }
+#deathoverlay.show { display: flex; }
+#deathtext { font-size: 30px; font-weight: 700; text-shadow: 0 2px 4px #000; }
+#respawncount { font-size: 18px; margin-top: 12px; opacity: 0.9; }
+#killmsg { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); font-size: 20px; font-weight: 600; color: #ffd866; text-shadow: 0 1px 3px #000; opacity: 0; transition: opacity 0.3s; }
+#startoverlay { position: fixed; inset: 0; background: rgba(12,14,16,0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: #eee; font-family: 'Segoe UI', sans-serif; z-index: 10; }
+#startoverlay h1 { letter-spacing: 12px; font-size: 44px; color: #d8b24a; text-shadow: 0 2px 8px #000; }
+#startoverlay p { opacity: 0.85; font-size: 14px; }
+#playbtn { pointer-events: auto; font-size: 18px; padding: 10px 36px; background: #d8b24a; border: none; color: #1a1a1a; font-weight: 700; cursor: pointer; border-radius: 4px; }
+#playbtn:hover { background: #e6c566; }
+#dmgdir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; }
+#dmgdir::before { content: ''; position: absolute; left: -60px; top: -110px; width: 120px; height: 26px; background: radial-gradient(ellipse at 50% 100%, rgba(255,40,40,0.85), transparent 70%); clip-path: polygon(50% 100%, 0 0, 100% 0); }
+#scope { position: absolute; inset: 0; opacity: 0; transition: opacity 0.08s; pointer-events: none; }
+#scope .ring { position: absolute; left: 50%; top: 50%; width: 86vmin; height: 86vmin; transform: translate(-50%, -50%); border-radius: 50%; box-shadow: 0 0 0 200vmax rgba(0,0,0,0.97); border: 2px solid #111; }
+#scope .hline { position: absolute; left: 50%; top: 50%; width: 86vmin; height: 1.5px; transform: translate(-50%, -50%); background: rgba(10,10,10,0.9); }
+#scope .vline { position: absolute; left: 50%; top: 50%; width: 1.5px; height: 86vmin; transform: translate(-50%, -50%); background: rgba(10,10,10,0.9); }
+#minimap { position: absolute; left: 20px; top: 20px; background: rgba(10,12,14,0.55); border: 1px solid rgba(255,255,255,0.25); border-radius: 4px; }
+#scoreboard { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); }
+#scoreboard table, #endoverlay table { border-collapse: collapse; background: rgba(12,14,18,0.92); padding: 10px 18px; border-radius: 6px; }
+#scoreboard th, #endoverlay th { font-size: 13px; opacity: 0.7; padding: 6px 14px; text-align: left; }
+#scoreboard td, #endoverlay td { font-size: 15px; padding: 5px 14px; }
+#scoreboard tr.me td, #endoverlay tr.me td { color: #ffd866; font-weight: 700; }
+#endoverlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 20px; color: #eee; font-family: 'Segoe UI', sans-serif; z-index: 11; background: rgba(8,10,12,0.82); pointer-events: auto; }
+#endoverlay.show { display: flex; }
+#endtitle { font-size: 34px; font-weight: 800; color: #d8b24a; text-shadow: 0 2px 8px #000; }
+.endrow { display: flex; gap: 14px; }
+.endrow button { font-size: 16px; padding: 9px 28px; background: #d8b24a; border: none; color: #1a1a1a; font-weight: 700; cursor: pointer; border-radius: 4px; }
+.endrow button:hover { background: #e6c566; }
+.setting { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.setting label { width: 120px; text-align: right; opacity: 0.85; }
+.setting input[type='range'] { width: 200px; pointer-events: auto; }
+.setting select { pointer-events: auto; background: #22262c; color: #eee; border: 1px solid #555; padding: 4px 8px; border-radius: 3px; }
+.setting input[type='checkbox'] { pointer-events: auto; width: 18px; height: 18px; }
+.setting input[type='text'] { pointer-events: auto; width: 200px; background: #22262c; color: #eee; border: 1px solid #555; padding: 5px 8px; border-radius: 3px; font-size: 13px; }
