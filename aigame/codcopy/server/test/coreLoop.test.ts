@@ -23,6 +23,7 @@ describe('Room core loop', () => {
     const room = new Room(MAPS.warehouse, { seed: 42, bots: 0 });
     const a = room.addPlayer('A', false);
     const b = room.addPlayer('B', false);
+    b.spawnProtUntil = 0;
     place(room, a.id, 12, 5);
     place(room, b.id, 12, -5);
     const eye = { x: a.st.x, y: eyeY(a.st), z: a.st.z };
@@ -50,6 +51,7 @@ describe('Room core loop', () => {
     const room = new Room(MAPS.warehouse, { seed: 7, bots: 0 });
     const a = room.addPlayer('A', false);
     const b = room.addPlayer('B', false);
+    b.spawnProtUntil = 0;
     place(room, a.id, 2.5, 5);
     place(room, b.id, 2.5, -5);
     const eye = { x: a.st.x, y: eyeY(a.st), z: a.st.z };

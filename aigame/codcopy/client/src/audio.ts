@@ -11,13 +11,39 @@ export type SoundKind =
   | 'step'
   | 'ui'
   | 'explode'
-  | 'break';
+  | 'break'
+  | 'melee'
+  | 'throw'
+  | 'flash'
+  | 'streak'
+  | 'uav';
 
 export class AudioSys {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private volume = 0.7;
+  private ttsOn = true;
+
+  setTts(on: boolean): void {
+    this.ttsOn = on;
+    if (!on && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  }
+
+  /** 中文语音播报（Web Speech API）；不可用时静默回退 */
+  announce(text: string): void {
+    if (!this.ttsOn || typeof speechSynthesis === 'undefined') return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      u.rate = 1.1;
+      u.pitch = 1;
+      speechSynthesis.speak(u);
+    } catch {
+      void 0;
+    }
+  }
 
   resume(): void {
     if (!this.ctx) {
@@ -126,6 +152,25 @@ export class AudioSys {
       case 'break':
         this.burst(dest, t, 2600, 0.14, 0.24);
         this.blip(dest, t + 0.02, 320, 0.04, 0.12, 'square');
+        break;
+      case 'melee':
+        this.burst(dest, t, 900, 0.12, 0.2);
+        this.blip(dest, t + 0.1, 240, 0.06, 0.14, 'square');
+        break;
+      case 'throw':
+        this.burst(dest, t, 1400, 0.09, 0.12);
+        break;
+      case 'flash':
+        this.blip(dest, t, 3200, 0.5, 0.3, 'sine');
+        this.blip(dest, t + 0.02, 2400, 0.6, 0.2, 'sine');
+        break;
+      case 'streak':
+        this.blip(dest, t, 620, 0.08, 0.18, 'triangle');
+        this.blip(dest, t + 0.1, 930, 0.12, 0.18, 'triangle');
+        break;
+      case 'uav':
+        this.blip(dest, t, 440, 0.25, 0.12, 'sawtooth');
+        this.blip(dest, t + 0.3, 440, 0.25, 0.12, 'sawtooth');
         break;
     }
   }

@@ -91,6 +91,7 @@ describe('damage falloff and recoil in world', () => {
     const room = new Room(undefined, { seed: 7, bots: 0 });
     const a = room.addPlayer('A', false);
     const b = room.addPlayer('B', false);
+    b.spawnProtUntil = 0;
     const setPos = (id: number, x: number, z: number) => {
       const q = room.players.find((r) => r.id === id)!;
       q.st.x = x;

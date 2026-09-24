@@ -10,9 +10,15 @@ export interface LocalGameHandle {
 }
 
 export function createLocalGame(
-  opts: { bots?: number; seed?: number; botDifficulty?: BotDifficulty | 'mixed' } = {},
+  opts: { bots?: number; seed?: number; botDifficulty?: BotDifficulty | 'mixed'; killLimit?: number; durationSec?: number } = {},
 ): LocalGameHandle {
-  const room = new Room(MAPS.warehouse, { bots: opts.bots ?? 7, seed: opts.seed, botDifficulty: opts.botDifficulty });
+  const room = new Room(MAPS.warehouse, {
+    bots: opts.bots ?? 7,
+    seed: opts.seed,
+    botDifficulty: opts.botDifficulty,
+    killLimit: opts.killLimit,
+    durationSec: opts.durationSec,
+  });
   const { client, server } = createLocalPair();
   let joinedId = -1;
 
@@ -20,7 +26,7 @@ export function createLocalGame(
     if (msg.kind === 'join') {
       const p = room.addPlayer(String(msg.name || 'Player').slice(0, 16) || 'Player', false);
       joinedId = p.id;
-      server.send({ kind: 'welcome', playerId: p.id, mapName: room.map.name });
+      server.send({ kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec } });
     } else if (msg.kind === 'input') {
       room.enqueueInput(joinedId, msg.input);
     }

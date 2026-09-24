@@ -12,6 +12,8 @@ export interface NetServerOptions {
   bots?: number;
   difficulty?: BotDifficulty | 'mixed';
   roomResetMs?: number;
+  killLimit?: number;
+  durationSec?: number;
 }
 
 export interface NetServerHandle {
@@ -27,7 +29,13 @@ interface Client {
 }
 
 export function startNetServer(opts: NetServerOptions): NetServerHandle {
-  let room = new Room(undefined, { bots: opts.bots ?? 7, botDifficulty: opts.difficulty ?? 'mixed' });
+  const roomOpts = {
+    bots: opts.bots ?? 7,
+    botDifficulty: opts.difficulty ?? 'mixed',
+    killLimit: opts.killLimit,
+    durationSec: opts.durationSec,
+  };
+  let room = new Room(undefined, roomOpts);
   const distDir = fileURLToPath(new URL('../../client/dist/', import.meta.url));
   const mime: Record<string, string> = {
     '.html': 'text/html; charset=utf-8',
@@ -77,7 +85,7 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
         const p = room.addHuman(name);
         client = { ws, playerId: p.id, name };
         clients.add(client);
-        send(ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name });
+        send(ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec } });
       } else if (msg.kind === 'input' && client) {
         room.enqueueInput(client.playerId, msg.input);
       } else if (msg.kind === 'ping') {
@@ -96,11 +104,11 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
 
   const resetRoom = () => {
     const old = [...clients];
-    room = new Room(undefined, { bots: Math.max(0, opts.bots ?? 7 - old.length), botDifficulty: opts.difficulty ?? 'mixed' });
+    room = new Room(undefined, { ...roomOpts, bots: Math.max(0, (opts.bots ?? 7) - old.length) });
     for (const c of old) {
       const p = room.addHuman(c.name);
       c.playerId = p.id;
-      send(c.ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name });
+      send(c.ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec } });
     }
     overSince = 0;
   };
@@ -142,6 +150,11 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
 
 if (process.argv[1] && process.argv[1].endsWith('net.ts')) {
   const port = Number(process.env.PORT ?? 8080);
-  const handle = startNetServer({ port, bots: Number(process.env.BOTS ?? 7) });
+  const handle = startNetServer({
+    port,
+    bots: Number(process.env.BOTS ?? 7),
+    killLimit: Number(process.env.KILL_LIMIT ?? 30),
+    durationSec: Number(process.env.MATCH_MINUTES ?? 10) * 60,
+  });
   console.log(`[codcopy] ws server listening on ws://localhost:${handle.port}`);
 }

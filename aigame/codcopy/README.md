@@ -1,6 +1,6 @@
 # Codcopy
 
-浏览器端 COD 风格第一人称射击游戏：FFA 个人混战（8 人局，真人不足自动补 AI），低多边形工业仓库地图，含可破坏掩体（木箱 / 爆炸油桶）、感应滑门与升降平台。
+浏览器端 COD 风格第一人称射击游戏：FFA 个人混战（8 人局，真人不足自动补 AI），连杀奖励（UAV / 精准空袭 / 集束炸弹）、手雷 / 闪光战术装备、近战，程序化贴图写实画风的工业仓库地图，含可破坏掩体（木箱 / 爆炸油桶）、感应滑门与升降平台。
 
 - 客户端：TypeScript + Vite + Three.js
 - 服务器：Node.js + ws（权威服务器，30Hz tick / 15Hz 快照）
@@ -18,7 +18,7 @@ npm install
 npm run dev          # 打开 http://localhost:5173
 ```
 
-菜单选择「单机」直接开打；操作：WASD 移动、Shift 冲刺、Space 跳跃、Ctrl 蹲/滑铲（冲刺中按蹲）、左键射击、右键开镜、R 换弹、1/2/3 或滚轮切枪、Tab 计分板。
+菜单选择「单机」直接开打；操作：WASD 移动、Shift 冲刺、Space 跳跃、Ctrl 蹲/滑铲（冲刺中按蹲）、左键射击、右键开镜、R 换弹、1/2/3 或滚轮切枪、V 近战、G 手雷（按住烹煮）、E 闪光、4/5/6 激活连杀奖励、狙击开镜时 Shift 屏息、Tab 计分板。
 
 ## 联机
 
@@ -44,13 +44,15 @@ npm run dev                        # 另开终端，客户端菜单选「联机�
 | `PORT` | `8080` | HTTP / WebSocket 端口 |
 | `BOTS` | `7` | 房间初始 AI 数量（真人加入自动替换 AI，离线自动补位） |
 | `DIFFICULTY` | `mixed` | AI 难度：`mixed` / `easy` / `normal` / `hard` |
+| `KILL_LIMIT` | `30` | 胜利击杀上限（单机菜单也可调） |
+| `MATCH_MINUTES` | `10` | 对局时长（分钟，单机菜单也可调） |
 
 PowerShell 示例：`$env:PORT=9000; $env:BOTS=5; npm start -w server`
 
 ## 测试与检查
 
 ```bash
-npm test             # vitest 全部测试（物理/AI/对局/ws 联机/掩体，40 项）
+npm test             # vitest 全部测试（物理/AI/对局/装备/连杀/近战/ws 联机/掩体）
 npm run typecheck    # 三个包 tsc --noEmit
 npm run build        # typecheck + 客户端生产构建（client/dist）
 ```

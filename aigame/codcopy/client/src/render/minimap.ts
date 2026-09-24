@@ -23,7 +23,7 @@ export class Minimap {
     this.ctx = this.canvas.getContext('2d')!;
   }
 
-  render(self: { x: number; z: number; yaw: number }, enemies: Map<number, EnemyBlip>, now: number): void {
+  render(self: { x: number; z: number; yaw: number }, enemies: Map<number, EnemyBlip>, now: number, uavEnemies: { x: number; z: number }[] = []): void {
     const ctx = this.ctx;
     const size = this.canvas.width;
     const world = this.map.size;
@@ -46,6 +46,14 @@ export class Minimap {
       ctx.beginPath();
       ctx.arc((b.x + world / 2) * s, (b.z + world / 2) * s, 3.4, 0, Math.PI * 2);
       ctx.fill();
+    }
+    for (const e of uavEnemies) {
+      ctx.fillStyle = 'rgba(255,120,80,0.95)';
+      ctx.beginPath();
+      ctx.arc((e.x + world / 2) * s, (e.z + world / 2) * s, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,200,90,0.8)';
+      ctx.stroke();
     }
     const sx = (self.x + world / 2) * s;
     const sz = (self.z + world / 2) * s;

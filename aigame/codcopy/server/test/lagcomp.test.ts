@@ -22,6 +22,7 @@ describe('lag compensation', () => {
     a.st.z = 5;
     b.st.x = 12;
     b.st.z = -5;
+    b.spawnProtUntil = 0;
     room.setRtt(a.id, 100);
     for (let i = 0; i < 12; i++) room.step();
     const oldPos = { x: b.st.x, y: b.st.y + b.st.height * 0.5, z: b.st.z };

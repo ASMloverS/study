@@ -62,7 +62,7 @@ describe('input validation', () => {
     expect(first.seq).toBe(5);
     expect(first.moveX).toBe(1);
     expect(first.pitch).toBe(1.55);
-    expect(p.inputQueue[1].buttons).toBe(999 & 63);
+    expect(p.inputQueue[1].buttons).toBe(999 & 511);
   });
 });
 

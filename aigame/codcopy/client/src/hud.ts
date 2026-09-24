@@ -19,6 +19,13 @@ export class Hud {
   private readonly scoreboardBody = el<HTMLTableSectionElement>('scorebody');
   private readonly dmgdir = el<HTMLDivElement>('dmgdir');
   private readonly scope = el<HTMLDivElement>('scope');
+  private readonly equip = el<HTMLDivElement>('equip');
+  private readonly streaksEl = el<HTMLDivElement>('streaks');
+  private readonly breathbar = el<HTMLDivElement>('breathbar');
+  private readonly breathfill = el<HTMLDivElement>('breathfill');
+  private readonly flashoverlay = el<HTMLDivElement>('flashoverlay');
+  private flashStart = 0;
+  private flashUntil = 0;
   private readonly endoverlay = el<HTMLDivElement>('endoverlay');
   private readonly endtitle = el<HTMLDivElement>('endtitle');
   private readonly endbody = el<HTMLTableSectionElement>('endbody');
@@ -35,7 +42,7 @@ export class Hud {
     el<HTMLButtonElement>('menubtn').addEventListener('click', () => this.onMenu?.());
   }
 
-  update(self: PlayerSnap | undefined, timeLeft: number, now: number, ping: number | null = null): void {
+  update(self: PlayerSnap | undefined, timeLeft: number, now: number, ping: number | null = null, killLimit = 30): void {
     if (self) {
       this.healthbar.style.width = `${self.hp}%`;
       this.healthbar.style.background = self.hp > 60 ? '#7ec850' : self.hp > 30 ? '#e0b13e' : '#d84f3f';
@@ -51,7 +58,21 @@ export class Hud {
         this.reloadbar.style.opacity = '0';
       }
       const pingStr = ping !== null ? ` &nbsp;·&nbsp; ping ${ping}ms` : '';
-      this.score.innerHTML = `击杀 ${self.k} &nbsp;·&nbsp; 死亡 ${self.d}${pingStr}<br>${fmtTime(timeLeft)}`;
+      this.score.innerHTML = `击杀 ${self.k} / ${killLimit} &nbsp;·&nbsp; 死亡 ${self.d}${pingStr}<br>${fmtTime(timeLeft)}`;
+      this.equip.textContent = `手雷 ${self.le ?? 1} · 闪光 ${self.ta ?? 1}`;
+      const sv = self.sv ?? 0;
+      const parts: string[] = [];
+      if (sv & 1) parts.push('UAV[4]');
+      if (sv & 2) parts.push('空袭[5]');
+      if (sv & 4) parts.push('集束[6]');
+      this.streaksEl.textContent = parts.length > 0 ? `连杀奖励就绪：${parts.join(' ')}` : '';
+      this.streaksEl.style.color = parts.length > 0 ? '#ffd76a' : '';
+    }
+    if (this.flashUntil > now) {
+      const k = (this.flashUntil - now) / Math.max(1, this.flashUntil - this.flashStart);
+      this.flashoverlay.style.opacity = String(Math.min(1, k * 1.6));
+    } else {
+      this.flashoverlay.style.opacity = '0';
     }
     this.hitmarker.style.opacity = now - this.hitAt < 120 ? '1' : '0';
     this.vignette.style.opacity = self && self.hp < 35 && self.a ? '0.6' : '0';
@@ -98,23 +119,51 @@ export class Hud {
     setTimeout(() => (this.vignette.style.opacity = '0'), 180);
   }
 
+  flash(ms: number): void {
+    this.flashStart = performance.now();
+    this.flashUntil = this.flashStart + ms;
+  }
+
+  setCook(text: string | null): void {
+    if (text) {
+      this.equip.textContent = `烹煮 ${text}s 后松手投出！`;
+      this.equip.style.color = '#ff8f6a';
+    } else {
+      this.equip.style.color = '';
+    }
+  }
+
+  setBreath(v: number | null): void {
+    this.breathbar.style.opacity = v !== null ? '1' : '0';
+    if (v !== null) {
+      this.breathfill.style.width = `${Math.round(v * 100)}%`;
+      this.breathfill.style.background = v > 0.35 ? '#5ac8dc' : '#d84f3f';
+    }
+  }
+
   damageDir(angle: number): void {
     this.dmgUntil = performance.now() + 1000;
     this.dmgdir.style.opacity = '1';
     this.dmgdir.style.transform = `translate(-50%, -50%) rotate(${(angle * 180) / Math.PI}deg)`;
   }
 
-  addKill(killer: string, victim: string): void {
+  addKill(killer: string, victim: string, hs = false, cause: string = 'ar'): void {
     const li = document.createElement('li');
-    li.textContent = `${killer} ⌖ ${victim}`;
+    if (cause === 'suicide') {
+      li.innerHTML = `<span class="kname">${escapeHtml(victim)}</span> <span class="cause">自爆</span>`;
+    } else {
+      const hsTag = hs ? '<span class="hs">爆头</span>' : '';
+      li.innerHTML = `<span class="kname">${escapeHtml(killer)}</span> <span class="cause">${causeLabel(cause)}</span>${hsTag} <span class="kname">${escapeHtml(victim)}</span>`;
+    }
     this.killfeed.prepend(li);
     while (this.killfeed.children.length > 5) this.killfeed.removeChild(this.killfeed.lastChild!);
     setTimeout(() => li.remove(), 6000);
   }
 
-  showDeath(killerName: string): void {
+  showDeath(killerName: string, cause: string = 'ar'): void {
     this.deathAt = performance.now();
-    this.deathtext.textContent = `你被 ${killerName} 击杀`;
+    const how = deathText(cause);
+    this.deathtext.textContent = how ? `你被 ${killerName} ${how}` : `你被 ${killerName} 击杀`;
     this.deathoverlay.classList.add('show');
   }
 
@@ -160,6 +209,48 @@ function el<T extends HTMLElement>(id: string): T {
 
 function weaponName(w: string): string {
   return { ar: '突击步枪', sg: '霰弹枪', sr: '狙击枪' }[w] ?? w;
+}
+
+function causeLabel(cause: string): string {
+  switch (cause) {
+    case 'melee':
+      return '近战';
+    case 'grenade':
+      return '手雷';
+    case 'airstrike':
+      return '空袭';
+    case 'cluster':
+      return '集束';
+    case 'suicide':
+      return '自爆';
+    case 'sg':
+      return '霰弹枪';
+    case 'sr':
+      return '狙击枪';
+    case 'ar':
+      return '步枪';
+    default:
+      return '击杀';
+  }
+}
+
+function deathText(cause: string): string {
+  switch (cause) {
+    case 'melee':
+      return '近战击杀';
+    case 'grenade':
+      return '的手雷炸死';
+    case 'airstrike':
+      return '的空袭炸死';
+    case 'cluster':
+      return '的集束炸弹炸死';
+    case 'barrel':
+      return '引爆的油桶炸死';
+    case 'suicide':
+      return '自爆身亡';
+    default:
+      return '击杀';
+  }
 }
 
 function fmtTime(sec: number): string {

@@ -1,8 +1,8 @@
 # Codcopy 技术架构文档
 
-- 版本：v1.1
-- 日期：2026-09-24
-- 状态：已确认；含 M5 迭代设计（标注 [M5] 的条目为该迭代新增，待实施）
+- 版本：v1.2
+- 日期：2026-09-25
+- 状态：已确认；含 M6（FFA 玩法还原）与 M7（视觉重制）迭代设计（标注 [M6]/[M7] 的条目为该迭代新增）
 
 ## 1. 总体架构
 
@@ -36,7 +36,8 @@ codcopy/
 │  │  ├─ constants.ts        # tick、移动、对局规则等常量
 │  │  ├─ weapons.ts          # 武器数据表
 │  │  ├─ sim/
-│  │  │  └─ movement.ts      # 移动解算器（走/跳/蹲/冲刺/滑铲；双端同一函数）
+│  │  │  ├─ movement.ts      # 移动解算器（走/跳/蹲/冲刺/滑铲；双端同一函数）
+│  │  │  └─ projectile.ts    # 投掷物弹道（重力/AABB 反弹/引信；双端同一函数）[M6]
 │  │  ├─ map/
 │  │  │  ├─ schema.ts        # 地图数据类型
 │  │  │  └─ warehouse.json   # 「工业区仓库」地图数据（tools/genmap.mjs 生成）
@@ -55,10 +56,11 @@ codcopy/
 │     ├─ transport/
 │     │  ├─ local.ts         # Transport 抽象 + 本地直连对
 │     ├─ game/
-│     │  ├─ world.ts         # Room：tick/移动/射击判定/伤害/死亡重生/快照/掩体集成
+│     │  ├─ world.ts         # Room：tick/移动/射击判定/近战/伤害/死亡重生/快照/掩体集成
 │     │  ├─ rng.ts           # mulberry32 种子随机（确定性）
 │     │  ├─ destructible.ts  # 可破坏掩体状态、油桶 AOE 数值、连锁半径
-│     │  └─ dynamicCover.ts  # 感应滑门/周期升降平台状态机
+│     │  ├─ dynamicCover.ts  # 感应滑门/周期升降平台状态机
+│     │  └─ killstreak.ts    # 连杀奖励：档位状态机/UAV/空袭与集束调度 [M6]
 │     ├─ ai/
 │     │  ├─ controller.ts     # AI 控制器：行为树 + A* 跟随 + peek/换弹/选枪
 │     │  ├─ perception.ts      # 视觉（FOV+LOS）/ 听觉（声音事件）/ 记忆衰减
@@ -71,12 +73,14 @@ codcopy/
       ├─ hud.ts               # DOM HUD：准星扩散/计分板/结算/伤害方向/狙击镜
       ├─ audio.ts             # WebAudio 合成 + PannerNode 空间化
       ├─ render/
-      │  ├─ scene.ts          # Three.js 场景/光照/雾
-      │  ├─ mapView.ts        # 掩体渲染：静态按色合批 merge；可破坏/动态独立对象
-      │  ├─ actors.ts         # 远端玩家：拟人分节模型 + 程序化动画（走/跑/蹲/滑/倒地）[M5]
-      │  ├─ effects.ts        # 曳光（高速弹道）/枪口焰/抛壳/弹孔贴花/分材质命中/血雾 [M5]
-      │  ├─ viewmodel.ts      # 高精度武器视图模型 + 双手 + 真铁瞄 [M5]
-      │  └─ minimap.ts        # 俯视小地图 canvas + 开枪暴露红点
+      │  ├─ scene.ts          # Three.js 场景/天空盒/光照/雾/后处理链 [M7]
+      │  ├─ mapView.ts        # 掩体渲染：静态按材质+贴图合批；可破坏/动态独立对象 [M7]
+      │  ├─ textures.ts       # 程序化 canvas 纹理工厂（漫反射/法线/粗糙度）[M7]
+      │  ├─ actors.ts         # 远端玩家：真实比例分节模型 + 程序化动画 + IK 持枪 + 名牌 [M7]
+      │  ├─ effects.ts        # InstancedMesh 粒子池：曳光/枪口焰/抛壳/弹孔/命中/血雾 [M7]
+      │  ├─ viewmodel.ts      # 武器视图模型：独立场景+相机双 pass、40+ 部件、程序化动画 [M7]
+      │  ├─ killcam.ts        # 死亡回放：快照+事件环形缓冲录像与重放 [M6]
+      │  └─ minimap.ts        # 俯视小地图 canvas + 开枪/UAV 敌点
       └─ transport.ts         # Session 抽象：LocalSession / NetSession（ws + RTT + 断线回调）
 ```
 
@@ -101,11 +105,12 @@ tick(dt = 1/30):
   1. 收集输入：每玩家（真人 / AI controller）按序号取输入
   2. movement.solve(players, colliders)      // 权威移动
   3. dynamicCover.update(dt)                 // 滑门/平台
-  4. combat.resolve(shots)                   // 射线判定/伤害/死亡
-  5. destructible.update(dt)                 // 油桶连锁/木箱
-  6. ai.update(dt)                           // 感知+行为树→生成下 tick 输入
-  7. respawn / 对局规则推进（击杀数/计时）
-  8. 每 2 tick 广播一次快照（15Hz）+ 即时事件
+  4. combat.resolve(shots, melee)            // 射线判定/近战/伤害/死亡
+  5. projectile.update(dt)                   // 手雷/闪光弹道与引信 [M6]
+  6. destructible/killstreak.update(dt)      // 油桶连锁/空袭落弹/UAV [M6]
+  7. ai.update(dt)                           // 感知+行为树→生成下 tick 输入
+  8. respawn / 对局规则推进（击杀数/计时）
+  9. 每 2 tick 广播一次快照（15Hz）+ 即时事件
 ```
 
 - 固定 `dt` 保证确定性与可测性；AI 决策频率按难度分档（5/8/12Hz），在 `ai.update` 内节流。
@@ -147,22 +152,23 @@ frame(rAF):
 ### 5.4 服务端回滚（lag compensation）[M5]
 
 - 服务器按 tick 保存全体玩家位置历史（环形缓冲，约 267ms / 8 tick 窗口）。
-- 开火判定时：将所有潜在受击者回溯至「当前 tick − 攻击者 ½RTT 对应 tick 数」时刻的位置再做射线求交；掩体（含动态掩体）按当前状态判定，不回溯。
+- 开火判定时：将所有潜在受击者回溯至「当前 tick − 攻击者 ½RTT 对应 tick 数」时刻的位置再做射线求交；掩体（含动态掩体）按当前状态判定，不回溯。近战判定共用同一回溯管线 [M6]。
 - 攻击者 RTT 来源：`ping` 消息携带客户端实测 RTT（服务器侧 `setRtt`）；RTT 上限 500ms、回溯上限 8 tick（≈250ms，防 ping 欺骗拉大回溯窗口）。
 - 单测重点：回溯窗口读写边界、延迟命中判定（构造 100ms 前位置与当前视线的命中）。
 
-### 5.5 协议（v1 摘要，类型定义于 `shared/protocol.ts`）
+### 5.5 协议（v1.2 摘要，类型定义于 `shared/protocol.ts`）
 
 | 方向 | 消息 | 载荷要点 |
 |---|---|---|
 | C→S | `join` | 昵称 / 客户端版本 |
-| C→S | `input` | seq、移动向量、视角增量、按键位（跳/蹲/冲刺/开镜/射击/换弹/切枪） |
-| S→C | `welcome` | 玩家 id、地图数据、对局配置、tick 基准 |
-| S→C | `snapshot` | 各玩家权威态 + lastSeq + 掩体状态 + 计分 |
-| S→C | `event` | shot（弹道表现）/ hit / kill / explode / coverBreak / door / spawn / gameOver |
-| C↔S | `lobby` / `leave` | 房间管理、AI 设置（单机建房） |
+| C→S | `input` | seq、移动向量、视角、按键位（跳/蹲/冲刺/开镜/射击/换弹/近战/致命/战术）+ 连杀激活档（0-3）[M6] |
+| S→C | `welcome` | 玩家 id、地图数据、对局配置（击杀上限/时长）、tick 基准 |
+| S→C | `snapshot` | 各玩家权威态 + lastSeq + 掩体状态 + 计分 + 活动投掷物 + 连杀/重生保护状态 [M6] |
+| S→C | `event` | shot / hit / kill / explode / coverBreak / door / spawn / gameOver / streakEarned / streakUse / grenadeThrow / melee [M6] |
+| C↔S | `lobby` / `leave` | 房间管理、AI 设置、对局参数（单机建房）[M6] |
 
 - 协议 v1.1 变更 [M5]：`PlayerSnap` 增加 `rs`（reserve 备弹）与 `rl`（换弹剩余秒数）字段，快照体积预算复测通过（< 6.2KB 断言维持）；`ping` 消息增加可选 `rtt`（客户端实测回传，用于服务端回滚）；其余消息结构不变。
+- 协议 v1.2 变更 [M6/M7]：`InputMsg.buttons` 扩至 9 bit（+MELEE/LETHAL/TACTICAL，LETHAL 为按住语义支持烹煮）并新增连杀激活档字段；`PlayerSnap` 增加 `st`（连杀数）/`sv`（可用奖励掩码）/`sp`（重生保护剩余）/`le`+`ta`（装备余量）/`ps`（姿态枚举 [M7]）；快照顶层增加 `nades`（活动投掷物位置列表）；`kill` 事件增加 `hs`（爆头）与 `cause`（死因：武器/近战/手雷/空袭/集束/自杀）；`welcome` 携带对局配置；新增 `streakEarned`/`streakUse`/`grenadeThrow`/`melee` 事件。快照体积断言随新字段复测。
 
 ## 6. 共享库（shared）
 
@@ -181,10 +187,12 @@ frame(rAF):
 
 - **Transport 抽象**：`send(msg)` / `onMessage(cb)`，`local.ts`（单机直调）与 `websocket.ts`（联机）同接口，上层无感知。
 - **渲染分层**：静态地图（一次性构建 + 合批）/ 动态掩体（独立对象）/ 玩家 / 粒子，控制 draw call。
+- **武器独立渲染 pass [M7]**：视图模型置于独立武器场景 + 独立相机（固定 FOV、near 0.01），主场景渲染后 `clearDepth` 再渲染——不与世界几何共深度（不穿墙）、不受开镜 FOV 收缩透视影响；武器光照用主光照的廉价副本，枪口点光同步主场景。
+- **后处理链 [M7]**：EffectComposer（SSAO + Bloom + AA）按画质档开关，低档直渲染；程序化纹理工厂 `textures.ts` 供地图 / 枪械 / 角色共用。
 - **动画 / 特效系统 [M5]**：程序化动画（姿态驱动，无骨骼资源）+ 分层特效（枪口 / 弹道 / 命中 / 环境）；弹孔贴花等长生命周期效果走对象池（32 循环复用）；命中材质由客户端对照地图数据推断，不新增协议字段。
-- **画质档 [M5]**：低 / 中 / 高——粒子密度、阴影开关与质量、特效层数（枪口点光 / 弹孔贴花等），纯客户端设置。
-- **音频**：WebAudio 合成器 + PannerNode；事件驱动（shot/hit/explode 事件 → 对应音效 + 空间定位）。
-- **死亡回放**：kill 事件含击杀者 id，客户端 3s 内将相机挂到击杀者插值态视角。
+- **画质档 [M5]/[M7]**：低 / 中 / 高——粒子密度、阴影开关与质量、SSAO / Bloom、特效层数（枪口点光 / 弹孔贴花等），纯客户端设置。
+- **音频**：WebAudio 合成器 + PannerNode；事件驱动（shot/hit/explode 事件 → 对应音效 + 空间定位）；TTS 播报走 Web Speech API，voices 不可用回退音效 + 文字 [M6]。
+- **死亡回放 [M6]**：客户端维护 ~10s 快照 + 事件环形缓冲；kill 事件触发回放凶手视角 ~4s（含曳光 / 爆炸重放），可跳过；回放期间冻结本地预测渲染。
 
 ## 9. 性能与风险
 
@@ -197,3 +205,7 @@ frame(rAF):
 | 单机内存 | 内嵌 server 与客户端同进程，共享地图数据引用 |
 | 回滚窗口被滥用 [M5] | ½RTT 上限 250ms；仅回溯受击者位置，掩体静态不回溯 |
 | 开火预测与权威不一致 [M5] | 预测仅视觉层（弹道 / 枪口 / 音效），伤害与弹匣以服务器为准，视觉按 seq 去重 |
+| 投掷物 / 连杀权威与表现不一致 [M6] | 服务端权威模拟 + 快照 `nades` 兜底 + 事件去重，沿用 M5 开火预测方法论 |
+| TTS 可用性差异 [M6] | voices 异步加载 / 为空时回退音效 + 文字；设置可关 |
+| killcam 缓冲内存 [M6] | 10s × 15Hz × 8 人小结构 < 1MB，客户端环形缓冲自动覆盖 |
+| SSAO / Bloom 性能与贴图显存 [M7] | 画质档分级（低档直渲染、贴图按档缩放）；画质优先策略已确认 |

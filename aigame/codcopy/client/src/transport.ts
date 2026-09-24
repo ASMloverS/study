@@ -13,7 +13,7 @@ export class LocalSession implements Session {
   private cb: ((msg: any) => void) | null = null;
   readonly rtt: number | null = null;
 
-  constructor(opts: { bots?: number; botDifficulty?: 'mixed' | 'easy' | 'normal' | 'hard' }) {
+  constructor(opts: { bots?: number; botDifficulty?: 'mixed' | 'easy' | 'normal' | 'hard'; killLimit?: number; durationSec?: number }) {
     this.handle = createLocalGame(opts);
     this.handle.transport.onMessage((m) => this.cb?.(m));
   }

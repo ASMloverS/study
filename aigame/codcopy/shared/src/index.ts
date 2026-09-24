@@ -13,6 +13,7 @@ export * from './physics/raycast';
 export * from './sim/movement';
 export * from './sim/recoil';
 export * from './sim/spread';
+export * from './sim/projectile';
 export * from './nav/grid';
 export * from './nav/astar';
 export * from './map/schema';

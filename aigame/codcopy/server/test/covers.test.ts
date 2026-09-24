@@ -49,6 +49,7 @@ describe('destructible covers', () => {
     const room = new Room(undefined, { seed: 12, bots: 0 });
     const a = room.addPlayer('A', false);
     const victim = room.addPlayer('V', false);
+    victim.spawnProtUntil = 0;
     place(room, a.id, 13.4, 3);
     place(room, victim.id, 14.5, -0.5);
     const aim = aimAt({ x: a.st.x, y: eyeY(a.st), z: a.st.z }, { x: 13, y: 0.6, z: -3 });
@@ -74,6 +75,7 @@ describe('dynamic covers', () => {
     const room = new Room(undefined, { seed: 13, bots: 0 });
     const a = room.addPlayer('A', false);
     const b = room.addPlayer('B', false);
+    b.spawnProtUntil = 0;
     place(room, a.id, 1.6, 11.5);
     place(room, b.id, 1.6, -11.5);
     expect(room.blocked(1.6, 1.5, 11.5, 0, -1, 20)).toBe(true);

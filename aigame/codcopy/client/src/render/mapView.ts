@@ -1,30 +1,47 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { MapDef } from 'shared';
+import { cautionTexture, concreteTexture, corrugatedTexture, rustTexture, woodTexture } from './textures';
 
-const COLORS: Record<string, number> = {
-  wall: 0x8b9096,
-  lowwall: 0x70757c,
-  container: 0xc06a38,
-  crate: 0x8f6b3f,
-  barrel: 0xc9a23a,
-};
+/** 掩体渲染（M7.2）：按材质+程序贴图合批（UV 按世界尺寸缩放防拉伸）、圆柱油桶、装饰道具层。 */
 
-const DOOR_COLOR = 0xd8b24a;
 const LIFT_TRAVEL = 2;
 
-function coverMaterial(color: number, type: string): THREE.MeshStandardMaterial {
-  const metal = type === 'container' || type === 'barrel';
+function scaleBoxUV(geo: THREE.BufferGeometry, size: [number, number, number], density: number): void {
+  const uv = geo.attributes.uv as THREE.BufferAttribute;
+  const faceScales: [number, number][] = [
+    [size[2], size[1]],
+    [size[2], size[1]],
+    [size[0], size[2]],
+    [size[0], size[2]],
+    [size[0], size[1]],
+    [size[0], size[1]],
+  ];
+  for (let f = 0; f < 6; f++) {
+    const [su, sv] = faceScales[f];
+    for (let v = 0; v < 4; v++) {
+      const i = f * 4 + v;
+      uv.setXY(i, uv.getX(i) * (su / density), uv.getY(i) * (sv / density));
+    }
+  }
+}
+
+function stdMat(t: { map: THREE.Texture; normalMap: THREE.Texture; roughnessMap: THREE.Texture }, color = 0xffffff, metalness = 0.05, roughness = 1): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
+    map: t.map,
+    normalMap: t.normalMap,
+    roughnessMap: t.roughnessMap,
     color,
-    metalness: metal ? 0.55 : 0.05,
-    roughness: type === 'wall' || type === 'lowwall' ? 0.92 : metal ? 0.48 : 0.85,
+    metalness,
+    roughness,
+    normalScale: new THREE.Vector2(1, 1),
   });
 }
 
 export class MapView {
   readonly group = new THREE.Group();
-  private readonly coverMeshes = new Map<number, THREE.Mesh>();
+  private readonly coverMeshes = new Map<number, THREE.Object3D>();
+  private readonly ownMaterials: THREE.Material[] = [];
   private readonly dynEntries: {
     index: number;
     kind: 'door' | 'lift';
@@ -34,13 +51,33 @@ export class MapView {
   }[] = [];
 
   constructor(scene: THREE.Scene, map: MapDef) {
-    const byColor = new Map<number, THREE.BufferGeometry[]>();
+    const wallT = concreteTexture(256, 1);
+    const lowT = concreteTexture(256, 1);
+    const contOrangeT = corrugatedTexture(256, 1, [205, 102, 46], 'CODCOPY 42');
+    const contBlueT = corrugatedTexture(256, 1, [72, 112, 148], 'AIGAME 07');
+    const crateT = woodTexture(256, 1);
+    const rustT = rustTexture(256, 1);
+    const cautionT = cautionTexture(128, 1);
+
+    const wallMat = stdMat(wallT, 0xb6babf, 0.04, 1);
+    const lowMat = stdMat(lowT, 0x9aa0a6, 0.04, 1);
+    const contOrangeMat = stdMat(contOrangeT, 0xffffff, 0.6, 0.72);
+    const contBlueMat = stdMat(contBlueT, 0xffffff, 0.6, 0.72);
+    const crateMat = stdMat(crateT, 0xffffff, 0.05, 1);
+    const barrelMat = stdMat(rustT, 0xd8b24a, 0.5, 0.68);
+    const doorMat = stdMat(cautionT, 0xffffff, 0.35, 0.7);
+    const liftMat = stdMat(rustT, 0x6f767e, 0.65, 0.6);
+    this.ownMaterials.push(wallMat, lowMat, contOrangeMat, contBlueMat, crateMat, barrelMat, doorMat, liftMat);
+
+    const batches = new Map<THREE.Material, THREE.BufferGeometry[]>();
+
     map.covers.forEach((c, i) => {
       if (c.dynamic) {
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]),
-          coverMaterial(c.dynamic === 'door' ? DOOR_COLOR : COLORS[c.type], c.type),
+          c.dynamic === 'door' ? doorMat : liftMat,
         );
+        scaleBoxUV(mesh.geometry, c.size, c.dynamic === 'door' ? 1.2 : 2);
         mesh.position.set(c.pos[0], c.pos[1], c.pos[2]);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -49,33 +86,61 @@ export class MapView {
         this.dynEntries.push({ index: i, kind: c.dynamic, mesh, base: [...c.pos] as [number, number, number], size: c.size });
         return;
       }
+      if (c.destructible && c.type === 'barrel') {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 1.2, 20), barrelMat);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        g.add(body);
+        for (const y of [-0.2, 0.2]) {
+          const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.352, 0.352, 0.09, 20), doorMat);
+          ring.position.y = y;
+          g.add(ring);
+        }
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 12), liftMat);
+        cap.position.y = 0.62;
+        g.add(cap);
+        g.position.set(c.pos[0], c.pos[1] + 0.6, c.pos[2]);
+        this.group.add(g);
+        this.coverMeshes.set(i, g);
+        return;
+      }
+      const geo = new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]);
+      scaleBoxUV(geo, c.size, c.type === 'container' ? 2.4 : c.type === 'crate' ? 1.4 : 2);
+      geo.translate(c.pos[0], c.pos[1], c.pos[2]);
+      const mat =
+        c.type === 'container'
+          ? i % 2 === 1
+            ? contBlueMat
+            : contOrangeMat
+          : c.type === 'lowwall'
+            ? lowMat
+            : c.type === 'crate'
+              ? crateMat
+              : wallMat;
       if (c.destructible) {
-        const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]),
-          coverMaterial(COLORS[c.type], c.type),
-        );
-        mesh.position.set(c.pos[0], c.pos[1], c.pos[2]);
+        const mesh = new THREE.Mesh(geo, mat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.group.add(mesh);
         this.coverMeshes.set(i, mesh);
         return;
       }
-      const color = c.type === 'container' && i % 2 === 1 ? 0x3f6f8f : COLORS[c.type];
-      const geo = new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]);
-      geo.translate(c.pos[0], c.pos[1], c.pos[2]);
-      const list = byColor.get(color) ?? [];
+      const list = batches.get(mat) ?? [];
       list.push(geo);
-      byColor.set(color, list);
+      batches.set(mat, list);
     });
-    for (const [color, geos] of byColor) {
+
+    for (const [mat, geos] of batches) {
       const merged = mergeGeometries(geos);
       if (!merged) continue;
-      const mesh = new THREE.Mesh(merged, coverMaterial(color, 'wall'));
+      const mesh = new THREE.Mesh(merged, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.group.add(mesh);
     }
+
+    this.group.add(buildProps(crateMat, liftMat, doorMat, map));
     scene.add(this.group);
   }
 
@@ -83,8 +148,9 @@ export class MapView {
     const mesh = this.coverMeshes.get(index);
     if (!mesh) return;
     this.group.remove(mesh);
-    mesh.geometry.dispose();
-    (mesh.material as THREE.Material).dispose();
+    mesh.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
     this.coverMeshes.delete(index);
   }
 
@@ -101,15 +167,117 @@ export class MapView {
     this.group.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
-        const m = o.material;
-        if (Array.isArray(m)) m.forEach((x) => x.dispose());
-        else m.dispose();
       }
     });
+    for (const m of this.ownMaterials) m.dispose();
     this.group.removeFromParent();
     this.coverMeshes.clear();
     this.dynEntries.length = 0;
   }
+}
+
+/** 装饰道具层（零碰撞 / 导航影响）：托盘堆、沿墙管道、灯柱、地面安全线、集装箱顶细节 */
+function buildProps(
+  crateMat: THREE.MeshStandardMaterial,
+  metalMat: THREE.MeshStandardMaterial,
+  cautionMat: THREE.MeshStandardMaterial,
+  map: MapDef,
+): THREE.Group {
+  const g = new THREE.Group();
+  const woodGeos: THREE.BufferGeometry[] = [];
+  const metalGeos: THREE.BufferGeometry[] = [];
+  const cautionGeos: THREE.BufferGeometry[] = [];
+
+  const addBox = (list: THREE.BufferGeometry[], w: number, h: number, d: number, x: number, y: number, z: number, ry = 0): void => {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    if (ry !== 0) geo.rotateY(ry);
+    geo.translate(x, y, z);
+    list.push(geo);
+  };
+  const addCyl = (list: THREE.BufferGeometry[], r: number, len: number, x: number, y: number, z: number, axis: 'x' | 'y' | 'z', seg = 12): void => {
+    const geo = new THREE.CylinderGeometry(r, r, len, seg);
+    if (axis === 'x') geo.rotateZ(Math.PI / 2);
+    if (axis === 'z') geo.rotateX(Math.PI / 2);
+    geo.translate(x, y, z);
+    list.push(geo);
+  };
+
+  for (const [px, pz, count] of [
+    [-21, -18, 2],
+    [21.5, 19, 3],
+    [-20, 20, 2],
+    [20.5, -20, 3],
+    [-21.5, 2, 2],
+    [21.5, -3, 2],
+  ] as const) {
+    for (let i = 0; i < count; i++) {
+      addBox(woodGeos, 1.15, 0.13, 1.0, px, 0.07 + i * 0.145, pz, i * 0.12);
+    }
+  }
+
+  for (const [axis, fixed] of [
+    ['x', -23.4],
+    ['x', 23.4],
+    ['z', -23.4],
+    ['z', 23.4],
+  ] as const) {
+    if (axis === 'x') addCyl(metalGeos, 0.075, 45, 0, 3.4, fixed, 'x');
+    else addCyl(metalGeos, 0.075, 45, fixed, 3.4, 0, 'z');
+    addCyl(metalGeos, 0.075, 45, 0, 3.15, fixed, axis === 'x' ? 'x' : 'z');
+    for (let k = -2; k <= 2; k++) {
+      const off = k * 9;
+      if (axis === 'x') addCyl(metalGeos, 0.16, 0.05, off, 3.3, fixed, 'y');
+      else addCyl(metalGeos, 0.16, 0.05, fixed, 3.3, off, 'y');
+    }
+  }
+
+  for (const [px, pz] of [
+    [-16.5, -16.5],
+    [16.5, 16.5],
+    [-16.5, 16.5],
+    [16.5, -16.5],
+  ] as const) {
+    addCyl(metalGeos, 0.06, 4.6, px, 2.3, pz, 'y', 10);
+    addBox(metalGeos, 0.5, 0.1, 0.24, px, 4.55, pz);
+    addBox(metalGeos, 0.42, 0.07, 0.16, px + 0.16, 4.48, pz);
+  }
+
+  for (const x of [-1.9, 1.9]) {
+    const geo = new THREE.PlaneGeometry(0.24, 24);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(x, 0.015, 0);
+    cautionGeos.push(geo);
+  }
+  for (const z of [-1.9, 1.9]) {
+    const geo = new THREE.PlaneGeometry(24, 0.24);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, 0.015, z);
+    cautionGeos.push(geo);
+  }
+
+  map.covers.forEach((c, i) => {
+    if (c.type !== 'container' || c.dynamic || c.destructible) return;
+    const top = c.pos[1] + c.size[1];
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        addBox(metalGeos, 0.22, 0.18, 0.22, c.pos[0] + sx * (c.size[0] / 2 - 0.13), top + 0.09, c.pos[2] + sz * (c.size[2] / 2 - 0.13));
+      }
+    }
+    addBox(metalGeos, 0.5, 0.12, 0.36, c.pos[0] + (i % 2 === 0 ? 1.2 : -1.2), top + 0.06, c.pos[2]);
+  });
+
+  const emit = (geos: THREE.BufferGeometry[], mat: THREE.Material, shadow: boolean): void => {
+    const merged = mergeGeometries(geos);
+    if (!merged) return;
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = shadow;
+    g.add(mesh);
+  };
+  emit(woodGeos, crateMat, true);
+  emit(metalGeos, metalMat, true);
+  emit(cautionGeos, cautionMat, false);
+  return g;
 }
 
 export function dynIndicesOf(map: MapDef): number[] {

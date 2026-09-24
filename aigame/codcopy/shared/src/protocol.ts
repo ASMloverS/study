@@ -7,6 +7,9 @@ export const BTN = {
   SPRINT: 8,
   ADS: 16,
   RELOAD: 32,
+  MELEE: 64,
+  LETHAL: 128,
+  TACTICAL: 256,
 } as const;
 
 export interface InputMsg {
@@ -17,6 +20,22 @@ export interface InputMsg {
   pitch: number;
   buttons: number;
   slot: number;
+  streak?: number;
+}
+
+export interface MatchConfig {
+  killLimit: number;
+  durationSec: number;
+}
+
+export type KillCause = WeaponId | 'melee' | 'grenade' | 'airstrike' | 'cluster' | 'barrel' | 'suicide';
+
+export interface NadeSnap {
+  i: number;
+  x: number;
+  y: number;
+  z: number;
+  k: 'frag' | 'flash';
 }
 
 export interface Vec3 {
@@ -54,6 +73,12 @@ export interface PlayerSnap {
   sf: number;
   sh: number;
   bs: number;
+  sp?: number;
+  st?: number;
+  sv?: number;
+  le?: number;
+  ta?: number;
+  ps?: number;
 }
 
 export interface Standing {
@@ -69,14 +94,20 @@ export interface Standing {
 export type GameEvent =
   | { type: 'shot'; tick: number; shooterId: number; origin: Vec3; end: Vec3; weapon: WeaponId }
   | { type: 'hit'; tick: number; attackerId: number; victimId: number; part: 'head' | 'body'; damage: number; attackerPos: Vec3 }
-  | { type: 'kill'; tick: number; killerId: number; victimId: number; weapon: WeaponId; streak: number }
+  | { type: 'kill'; tick: number; killerId: number; victimId: number; weapon: WeaponId; streak: number; hs?: boolean; cause?: KillCause }
   | { type: 'spawn'; tick: number; playerId: number; pos: Vec3 }
   | { type: 'coverBreak'; tick: number; coverIndex: number; pos: Vec3 }
   | { type: 'explode'; tick: number; coverIndex: number; pos: Vec3; attackerId: number }
+  | { type: 'blast'; tick: number; pos: Vec3; attackerId: number | null; cause: KillCause }
+  | { type: 'melee'; tick: number; attackerId: number; victimId: number | null }
+  | { type: 'grenadeThrow'; tick: number; ownerId: number; nadeId: number; kind: 'frag' | 'flash'; pos: Vec3; vel: Vec3 }
+  | { type: 'flashPop'; tick: number; ownerId: number; pos: Vec3 }
+  | { type: 'streakEarned'; tick: number; playerId: number; tier: 1 | 2 | 3 }
+  | { type: 'streakUse'; tick: number; playerId: number; tier: 1 | 2 | 3; target?: Vec3; yaw?: number }
   | { type: 'gameOver'; tick: number; winnerId: number | null; standings: Standing[] };
 
 export type S2CMessage =
-  | { kind: 'welcome'; playerId: number; mapName: string }
-  | { kind: 'snapshot'; tick: number; timeLeft: number; acks: Record<number, number>; players: PlayerSnap[]; destroyed: number[]; dyn: number[] }
+  | { kind: 'welcome'; playerId: number; mapName: string; cfg?: MatchConfig }
+  | { kind: 'snapshot'; tick: number; timeLeft: number; acks: Record<number, number>; players: PlayerSnap[]; destroyed: number[]; dyn: number[]; nades?: NadeSnap[] }
   | { kind: 'events'; events: GameEvent[] }
   | { kind: 'pong'; t: number };

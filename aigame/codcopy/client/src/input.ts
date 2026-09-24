@@ -7,6 +7,8 @@ export interface Settings {
   bots: number;
   difficulty: 'mixed' | 'easy' | 'normal' | 'hard';
   quality: 'low' | 'medium' | 'high';
+  killLimit: number;
+  matchMinutes: number;
 }
 
 export const defaultSettings: Settings = {
@@ -16,6 +18,8 @@ export const defaultSettings: Settings = {
   bots: 7,
   difficulty: 'mixed',
   quality: 'high',
+  killLimit: 30,
+  matchMinutes: 10,
 };
 
 export class InputSystem {
@@ -30,6 +34,7 @@ export class InputSystem {
   private pendingSlot = 0;
   private qSwapSlot = 0;
   private lastSlotSent = 1;
+  private pendingStreak = 0;
 
   constructor(private target: HTMLElement, onStart: () => void, settings: Settings) {
     this.settings = settings;
@@ -39,6 +44,9 @@ export class InputSystem {
       if (e.code === 'Digit1') this.pendingSlot = 1;
       if (e.code === 'Digit2') this.pendingSlot = 2;
       if (e.code === 'Digit3') this.pendingSlot = 3;
+      if (e.code === 'Digit4') this.pendingStreak = 1;
+      if (e.code === 'Digit5') this.pendingStreak = 2;
+      if (e.code === 'Digit6') this.pendingStreak = 3;
       if (e.code === 'KeyQ' && this.qSwapSlot > 0) this.pendingSlot = this.qSwapSlot;
     });
     document.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -88,7 +96,19 @@ export class InputSystem {
     return this.fireHeld;
   }
 
-  buildInput(seq: number): InputMsg {
+  get lethalHeld(): boolean {
+    return this.keys.has('KeyG');
+  }
+
+  get meleeHeld(): boolean {
+    return this.keys.has('KeyV');
+  }
+
+  get sprintHeld(): boolean {
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+  }
+
+  buildInput(seq: number, swayYaw = 0, swayPitch = 0): InputMsg {
     const k = this.keys;
     let moveZ = 0;
     let moveX = 0;
@@ -103,6 +123,9 @@ export class InputSystem {
     if (k.has('ControlLeft') || k.has('KeyC')) buttons |= BTN.CROUCH;
     if (k.has('ShiftLeft')) buttons |= BTN.SPRINT;
     if (k.has('KeyR')) buttons |= BTN.RELOAD;
+    if (k.has('KeyV')) buttons |= BTN.MELEE;
+    if (k.has('KeyG')) buttons |= BTN.LETHAL;
+    if (k.has('KeyE')) buttons |= BTN.TACTICAL;
     const slot = this.pendingSlot;
     if (slot > 0 && slot !== this.lastSlotSent) {
       this.qSwapSlot = this.lastSlotSent;
@@ -110,6 +133,8 @@ export class InputSystem {
     }
     this.pendingSlot = 0;
     this.scoreboard = k.has('Tab');
-    return { seq, moveX, moveZ, yaw: this.yaw, pitch: this.pitch, buttons, slot };
+    const streak = this.pendingStreak;
+    this.pendingStreak = 0;
+    return { seq, moveX, moveZ, yaw: this.yaw + swayYaw, pitch: this.pitch + swayPitch, buttons, slot, streak };
   }
 }

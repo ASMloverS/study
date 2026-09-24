@@ -24,10 +24,14 @@
         <div id="healthtext">100</div>
       </div>
       <div id="bottomright">
+        <div id="breathbar"><div id="breathfill"></div></div>
         <div id="reloadbar"><div id="reloadfill"></div></div>
         <div id="ammo">30 / 90</div>
         <div id="weapon">突击步枪</div>
+        <div id="equip">手雷 1 · 闪光 1</div>
+        <div id="streaks"></div>
       </div>
+      <div id="flashoverlay"></div>
       <div id="score"></div>
       <ul id="killfeed"></ul>
       <div id="deathoverlay"><div id="deathtext"></div><div id="respawncount"></div></div>
@@ -53,7 +57,7 @@
     </div>
     <div id="startoverlay">
       <h1>CODCOPY</h1>
-      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2/3 或滚轮切枪 · Q 切回上一把 · Tab 计分板</p>
+      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2/3 或滚轮切枪 · Q 切回上一把 · V 近战 · G 手雷（按住烹煮） · E 闪光 · 4/5/6 连杀奖励 · 狙击开镜时 Shift 屏息 · Tab 计分板</p>
       <div class="setting"><label>模式</label>
         <select id="modesel">
           <option value="local" selected>单机（内嵌服务器）</option>
@@ -63,6 +67,8 @@
       <div class="setting netonly" style="display:none"><label>昵称</label><input id="nameinput" type="text" maxlength="16" value="玩家" /></div>
       <div class="setting netonly" style="display:none"><label>服务器</label><input id="serverinput" type="text" value="ws://localhost:8080" /></div>
       <div class="setting localonly"><label>AI 数量 <span id="botsval">7</span></label><input id="botsrange" type="range" min="0" max="7" step="1" value="7" /></div>
+      <div class="setting localonly"><label>击杀上限 <span id="killval">30</span></label><input id="killrange" type="range" min="10" max="50" step="5" value="30" /></div>
+      <div class="setting localonly"><label>时长（分钟） <span id="durval">10</span></label><input id="durrange" type="range" min="5" max="15" step="1" value="10" /></div>
       <div class="setting localonly"><label>AI 难度</label>
         <select id="diffsel">
           <option value="mixed" selected>混合</option>
@@ -82,6 +88,7 @@
         </select>
       </div>
       <div class="setting"><label>阴影</label><input id="shadowcheck" type="checkbox" checked /></div>
+      <div class="setting"><label>语音播报（TTS）</label><input id="ttscheck" type="checkbox" checked /></div>
       <button id="playbtn">开始游戏</button>
     </div>
     <script type="module" src="/src/main.ts"></script>

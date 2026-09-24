@@ -1,22 +1,50 @@
 import {
   BTN,
+  DEFAULT_KILL_LIMIT,
+  DEFAULT_MATCH_DURATION,
   DEG2RAD,
   EMPTY_RELOAD_EXTRA,
   type GameEvent,
   type InputMsg,
+  type KillCause,
   LAG_COMP_MAX_RTT_MS,
   LAG_COMP_MAX_TICKS,
   MAPS,
   type MapDef,
   MAX_HEALTH,
   MAX_PLAYERS,
-  MATCH_KILL_LIMIT,
   type PlayerSnap,
   REGEN_DELAY_TICKS,
   REGEN_PER_TICK,
   RESPAWN_DELAY_TICKS,
+  FLASH_FUSE_TICKS,
+  FLASH_MAX_BLIND_MS,
+  FLASH_RADIUS,
+  FRAG_FUSE_TICKS,
+  FRAG_MAX_DMG,
+  FRAG_RADIUS,
+  GRENADE_BOUNCE,
+  GRENADE_RADIUS,
+  GRENADE_THROW_SPEED,
+  MELEE_COOLDOWN_TICKS,
+  MELEE_DAMAGE,
+  MELEE_HIT_TICK,
+  MELEE_LOCK_TICKS,
+  MELEE_RANGE,
+  type NadeSnap,
   SHOT_MAX_DISTANCE,
+  SPAWN_PROTECT_TICKS,
   type Standing,
+  AIRSTRIKE_COUNT,
+  AIRSTRIKE_DELAY_TICKS,
+  AIRSTRIKE_DMG,
+  AIRSTRIKE_RADIUS,
+  AIRSTRIKE_SPACING,
+  CLUSTER_COUNT,
+  CLUSTER_DMG,
+  CLUSTER_RADIUS,
+  CLUSTER_SCATTER,
+  stepProjectile,
   TICK_RATE,
   TICK_DT,
   WEAPONS,
@@ -46,10 +74,20 @@ import {
   type S2CMessage,
 } from 'shared';
 import { mulberry32 } from './rng';
+import type { ProjectileState } from 'shared';
 import { createBrain, mixedDifficulty, updateBot, type BotBrain, type BotDifficulty } from '../ai/controller';
 import type { SoundEvent } from '../ai/perception';
 import { createDestructibles, barrelDamage, CHAIN_DELAY_TICKS, BARREL_BLAST_RADIUS, type DestructibleState } from './destructible';
 import { createDynamicCovers, type DynamicCoverManager } from './dynamicCover';
+import {
+  createStreakState,
+  streakAvailableMask,
+  streakCanUse,
+  streakConsume,
+  streakOnDeath,
+  streakOnKill,
+  type StreakState,
+} from './killstreak';
 
 export interface ServerPlayer {
   id: number;
@@ -75,6 +113,18 @@ export interface ServerPlayer {
   shotsFired: number;
   shotsHit: number;
   lastDamagedTick: number;
+  spawnProtUntil: number;
+  lethal: number;
+  tactical: number;
+  cookingKind: 'frag' | null;
+  cookingSinceTick: number;
+  meleeEndsTick: number;
+  meleeHitTick: number;
+  meleeCooldownUntil: number;
+  prevMeleeBtn: boolean;
+  prevLethalBtn: boolean;
+  prevTacticalBtn: boolean;
+  streaks: StreakState;
   ackSeq: number;
   lastRecvSeq: number;
   inputQueue: InputMsg[];
@@ -86,10 +136,12 @@ export interface RoomOptions {
   bots?: number;
   seed?: number;
   botDifficulty?: BotDifficulty | 'mixed';
+  killLimit?: number;
+  durationSec?: number;
 }
 
 function zeroInput(): InputMsg {
-  return { seq: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 0 };
+  return { seq: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 0, streak: 0 };
 }
 
 function freshMags(): Record<WeaponId, number> {
@@ -108,7 +160,9 @@ export class Room {
   readonly destructibles: DestructibleState[];
   readonly dynamic: DynamicCoverManager;
   tick = 0;
-  timeLeft = 600;
+  timeLeft = DEFAULT_MATCH_DURATION;
+  readonly killLimit: number;
+  readonly durationSec: number;
   over = false;
   winner: number | null = null;
   currentSounds: readonly SoundEvent[] = [];
@@ -124,9 +178,24 @@ export class Room {
   private navRebuildAtTick = 0;
   private readonly rttMs = new Map<number, number>();
   private readonly posHistory: HistoryEntry[] = [];
+  private readonly nades: NadeEntity[] = [];
+  private nextNadeId = 1;
+  private readonly flashBlindUntil = new Map<number, number>();
+  private readonly pendingStrikes: {
+    attackerId: number;
+    cause: 'airstrike' | 'cluster';
+    x: number;
+    z: number;
+    atTick: number;
+    radius: number;
+    dmg: number;
+  }[] = [];
 
   constructor(map: MapDef = MAPS.warehouse, opts: RoomOptions = {}) {
     this.map = map;
+    this.killLimit = Math.max(1, Math.round(opts.killLimit ?? DEFAULT_KILL_LIMIT));
+    this.durationSec = Math.max(15, Math.round(opts.durationSec ?? DEFAULT_MATCH_DURATION));
+    this.timeLeft = this.durationSec;
     this.destructibles = createDestructibles(map.covers);
     this.dynamic = createDynamicCovers(map.covers);
     this.coverBoxes = map.covers.map((c) => coverToAABB(c));
@@ -191,6 +260,18 @@ export class Room {
       shotsFired: 0,
       shotsHit: 0,
       lastDamagedTick: -9999,
+      spawnProtUntil: 0,
+      lethal: 1,
+      tactical: 1,
+      cookingKind: null,
+      cookingSinceTick: 0,
+      meleeEndsTick: 0,
+      meleeHitTick: 0,
+      meleeCooldownUntil: 0,
+      prevMeleeBtn: false,
+      prevLethalBtn: false,
+      prevTacticalBtn: false,
+      streaks: createStreakState(),
       ackSeq: 0,
       lastRecvSeq: 0,
       inputQueue: [],
@@ -228,6 +309,17 @@ export class Room {
     p.fireCooldown = 0;
     p.prevFireBtn = false;
     p.lastDamagedTick = -9999;
+    p.spawnProtUntil = this.tick + SPAWN_PROTECT_TICKS;
+    p.lethal = 1;
+    p.tactical = 1;
+    p.cookingKind = null;
+    p.meleeEndsTick = 0;
+    p.meleeHitTick = 0;
+    p.meleeCooldownUntil = 0;
+    p.prevMeleeBtn = false;
+    p.prevLethalBtn = false;
+    p.prevTacticalBtn = false;
+    p.streaks = createStreakState();
     p.inputQueue.length = 0;
     p.lastInput = zeroInput();
     if (p.bot) {
@@ -259,8 +351,9 @@ export class Room {
       moveZ: Math.max(-1, Math.min(1, input.moveZ)),
       yaw: input.yaw,
       pitch: Math.max(-1.55, Math.min(1.55, input.pitch)),
-      buttons: Number.isFinite(input.buttons) ? input.buttons & 63 : 0,
+      buttons: Number.isFinite(input.buttons) ? input.buttons & 511 : 0,
       slot: Number.isInteger(input.slot) ? Math.max(0, Math.min(3, input.slot)) : 0,
+      streak: typeof input.streak === 'number' && Number.isInteger(input.streak) ? Math.max(0, Math.min(3, input.streak)) : 0,
     };
     p.lastRecvSeq = input.seq;
     p.inputQueue.push(sanitized);
@@ -343,6 +436,8 @@ export class Room {
     });
     if (this.posHistory.length > LAG_COMP_MAX_TICKS + 1) this.posHistory.shift();
     this.processExplosions();
+    this.updateNades();
+    this.processStrikes();
     if (this.navDirty && this.tick - this.navRebuildAtTick >= 30) {
       this.nav = this.bakeNav();
       this.navRebuildAtTick = this.tick;
@@ -389,7 +484,7 @@ export class Room {
       if (dmg <= 0) continue;
       const blockedHit = raycastBoxes(cx, cy, cz, (tx - cx) / dist, (ty - cy) / dist, (tz - cz) / dist, dist, this.obstacles);
       if (blockedHit && blockedHit.t < dist - 0.2) continue;
-      if (attacker) this.applyDamage(attacker, q, 'body', dmg, 1);
+      if (attacker) this.applyDamage(attacker, q, 'body', dmg, 1, 'barrel');
     }
     for (const other of this.destructibles) {
       if (other.destroyed || other.kind !== 'barrel' || other.coverIndex === coverIndex) continue;
@@ -400,7 +495,7 @@ export class Room {
     }
   }
 
-  private damageCover(attacker: ServerPlayer, coverIndex: number, dmg: number): void {
+  private damageCover(attacker: ServerPlayer | null, coverIndex: number, dmg: number): void {
     const d = this.destructibles.find((x) => x.coverIndex === coverIndex);
     if (!d || d.destroyed) return;
     d.hp -= dmg;
@@ -412,7 +507,7 @@ export class Room {
       this.navDirty = true;
       this.events.push({ type: 'coverBreak', tick: this.tick, coverIndex, pos: { ...d.center } });
     } else {
-      this.pendingExplosions.push({ coverIndex, atTick: this.tick, attackerId: attacker.id });
+      this.pendingExplosions.push({ coverIndex, atTick: this.tick, attackerId: attacker ? attacker.id : -1 });
     }
   }
 
@@ -428,7 +523,7 @@ export class Room {
   }
 
   private checkMatchEnd(): void {
-    const leader = this.players.find((p) => p.kills >= MATCH_KILL_LIMIT);
+    const leader = this.players.find((p) => p.kills >= this.killLimit);
     if (leader) {
       this.finish(leader.id);
     } else if (this.timeLeft <= 0) {
@@ -451,8 +546,9 @@ export class Room {
 
   private combat(p: ServerPlayer, input: InputMsg): void {
     const w = WEAPONS[p.weapon];
+    const btn = input.buttons;
     const slotIdx = input.slot - 1;
-    if (slotIdx >= 0 && slotIdx < WEAPON_SLOTS.length) {
+    if (slotIdx >= 0 && slotIdx < WEAPON_SLOTS.length && this.tick >= p.meleeEndsTick) {
       const want = WEAPON_SLOTS[slotIdx];
       if (want !== p.weapon && p.pendingWeapon !== want) {
         p.pendingWeapon = want;
@@ -473,10 +569,56 @@ export class Room {
       p.reloadEndsTick = -1;
     }
     updateRecoil(p.recoil, this.tick * TICK_DT, TICK_DT);
-    const btn = input.buttons;
+
+    // 近战（V）
+    const meleeBtn = (btn & BTN.MELEE) !== 0;
+    const meleeFree = this.tick >= p.meleeEndsTick && this.tick >= p.meleeCooldownUntil && p.pendingWeapon === null;
+    if (meleeBtn && !p.prevMeleeBtn && meleeFree) {
+      p.meleeEndsTick = this.tick + MELEE_LOCK_TICKS;
+      p.meleeHitTick = this.tick + MELEE_HIT_TICK;
+      p.meleeCooldownUntil = this.tick + MELEE_COOLDOWN_TICKS;
+      p.reloadEndsTick = -1;
+      p.spawnProtUntil = 0;
+    }
+    if (p.meleeHitTick > 0 && this.tick >= p.meleeHitTick) {
+      p.meleeHitTick = 0;
+      this.resolveMelee(p, input);
+    }
+    p.prevMeleeBtn = meleeBtn;
+
+    // 致命装备：手雷烹煮（G 按住拉栓、松手投出）
+    const lethalHeld = (btn & BTN.LETHAL) !== 0;
+    if (lethalHeld && !p.prevLethalBtn && p.lethal > 0 && p.cookingKind === null) {
+      p.cookingKind = 'frag';
+      p.cookingSinceTick = this.tick;
+      p.lethal--;
+      p.spawnProtUntil = 0;
+    }
+    if (!lethalHeld && p.cookingKind === 'frag') {
+      this.throwNade(p, input, 'frag', p.cookingSinceTick);
+      p.cookingKind = null;
+    } else if (p.cookingKind === 'frag' && this.tick - p.cookingSinceTick >= FRAG_FUSE_TICKS) {
+      p.cookingKind = null;
+      this.explodeAt(p.id, p.st.x, p.st.y + p.st.height * 0.6, p.st.z, FRAG_RADIUS, FRAG_MAX_DMG, 'grenade');
+    }
+    p.prevLethalBtn = lethalHeld;
+
+    // 战术装备：闪光（E 按下即投）
+    const tacticalHeld = (btn & BTN.TACTICAL) !== 0;
+    if (tacticalHeld && !p.prevTacticalBtn && p.tactical > 0) {
+      p.tactical--;
+      this.throwNade(p, input, 'flash', this.tick);
+    }
+    p.prevTacticalBtn = tacticalHeld;
+
+    // 连杀奖励激活（4/5/6）
+    const tier = typeof input.streak === 'number' ? input.streak : 0;
+    if (tier >= 1 && tier <= 3) this.activateStreak(p, tier, input);
+
     const fireHeld = (btn & BTN.FIRE) !== 0;
     const fireEdge = fireHeld && !p.prevFireBtn;
-    const canTrigger = fireHeld && (w.auto || fireEdge) && p.st.sprintLockT <= 0 && p.pendingWeapon === null;
+    const canTrigger =
+      fireHeld && (w.auto || fireEdge) && p.st.sprintLockT <= 0 && p.pendingWeapon === null && this.tick >= p.meleeEndsTick;
     if (canTrigger) {
       if (p.mags[p.weapon] <= 0) {
         if (p.reserve[p.weapon] > 0) this.startReload(p);
@@ -490,6 +632,181 @@ export class Room {
     p.prevFireBtn = fireHeld;
   }
 
+  private resolveMelee(p: ServerPlayer, input: InputMsg): void {
+    const dir = viewDir(input.yaw, input.pitch);
+    const ox = p.st.x;
+    const oy = eyeY(p.st);
+    const oz = p.st.z;
+    const hit = this.castShot(p.id, ox, oy, oz, dir, this.rewindTicksFor(p.id));
+    const victim = hit && hit.player && hit.t <= MELEE_RANGE ? hit.player : null;
+    if (victim) this.applyDamage(p, victim, 'body', MELEE_DAMAGE, 1, 'melee');
+    this.events.push({ type: 'melee', tick: this.tick, attackerId: p.id, victimId: victim ? victim.id : null });
+    this.pendingSounds.push({ x: ox, z: oz, sourceId: p.id, kind: 'step' });
+  }
+
+  private throwNade(p: ServerPlayer, input: InputMsg, kind: 'frag' | 'flash', sinceTick: number): void {
+    const dir = viewDir(input.yaw, input.pitch);
+    const ox = p.st.x + dir.x * 0.3;
+    const oy = eyeY(p.st) - 0.1;
+    const oz = p.st.z + dir.z * 0.3;
+    const vx = dir.x * GRENADE_THROW_SPEED;
+    const vy = dir.y * GRENADE_THROW_SPEED + 3.5;
+    const vz = dir.z * GRENADE_THROW_SPEED;
+    const explodeAtTick = sinceTick + (kind === 'frag' ? FRAG_FUSE_TICKS : FLASH_FUSE_TICKS);
+    const nadeId = this.nextNadeId++;
+    this.nades.push({ id: nadeId, kind, ownerId: p.id, explodeAtTick, x: ox, y: oy, z: oz, vx, vy, vz });
+    this.events.push({
+      type: 'grenadeThrow',
+      tick: this.tick,
+      ownerId: p.id,
+      nadeId,
+      kind,
+      pos: { x: ox, y: oy, z: oz },
+      vel: { x: vx, y: vy, z: vz },
+    });
+  }
+
+  private updateNades(): void {
+    for (let i = this.nades.length - 1; i >= 0; i--) {
+      const n = this.nades[i];
+      stepProjectile(n, TICK_DT, this.obstacles, GRENADE_BOUNCE, GRENADE_RADIUS);
+      if (this.tick < n.explodeAtTick) continue;
+      this.nades.splice(i, 1);
+      if (n.kind === 'frag') {
+        this.explodeAt(n.ownerId, n.x, n.y, n.z, FRAG_RADIUS, FRAG_MAX_DMG, 'grenade');
+      } else {
+        this.detonateFlash(n);
+      }
+    }
+  }
+
+  private explodeAt(
+    attackerId: number | null,
+    cx: number,
+    cy: number,
+    cz: number,
+    radius: number,
+    maxDmg: number,
+    cause: KillCause,
+  ): void {
+    const attacker = attackerId !== null ? this.players.find((p) => p.id === attackerId) ?? null : null;
+    this.events.push({ type: 'blast', tick: this.tick, pos: { x: cx, y: cy, z: cz }, attackerId, cause });
+    for (const q of this.players) {
+      if (!q.alive) continue;
+      const tx = q.st.x;
+      const ty = q.st.y + q.st.height * 0.6;
+      const tz = q.st.z;
+      const dist = Math.hypot(tx - cx, ty - cy, tz - cz);
+      if (dist > radius) continue;
+      const dmg = dist < 1e-6 ? maxDmg : maxDmg * (1 - dist / radius);
+      if (dmg <= 0) continue;
+      if (dist > 0.5) {
+        const blockedHit = raycastBoxes(cx, cy, cz, (tx - cx) / dist, (ty - cy) / dist, (tz - cz) / dist, dist, this.obstacles);
+        if (blockedHit && blockedHit.t < dist - 0.2) continue;
+      }
+      if (attacker) this.applyDamage(attacker, q, 'body', dmg, 1, cause);
+    }
+    for (const d of this.destructibles) {
+      if (d.destroyed) continue;
+      const od = Math.hypot(d.center.x - cx, d.center.y - cy, d.center.z - cz);
+      if (od < radius) this.damageCover(attacker, d.coverIndex, maxDmg * (1 - od / radius));
+    }
+  }
+
+  private detonateFlash(n: NadeEntity): void {
+    this.events.push({ type: 'flashPop', tick: this.tick, ownerId: n.ownerId, pos: { x: n.x, y: n.y, z: n.z } });
+    for (const q of this.players) {
+      if (!q.alive) continue;
+      const dx = q.st.x - n.x;
+      const dy = eyeY(q.st) - n.y;
+      const dz = q.st.z - n.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > FLASH_RADIUS) continue;
+      if (dist > 0.5 && raycastBoxes(n.x, n.y, n.z, dx / dist, dy / dist, dz / dist, dist, this.obstacles)) continue;
+      const vd = viewDir(q.st.yaw, q.st.pitch);
+      const dot = dist < 1e-6 ? 1 : (vd.x * -dx + vd.y * -dy + vd.z * -dz) / dist;
+      const facing = Math.max(0, dot);
+      const distF = Math.max(0.25, 1 - dist / FLASH_RADIUS);
+      const blindTicks = Math.round((FLASH_MAX_BLIND_MS / 1000) * TICK_RATE * (0.35 + 0.65 * facing) * distF);
+      if (blindTicks > (this.flashBlindUntil.get(q.id) ?? 0)) this.flashBlindUntil.set(q.id, this.tick + blindTicks);
+    }
+  }
+
+  isBlinded(id: number): boolean {
+    return (this.flashBlindUntil.get(id) ?? 0) > this.tick;
+  }
+
+  private activateStreak(p: ServerPlayer, tier: number, input: InputMsg): void {
+    if (!streakCanUse(p.streaks, tier)) return;
+    streakConsume(p.streaks, tier);
+    if (tier === 1) {
+      this.events.push({ type: 'streakUse', tick: this.tick, playerId: p.id, tier: 1 });
+      return;
+    }
+    const t = this.groundTarget(p, input);
+    this.events.push({
+      type: 'streakUse',
+      tick: this.tick,
+      playerId: p.id,
+      tier: tier as 2 | 3,
+      target: { x: t.x, y: 0.5, z: t.z },
+      yaw: input.yaw,
+    });
+    const lim = this.map.size / 2 - 1;
+    const clamp = (v: number): number => Math.max(-lim, Math.min(lim, v));
+    if (tier === 2) {
+      const dx = -Math.sin(input.yaw);
+      const dz = -Math.cos(input.yaw);
+      for (let i = 0; i < AIRSTRIKE_COUNT; i++) {
+        const off = (i - (AIRSTRIKE_COUNT - 1) / 2) * AIRSTRIKE_SPACING;
+        this.pendingStrikes.push({
+          attackerId: p.id,
+          cause: 'airstrike',
+          x: clamp(t.x + dx * off),
+          z: clamp(t.z + dz * off),
+          atTick: this.tick + AIRSTRIKE_DELAY_TICKS + i * 3,
+          radius: AIRSTRIKE_RADIUS,
+          dmg: AIRSTRIKE_DMG,
+        });
+      }
+    } else {
+      for (let i = 0; i < CLUSTER_COUNT; i++) {
+        const ang = this.rng() * Math.PI * 2;
+        const r = Math.sqrt(this.rng()) * CLUSTER_SCATTER;
+        this.pendingStrikes.push({
+          attackerId: p.id,
+          cause: 'cluster',
+          x: clamp(t.x + Math.cos(ang) * r),
+          z: clamp(t.z + Math.sin(ang) * r),
+          atTick: this.tick + AIRSTRIKE_DELAY_TICKS + i * 2,
+          radius: CLUSTER_RADIUS,
+          dmg: CLUSTER_DMG,
+        });
+      }
+    }
+  }
+
+  private groundTarget(p: ServerPlayer, input: InputMsg): { x: number; z: number } {
+    const dir = viewDir(input.yaw, input.pitch);
+    const ox = p.st.x;
+    const oy = eyeY(p.st);
+    const oz = p.st.z;
+    let t = dir.y < -0.001 ? -oy / dir.y : 60;
+    t = Math.min(t, 60);
+    const hit = raycastBoxes(ox, oy, oz, dir.x, dir.y, dir.z, t, this.obstacles);
+    if (hit) t = hit.t;
+    return { x: ox + dir.x * t, z: oz + dir.z * t };
+  }
+
+  private processStrikes(): void {
+    for (let i = this.pendingStrikes.length - 1; i >= 0; i--) {
+      const s = this.pendingStrikes[i];
+      if (this.tick < s.atTick) continue;
+      this.pendingStrikes.splice(i, 1);
+      this.explodeAt(s.attackerId, s.x, 0.6, s.z, s.radius, s.dmg, s.cause);
+    }
+  }
+
   private startReload(p: ServerPlayer): void {
     const w = WEAPONS[p.weapon];
     const time = p.mags[p.weapon] === 0 ? w.reloadTime + EMPTY_RELOAD_EXTRA : w.reloadTime;
@@ -498,6 +815,7 @@ export class Room {
 
   private fire(p: ServerPlayer, input: InputMsg): void {
     const w = WEAPONS[p.weapon];
+    p.spawnProtUntil = 0;
     p.fireCooldown = 60 / w.rpm;
     p.mags[p.weapon]--;
     p.shotsFired++;
@@ -521,7 +839,7 @@ export class Room {
         weapon: p.weapon,
       });
       if (hit && hit.player) {
-        this.applyDamage(p, hit.player, hit.part, w.damage * falloffMul(w, hit.t), w.headMul);
+        this.applyDamage(p, hit.player, hit.part, w.damage * falloffMul(w, hit.t), w.headMul, p.weapon);
         hitAny = true;
       } else if (hit && hit.coverIndex >= 0) {
         this.damageCover(p, hit.coverIndex, w.damage);
@@ -605,7 +923,9 @@ export class Room {
     part: 'head' | 'body',
     damage: number,
     headMul: number,
+    cause: KillCause = attacker.weapon,
   ): void {
+    if (this.tick < victim.spawnProtUntil) return;
     const dmg = part === 'head' ? damage * headMul : damage;
     victim.health -= dmg;
     victim.lastDamagedTick = this.tick;
@@ -618,27 +938,38 @@ export class Room {
       damage: dmg,
       attackerPos: { x: attacker.st.x, y: attacker.st.y, z: attacker.st.z },
     });
-    if (victim.health <= 0) this.killPlayer(attacker, victim);
+    if (victim.health <= 0) this.killPlayer(attacker, victim, cause, part === 'head');
   }
 
-  private killPlayer(killer: ServerPlayer, victim: ServerPlayer): void {
+  private killPlayer(killer: ServerPlayer, victim: ServerPlayer, cause: KillCause, hs: boolean): void {
     victim.alive = false;
     victim.deaths++;
     victim.streak = 0;
+    victim.spawnProtUntil = 0;
+    victim.cookingKind = null;
     victim.respawnAtTick = this.tick + RESPAWN_DELAY_TICKS;
     victim.st.vx = 0;
     victim.st.vy = 0;
     victim.st.vz = 0;
-    killer.kills++;
-    killer.streak++;
-    killer.bestStreak = Math.max(killer.bestStreak, killer.streak);
+    const suicide = killer === victim || cause === 'suicide';
+    if (!suicide) {
+      killer.kills++;
+      killer.streak++;
+      killer.bestStreak = Math.max(killer.bestStreak, killer.streak);
+      for (const tier of streakOnKill(killer.streaks, killer.streak)) {
+        this.events.push({ type: 'streakEarned', tick: this.tick, playerId: killer.id, tier: (tier + 1) as 1 | 2 | 3 });
+      }
+    }
+    streakOnDeath(victim.streaks);
     this.events.push({
       type: 'kill',
       tick: this.tick,
       killerId: killer.id,
       victimId: victim.id,
       weapon: killer.weapon,
-      streak: killer.streak,
+      streak: suicide ? 0 : killer.streak,
+      hs: hs && !suicide,
+      cause: suicide ? 'suicide' : cause,
     });
   }
 
@@ -667,11 +998,33 @@ export class Room {
       sf: p.shotsFired,
       sh: p.shotsHit,
       bs: p.bestStreak,
+      sp: p.alive ? Math.max(0, Math.round((p.spawnProtUntil - this.tick) * TICK_DT * 10) / 10) : 0,
+      st: p.streak,
+      sv: streakAvailableMask(p.streaks),
+      le: p.lethal,
+      ta: p.tactical,
+      ps: p.st.sliding ? 2 : !p.st.onGround ? 3 : p.st.crouching ? 1 : 0,
     }));
     const acks: Record<number, number> = {};
     for (const p of this.players) acks[p.id] = p.ackSeq;
     const destroyed = this.destructibles.filter((d) => d.destroyed).map((d) => d.coverIndex);
-    return { kind: 'snapshot', tick: this.tick, timeLeft: this.timeLeft, acks, players, destroyed, dyn: this.dynamic.values() };
+    const nades: NadeSnap[] = this.nades.map((n) => ({
+      i: n.id,
+      x: round3(n.x),
+      y: round3(n.y),
+      z: round3(n.z),
+      k: n.kind,
+    }));
+    return {
+      kind: 'snapshot',
+      tick: this.tick,
+      timeLeft: this.timeLeft,
+      acks,
+      players,
+      destroyed,
+      dyn: this.dynamic.values(),
+      nades,
+    };
   }
 
   drainEvents(): GameEvent[] {
@@ -688,4 +1041,11 @@ function round3(v: number): number {
 interface HistoryEntry {
   tick: number;
   pos: Map<number, { x: number; y: number; z: number; h: number }>;
+}
+
+interface NadeEntity extends ProjectileState {
+  id: number;
+  kind: 'frag' | 'flash';
+  ownerId: number;
+  explodeAtTick: number;
 }

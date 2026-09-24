@@ -55,6 +55,7 @@ export interface BotBrain {
   targetId: number | null;
   threatPos: PathPoint | null;
   wantWeapon: WeaponId | null;
+  slideAgainAtTick: number;
 }
 
 export interface Ctx {
@@ -105,6 +106,7 @@ export function createBrain(seed: number, difficulty: BotDifficulty, yaw: number
     targetId: null,
     threatPos: null,
     wantWeapon: null,
+    slideAgainAtTick: 0,
   };
 }
 
@@ -268,7 +270,8 @@ function followPath(ctx: Ctx): { dirX: number; dirZ: number; sprint: boolean } {
   const dz = wp.z - p.st.z;
   const len = Math.hypot(dx, dz) || 1;
   const far = Math.hypot(goal.x - p.st.x, goal.z - p.st.z) > 8;
-  return { dirX: dx / len, dirZ: dz / len, sprint: far && b.targetId === null };
+  const evade = b.difficulty === 'hard' && p.lastDamagedTick >= room.tick - 30;
+  return { dirX: dx / len, dirZ: dz / len, sprint: far && (b.targetId === null || evade) };
 }
 
 export function findCover(ctx: Ctx, threat: PathPoint): PathPoint | null {
@@ -312,7 +315,12 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
 
   if (t - b.lastDecisionTick >= def.decideEvery) {
     b.lastDecisionTick = t;
-    updatePerception(room, p, b.perception, room.currentSounds);
+    if (room.isBlinded(p.id)) {
+      b.perception.memories.clear();
+      b.targetId = null;
+    } else {
+      updatePerception(room, p, b.perception, room.currentSounds);
+    }
     b.root.tick({ room, p, b });
     if (b.targetId === null) b.coverSpot = null;
   }
@@ -334,7 +342,8 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
   let desiredPitch = 0;
   let aimClose = false;
   if (target) {
-    const err = def.aimErr * (0.6 + dist / 25);
+    const err0 = def.aimErr * (0.6 + dist / 25);
+    const err = p.weapon === 'sr' && b.difficulty === 'hard' ? err0 * 0.6 : err0;
     const aimY = target.st.y + target.st.height * 0.7;
     const dy = aimY - (p.st.y + p.st.height * 0.9);
     const dx = target.st.x - p.st.x;
@@ -370,7 +379,7 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
   if (b.restUntilTick <= t && b.fireUntilTick === 0) b.fireUntilTick = t + 12;
   const hiding = b.coverSpot !== null && !b.peeking && b.moveGoal === b.coverSpot;
   const rangeOk = p.weapon === 'sg' ? dist < 12 : p.weapon === 'sr' ? dist > 8 : true;
-  if (target && aimClose && rangeOk && !hiding && t >= b.reactionUntilTick && b.fireUntilTick > t) {
+  if (target && aimClose && rangeOk && !hiding && t >= b.reactionUntilTick && b.fireUntilTick > t && !room.isBlinded(p.id)) {
     buttons |= BTN.FIRE;
   }
 
@@ -379,6 +388,24 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
     (target && dist > 25 && p.mags[p.weapon] <= Math.ceil(magSize(p.weapon) * 0.2) && p.reserve[p.weapon] > 0)
   ) {
     buttons |= BTN.RELOAD;
+  }
+
+  // 交战 ADS：中远距离开镜获得精度加成
+  if (target && dist > 8 && !hiding) buttons |= BTN.ADS;
+  // 掩体后隐藏 / 换弹时蹲下（低矮掩体完全遮蔽）
+  if (p.st.onGround && (hiding || ((buttons & BTN.RELOAD) !== 0 && b.coverSpot !== null))) {
+    buttons |= BTN.CROUCH;
+  }
+  // 受压滑铲：困难 AI 在高速受击时滑铲换位（冲刺中按蹲触发）
+  if (
+    b.difficulty === 'hard' &&
+    p.lastDamagedTick >= t - 15 &&
+    p.st.onGround &&
+    Math.hypot(p.st.vx, p.st.vz) > 5.5 &&
+    t >= b.slideAgainAtTick
+  ) {
+    buttons |= BTN.CROUCH;
+    b.slideAgainAtTick = t + 45;
   }
 
   const hasAmmo = (wid: WeaponId): boolean => p.mags[wid] > 0 || p.reserve[wid] > 0;
