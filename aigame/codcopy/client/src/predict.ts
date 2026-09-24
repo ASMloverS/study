@@ -1,10 +1,12 @@
 import {
   MAPS,
   PLAYER_CROUCH_HEIGHT,
+  SHOT_MAX_DISTANCE,
   type InputMsg,
   type PlayerSnap,
   createMoveState,
   mapToObstacles,
+  raycastBoxes,
   stepMovement,
   type MoveState,
   type AABB,
@@ -27,6 +29,11 @@ export class Predictor {
     this.history.push(input);
     if (this.history.length > 120) this.history.shift();
     stepMovement(this.state, input, this.obstacles);
+  }
+
+  raycastObstacles(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number | null {
+    const hit = raycastBoxes(ox, oy, oz, dx, dy, dz, SHOT_MAX_DISTANCE, this.obstacles);
+    return hit ? hit.t : null;
   }
 
   reconcile(snap: PlayerSnap, ackSeq: number): void {

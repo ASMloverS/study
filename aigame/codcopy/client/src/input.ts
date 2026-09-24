@@ -6,6 +6,7 @@ export interface Settings {
   fov: number;
   bots: number;
   difficulty: 'mixed' | 'easy' | 'normal' | 'hard';
+  quality: 'low' | 'medium' | 'high';
 }
 
 export const defaultSettings: Settings = {
@@ -14,6 +15,7 @@ export const defaultSettings: Settings = {
   fov: 80,
   bots: 7,
   difficulty: 'mixed',
+  quality: 'high',
 };
 
 export class InputSystem {
@@ -26,6 +28,8 @@ export class InputSystem {
   private fireHeld = false;
   private adsHeld = false;
   private pendingSlot = 0;
+  private qSwapSlot = 0;
+  private lastSlotSent = 1;
 
   constructor(private target: HTMLElement, onStart: () => void, settings: Settings) {
     this.settings = settings;
@@ -35,6 +39,7 @@ export class InputSystem {
       if (e.code === 'Digit1') this.pendingSlot = 1;
       if (e.code === 'Digit2') this.pendingSlot = 2;
       if (e.code === 'Digit3') this.pendingSlot = 3;
+      if (e.code === 'KeyQ' && this.qSwapSlot > 0) this.pendingSlot = this.qSwapSlot;
     });
     document.addEventListener('keyup', (e) => this.keys.delete(e.code));
     document.addEventListener('mousedown', (e) => {
@@ -71,8 +76,6 @@ export class InputSystem {
     return this.lastSlotSent;
   }
 
-  private lastSlotSent = 1;
-
   lock(): void {
     this.target.requestPointerLock();
   }
@@ -101,7 +104,10 @@ export class InputSystem {
     if (k.has('ShiftLeft')) buttons |= BTN.SPRINT;
     if (k.has('KeyR')) buttons |= BTN.RELOAD;
     const slot = this.pendingSlot;
-    if (slot > 0) this.lastSlotSent = slot;
+    if (slot > 0 && slot !== this.lastSlotSent) {
+      this.qSwapSlot = this.lastSlotSent;
+      this.lastSlotSent = slot;
+    }
     this.pendingSlot = 0;
     this.scoreboard = k.has('Tab');
     return { seq, moveX, moveZ, yaw: this.yaw, pitch: this.pitch, buttons, slot };

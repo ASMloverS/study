@@ -1,5 +1,6 @@
 import type { InputMsg } from '../protocol';
 import { BTN } from '../protocol';
+import { WEAPONS, WEAPON_SLOTS } from '../weapons';
 import {
   ADS_SPEED,
   AIR_ACCEL,
@@ -7,19 +8,27 @@ import {
   GRAVITY,
   GROUND_ACCEL_K,
   JUMP_VELOCITY,
+  MANTLE_COOLDOWN,
+  MANTLE_LAND_INSET,
+  MANTLE_MAX_RISE,
+  MANTLE_MIN_RISE,
+  MANTLE_REACH,
   PLAYER_CROUCH_HEIGHT,
   PLAYER_EYE_RATIO,
   PLAYER_RADIUS,
   PLAYER_STAND_HEIGHT,
+  SLIDE_COOLDOWN,
   SLIDE_END_SPEED,
-  SLIDE_INITIAL_SPEED,
-  SLIDE_MAX_DURATION,
+  SLIDE_FRICTION,
+  SLIDE_MIN_START_SPEED,
+  SLIDE_START_MUL,
   SPRINT_SPEED,
   TERMINAL_VELOCITY,
   TICK_DT,
   WALK_SPEED,
 } from '../constants';
-import { moveBodyAxis, type AABB } from '../physics/aabb';
+import { bodyOverlaps, moveBodyAxis, type AABB } from '../physics/aabb';
+import { raycastBoxes } from '../physics/raycast';
 
 export interface MoveState {
   x: number;
@@ -35,6 +44,11 @@ export interface MoveState {
   crouching: boolean;
   sliding: boolean;
   slideT: number;
+  slideV0: number;
+  slideCooldownT: number;
+  sprintLockT: number;
+  mantleCdT: number;
+  sprinting: boolean;
   onGround: boolean;
   prevButtons: number;
 }
@@ -54,6 +68,11 @@ export function createMoveState(x: number, y: number, z: number, yaw = 0): MoveS
     crouching: false,
     sliding: false,
     slideT: 0,
+    slideV0: 0,
+    slideCooldownT: 0,
+    sprintLockT: 0,
+    mantleCdT: 0,
+    sprinting: false,
     onGround: true,
     prevButtons: 0,
   };
@@ -87,31 +106,44 @@ export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly 
   const btn = input.buttons;
   const wantCrouch = (btn & BTN.CROUCH) !== 0;
   const wantAds = (btn & BTN.ADS) !== 0;
+  const fireHeld = (btn & BTN.FIRE) !== 0;
+  const fireEdge = fireHeld && (s.prevButtons & BTN.FIRE) === 0;
   const moving = input.moveX !== 0 || input.moveZ !== 0;
-  const sprintHeld = (btn & BTN.SPRINT) !== 0 && !wantAds && moving;
-  const sprinting = sprintHeld && !wantCrouch;
+  const sprintIntent = (btn & BTN.SPRINT) !== 0 && !wantAds && moving;
+  if (s.sprintLockT > 0) s.sprintLockT = Math.max(0, s.sprintLockT - dt);
+  if (fireEdge && sprintIntent && !s.sliding && s.sprintLockT <= 0) {
+    const wid = WEAPON_SLOTS[input.slot - 1];
+    s.sprintLockT = wid ? WEAPONS[wid].sprintOutTime : WEAPONS.ar.sprintOutTime;
+  }
+  const sprinting = sprintIntent && !wantCrouch && !fireHeld && s.sprintLockT <= 0;
+  s.sprinting = sprinting;
   const crouchEdge = wantCrouch && (s.prevButtons & BTN.CROUCH) === 0;
 
-  if (crouchEdge && sprintHeld && s.onGround && !s.sliding) {
+  if (s.slideCooldownT > 0) s.slideCooldownT = Math.max(0, s.slideCooldownT - dt);
+  if (crouchEdge && sprintIntent && s.onGround && !s.sliding && s.slideCooldownT <= 0) {
     const w = wishDir(input.yaw, input.moveX, input.moveZ);
+    const v0 = Math.max(Math.hypot(s.vx, s.vz) * SLIDE_START_MUL, SLIDE_MIN_START_SPEED);
     s.sliding = true;
     s.slideT = 0;
-    s.vx = w.x * SLIDE_INITIAL_SPEED;
-    s.vz = w.z * SLIDE_INITIAL_SPEED;
+    s.slideV0 = v0;
+    s.vx = w.x * v0;
+    s.vz = w.z * v0;
   }
 
   s.crouching = wantCrouch && !s.sliding;
 
   if (s.sliding) {
     s.slideT += dt;
-    const k = Math.min(1, s.slideT / SLIDE_MAX_DURATION);
-    const speed = SLIDE_INITIAL_SPEED + (SLIDE_END_SPEED - SLIDE_INITIAL_SPEED) * k;
+    const speed = s.slideV0 * Math.exp(-SLIDE_FRICTION * s.slideT);
     const len = Math.hypot(s.vx, s.vz);
     if (len > 1e-6) {
       s.vx = (s.vx / len) * speed;
       s.vz = (s.vz / len) * speed;
     }
-    if (s.slideT >= SLIDE_MAX_DURATION) s.sliding = false;
+    if (speed <= SLIDE_END_SPEED) {
+      s.sliding = false;
+      s.slideCooldownT = SLIDE_COOLDOWN;
+    }
   } else {
     const speed = s.crouching ? CROUCH_SPEED : wantAds ? ADS_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
     const w = wishDir(input.yaw, input.moveX, input.moveZ);
@@ -128,7 +160,10 @@ export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly 
   if ((btn & BTN.JUMP) !== 0 && s.onGround) {
     s.vy = JUMP_VELOCITY;
     s.onGround = false;
-    s.sliding = false;
+    if (s.sliding) {
+      s.sliding = false;
+      s.slideCooldownT = SLIDE_COOLDOWN;
+    }
     s.crouching = wantCrouch;
   }
 
@@ -150,6 +185,32 @@ export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly 
   if (blockedZ) s.vz = 0;
   if (blockedY) s.vy = 0;
   else if (grounded) s.vy = 0;
+
+  if (s.mantleCdT > 0) s.mantleCdT = Math.max(0, s.mantleCdT - dt);
+  if (!s.onGround && (btn & BTN.JUMP) !== 0 && moving && s.mantleCdT <= 0) {
+    const f = wishDir(input.yaw, input.moveX, input.moveZ);
+    const wall = raycastBoxes(s.x, s.y + 0.25, s.z, f.x, 0, f.z, MANTLE_REACH, obstacles);
+    if (wall) {
+      const rise = wall.box.maxY - s.y;
+      if (rise >= MANTLE_MIN_RISE && rise <= MANTLE_MAX_RISE) {
+        const landX = s.x + f.x * (wall.t + MANTLE_LAND_INSET);
+        const landZ = s.z + f.z * (wall.t + MANTLE_LAND_INSET);
+        const body = { x: landX, y: wall.box.maxY, z: landZ, height: PLAYER_STAND_HEIGHT, radius: s.radius };
+        if (!obstacles.some((o) => bodyOverlaps(body, o))) {
+          s.x = landX;
+          s.y = wall.box.maxY;
+          s.z = landZ;
+          s.vx = 0;
+          s.vz = 0;
+          s.vy = 0;
+          s.onGround = true;
+          s.sliding = false;
+          s.crouching = wantCrouch;
+          s.mantleCdT = MANTLE_COOLDOWN;
+        }
+      }
+    }
+  }
 
   s.height = s.crouching || s.sliding ? PLAYER_CROUCH_HEIGHT : PLAYER_STAND_HEIGHT;
   s.yaw = input.yaw;

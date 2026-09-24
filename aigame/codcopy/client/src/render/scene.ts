@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 export interface SceneCtx {
   scene: THREE.Scene;
@@ -20,11 +21,18 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
 
-  const hemi = new THREE.HemisphereLight(0xd8e2e8, 0x4a4f52, 0.9);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.45;
+  pmrem.dispose();
+
+  const hemi = new THREE.HemisphereLight(0xd8e2e8, 0x4a4f52, 0.55);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff0d8, 1.6);
+  const sun = new THREE.DirectionalLight(0xfff0d8, 1.8);
   sun.position.set(30, 55, 18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -36,7 +44,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   scene.add(sun);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 120),
-    new THREE.MeshLambertMaterial({ color: 0x3f4448 }),
+    new THREE.MeshStandardMaterial({ color: 0x3f4448, roughness: 0.95, metalness: 0 }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;

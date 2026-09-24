@@ -13,6 +13,15 @@ const COLORS: Record<string, number> = {
 const DOOR_COLOR = 0xd8b24a;
 const LIFT_TRAVEL = 2;
 
+function coverMaterial(color: number, type: string): THREE.MeshStandardMaterial {
+  const metal = type === 'container' || type === 'barrel';
+  return new THREE.MeshStandardMaterial({
+    color,
+    metalness: metal ? 0.55 : 0.05,
+    roughness: type === 'wall' || type === 'lowwall' ? 0.92 : metal ? 0.48 : 0.85,
+  });
+}
+
 export class MapView {
   readonly group = new THREE.Group();
   private readonly coverMeshes = new Map<number, THREE.Mesh>();
@@ -30,7 +39,7 @@ export class MapView {
       if (c.dynamic) {
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]),
-          new THREE.MeshLambertMaterial({ color: c.dynamic === 'door' ? DOOR_COLOR : COLORS[c.type] }),
+          coverMaterial(c.dynamic === 'door' ? DOOR_COLOR : COLORS[c.type], c.type),
         );
         mesh.position.set(c.pos[0], c.pos[1], c.pos[2]);
         mesh.castShadow = true;
@@ -43,7 +52,7 @@ export class MapView {
       if (c.destructible) {
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]),
-          new THREE.MeshLambertMaterial({ color: COLORS[c.type] }),
+          coverMaterial(COLORS[c.type], c.type),
         );
         mesh.position.set(c.pos[0], c.pos[1], c.pos[2]);
         mesh.castShadow = true;
@@ -62,7 +71,7 @@ export class MapView {
     for (const [color, geos] of byColor) {
       const merged = mergeGeometries(geos);
       if (!merged) continue;
-      const mesh = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ color }));
+      const mesh = new THREE.Mesh(merged, coverMaterial(color, 'wall'));
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.group.add(mesh);

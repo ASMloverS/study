@@ -59,7 +59,7 @@ export class NetSession implements Session {
     this.ws.onopen = () => {
       this.send({ kind: 'join', name });
       this.pingTimer = window.setInterval(() => {
-        if (this.ws.readyState === WebSocket.OPEN) this.send({ kind: 'ping', t: performance.now() });
+        if (this.ws.readyState === WebSocket.OPEN) this.send({ kind: 'ping', t: performance.now(), rtt: this.rttValue ?? 0 });
       }, 2000);
     };
     this.ws.onclose = () => {

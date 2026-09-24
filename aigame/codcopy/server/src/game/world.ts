@@ -1,7 +1,11 @@
 import {
   BTN,
+  DEG2RAD,
+  EMPTY_RELOAD_EXTRA,
   type GameEvent,
   type InputMsg,
+  LAG_COMP_MAX_RTT_MS,
+  LAG_COMP_MAX_TICKS,
   MAPS,
   type MapDef,
   MAX_HEALTH,
@@ -18,17 +22,24 @@ import {
   WEAPONS,
   WEAPON_SLOTS,
   type WeaponId,
+  addRecoilShot,
   bakeNavGrid,
   boxCenter,
   coverToAABB,
   createMoveState,
+  createRecoilState,
   eyeY,
+  falloffMul,
+  jitterDir,
   type MoveState,
   type NavGrid,
+  type RecoilState,
   rayBox,
   raycastBoxes,
   type AABB,
+  spreadMulFor,
   stepMovement,
+  updateRecoil,
   viewDir,
   isWalkable,
   worldToCell,
@@ -50,6 +61,8 @@ export interface ServerPlayer {
   respawnAtTick: number;
   weapon: WeaponId;
   mags: Record<WeaponId, number>;
+  reserve: Record<WeaponId, number>;
+  recoil: RecoilState;
   pendingWeapon: WeaponId | null;
   switchEndsTick: number;
   reloadEndsTick: number;
@@ -83,6 +96,10 @@ function freshMags(): Record<WeaponId, number> {
   return { ar: WEAPONS.ar.magSize, sg: WEAPONS.sg.magSize, sr: WEAPONS.sr.magSize };
 }
 
+function freshReserve(): Record<WeaponId, number> {
+  return { ar: WEAPONS.ar.reserve, sg: WEAPONS.sg.reserve, sr: WEAPONS.sr.reserve };
+}
+
 export class Room {
   readonly map: MapDef;
   readonly obstacles: AABB[];
@@ -105,6 +122,8 @@ export class Room {
   private pendingExplosions: { coverIndex: number; atTick: number; attackerId: number }[] = [];
   private navDirty = false;
   private navRebuildAtTick = 0;
+  private readonly rttMs = new Map<number, number>();
+  private readonly posHistory: HistoryEntry[] = [];
 
   constructor(map: MapDef = MAPS.warehouse, opts: RoomOptions = {}) {
     this.map = map;
@@ -158,6 +177,8 @@ export class Room {
       respawnAtTick: 0,
       weapon: 'ar',
       mags: freshMags(),
+      reserve: freshReserve(),
+      recoil: createRecoilState(),
       pendingWeapon: null,
       switchEndsTick: 0,
       reloadEndsTick: -1,
@@ -200,6 +221,8 @@ export class Room {
     p.health = MAX_HEALTH;
     p.alive = true;
     p.mags = freshMags();
+    p.reserve = freshReserve();
+    p.recoil = createRecoilState();
     p.pendingWeapon = null;
     p.reloadEndsTick = -1;
     p.fireCooldown = 0;
@@ -270,6 +293,16 @@ export class Room {
     return isWalkable(this.nav, c.cx, c.cz);
   }
 
+  setRtt(id: number, ms: number): void {
+    if (!Number.isFinite(ms)) return;
+    this.rttMs.set(id, Math.max(0, Math.min(LAG_COMP_MAX_RTT_MS, Math.round(ms))));
+  }
+
+  private rewindTicksFor(id: number): number {
+    const rtt = this.rttMs.get(id) ?? 0;
+    return Math.min(LAG_COMP_MAX_TICKS, Math.round(((rtt / 2) / 1000) * TICK_RATE));
+  }
+
   blocked(x: number, y: number, z: number, dx: number, dz: number, dist: number): boolean {
     return raycastBoxes(x, y, z, dx, 0, dz, dist, this.obstacles) !== null;
   }
@@ -304,6 +337,11 @@ export class Room {
         p.health = Math.min(MAX_HEALTH, p.health + REGEN_PER_TICK);
       }
     }
+    this.posHistory.push({
+      tick: this.tick,
+      pos: new Map(this.players.map((p) => [p.id, { x: p.st.x, y: p.st.y, z: p.st.z, h: p.st.height }])),
+    });
+    if (this.posHistory.length > LAG_COMP_MAX_TICKS + 1) this.posHistory.shift();
     this.processExplosions();
     if (this.navDirty && this.tick - this.navRebuildAtTick >= 30) {
       this.nav = this.bakeNav();
@@ -428,31 +466,34 @@ export class Room {
     }
     if (p.fireCooldown > 0) p.fireCooldown -= TICK_DT;
     if (p.reloadEndsTick >= 0 && this.tick >= p.reloadEndsTick) {
-      p.mags[p.weapon] = WEAPONS[p.weapon].magSize;
+      const cw = WEAPONS[p.weapon];
+      const take = Math.min(cw.magSize - p.mags[p.weapon], p.reserve[p.weapon]);
+      p.mags[p.weapon] += take;
+      p.reserve[p.weapon] -= take;
       p.reloadEndsTick = -1;
     }
+    updateRecoil(p.recoil, this.tick * TICK_DT, TICK_DT);
     const btn = input.buttons;
-    const moving = input.moveX !== 0 || input.moveZ !== 0;
-    const sprinting = (btn & BTN.SPRINT) !== 0 && (btn & BTN.CROUCH) === 0 && moving;
     const fireHeld = (btn & BTN.FIRE) !== 0;
     const fireEdge = fireHeld && !p.prevFireBtn;
-    const canTrigger =
-      fireHeld && (w.auto || fireEdge) && !sprinting && !p.st.sliding && p.pendingWeapon === null;
+    const canTrigger = fireHeld && (w.auto || fireEdge) && p.st.sprintLockT <= 0 && p.pendingWeapon === null;
     if (canTrigger) {
       if (p.mags[p.weapon] <= 0) {
-        this.startReload(p);
+        if (p.reserve[p.weapon] > 0) this.startReload(p);
       } else if (p.fireCooldown <= 0 && p.reloadEndsTick < 0) {
         this.fire(p, input);
       }
     }
-    if ((btn & BTN.RELOAD) !== 0 && p.reloadEndsTick < 0 && p.mags[p.weapon] < WEAPONS[p.weapon].magSize) {
+    if ((btn & BTN.RELOAD) !== 0 && p.reloadEndsTick < 0 && p.mags[p.weapon] < w.magSize && p.reserve[p.weapon] > 0) {
       this.startReload(p);
     }
     p.prevFireBtn = fireHeld;
   }
 
   private startReload(p: ServerPlayer): void {
-    p.reloadEndsTick = this.tick + Math.round(WEAPONS[p.weapon].reloadTime * TICK_RATE);
+    const w = WEAPONS[p.weapon];
+    const time = p.mags[p.weapon] === 0 ? w.reloadTime + EMPTY_RELOAD_EXTRA : w.reloadTime;
+    p.reloadEndsTick = this.tick + Math.round(time * TICK_RATE);
   }
 
   private fire(p: ServerPlayer, input: InputMsg): void {
@@ -463,12 +504,13 @@ export class Room {
     const ox = p.st.x;
     const oy = eyeY(p.st);
     const oz = p.st.z;
-    const spread = (input.buttons & BTN.ADS) !== 0 ? w.spreadAds : w.spreadHip;
-    const base = viewDir(input.yaw, input.pitch);
+    const spread = ((input.buttons & BTN.ADS) !== 0 ? w.spreadAds : w.spreadHip) * spreadMulFor(p.st, input);
+    const base = viewDir(input.yaw + p.recoil.yaw * DEG2RAD, input.pitch + p.recoil.pitch * DEG2RAD);
+    const rewind = this.rewindTicksFor(p.id);
     let hitAny = false;
     for (let i = 0; i < w.pellets; i++) {
       const dir = jitterDir(base, spread, this.rng);
-      const hit = this.castShot(p.id, ox, oy, oz, dir);
+      const hit = this.castShot(p.id, ox, oy, oz, dir, rewind);
       const dist = hit ? hit.t : SHOT_MAX_DISTANCE;
       this.events.push({
         type: 'shot',
@@ -479,13 +521,14 @@ export class Room {
         weapon: p.weapon,
       });
       if (hit && hit.player) {
-        this.applyDamage(p, hit.player, hit.part, w.damage, w.headMul);
+        this.applyDamage(p, hit.player, hit.part, w.damage * falloffMul(w, hit.t), w.headMul);
         hitAny = true;
       } else if (hit && hit.coverIndex >= 0) {
         this.damageCover(p, hit.coverIndex, w.damage);
       }
     }
     if (hitAny) p.shotsHit++;
+    addRecoilShot(p.recoil, w, this.tick * TICK_DT, this.rng);
     this.pendingSounds.push({ x: ox, z: oz, sourceId: p.id, kind: 'shot' });
   }
 
@@ -510,6 +553,7 @@ export class Room {
     oy: number,
     oz: number,
     dir: { x: number; y: number; z: number },
+    rewindTicks = 0,
   ): { t: number; player: ServerPlayer | null; part: 'head' | 'body'; coverIndex: number } | null {
     let best: { t: number; player: ServerPlayer | null; part: 'head' | 'body'; coverIndex: number } | null = null;
     for (let i = 0; i < this.obstacles.length; i++) {
@@ -518,10 +562,31 @@ export class Room {
         best = { t, player: null, part: 'body', coverIndex: this.obstacleCoverIndex[i] };
       }
     }
+    let rewound: Map<number, { x: number; y: number; z: number; h: number }> | null = null;
+    if (rewindTicks > 0) {
+      const targetTick = this.tick - rewindTicks;
+      for (let i = this.posHistory.length - 1; i >= 0; i--) {
+        if (this.posHistory[i].tick <= targetTick) {
+          rewound = this.posHistory[i].pos;
+          break;
+        }
+      }
+    }
     for (const q of this.players) {
       if (q.id === excludeId || !q.alive) continue;
-      const body = boxCenter(q.st.x, q.st.y + (q.st.height - 0.35) / 2, q.st.z, 0.8, q.st.height - 0.35, 0.8);
-      const head = boxCenter(q.st.x, q.st.y + q.st.height - 0.175, q.st.z, 0.36, 0.35, 0.36);
+      let bx = q.st.x;
+      let by = q.st.y;
+      let bz = q.st.z;
+      let bh = q.st.height;
+      const r = rewound?.get(q.id);
+      if (r) {
+        bx = r.x;
+        by = r.y;
+        bz = r.z;
+        bh = r.h;
+      }
+      const body = boxCenter(bx, by + (bh - 0.35) / 2, bz, 0.8, bh - 0.35, 0.8);
+      const head = boxCenter(bx, by + bh - 0.175, bz, 0.36, 0.35, 0.36);
       const tBody = rayBox(ox, oy, oz, dir.x, dir.y, dir.z, body, SHOT_MAX_DISTANCE);
       const tHead = rayBox(ox, oy, oz, dir.x, dir.y, dir.z, head, SHOT_MAX_DISTANCE);
       for (const [t, part] of [
@@ -595,6 +660,8 @@ export class Room {
       a: p.alive,
       w: p.weapon,
       m: p.mags[p.weapon],
+      rs: p.reserve[p.weapon],
+      rl: p.reloadEndsTick >= 0 ? Math.round((p.reloadEndsTick - this.tick) * TICK_DT * 10) / 10 : 0,
       k: p.kills,
       d: p.deaths,
       sf: p.shotsFired,
@@ -618,31 +685,7 @@ function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
-export function jitterDir(
-  base: { x: number; y: number; z: number },
-  spread: number,
-  rng: () => number,
-): { x: number; y: number; z: number } {
-  if (spread <= 0) return base;
-  const upX = Math.abs(base.y) < 0.99 ? 0 : 1;
-  const upY = Math.abs(base.y) < 0.99 ? 1 : 0;
-  let rx = -base.z * upY;
-  let ry = base.z * upX;
-  let rz = base.x * upY - base.y * upX;
-  const rLen = Math.hypot(rx, ry, rz) || 1;
-  rx /= rLen;
-  ry /= rLen;
-  rz /= rLen;
-  const ux = ry * base.z - rz * base.y;
-  const uy = rz * base.x - rx * base.z;
-  const uz = rx * base.y - ry * base.x;
-  const a = rng() * Math.PI * 2;
-  const r = Math.sqrt(rng()) * spread;
-  const ca = Math.cos(a) * r;
-  const sa = Math.sin(a) * r;
-  const dx = base.x + rx * ca + ux * sa;
-  const dy = base.y + ry * ca + uy * sa;
-  const dz = base.z + rz * ca + uz * sa;
-  const len = Math.hypot(dx, dy, dz);
-  return { x: dx / len, y: dy / len, z: dz / len };
+interface HistoryEntry {
+  tick: number;
+  pos: Map<number, { x: number; y: number; z: number; h: number }>;
 }

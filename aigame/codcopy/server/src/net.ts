@@ -81,6 +81,7 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
       } else if (msg.kind === 'input' && client) {
         room.enqueueInput(client.playerId, msg.input);
       } else if (msg.kind === 'ping') {
+        if (client) room.setRtt(client.playerId, Number(msg.rtt ?? 0));
         send(ws, { kind: 'pong', t: msg.t });
       }
     });

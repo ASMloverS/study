@@ -24,7 +24,8 @@
         <div id="healthtext">100</div>
       </div>
       <div id="bottomright">
-        <div id="ammo">30 / 30</div>
+        <div id="reloadbar"><div id="reloadfill"></div></div>
+        <div id="ammo">30 / 90</div>
         <div id="weapon">突击步枪</div>
       </div>
       <div id="score"></div>
@@ -52,7 +53,7 @@
     </div>
     <div id="startoverlay">
       <h1>CODCOPY</h1>
-      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2/3 或滚轮切枪 · Tab 计分板</p>
+      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2/3 或滚轮切枪 · Q 切回上一把 · Tab 计分板</p>
       <div class="setting"><label>模式</label>
         <select id="modesel">
           <option value="local" selected>单机（内嵌服务器）</option>
@@ -73,6 +74,13 @@
       <div class="setting"><label>灵敏度 <span id="sensval">2.2</span></label><input id="sensrange" type="range" min="5" max="60" step="1" value="22" /></div>
       <div class="setting"><label>音量 <span id="volval">70%</span></label><input id="volrange" type="range" min="0" max="100" step="1" value="70" /></div>
       <div class="setting"><label>视场角 <span id="fovval">80</span></label><input id="fovrange" type="range" min="60" max="110" step="1" value="80" /></div>
+      <div class="setting"><label>画质</label>
+        <select id="qualitysel">
+          <option value="low">低（无弹孔/点光，粒子减半）</option>
+          <option value="medium">中</option>
+          <option value="high" selected>高</option>
+        </select>
+      </div>
       <div class="setting"><label>阴影</label><input id="shadowcheck" type="checkbox" checked /></div>
       <button id="playbtn">开始游戏</button>
     </div>

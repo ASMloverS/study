@@ -28,7 +28,7 @@ export interface Vec3 {
 export type C2SMessage =
   | { kind: 'join'; name: string }
   | { kind: 'input'; input: InputMsg }
-  | { kind: 'ping'; t: number };
+  | { kind: 'ping'; t: number; rtt?: number };
 
 export interface PlayerSnap {
   id: number;
@@ -47,6 +47,8 @@ export interface PlayerSnap {
   a: boolean;
   w: WeaponId;
   m: number;
+  rs: number;
+  rl: number;
   k: number;
   d: number;
   sf: number;

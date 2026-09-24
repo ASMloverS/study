@@ -146,9 +146,9 @@ frame(rAF):
 
 ### 5.4 服务端回滚（lag compensation）[M5]
 
-- 服务器按 tick 保存全体玩家位置历史（环形缓冲，约 200ms / 6 tick 窗口）。
-- 开火判定时：将所有潜在受击者回溯至「当前 tick − 攻击者 ½RTT 对应 tick 数」时刻的位置再做射线求交；静态掩体不回溯，动态掩体（滑门开度）按回溯 tick 读取。
-- 攻击者 RTT 来源：`ping` 消息最小 RTT 滑动窗口；回溯上限 250ms（防 ping 欺骗拉大回溯窗口）。
+- 服务器按 tick 保存全体玩家位置历史（环形缓冲，约 267ms / 8 tick 窗口）。
+- 开火判定时：将所有潜在受击者回溯至「当前 tick − 攻击者 ½RTT 对应 tick 数」时刻的位置再做射线求交；掩体（含动态掩体）按当前状态判定，不回溯。
+- 攻击者 RTT 来源：`ping` 消息携带客户端实测 RTT（服务器侧 `setRtt`）；RTT 上限 500ms、回溯上限 8 tick（≈250ms，防 ping 欺骗拉大回溯窗口）。
 - 单测重点：回溯窗口读写边界、延迟命中判定（构造 100ms 前位置与当前视线的命中）。
 
 ### 5.5 协议（v1 摘要，类型定义于 `shared/protocol.ts`）
@@ -162,7 +162,7 @@ frame(rAF):
 | S→C | `event` | shot（弹道表现）/ hit / kill / explode / coverBreak / door / spawn / gameOver |
 | C↔S | `lobby` / `leave` | 房间管理、AI 设置（单机建房） |
 
-- 协议 v1.1 变更 [M5]：`PlayerSnap` 增加 `rs`（reserve 备弹）字段，快照体积预算需复测（原 < 6.2KB 断言更新）；其余消息结构不变。
+- 协议 v1.1 变更 [M5]：`PlayerSnap` 增加 `rs`（reserve 备弹）与 `rl`（换弹剩余秒数）字段，快照体积预算复测通过（< 6.2KB 断言维持）；`ping` 消息增加可选 `rtt`（客户端实测回传，用于服务端回滚）；其余消息结构不变。
 
 ## 6. 共享库（shared）
 

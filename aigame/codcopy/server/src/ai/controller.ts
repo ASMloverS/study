@@ -374,12 +374,21 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
     buttons |= BTN.FIRE;
   }
 
-  if (p.mags[p.weapon] === 0 || (target && dist > 25 && p.mags[p.weapon] <= Math.ceil(magSize(p.weapon) * 0.2))) {
+  if (
+    (p.mags[p.weapon] === 0 && p.reserve[p.weapon] > 0) ||
+    (target && dist > 25 && p.mags[p.weapon] <= Math.ceil(magSize(p.weapon) * 0.2) && p.reserve[p.weapon] > 0)
+  ) {
     buttons |= BTN.RELOAD;
   }
 
+  const hasAmmo = (wid: WeaponId): boolean => p.mags[wid] > 0 || p.reserve[wid] > 0;
   let slot = 0;
-  if (b.wantWeapon && b.wantWeapon !== p.weapon) slot = WEAPON_SLOTS.indexOf(b.wantWeapon) + 1;
+  if (b.wantWeapon && b.wantWeapon !== p.weapon && hasAmmo(b.wantWeapon)) {
+    slot = WEAPON_SLOTS.indexOf(b.wantWeapon) + 1;
+  } else if (!hasAmmo(p.weapon)) {
+    const alt = WEAPON_SLOTS.find((wid) => wid !== p.weapon && hasAmmo(wid));
+    if (alt) slot = WEAPON_SLOTS.indexOf(alt) + 1;
+  }
 
   p.ackSeq++;
   return { seq: p.ackSeq, moveX, moveZ, yaw: b.aimYaw, pitch: b.aimPitch, buttons, slot };

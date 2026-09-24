@@ -10,12 +10,14 @@ describe('weapon switch', () => {
     room.enqueueInput(p.id, { seq: 1, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 3 });
     room.step();
     expect(p.weapon).toBe('ar');
-    for (let i = 2; i <= 16; i++) {
+    expect(p.pendingWeapon).toBe('sr');
+    for (let i = 2; i <= 25; i++) {
       room.enqueueInput(p.id, { seq: i, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 3 });
       room.step();
     }
     expect(p.weapon).toBe('sr');
     expect(p.mags.sr).toBe(WEAPONS.sr.magSize);
+    expect(p.reserve.sr).toBe(WEAPONS.sr.reserve);
     expect(p.mags.ar).toBe(WEAPONS.ar.magSize);
   });
 
@@ -32,7 +34,7 @@ describe('weapon switch', () => {
     room.step();
     expect(b.health).toBe(before);
     expect(a.shotsFired).toBe(0);
-    for (let i = 3; i <= 16; i++) {
+    for (let i = 3; i <= 22; i++) {
       fireAt(0, i);
       room.step();
     }

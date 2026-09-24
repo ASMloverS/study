@@ -23,6 +23,8 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
 #bottomright { position: absolute; right: 24px; bottom: 24px; text-align: right; }
 #ammo { font-size: 26px; font-weight: 700; text-shadow: 0 1px 2px #000; }
 #weapon { font-size: 14px; opacity: 0.85; }
+#reloadbar { width: 160px; height: 6px; margin: 0 0 6px auto; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.3); opacity: 0; transition: opacity 0.1s; }
+#reloadfill { height: 100%; width: 0%; background: #d8b24a; }
 #score { position: absolute; top: 16px; right: 20px; font-size: 15px; text-shadow: 0 1px 2px #000; text-align: right; }
 #killfeed { position: absolute; top: 16px; right: 20px; margin-top: 28px; list-style: none; text-align: right; }
 #killfeed li { font-size: 13px; margin-bottom: 4px; text-shadow: 0 1px 2px #000; background: rgba(0,0,0,0.35); padding: 2px 8px; border-radius: 3px; }

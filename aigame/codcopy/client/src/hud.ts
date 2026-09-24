@@ -4,6 +4,8 @@ export class Hud {
   private readonly healthbar = el<HTMLDivElement>('healthbar');
   private readonly healthtext = el<HTMLDivElement>('healthtext');
   private readonly ammo = el<HTMLDivElement>('ammo');
+  private readonly reloadbar = el<HTMLDivElement>('reloadbar');
+  private readonly reloadfill = el<HTMLDivElement>('reloadfill');
   private readonly weaponEl = el<HTMLDivElement>('weapon');
   private readonly score = el<HTMLDivElement>('score');
   private readonly killfeed = el<HTMLUListElement>('killfeed');
@@ -24,6 +26,7 @@ export class Hud {
   private deathAt = 0;
   private hitAt = 0;
   private dmgUntil = 0;
+  private reloadTotal = 0;
   onRestart: (() => void) | null = null;
   onMenu: (() => void) | null = null;
 
@@ -37,8 +40,16 @@ export class Hud {
       this.healthbar.style.width = `${self.hp}%`;
       this.healthbar.style.background = self.hp > 60 ? '#7ec850' : self.hp > 30 ? '#e0b13e' : '#d84f3f';
       this.healthtext.textContent = String(self.hp);
-      this.ammo.textContent = `${self.m} / ${self.m}`;
+      this.ammo.textContent = `${self.m} / ${self.rs}`;
       this.weaponEl.textContent = weaponName(self.w);
+      if (self.rl > 0) {
+        this.reloadTotal = Math.max(this.reloadTotal, self.rl);
+        this.reloadbar.style.opacity = '1';
+        this.reloadfill.style.width = `${Math.round((1 - self.rl / this.reloadTotal) * 100)}%`;
+      } else {
+        this.reloadTotal = 0;
+        this.reloadbar.style.opacity = '0';
+      }
       const pingStr = ping !== null ? ` &nbsp;·&nbsp; ping ${ping}ms` : '';
       this.score.innerHTML = `击杀 ${self.k} &nbsp;·&nbsp; 死亡 ${self.d}${pingStr}<br>${fmtTime(timeLeft)}`;
     }
