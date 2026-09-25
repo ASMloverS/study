@@ -34,9 +34,16 @@
       <div id="flashoverlay"></div>
       <div id="score"></div>
       <ul id="killfeed"></ul>
-      <div id="deathoverlay"><div id="deathtext"></div><div id="respawncount"></div></div>
+      <div id="deathoverlay"><div id="deathtext"></div><div id="respawncount"></div>
+        <div id="deathloadout">
+          <label>主武器 <select id="dprimarysel"></select></label>
+          <label>副武器 <select id="dsecondarysel"></select></label>
+          <span>下一命生效</span>
+        </div>
+      </div>
       <div id="killmsg"></div>
       <canvas id="minimap" width="180" height="180"></canvas>
+      <div id="inputdev"></div>
       <div id="scoreboard">
         <table>
           <thead><tr><th>玩家</th><th>击杀</th><th>死亡</th><th>连杀</th><th>命中率</th></tr></thead>
@@ -57,7 +64,10 @@
     </div>
     <div id="startoverlay">
       <h1>CODCOPY</h1>
-      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2/3 或滚轮切枪 · Q 切回上一把 · V 近战 · G 手雷（按住烹煮） · E 闪光 · 4/5/6 连杀奖励 · 狙击开镜时 Shift 屏息 · Tab 计分板</p>
+      <p>WASD 移动 · Shift 冲刺 · Space 跳跃 · Ctrl 蹲/滑铲 · 左键射击 · 右键开镜 · R 换弹 · 1/2 或滚轮切主/副武器 · Q 快速切换 · V 近战 · G 手雷（按住烹煮） · E 闪光 · 4/5/6 连杀奖励 · 狙击开镜时 Shift 屏息 · Tab 计分板 · Esc 暂停</p>
+      <div id="settingscroll">
+      <div class="setting"><label>主武器</label><select id="primarysel"></select></div>
+      <div class="setting"><label>副武器</label><select id="secondarysel"></select></div>
       <div class="setting"><label>模式</label>
         <select id="modesel">
           <option value="local" selected>单机（内嵌服务器）</option>
@@ -78,6 +88,15 @@
         </select>
       </div>
       <div class="setting"><label>灵敏度 <span id="sensval">2.2</span></label><input id="sensrange" type="range" min="5" max="60" step="1" value="22" /></div>
+      <div class="setting"><label>ADS 灵敏度倍率 <span id="adssensval">100%</span></label><input id="adssensrange" type="range" min="30" max="200" step="5" value="100" /></div>
+      <div class="setting"><label>辅助瞄准</label>
+        <select id="assistsel">
+          <option value="off" selected>关</option>
+          <option value="low">低</option>
+          <option value="medium">中</option>
+          <option value="high">高</option>
+        </select>
+      </div>
       <div class="setting"><label>音量 <span id="volval">70%</span></label><input id="volrange" type="range" min="0" max="100" step="1" value="70" /></div>
       <div class="setting"><label>视场角 <span id="fovval">80</span></label><input id="fovrange" type="range" min="60" max="110" step="1" value="80" /></div>
       <div class="setting"><label>画质</label>
@@ -89,7 +108,45 @@
       </div>
       <div class="setting"><label>阴影</label><input id="shadowcheck" type="checkbox" checked /></div>
       <div class="setting"><label>语音播报（TTS）</label><input id="ttscheck" type="checkbox" checked /></div>
+      <div class="setting"><label>手柄灵敏度 <span id="padsensval">2.4</span></label><input id="padsensrange" type="range" min="5" max="50" step="1" value="24" /></div>
+      <div class="setting"><label>手柄死区 <span id="paddzval">0.12</span></label><input id="paddzrange" type="range" min="5" max="30" step="1" value="12" /></div>
+      <div class="setting"><label>手柄震动</label><input id="padrumblecheck" type="checkbox" checked /></div>
+      <div class="setting"><label>亮度 <span id="brightval">100%</span></label><input id="brightrange" type="range" min="50" max="150" step="5" value="100" /></div>
+      <div class="setting"><label>敌人描边</label><input id="outlinecheck" type="checkbox" checked /></div>
+      <div class="setting"><label>敌人颜色</label>
+        <select id="enemycolorsel">
+          <option value="red" selected>红</option>
+          <option value="orange">橙</option>
+          <option value="yellow">黄</option>
+          <option value="purple">紫</option>
+          <option value="cyan">青</option>
+        </select>
+      </div>
+      </div>
       <button id="playbtn">开始游戏</button>
+    </div>
+    <div id="pauseoverlay">
+      <h2 id="pausetitle">已暂停</h2>
+      <div id="lobbyset">
+        <div class="lobtitle">房间设置</div>
+        <div class="setting"><label>AI 数量 <span id="pbotsval">7</span></label><input id="pbotsrange" type="range" min="0" max="7" step="1" value="7" disabled /></div>
+        <div class="setting"><label>AI 难度</label>
+          <select id="pdiffsel" disabled>
+            <option value="mixed">混合</option>
+            <option value="easy">简单</option>
+            <option value="normal">普通</option>
+            <option value="hard">困难</option>
+          </select>
+        </div>
+        <div class="setting"><label>击杀上限 <span id="pkillval">30</span></label><input id="pkillrange" type="range" min="10" max="50" step="5" value="30" disabled /></div>
+        <div class="setting"><label>时长 <span id="pdurval">10 分钟</span></label><input id="pdurrange" type="range" min="5" max="15" step="1" value="10" disabled /></div>
+        <div id="plobbyhint"></div>
+      </div>
+      <div class="pauserow">
+        <button id="resumebtn">继续游戏</button>
+        <button id="pauserestartbtn">重开局</button>
+        <button id="pausemenubtn">返回主菜单</button>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -1,13 +1,35 @@
 import * as THREE from 'three';
 import type { PlayerSnap, WeaponId } from 'shared';
 import { MAPS, mapToObstacles, raycastBoxes, type AABB } from 'shared';
+import type { EnemyColor } from '../input';
 
-/** 远端角色（M7.3）：真实比例分节骨架 + 程序化步态 + 双臂 IK 持枪 + 类 ragdoll 死亡 + 红色名牌。 */
+/** 远端角色（M7.3）：真实比例分节骨架 + 程序化步态 + 双臂 IK 持枪 + 类 ragdoll 死亡 + 敌色名牌。 */
 
 const PALETTE = [0xc94f3f, 0x3f7fc9, 0x8fca4f, 0xc9a23a, 0x9a5fc9, 0x3fc9b0, 0xd06f9e, 0x8a8f3f];
 const INTERP_DELAY = 0.066;
 const CORPSE_FADE = 3.0;
-const NAME_RANGE = 40;
+const NAME_RANGE = 60;
+
+/** [M9] 敌我识别：敌色（描边 / emissive / 名牌 / 小地图统一取色） */
+export const ENEMY_COLORS: Record<EnemyColor, number> = {
+  red: 0xff3b30,
+  orange: 0xff8c1a,
+  yellow: 0xffd60a,
+  purple: 0xa545ff,
+  cyan: 0x2ad4ee,
+};
+
+export const ENEMY_COLOR_RGB: Record<EnemyColor, string> = {
+  red: '255,59,48',
+  orange: '255,140,26',
+  yellow: '255,214,10',
+  purple: '165,69,255',
+  cyan: '42,212,238',
+};
+
+let enemyOutlineOn = true;
+let enemyShellsOn = true;
+let enemyColorHex = ENEMY_COLORS.red;
 
 const OBSTACLES: AABB[] = mapToObstacles(MAPS.warehouse);
 
@@ -79,32 +101,51 @@ function gunFor(w: WeaponId, mat: THREE.Material): THREE.Group {
     add(GEO.gunBody, 0, 0.01, -0.08);
     add(GEO.gunPump, 0, -0.05, -0.14);
     add(GEO.gunStock, 0, -0.02, 0.24);
-  } else {
+  } else if (w === 'sr') {
     add(GEO.gunBody, 0, 0.01, -0.16);
     add(GEO.gunMag, 0, -0.08, -0.02);
     add(GEO.gunStock, 0, -0.01, 0.3);
     add(GEO.gunScope, 0, 0.09, -0.04);
+  } else if (w === 'smg') {
+    add(GEO.gunBody, 0, 0, -0.02);
+    add(GEO.gunMag, 0, -0.1, 0.04);
+    add(GEO.gunStock, 0, 0, 0.2);
+    add(GEO.gunScope, 0, 0.06, 0);
+  } else if (w === 'lmg') {
+    add(GEO.gunBody, 0, 0, -0.1);
+    add(GEO.gunMag, 0, -0.1, 0);
+    add(GEO.gunStock, 0, -0.01, 0.28);
+    add(GEO.gunScope, 0, 0.07, 0.06);
+  } else if (w === 'dmr') {
+    add(GEO.gunBody, 0, 0.01, -0.12);
+    add(GEO.gunMag, 0, -0.07, 0);
+    add(GEO.gunStock, 0, -0.01, 0.28);
+    add(GEO.gunScope, 0, 0.08, -0.02);
+  } else {
+    add(GEO.gunBody, 0, 0.01, 0.1);
+    add(GEO.gunMag, 0, -0.07, 0.12);
   }
   return g;
 }
 
 function nameSprite(name: string): THREE.Sprite {
   const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 64;
+  c.width = 320;
+  c.height = 80;
   const ctx = c.getContext('2d')!;
-  ctx.font = 'bold 34px sans-serif';
+  ctx.font = 'bold 44px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-  ctx.strokeText(name, 128, 32);
-  ctx.fillStyle = '#ff5347';
-  ctx.fillText(name, 128, 32);
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(name, 160, 40);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(name, 160, 40);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, transparent: true }));
-  sprite.scale.set(1.4, 0.35, 1);
+  sprite.material.color.setHex(enemyColorHex);
+  sprite.scale.set(1.75, 0.44, 1);
   return sprite;
 }
 
@@ -135,6 +176,13 @@ class RemoteView {
   private readonly armR: ArmRig;
   private readonly guns: Record<WeaponId, THREE.Group>;
   private readonly nameTag: THREE.Sprite;
+  private readonly shellMat = new THREE.MeshBasicMaterial({
+    color: ENEMY_COLORS.red,
+    side: THREE.BackSide,
+    toneMapped: false,
+  });
+  private readonly shells: THREE.Mesh[] = [];
+  private readonly bodyMats: THREE.MeshStandardMaterial[];
   private nameOccludeAt = 0;
   private nameVisible = true;
 
@@ -145,6 +193,7 @@ class RemoteView {
     const gun = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.45, metalness: 0.75 });
     this.bandMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2 });
     this.mats = [uniform, gear, skin, gun, this.bandMat];
+    this.bodyMats = [uniform, gear, skin];
 
     const M = (geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh => {
       const m = new THREE.Mesh(geo, mat);
@@ -183,13 +232,22 @@ class RemoteView {
     this.armR = this.buildArm(M, uniform, gear, -1);
     this.armL = this.buildArm(M, uniform, gear, 1);
 
-    this.guns = { ar: gunFor('ar', gun), sg: gunFor('sg', gun), sr: gunFor('sr', gun) };
+    this.guns = {
+      ar: gunFor('ar', gun),
+      sg: gunFor('sg', gun),
+      sr: gunFor('sr', gun),
+      smg: gunFor('smg', gun),
+      lmg: gunFor('lmg', gun),
+      dmr: gunFor('dmr', gun),
+      pistol: gunFor('pistol', gun),
+    };
     for (const g of Object.values(this.guns)) {
       g.position.set(-0.09, -0.02, -0.26);
       this.aim.add(g);
     }
-    this.guns.sg.visible = false;
-    this.guns.sr.visible = false;
+    for (const k of Object.keys(this.guns)) {
+      if (k !== 'ar') this.guns[k as WeaponId].visible = false;
+    }
 
     this.thighL.position.set(0.1, -0.08, 0);
     this.hips.add(this.thighL);
@@ -210,6 +268,37 @@ class RemoteView {
     this.nameTag = nameSprite(name);
     this.nameTag.position.y = 2.05;
     this.group.add(this.nameTag);
+    this.buildShells();
+    this.applyEnemyVisuals();
+  }
+
+  /** [M9] shell 法描边：每个身体网格挂一个 BackSide 外扩壳（自带遮挡，随姿态动画更新） */
+  private buildShells(): void {
+    const meshes: THREE.Mesh[] = [];
+    this.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+    for (const mesh of meshes) {
+      const shell = new THREE.Mesh(mesh.geometry, this.shellMat);
+      shell.scale.setScalar(1.08);
+      mesh.add(shell);
+      this.shells.push(shell);
+    }
+  }
+
+  applyEnemyVisuals(): void {
+    for (const s of this.shells) s.visible = enemyOutlineOn && enemyShellsOn;
+    this.shellMat.color.setHex(enemyColorHex);
+    for (const m of this.bodyMats) {
+      if (enemyOutlineOn) {
+        m.emissive.setHex(enemyColorHex);
+        m.emissiveIntensity = 0.15;
+      } else {
+        m.emissive.setHex(0x000000);
+        m.emissiveIntensity = 0;
+      }
+    }
+    this.nameTag.material.color.setHex(enemyColorHex);
   }
 
   private buildArm(M: (geo: THREE.BufferGeometry, mat: THREE.Material, x?: number, y?: number, z?: number) => THREE.Mesh, uniform: THREE.Material, gear: THREE.Material, side: 1 | -1): ArmRig {
@@ -232,7 +321,7 @@ class RemoteView {
     const d = fromDir.clone().setY(0);
     if (d.lengthSq() > 1e-6) this.fallYaw = Math.atan2(-d.x, -d.z);
     this.deathAt = performance.now() / 1000;
-    for (const m of this.mats) {
+    for (const m of [...this.mats, this.shellMat]) {
       m.transparent = true;
       m.needsUpdate = true;
     }
@@ -244,7 +333,7 @@ class RemoteView {
     }
     if (s.a) {
       this.deathAt = null;
-      for (const m of this.mats) {
+      for (const m of [...this.mats, this.shellMat]) {
         m.opacity = 1;
         m.transparent = false;
         m.needsUpdate = true;
@@ -301,6 +390,7 @@ class RemoteView {
       this.aim.rotation.x = 0.4 * loosen;
       const fade = age < CORPSE_FADE ? 1 : Math.max(0, 1 - (age - CORPSE_FADE) / 0.6);
       for (const m of this.mats) m.opacity = fade;
+      this.shellMat.opacity = fade;
       return;
     }
     for (const m of this.mats) m.opacity = 1;
@@ -383,7 +473,7 @@ class RemoteView {
       }
       this.nameTag.visible = this.nameVisible;
       const k = Math.max(0.7, Math.min(1.6, dist / 18));
-      this.nameTag.scale.set(1.4 * k, 0.35 * k, 1);
+      this.nameTag.scale.set(1.75 * k, 0.44 * k, 1);
       this.nameTag.position.y = e.h + 0.3;
     }
   }
@@ -425,6 +515,14 @@ export class RemoteViews {
   private views = new Map<number, RemoteView>();
 
   constructor(private scene: THREE.Scene) {}
+
+  /** [M9] 敌我识别设置：更新全局敌色/描边并应用到现有角色（shells=false 为低画质降级：仅 emissive） */
+  setEnemyVisuals(outline: boolean, color: EnemyColor, shells = true): void {
+    enemyOutlineOn = outline;
+    enemyShellsOn = shells;
+    enemyColorHex = ENEMY_COLORS[color];
+    for (const v of this.views.values()) v.applyEnemyVisuals();
+  }
 
   pushAll(players: PlayerSnap[], selfId: number, time: number): void {
     for (const p of players) {

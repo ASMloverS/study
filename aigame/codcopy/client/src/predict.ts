@@ -4,6 +4,7 @@ import {
   SHOT_MAX_DISTANCE,
   type InputMsg,
   type PlayerSnap,
+  type WeaponId,
   createMoveState,
   mapToObstacles,
   raycastBoxes,
@@ -19,16 +20,18 @@ export class Predictor {
   prevZ = 0;
   prevH = 1.8;
   private readonly obstacles: AABB[] = mapToObstacles(MAPS.warehouse);
-  private history: InputMsg[] = [];
+  private history: { input: InputMsg; weapon: WeaponId }[] = [];
+  private lastWeapon: WeaponId = 'ar';
 
-  step(input: InputMsg): void {
+  step(input: InputMsg, weapon: WeaponId = this.lastWeapon): void {
+    this.lastWeapon = weapon;
     this.prevX = this.state.x;
     this.prevY = this.state.y;
     this.prevZ = this.state.z;
     this.prevH = this.state.height;
-    this.history.push(input);
+    this.history.push({ input, weapon });
     if (this.history.length > 120) this.history.shift();
-    stepMovement(this.state, input, this.obstacles);
+    stepMovement(this.state, input, this.obstacles, undefined, weapon);
   }
 
   raycastObstacles(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number): number | null {
@@ -37,7 +40,7 @@ export class Predictor {
   }
 
   reconcile(snap: PlayerSnap, ackSeq: number): void {
-    this.history = this.history.filter((i) => i.seq > ackSeq);
+    this.history = this.history.filter((i) => i.input.seq > ackSeq);
     const s = this.state;
     const drifted =
       Math.abs(s.x - snap.x) > 0.02 ||
@@ -61,6 +64,6 @@ export class Predictor {
     s.sliding = snap.sl;
     s.crouching = snap.h === PLAYER_CROUCH_HEIGHT && !snap.sl;
     s.onGround = Math.abs(snap.vy) < 0.01;
-    for (const input of this.history) stepMovement(s, input, this.obstacles);
+    for (const { input, weapon } of this.history) stepMovement(s, input, this.obstacles, undefined, weapon);
   }
 }

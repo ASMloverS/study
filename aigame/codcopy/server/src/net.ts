@@ -3,7 +3,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { SNAPSHOT_EVERY_TICKS, TICK_RATE, type S2CMessage } from 'shared';
+import { DEFAULT_LOADOUT, SNAPSHOT_EVERY_TICKS, TICK_RATE, WEAPON_LIST, type Loadout, type S2CMessage } from 'shared';
 import type { BotDifficulty } from './ai/controller';
 import { Room } from './game/world';
 
@@ -26,16 +26,21 @@ interface Client {
   ws: WebSocket;
   playerId: number;
   name: string;
+  loadout: Loadout;
 }
 
 export function startNetServer(opts: NetServerOptions): NetServerHandle {
-  const roomOpts = {
-    bots: opts.bots ?? 7,
-    botDifficulty: opts.difficulty ?? 'mixed',
-    killLimit: opts.killLimit,
-    durationSec: opts.durationSec,
-  };
-  let room = new Room(undefined, roomOpts);
+  let lobbyBots = opts.bots ?? 7;
+  let lobbyDifficulty = opts.difficulty ?? 'mixed';
+  let pendingKillLimit: number | undefined;
+  let pendingMatchMinutes: number | undefined;
+  const roomOpts = () => ({
+    bots: lobbyBots,
+    botDifficulty: lobbyDifficulty,
+    killLimit: pendingKillLimit ?? opts.killLimit,
+    durationSec: pendingMatchMinutes != null ? pendingMatchMinutes * 60 : opts.durationSec,
+  });
+  let room = new Room(undefined, roomOpts());
   const distDir = fileURLToPath(new URL('../../client/dist/', import.meta.url));
   const mime: Record<string, string> = {
     '.html': 'text/html; charset=utf-8',
@@ -71,6 +76,12 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
     for (const c of clients) send(c.ws, msg);
   };
 
+  /** [M10] 房主：首个真人；退出移交最早加入者 */
+  const hostClient = (): Client | null => (clients.size > 0 ? [...clients][0] : null);
+  const broadcastLobby = () => {
+    broadcast(room.lobbyState(hostClient()?.playerId ?? null, { killLimit: pendingKillLimit, matchMinutes: pendingMatchMinutes }));
+  };
+
   wss.on('connection', (ws) => {
     let client: Client | null = null;
     ws.on('message', (data) => {
@@ -82,12 +93,33 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
       }
       if (msg.kind === 'join' && !client) {
         const name = String(msg.name ?? 'Player').slice(0, 16) || 'Player';
-        const p = room.addHuman(name);
-        client = { ws, playerId: p.id, name };
+        const loadout: Loadout =
+          msg.loadout && WEAPON_LIST.includes(msg.loadout.primary) && WEAPON_LIST.includes(msg.loadout.secondary)
+            ? { primary: msg.loadout.primary, secondary: msg.loadout.secondary }
+            : DEFAULT_LOADOUT;
+        const p = room.addHuman(name, loadout);
+        client = { ws, playerId: p.id, name, loadout: { ...p.loadout } };
         clients.add(client);
-        send(ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec } });
+        send(ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec }, loadout: { ...p.loadout } });
+        send(ws, room.lobbyState(hostClient()?.playerId ?? null, { killLimit: pendingKillLimit, matchMinutes: pendingMatchMinutes }));
       } else if (msg.kind === 'input' && client) {
         room.enqueueInput(client.playerId, msg.input);
+      } else if (msg.kind === 'loadout' && client) {
+        const applied = room.setLoadout(client.playerId, msg.loadout);
+        client.loadout = { ...applied };
+        send(ws, { kind: 'loadoutAck', loadout: applied });
+      } else if (msg.kind === 'lobby' && client) {
+        if (hostClient() !== client) return;
+        if (typeof msg.bots === 'number') {
+          lobbyBots = room.setBotCount(msg.bots);
+        }
+        if (typeof msg.difficulty === 'string' && ['mixed', 'easy', 'normal', 'hard'].includes(msg.difficulty)) {
+          lobbyDifficulty = msg.difficulty;
+          room.setBotDifficulty(msg.difficulty);
+        }
+        if (typeof msg.killLimit === 'number' && msg.killLimit >= 1) pendingKillLimit = Math.round(msg.killLimit);
+        if (typeof msg.matchMinutes === 'number' && msg.matchMinutes >= 1) pendingMatchMinutes = Math.round(msg.matchMinutes);
+        broadcastLobby();
       } else if (msg.kind === 'ping') {
         if (client) room.setRtt(client.playerId, Number(msg.rtt ?? 0));
         send(ws, { kind: 'pong', t: msg.t });
@@ -97,6 +129,7 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
       if (client) {
         room.playerLeft(client.playerId);
         clients.delete(client);
+        broadcastLobby();
       }
     });
     ws.on('error', () => ws.close());
@@ -104,13 +137,16 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
 
   const resetRoom = () => {
     const old = [...clients];
-    room = new Room(undefined, { ...roomOpts, bots: Math.max(0, (opts.bots ?? 7) - old.length) });
+    room = new Room(undefined, { ...roomOpts(), bots: Math.max(0, lobbyBots - old.length) });
     for (const c of old) {
-      const p = room.addHuman(c.name);
+      const p = room.addHuman(c.name, c.loadout);
       c.playerId = p.id;
-      send(c.ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec } });
+      send(c.ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec }, loadout: { ...p.loadout } });
     }
+    pendingKillLimit = undefined;
+    pendingMatchMinutes = undefined;
     overSince = 0;
+    broadcastLobby();
   };
 
   let last = Date.now();
@@ -150,9 +186,14 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
 
 if (process.argv[1] && process.argv[1].endsWith('net.ts')) {
   const port = Number(process.env.PORT ?? 8080);
+  const difficultyEnv = String(process.env.DIFFICULTY ?? 'mixed');
+  const difficulty = (['mixed', 'easy', 'normal', 'hard'] as const).includes(difficultyEnv as any)
+    ? (difficultyEnv as 'mixed' | 'easy' | 'normal' | 'hard')
+    : 'mixed';
   const handle = startNetServer({
     port,
     bots: Number(process.env.BOTS ?? 7),
+    difficulty,
     killLimit: Number(process.env.KILL_LIMIT ?? 30),
     durationSec: Number(process.env.MATCH_MINUTES ?? 10) * 60,
   });

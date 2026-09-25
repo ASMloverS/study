@@ -17,10 +17,15 @@ export interface EnemyBlip {
 export class Minimap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly canvas: HTMLCanvasElement;
+  private enemyRgb = '255,70,60';
 
   constructor(private map: MapDef) {
     this.canvas = document.getElementById('minimap') as HTMLCanvasElement;
     this.ctx = this.canvas.getContext('2d')!;
+  }
+
+  setEnemyColor(rgb: string): void {
+    this.enemyRgb = rgb;
   }
 
   render(self: { x: number; z: number; yaw: number }, enemies: Map<number, EnemyBlip>, now: number, uavEnemies: { x: number; z: number }[] = []): void {
@@ -42,13 +47,13 @@ export class Minimap {
         enemies.delete(id);
         continue;
       }
-      ctx.fillStyle = 'rgba(255,70,60,0.9)';
+      ctx.fillStyle = `rgba(${this.enemyRgb},0.9)`;
       ctx.beginPath();
       ctx.arc((b.x + world / 2) * s, (b.z + world / 2) * s, 3.4, 0, Math.PI * 2);
       ctx.fill();
     }
     for (const e of uavEnemies) {
-      ctx.fillStyle = 'rgba(255,120,80,0.95)';
+      ctx.fillStyle = `rgba(${this.enemyRgb},0.95)`;
       ctx.beginPath();
       ctx.arc((e.x + world / 2) * s, (e.z + world / 2) * s, 3.4, 0, Math.PI * 2);
       ctx.fill();

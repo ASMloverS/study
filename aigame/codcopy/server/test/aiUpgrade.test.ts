@@ -10,16 +10,15 @@ describe('AI behavior upgrade (M6.4)', () => {
     const b = room.addPlayer('B', true, 'hard');
     Object.assign(a.st, { x: 12, z: 5, yaw: 0 });
     Object.assign(b.st, { x: 12, z: -10, yaw: Math.PI });
-    for (let i = 0; i < 150; i++) {
-      a.health = 10000;
-      b.health = 10000;
-      room.step();
-    }
+    const brain = a.bot!;
+    brain.lastDecisionTick = room.tick; // 冻结本 tick 决策，直接验证输入组装（确定性）
+    brain.targetId = b.id;
+    brain.coverSpot = null;
+    brain.peekSpot = null;
+    brain.moveGoal = null;
     const inp = updateBot(room, a);
-    const dist = Math.hypot(b.st.x - a.st.x, b.st.z - a.st.z);
-    if (dist > 8) {
-      expect((inp.buttons & BTN.ADS) !== 0).toBe(true);
-    }
+    expect(Math.hypot(b.st.x - a.st.x, b.st.z - a.st.z)).toBeGreaterThan(8);
+    expect((inp.buttons & BTN.ADS) !== 0).toBe(true);
   });
 
   it('bot with cover assignment crouches when hiding', () => {

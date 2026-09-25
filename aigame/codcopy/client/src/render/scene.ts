@@ -15,6 +15,7 @@ export interface SceneCtx {
   sun: THREE.DirectionalLight;
   composer: EffectComposer | null;
   setQuality: (q: QualityTier) => void;
+  setBrightness: (mult: number) => void;
 }
 
 const SKY_VERT = `
@@ -54,9 +55,11 @@ function buildSky(): THREE.Mesh {
   return sky;
 }
 
+const BASE_EXPOSURE = 1.15;
+
 export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xcfdce6, 0.0045);
+  scene.fog = new THREE.FogExp2(0xcfdce6, 0.0028);
 
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 400);
   camera.rotation.order = 'YXZ';
@@ -67,7 +70,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.02;
+  renderer.toneMappingExposure = BASE_EXPOSURE;
 
   const sky = buildSky();
   scene.add(sky);
@@ -76,13 +79,13 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   const envScene = new THREE.Scene();
   envScene.add(buildSky());
   scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.7;
+  scene.environmentIntensity = 0.85;
   pmrem.dispose();
 
-  const hemi = new THREE.HemisphereLight(0xbfd4e6, 0x4a4f52, 0.42);
+  const hemi = new THREE.HemisphereLight(0xbfd4e6, 0x4a4f52, 0.55);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
+  const sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
   sun.position.set(33, 43, 25);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -131,6 +134,9 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
       ssao.enabled = q === 'high';
       bloom.enabled = q !== 'low';
       ctx.composer = q === 'low' ? null : composer;
+    },
+    setBrightness: (mult: number) => {
+      renderer.toneMappingExposure = BASE_EXPOSURE * Math.max(0.1, Math.min(3, mult));
     },
   };
   ctx.setQuality('high');

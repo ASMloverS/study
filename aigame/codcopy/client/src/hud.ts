@@ -74,7 +74,7 @@ export class Hud {
     } else {
       this.flashoverlay.style.opacity = '0';
     }
-    this.hitmarker.style.opacity = now - this.hitAt < 120 ? '1' : '0';
+    this.hitmarker.style.opacity = now - this.hitAt < 160 ? '1' : '0';
     this.vignette.style.opacity = self && self.hp < 35 && self.a ? '0.6' : '0';
     if (this.deathAt > 0) {
       const remain = Math.max(0, 3 - (now - this.deathAt) / 1000);
@@ -95,7 +95,7 @@ export class Hud {
     this.scope.style.opacity = show ? '1' : '0';
   }
 
-  setScoreboard(show: boolean, players: PlayerSnap[], selfId: number): void {
+  setScoreboard(show: boolean, players: PlayerSnap[], selfId: number, hostId: number | null = null): void {
     this.scoreboard.style.display = show ? 'flex' : 'none';
     if (!show) return;
     const sorted = [...players].sort((a, b) => b.k - a.k || a.d - b.d);
@@ -104,7 +104,8 @@ export class Hud {
       const tr = document.createElement('tr');
       if (p.id === selfId) tr.className = 'me';
       const acc = p.sf > 0 ? Math.round((p.sh / p.sf) * 100) : 0;
-      tr.innerHTML = `<td>${escapeHtml(p.name)}</td><td>${p.k}</td><td>${p.d}</td><td>${p.bs}</td><td>${acc}%</td>`;
+      const hostTag = hostId !== null && p.id === hostId ? ' <span class="hosttag">房主</span>' : '';
+      tr.innerHTML = `<td>${escapeHtml(p.name)}${hostTag}</td><td>${p.k}</td><td>${p.d}</td><td>${p.bs}</td><td>${acc}%</td>`;
       this.scoreboardBody.appendChild(tr);
     }
   }
@@ -208,7 +209,17 @@ function el<T extends HTMLElement>(id: string): T {
 }
 
 function weaponName(w: string): string {
-  return { ar: '突击步枪', sg: '霰弹枪', sr: '狙击枪' }[w] ?? w;
+  return (
+    {
+      ar: '突击步枪',
+      smg: '冲锋枪',
+      lmg: '轻机枪',
+      dmr: '射手步枪',
+      sg: '霰弹枪',
+      sr: '狙击枪',
+      pistol: '手枪',
+    } as Record<string, string>
+  )[w] ?? w;
 }
 
 function causeLabel(cause: string): string {
@@ -229,6 +240,14 @@ function causeLabel(cause: string): string {
       return '狙击枪';
     case 'ar':
       return '步枪';
+    case 'smg':
+      return '冲锋枪';
+    case 'lmg':
+      return '轻机枪';
+    case 'dmr':
+      return '射手步枪';
+    case 'pistol':
+      return '手枪';
     default:
       return '击杀';
   }

@@ -1,6 +1,6 @@
-import type { InputMsg } from '../protocol';
+import type { InputMsg, WeaponId } from '../protocol';
 import { BTN } from '../protocol';
-import { WEAPONS, WEAPON_SLOTS } from '../weapons';
+import { WEAPONS } from '../weapons';
 import {
   ADS_SPEED,
   AIR_ACCEL,
@@ -102,8 +102,9 @@ export function eyeY(s: MoveState): number {
   return s.y + s.height * PLAYER_EYE_RATIO;
 }
 
-export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly AABB[], dt: number = TICK_DT): void {
+export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly AABB[], dt: number = TICK_DT, weapon: WeaponId = 'ar'): void {
   const btn = input.buttons;
+  const wdef = WEAPONS[weapon];
   const wantCrouch = (btn & BTN.CROUCH) !== 0;
   const wantAds = (btn & BTN.ADS) !== 0;
   const fireHeld = (btn & BTN.FIRE) !== 0;
@@ -112,8 +113,7 @@ export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly 
   const sprintIntent = (btn & BTN.SPRINT) !== 0 && !wantAds && moving;
   if (s.sprintLockT > 0) s.sprintLockT = Math.max(0, s.sprintLockT - dt);
   if (fireEdge && sprintIntent && !s.sliding && s.sprintLockT <= 0) {
-    const wid = WEAPON_SLOTS[input.slot - 1];
-    s.sprintLockT = wid ? WEAPONS[wid].sprintOutTime : WEAPONS.ar.sprintOutTime;
+    s.sprintLockT = wdef.sprintOutTime;
   }
   const sprinting = sprintIntent && !wantCrouch && !fireHeld && s.sprintLockT <= 0;
   s.sprinting = sprinting;
@@ -145,7 +145,11 @@ export function stepMovement(s: MoveState, input: InputMsg, obstacles: readonly 
       s.slideCooldownT = SLIDE_COOLDOWN;
     }
   } else {
-    const speed = s.crouching ? CROUCH_SPEED : wantAds ? ADS_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
+    const speed = s.crouching
+      ? CROUCH_SPEED * wdef.moveMul
+      : wantAds
+        ? ADS_SPEED * wdef.adsMul
+        : (sprinting ? SPRINT_SPEED : WALK_SPEED) * wdef.moveMul;
     const w = wishDir(input.yaw, input.moveX, input.moveZ);
     if (s.onGround) {
       const blend = 1 - Math.exp(-GROUND_ACCEL_K * dt);

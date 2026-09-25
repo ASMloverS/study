@@ -1,4 +1,4 @@
-import { BTN, TICK_DT, VIEW_DISTANCE, WEAPON_SLOTS, type InputMsg, type PathPoint, type WeaponId, findPath } from 'shared';
+import { BTN, TICK_DT, VIEW_DISTANCE, WEAPONS, type InputMsg, type PathPoint, type WeaponId, findPath } from 'shared';
 import { mulberry32 } from '../game/rng';
 import type { Room, ServerPlayer } from '../game/world';
 import { createPerception, updatePerception, type PerceptionState } from './perception';
@@ -23,6 +23,26 @@ const MIXED: BotDifficulty[] = ['easy', 'easy', 'normal', 'normal', 'normal', 'n
 
 export function mixedDifficulty(i: number): BotDifficulty {
   return MIXED[i % MIXED.length];
+}
+
+/** [M11] 武器距离分类：近距 / 中距 / 远距 */
+const CLOSE_WEAPONS: WeaponId[] = ['sg', 'smg', 'pistol'];
+const FAR_WEAPONS: WeaponId[] = ['sr', 'dmr'];
+
+type WeaponClass = 'close' | 'mid' | 'far';
+
+export function weaponClass(w: WeaponId): WeaponClass {
+  if (CLOSE_WEAPONS.includes(w)) return 'close';
+  if (FAR_WEAPONS.includes(w)) return 'far';
+  return 'mid';
+}
+
+/** [M11] 按目标距离从 loadout 主/副武器中选择适配的一把 */
+export function pickLoadoutWeapon(loadout: { primary: WeaponId; secondary: WeaponId }, dist: number): WeaponId {
+  const want: WeaponClass = dist < 8 ? 'close' : dist > 18 ? 'far' : 'mid';
+  if (weaponClass(loadout.primary) === want) return loadout.primary;
+  if (weaponClass(loadout.secondary) === want) return loadout.secondary;
+  return loadout.primary;
 }
 
 export interface BotBrain {
@@ -162,7 +182,7 @@ function doEngage(ctx: Ctx): 'running' {
   const target = room.players.find((q) => q.id === b.targetId);
   if (!target) return 'running';
   const dist = Math.hypot(target.st.x - p.st.x, target.st.z - p.st.z);
-  b.wantWeapon = dist > 18 ? 'sr' : dist < 8 ? 'sg' : 'ar';
+  b.wantWeapon = pickLoadoutWeapon(p.loadout, dist);
   if (b.targetId !== b.lastTargetId) {
     b.lastTargetId = b.targetId ?? 0;
     b.reactionUntilTick = room.tick + DIFFICULTIES[b.difficulty].reaction;
@@ -197,18 +217,18 @@ function hasMemory({ b }: Ctx): boolean {
 }
 
 function doHunt(ctx: Ctx): 'running' {
-  const { b } = ctx;
+  const { b, p } = ctx;
   b.targetId = null;
-  b.wantWeapon = 'ar';
+  b.wantWeapon = p.loadout.primary;
   const mem = freshestMemory(b);
   if (mem) b.moveGoal = { x: mem.x, z: mem.z };
   return 'running';
 }
 
 function doPatrol(ctx: Ctx): 'running' {
-  const { room, b } = ctx;
+  const { room, b, p } = ctx;
   b.targetId = null;
-  b.wantWeapon = 'ar';
+  b.wantWeapon = p.loadout.primary;
   if (!b.moveGoal || reached(ctx, b.moveGoal) || room.tick > b.repathAtTick + 240) {
     const pois = room.map.interestPoints;
     const poi = pois[Math.floor(b.rng() * pois.length)];
@@ -240,7 +260,7 @@ function nearestEnemyPos({ room, p }: Ctx): PathPoint {
 }
 
 function magSize(w: WeaponId): number {
-  return { ar: 30, sg: 6, sr: 5 }[w];
+  return WEAPONS[w].magSize;
 }
 
 // ---------- locomotion & input assembly ----------
@@ -378,7 +398,7 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
   }
   if (b.restUntilTick <= t && b.fireUntilTick === 0) b.fireUntilTick = t + 12;
   const hiding = b.coverSpot !== null && !b.peeking && b.moveGoal === b.coverSpot;
-  const rangeOk = p.weapon === 'sg' ? dist < 12 : p.weapon === 'sr' ? dist > 8 : true;
+  const rangeOk = CLOSE_WEAPONS.includes(p.weapon) ? dist < 14 : p.weapon === 'sr' ? dist > 8 : true;
   if (target && aimClose && rangeOk && !hiding && t >= b.reactionUntilTick && b.fireUntilTick > t && !room.isBlinded(p.id)) {
     buttons |= BTN.FIRE;
   }
@@ -409,12 +429,13 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
   }
 
   const hasAmmo = (wid: WeaponId): boolean => p.mags[wid] > 0 || p.reserve[wid] > 0;
+  const slotOf = (wid: WeaponId): number => (wid === p.loadout.primary ? 1 : wid === p.loadout.secondary ? 2 : 0);
   let slot = 0;
   if (b.wantWeapon && b.wantWeapon !== p.weapon && hasAmmo(b.wantWeapon)) {
-    slot = WEAPON_SLOTS.indexOf(b.wantWeapon) + 1;
+    slot = slotOf(b.wantWeapon);
   } else if (!hasAmmo(p.weapon)) {
-    const alt = WEAPON_SLOTS.find((wid) => wid !== p.weapon && hasAmmo(wid));
-    if (alt) slot = WEAPON_SLOTS.indexOf(alt) + 1;
+    const alt = [p.loadout.primary, p.loadout.secondary].find((wid) => wid !== p.weapon && hasAmmo(wid));
+    if (alt) slot = slotOf(alt);
   }
 
   p.ackSeq++;

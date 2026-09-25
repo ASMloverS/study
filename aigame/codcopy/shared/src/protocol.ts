@@ -1,4 +1,10 @@
-export type WeaponId = 'ar' | 'sg' | 'sr';
+export type WeaponId = 'ar' | 'smg' | 'lmg' | 'dmr' | 'sg' | 'sr' | 'pistol';
+
+/** [M11] 双武器 loadout：主/副各任选（可双长枪） */
+export interface Loadout {
+  primary: WeaponId;
+  secondary: WeaponId;
+}
 
 export const BTN = {
   FIRE: 1,
@@ -44,10 +50,14 @@ export interface Vec3 {
   z: number;
 }
 
+export type LobbyDifficulty = 'mixed' | 'easy' | 'normal' | 'hard';
+
 export type C2SMessage =
-  | { kind: 'join'; name: string }
+  | { kind: 'join'; name: string; loadout?: Loadout }
   | { kind: 'input'; input: InputMsg }
-  | { kind: 'ping'; t: number; rtt?: number };
+  | { kind: 'ping'; t: number; rtt?: number }
+  | { kind: 'loadout'; loadout: Loadout }
+  | { kind: 'lobby'; bots?: number; difficulty?: LobbyDifficulty; killLimit?: number; matchMinutes?: number };
 
 export interface PlayerSnap {
   id: number;
@@ -107,7 +117,9 @@ export type GameEvent =
   | { type: 'gameOver'; tick: number; winnerId: number | null; standings: Standing[] };
 
 export type S2CMessage =
-  | { kind: 'welcome'; playerId: number; mapName: string; cfg?: MatchConfig }
+  | { kind: 'welcome'; playerId: number; mapName: string; cfg?: MatchConfig; loadout?: Loadout }
   | { kind: 'snapshot'; tick: number; timeLeft: number; acks: Record<number, number>; players: PlayerSnap[]; destroyed: number[]; dyn: number[]; nades?: NadeSnap[] }
   | { kind: 'events'; events: GameEvent[] }
-  | { kind: 'pong'; t: number };
+  | { kind: 'pong'; t: number }
+  | { kind: 'loadoutAck'; loadout: Loadout }
+  | { kind: 'lobbyState'; hostId: number | null; bots: number; difficulty: LobbyDifficulty; killLimit: number; matchMinutes: number; pendingKillLimit?: number; pendingMatchMinutes?: number };

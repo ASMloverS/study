@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { WEAPONS, type WeaponId } from 'shared';
+import { WEAPONS, WEAPON_LIST, type WeaponId } from 'shared';
 
 /** 程序化高精度武器视图模型（M7.1）：无手臂、独立场景双 pass、逐枪 ADS 锚点对齐、换弹/泵动/栓动动画。 */
 
@@ -91,8 +91,8 @@ export class ViewModel {
     rim.position.set(-1, 0.4, -0.8);
     this.scene.add(rim);
     this.scene.add(this.group);
-    for (const w of ['ar', 'sg', 'sr'] as WeaponId[]) {
-      const gun = w === 'ar' ? buildAr() : w === 'sg' ? buildSg() : buildSr();
+    for (const w of WEAPON_LIST) {
+      const gun = BUILDERS[w]();
       gun.root.visible = false;
       this.group.add(gun.root);
       this.models.set(w, gun);
@@ -113,7 +113,7 @@ export class ViewModel {
   }
 
   kick(): void {
-    this.kickAmt = Math.min(1, this.kickAmt + 0.6);
+    this.kickAmt = Math.min(1, this.kickAmt + 0.85);
     this.fireAnimT = 0;
   }
 
@@ -135,7 +135,7 @@ export class ViewModel {
     }
 
     this.adsAmt += ((o.ads ? 1 : 0) - this.adsAmt) * Math.min(1, 14 * o.dt);
-    this.kickAmt = Math.max(0, this.kickAmt - 11 * o.dt);
+    this.kickAmt = Math.max(0, this.kickAmt - 16 * o.dt);
     this.sprintAmt += ((o.sprinting && !o.ads ? 1 : 0) - this.sprintAmt) * Math.min(1, 8 * o.dt);
 
     const swayTargetX = THREE.MathUtils.clamp(-o.lookDX * 0.012, -0.03, 0.03);
@@ -497,3 +497,285 @@ function buildAr(): GunModel {
     ejectZ: 0.02,
   };
 }
+
+/** [M11] 冲锋枪：紧凑机匣 + 短枪管 + 长弧弹匣 + 折叠托 + 红点环瞄（~38 部件） */
+function buildSmg(): GunModel {
+  const root = new THREE.Group();
+  const sightY = 0.07;
+
+  root.add(box(0.044, 0.05, 0.2, M.polymer, 0, 0, 0.02));
+  root.add(box(0.048, 0.042, 0.2, M.gunMetal, 0, 0.038, -0.04));
+  root.add(box(0.026, 0.007, 0.22, M.darkMetal, 0, 0.062, -0.04));
+  railTeeth(root, 6, 0.068, -0.12, 0.024);
+
+  const bolt = new THREE.Group();
+  bolt.userData.baseZ = 0.02;
+  bolt.add(box(0.008, 0.018, 0.04, M.boltSteel, 0.023, 0.028, 0.02));
+  root.add(bolt);
+
+  root.add(cyl(0.009, 0.009, 0.14, M.darkMetal, 0, 0.024, -0.2, 14));
+  root.add(cyl(0.014, 0.014, 0.09, M.gunMetal, 0, 0.024, -0.29, 16));
+  root.add(cyl(0.012, 0.012, 0.01, M.boltSteel, 0, 0.024, -0.335, 16));
+  root.add(box(0.004, 0.016, 0.026, M.darkMetal, 0, 0.024, -0.3));
+
+  const rd = new THREE.Group();
+  rd.add(box(0.026, 0.026, 0.03, M.polymer, 0, sightY + 0.004, 0.02, 0.006));
+  rd.add(torus(0.011, 0.0022, M.darkMetal, 0, sightY + 0.004, 0.006, 14));
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0018, 8, 8), M.sightDot);
+  dot.position.set(0, sightY + 0.004, 0.006);
+  rd.add(dot);
+  rd.add(box(0.008, 0.016, 0.008, M.darkMetal, 0, sightY - 0.014, 0.02));
+  root.add(rd);
+
+  const fsight = new THREE.Group();
+  fsight.add(box(0.008, 0.02, 0.008, M.darkMetal, 0, sightY - 0.016, -0.17));
+  fsight.add(torus(0.008, 0.002, M.darkMetal, 0, sightY, -0.17, 12));
+  root.add(fsight);
+
+  const mag = new THREE.Group();
+  for (let i = 0; i < 4; i++) {
+    const seg = box(0.024, 0.03, 0.05, M.polymer, 0, -0.048 - i * 0.028, 0.035 + i * 0.013, 0.005);
+    seg.rotation.x = i * 0.17;
+    mag.add(seg);
+  }
+  root.add(mag);
+  root.add(box(0.03, 0.032, 0.058, M.gunMetal, 0, -0.028, 0.035));
+
+  const foreGrip = box(0.024, 0.05, 0.026, M.polymer, 0, -0.038, -0.13, 0.006);
+  foreGrip.rotation.x = -0.18;
+  root.add(foreGrip);
+
+  const grip = box(0.028, 0.066, 0.036, M.polymer, 0, -0.042, 0.1, 0.008);
+  grip.rotation.x = 0.34;
+  root.add(grip);
+  root.add(box(0.024, 0.005, 0.042, M.darkMetal, 0, -0.02, 0.062));
+  root.add(box(0.007, 0.016, 0.006, M.boltSteel, 0, -0.026, 0.062));
+
+  const stock = new THREE.Group();
+  stock.add(cyl(0.006, 0.006, 0.16, M.darkMetal, 0.016, 0.03, 0.19, 10, 'z'));
+  stock.add(cyl(0.006, 0.006, 0.16, M.darkMetal, -0.016, 0.03, 0.19, 10, 'z'));
+  stock.add(box(0.05, 0.062, 0.02, M.polymer, 0, 0.018, 0.27, 0.006));
+  stock.add(box(0.03, 0.04, 0.05, M.polymer, 0, 0.012, 0.2, 0.008));
+  root.add(stock);
+
+  root.add(box(0.01, 0.012, 0.016, M.boltSteel, 0.024, 0.024, -0.02));
+
+  return {
+    root,
+    sightY,
+    muzzle: new THREE.Vector3(0, 0.024, -0.34),
+    mag,
+    bolt,
+    pump: null,
+    shells: [],
+    reloadStyle: 'mag',
+    ejectZ: 0.02,
+  };
+}
+
+/** [M11] 轻机枪：厚重机匣 + 粗长枪管 + 两脚架 + 弹箱 + 提把（~36 部件） */
+function buildLmg(): GunModel {
+  const root = new THREE.Group();
+  const sightY = 0.082;
+
+  root.add(box(0.056, 0.066, 0.3, M.gunMetal, 0, 0.01, 0.04));
+  root.add(box(0.05, 0.03, 0.26, M.polymer, 0, 0.05, 0));
+  root.add(box(0.03, 0.009, 0.3, M.darkMetal, 0, 0.068, 0));
+  railTeeth(root, 8, 0.074, -0.1, 0.026);
+
+  const handle = new THREE.Group();
+  handle.add(box(0.014, 0.008, 0.07, M.darkMetal, 0, 0.082, 0.06));
+  handle.add(box(0.012, 0.024, 0.01, M.darkMetal, 0, 0.07, 0.09));
+  handle.add(box(0.012, 0.024, 0.01, M.darkMetal, 0, 0.07, 0.03));
+  root.add(handle);
+
+  const bolt = new THREE.Group();
+  bolt.userData.baseZ = 0.04;
+  bolt.add(box(0.009, 0.02, 0.045, M.boltSteel, 0.028, 0.026, 0.04));
+  root.add(bolt);
+
+  root.add(cyl(0.013, 0.011, 0.34, M.darkMetal, 0, 0.02, -0.26, 16));
+  root.add(cyl(0.015, 0.015, 0.07, M.gunMetal, 0, 0.02, -0.46, 16));
+  for (let i = 0; i < 4; i++) root.add(box(0.004, 0.02, 0.03, M.darkMetal, 0, 0.02, -0.38 - i * 0.04));
+  root.add(cyl(0.013, 0.013, 0.008, M.boltSteel, 0, 0.02, -0.5, 16));
+
+  const bipod = new THREE.Group();
+  const legL = cyl(0.004, 0.003, 0.12, M.darkMetal, 0.02, -0.03, -0.44, 8);
+  legL.rotation.z = 0.35;
+  const legR = cyl(0.004, 0.003, 0.12, M.darkMetal, -0.02, -0.03, -0.44, 8);
+  legR.rotation.z = -0.35;
+  bipod.add(legL, legR);
+  root.add(bipod);
+
+  const rsight = new THREE.Group();
+  rsight.add(box(0.006, 0.022, 0.006, M.darkMetal, -0.011, sightY - 0.016, 0.1));
+  rsight.add(box(0.006, 0.022, 0.006, M.darkMetal, 0.011, sightY - 0.016, 0.1));
+  rsight.add(torus(0.011, 0.0022, M.darkMetal, 0, sightY, 0.1, 14));
+  root.add(rsight);
+  const fsight = new THREE.Group();
+  fsight.add(box(0.008, 0.026, 0.008, M.darkMetal, 0, sightY - 0.018, -0.2));
+  fsight.add(torus(0.008, 0.002, M.darkMetal, 0, sightY, -0.2, 12));
+  root.add(fsight);
+
+  const mag = new THREE.Group();
+  mag.add(box(0.07, 0.075, 0.1, M.polymer, 0, -0.06, 0.06, 0.008));
+  mag.add(box(0.074, 0.012, 0.104, M.darkMetal, 0, -0.1, 0.06, 0.004));
+  mag.add(box(0.02, 0.05, 0.02, M.darkMetal, 0.037, -0.06, 0.06));
+  root.add(mag);
+  root.add(box(0.05, 0.03, 0.104, M.gunMetal, 0, -0.02, 0.06));
+
+  const grip = box(0.03, 0.068, 0.038, M.polymer, 0, -0.044, 0.15, 0.008);
+  grip.rotation.x = 0.32;
+  root.add(grip);
+  root.add(box(0.026, 0.005, 0.05, M.darkMetal, 0, -0.022, 0.1));
+  root.add(box(0.008, 0.018, 0.006, M.boltSteel, 0, -0.028, 0.1));
+
+  const stock = new THREE.Group();
+  stock.add(box(0.04, 0.06, 0.16, M.polymer, 0, 0.016, 0.26, 0.01));
+  stock.add(box(0.034, 0.016, 0.12, M.polymer, 0, 0.052, 0.26, 0.005));
+  stock.add(box(0.044, 0.08, 0.018, M.polymer, 0, 0.012, 0.35, 0.006));
+  root.add(stock);
+
+  return {
+    root,
+    sightY,
+    muzzle: new THREE.Vector3(0, 0.02, -0.51),
+    mag,
+    bolt,
+    pump: null,
+    shells: [],
+    reloadStyle: 'mag',
+    ejectZ: 0.04,
+  };
+}
+
+/** [M11] 射手步枪：修长机匣 + 细长枪管 + 中倍瞄镜 + 骨架托（~34 部件） */
+function buildDmr(): GunModel {
+  const root = new THREE.Group();
+  const sightY = 0.096;
+
+  root.add(box(0.046, 0.058, 0.28, M.gunMetal, 0, 0.012, 0.04));
+  root.add(box(0.03, 0.008, 0.3, M.darkMetal, 0, 0.052, 0.02));
+  railTeeth(root, 7, 0.058, -0.1, 0.026);
+
+  const bolt = new THREE.Group();
+  bolt.userData.baseZ = 0.12;
+  const handle = cyl(0.004, 0.004, 0.026, M.boltSteel, 0.03, 0.026, 0.12, 10, 'x');
+  bolt.add(handle);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.007, 10, 10), M.boltSteel);
+  knob.position.set(0.044, 0.026, 0.12);
+  bolt.add(knob);
+  root.add(bolt);
+
+  root.add(cyl(0.012, 0.01, 0.3, M.darkMetal, 0, 0.016, -0.25, 16));
+  root.add(cyl(0.013, 0.013, 0.06, M.gunMetal, 0, 0.016, -0.42, 16));
+  root.add(cyl(0.011, 0.011, 0.008, M.boltSteel, 0, 0.016, -0.45, 16));
+
+  const scope = new THREE.Group();
+  scope.add(cyl(0.016, 0.016, 0.16, M.gunMetal, 0, sightY, -0.04, 18));
+  scope.add(cyl(0.02, 0.016, 0.04, M.gunMetal, 0, sightY, -0.14, 18));
+  scope.add(cyl(0.016, 0.019, 0.04, M.gunMetal, 0, sightY, 0.06, 18));
+  scope.add(cyl(0.012, 0.012, 0.018, M.darkMetal, 0, sightY + 0.02, -0.04, 12, 'y'));
+  scope.add(box(0.012, 0.014, 0.018, M.darkMetal, 0, sightY - 0.018, -0.1));
+  scope.add(box(0.012, 0.014, 0.018, M.darkMetal, 0, sightY - 0.018, 0.02));
+  const lensF = new THREE.Mesh(new THREE.CircleGeometry(0.018, 20), M.lens);
+  lensF.position.set(0, sightY, -0.161);
+  lensF.rotation.y = Math.PI;
+  scope.add(lensF);
+  root.add(scope);
+
+  const mag = new THREE.Group();
+  mag.add(box(0.026, 0.05, 0.06, M.polymer, 0, -0.042, 0.02, 0.005));
+  mag.add(box(0.028, 0.008, 0.062, M.darkMetal, 0, -0.07, 0.024, 0.003));
+  root.add(mag);
+  root.add(box(0.032, 0.028, 0.066, M.gunMetal, 0, -0.022, 0.02));
+
+  const grip = box(0.028, 0.066, 0.038, M.polymer, 0, -0.042, 0.13, 0.008);
+  grip.rotation.x = 0.32;
+  root.add(grip);
+  root.add(box(0.024, 0.005, 0.042, M.darkMetal, 0, -0.02, 0.08));
+  root.add(box(0.007, 0.016, 0.006, M.boltSteel, 0, -0.026, 0.08));
+
+  const stock = new THREE.Group();
+  stock.add(box(0.036, 0.01, 0.2, M.polymer, 0, 0.044, 0.26, 0.005));
+  stock.add(box(0.036, 0.01, 0.2, M.polymer, 0, -0.016, 0.26, 0.005));
+  stock.add(box(0.036, 0.06, 0.016, M.polymer, 0, 0.014, 0.36, 0.006));
+  stock.add(box(0.03, 0.03, 0.1, M.polymer, 0, -0.006, 0.26, 0.006));
+  stock.add(box(0.03, 0.012, 0.14, M.darkMetal, 0, 0.014, 0.26));
+  root.add(stock);
+
+  return {
+    root,
+    sightY,
+    muzzle: new THREE.Vector3(0, 0.016, -0.46),
+    mag,
+    bolt,
+    pump: null,
+    shells: [],
+    reloadStyle: 'mag',
+    ejectZ: 0.1,
+  };
+}
+
+/** [M11] 手枪：套筒 + 握把 + 短枪管 + 板机护圈（~22 部件） */
+function buildPistol(): GunModel {
+  const root = new THREE.Group();
+  const sightY = 0.028;
+
+  const slide = new THREE.Group();
+  slide.userData.baseZ = 0;
+  slide.add(box(0.03, 0.032, 0.19, M.gunMetal, 0, 0.018, -0.03));
+  for (let i = 0; i < 4; i++) slide.add(box(0.004, 0.01, 0.016, M.darkMetal, 0.016, 0.018, -0.08 + i * 0.02));
+  slide.add(box(0.026, 0.008, 0.02, M.darkMetal, 0, 0.036, -0.11));
+  slide.add(box(0.006, 0.008, 0.008, M.darkMetal, -0.008, 0.036, -0.11));
+  slide.add(box(0.006, 0.008, 0.008, M.darkMetal, 0.008, 0.036, -0.11));
+  slide.add(box(0.006, 0.008, 0.008, M.darkMetal, -0.008, 0.036, 0.05));
+  slide.add(box(0.006, 0.008, 0.008, M.darkMetal, 0.008, 0.036, 0.05));
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0014, 8, 8), M.sightDot);
+  dot.position.set(0, sightY + 0.012, -0.11);
+  slide.add(dot);
+  root.add(slide);
+
+  root.add(box(0.028, 0.026, 0.17, M.polymer, 0, -0.006, -0.02));
+  root.add(cyl(0.008, 0.008, 0.03, M.darkMetal, 0, 0.008, -0.125, 12));
+  root.add(cyl(0.009, 0.009, 0.006, M.boltSteel, 0, 0.008, -0.14, 12));
+
+  root.add(box(0.024, 0.006, 0.05, M.darkMetal, 0, -0.02, -0.04));
+  root.add(torus(0.014, 0.003, M.polymer, 0, -0.032, -0.01, 14));
+
+  const mag = new THREE.Group();
+  mag.add(box(0.022, 0.06, 0.032, M.darkMetal, 0, -0.062, 0.012, 0.004));
+  mag.add(box(0.024, 0.008, 0.034, M.boltSteel, 0, -0.094, 0.012, 0.003));
+  root.add(mag);
+
+  const grip = box(0.03, 0.084, 0.042, M.polymer, 0, -0.044, 0.024, 0.008);
+  grip.rotation.x = 0.28;
+  root.add(grip);
+  for (let i = 0; i < 3; i++) root.add(box(0.032, 0.006, 0.03, M.darkMetal, 0, -0.03 - i * 0.014, 0.006 + i * 0.004));
+
+  const hammer = box(0.008, 0.016, 0.008, M.boltSteel, 0, 0.024, 0.07);
+  hammer.rotation.x = -0.4;
+  root.add(hammer);
+
+  return {
+    root,
+    sightY,
+    muzzle: new THREE.Vector3(0, 0.008, -0.145),
+    mag,
+    bolt: slide,
+    pump: null,
+    shells: [],
+    reloadStyle: 'mag',
+    ejectZ: -0.03,
+  };
+}
+
+const BUILDERS: Record<WeaponId, () => GunModel> = {
+  ar: buildAr,
+  sg: buildSg,
+  sr: buildSr,
+  smg: buildSmg,
+  lmg: buildLmg,
+  dmr: buildDmr,
+  pistol: buildPistol,
+};

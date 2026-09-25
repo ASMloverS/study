@@ -1,6 +1,11 @@
-import { BTN, WEAPON_SLOTS, type InputMsg } from 'shared';
+import { BTN, DEFAULT_LOADOUT, type InputMsg, type Loadout } from 'shared';
+import type { AssistLevel } from './aimassist';
+import { EMPTY_PAD, type PadActions } from './gamepad';
+
+export type EnemyColor = 'red' | 'orange' | 'yellow' | 'purple' | 'cyan';
 
 export interface Settings {
+  name: string;
   sensitivity: number;
   volume: number;
   fov: number;
@@ -9,9 +14,26 @@ export interface Settings {
   quality: 'low' | 'medium' | 'high';
   killLimit: number;
   matchMinutes: number;
+  shadow: boolean;
+  tts: boolean;
+  brightness: number;
+  enemyOutline: boolean;
+  enemyColor: EnemyColor;
+  loadout: Loadout;
+  /** [M12] ADS 灵敏度倍率（相对） */
+  adsSens: number;
+  /** [M12] 辅助瞄准档位（键鼠默认关；手柄接入时自动开为中档） */
+  aimAssist: AssistLevel;
+  /** [M12] 手柄视角灵敏度（rad/s @ 满偏） */
+  padSensitivity: number;
+  /** [M12] 手柄径向死区 */
+  padDeadzone: number;
+  /** [M12] 手柄震动 */
+  padRumble: boolean;
 }
 
 export const defaultSettings: Settings = {
+  name: '玩家',
   sensitivity: 0.0022,
   volume: 0.7,
   fov: 80,
@@ -20,6 +42,17 @@ export const defaultSettings: Settings = {
   quality: 'high',
   killLimit: 30,
   matchMinutes: 10,
+  shadow: true,
+  tts: true,
+  brightness: 1,
+  enemyOutline: true,
+  enemyColor: 'red',
+  loadout: { ...DEFAULT_LOADOUT },
+  adsSens: 1,
+  aimAssist: 'off',
+  padSensitivity: 2.4,
+  padDeadzone: 0.12,
+  padRumble: true,
 };
 
 export class InputSystem {
@@ -28,6 +61,8 @@ export class InputSystem {
   locked = false;
   settings: Settings;
   scoreboard = false;
+  /** [M12] 手柄动作状态（每帧由 main 写入，与键鼠状态合并） */
+  pad: PadActions = { ...EMPTY_PAD };
   private keys = new Set<string>();
   private fireHeld = false;
   private adsHeld = false;
@@ -43,7 +78,6 @@ export class InputSystem {
       if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
       if (e.code === 'Digit1') this.pendingSlot = 1;
       if (e.code === 'Digit2') this.pendingSlot = 2;
-      if (e.code === 'Digit3') this.pendingSlot = 3;
       if (e.code === 'Digit4') this.pendingStreak = 1;
       if (e.code === 'Digit5') this.pendingStreak = 2;
       if (e.code === 'Digit6') this.pendingStreak = 3;
@@ -62,22 +96,43 @@ export class InputSystem {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('wheel', (e) => {
       if (!this.locked) return;
-      const dir = e.deltaY > 0 ? 1 : -1;
-      const next = this.currentSlotHint + dir;
-      this.pendingSlot = ((next + WEAPON_SLOTS.length) % WEAPON_SLOTS.length) + 1;
+      void e.deltaY;
+      this.pendingSlot = this.lastSlotSent === 1 ? 2 : 1;
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
-      this.yaw -= e.movementX * this.settings.sensitivity;
-      this.pitch -= e.movementY * this.settings.sensitivity;
-      const lim = Math.PI / 2 - 0.01;
-      this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
+      const sens = this.settings.sensitivity * (this.ads ? this.settings.adsSens : 1);
+      this.yaw -= e.movementX * sens;
+      this.pitch -= e.movementY * sens;
+      this.clampPitch();
     });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.target;
       this.scoreboard = this.keys.has('Tab');
       if (this.locked) onStart();
     });
+  }
+
+  /** [M12] 手柄视角增量（已含灵敏度缩放） */
+  applyLook(dYaw: number, dPitch: number): void {
+    this.yaw += dYaw;
+    this.pitch += dPitch;
+    this.clampPitch();
+  }
+
+  /** [M12] 手柄切枪请求（1=主 2=副） */
+  requestSlot(s: number): void {
+    this.pendingSlot = s;
+  }
+
+  /** [M12] 手柄连杀激活请求（1-3） */
+  requestStreak(t: 0 | 1 | 2 | 3): void {
+    this.pendingStreak = t;
+  }
+
+  private clampPitch(): void {
+    const lim = Math.PI / 2 - 0.01;
+    this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
   }
 
   get currentSlotHint(): number {
@@ -89,50 +144,56 @@ export class InputSystem {
   }
 
   get ads(): boolean {
-    return this.adsHeld;
+    return this.adsHeld || this.pad.ads;
   }
 
   get fire(): boolean {
-    return this.fireHeld;
+    return this.fireHeld || this.pad.fire;
   }
 
   get lethalHeld(): boolean {
-    return this.keys.has('KeyG');
+    return this.keys.has('KeyG') || this.pad.lethal;
   }
 
   get meleeHeld(): boolean {
-    return this.keys.has('KeyV');
+    return this.keys.has('KeyV') || this.pad.melee;
   }
 
   get sprintHeld(): boolean {
-    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.pad.sprint;
   }
 
   buildInput(seq: number, swayYaw = 0, swayPitch = 0): InputMsg {
     const k = this.keys;
-    let moveZ = 0;
-    let moveX = 0;
+    const pad = this.pad;
+    let moveZ = pad.moveZ;
+    let moveX = pad.moveX;
     if (k.has('KeyW')) moveZ += 1;
     if (k.has('KeyS')) moveZ -= 1;
     if (k.has('KeyD')) moveX += 1;
     if (k.has('KeyA')) moveX -= 1;
+    const moveLen = Math.hypot(moveX, moveZ);
+    if (moveLen > 1) {
+      moveX /= moveLen;
+      moveZ /= moveLen;
+    }
     let buttons = 0;
-    if (this.fireHeld) buttons |= BTN.FIRE;
-    if (this.adsHeld) buttons |= BTN.ADS;
-    if (k.has('Space')) buttons |= BTN.JUMP;
-    if (k.has('ControlLeft') || k.has('KeyC')) buttons |= BTN.CROUCH;
-    if (k.has('ShiftLeft')) buttons |= BTN.SPRINT;
-    if (k.has('KeyR')) buttons |= BTN.RELOAD;
-    if (k.has('KeyV')) buttons |= BTN.MELEE;
-    if (k.has('KeyG')) buttons |= BTN.LETHAL;
-    if (k.has('KeyE')) buttons |= BTN.TACTICAL;
+    if (this.fire) buttons |= BTN.FIRE;
+    if (this.ads) buttons |= BTN.ADS;
+    if (k.has('Space') || pad.jump) buttons |= BTN.JUMP;
+    if (k.has('ControlLeft') || k.has('KeyC') || pad.crouch) buttons |= BTN.CROUCH;
+    if (k.has('ShiftLeft') || pad.sprint) buttons |= BTN.SPRINT;
+    if (k.has('KeyR') || pad.reload) buttons |= BTN.RELOAD;
+    if (this.meleeHeld) buttons |= BTN.MELEE;
+    if (this.lethalHeld) buttons |= BTN.LETHAL;
+    if (k.has('KeyE') || pad.tactical) buttons |= BTN.TACTICAL;
     const slot = this.pendingSlot;
     if (slot > 0 && slot !== this.lastSlotSent) {
       this.qSwapSlot = this.lastSlotSent;
       this.lastSlotSent = slot;
     }
     this.pendingSlot = 0;
-    this.scoreboard = k.has('Tab');
+    this.scoreboard = k.has('Tab') || pad.scoreboard;
     const streak = this.pendingStreak;
     this.pendingStreak = 0;
     return { seq, moveX, moveZ, yaw: this.yaw + swayYaw, pitch: this.pitch + swayPitch, buttons, slot, streak };

@@ -48,7 +48,9 @@ import {
   TICK_RATE,
   TICK_DT,
   WEAPONS,
-  WEAPON_SLOTS,
+  WEAPON_LIST,
+  DEFAULT_LOADOUT,
+  type Loadout,
   type WeaponId,
   addRecoilShot,
   bakeNavGrid,
@@ -97,6 +99,7 @@ export interface ServerPlayer {
   alive: boolean;
   health: number;
   respawnAtTick: number;
+  loadout: Loadout;
   weapon: WeaponId;
   mags: Record<WeaponId, number>;
   reserve: Record<WeaponId, number>;
@@ -145,11 +148,23 @@ function zeroInput(): InputMsg {
 }
 
 function freshMags(): Record<WeaponId, number> {
-  return { ar: WEAPONS.ar.magSize, sg: WEAPONS.sg.magSize, sr: WEAPONS.sr.magSize };
+  const o = {} as Record<WeaponId, number>;
+  for (const id of WEAPON_LIST) o[id] = WEAPONS[id].magSize;
+  return o;
 }
 
 function freshReserve(): Record<WeaponId, number> {
-  return { ar: WEAPONS.ar.reserve, sg: WEAPONS.sg.reserve, sr: WEAPONS.sr.reserve };
+  const o = {} as Record<WeaponId, number>;
+  for (const id of WEAPON_LIST) o[id] = WEAPONS[id].reserve;
+  return o;
+}
+
+/** [M11] AI 随机 loadout：长枪主武器 + 副手枪/第二长枪 */
+function randomBotLoadout(rng: () => number): Loadout {
+  const longGuns: WeaponId[] = ['ar', 'smg', 'lmg', 'dmr', 'sg', 'sr'];
+  const primary = longGuns[Math.floor(rng() * longGuns.length)];
+  const secondary: WeaponId = rng() < 0.5 ? 'pistol' : longGuns[Math.floor(rng() * longGuns.length)];
+  return { primary, secondary };
 }
 
 export class Room {
@@ -161,10 +176,11 @@ export class Room {
   readonly dynamic: DynamicCoverManager;
   tick = 0;
   timeLeft = DEFAULT_MATCH_DURATION;
-  readonly killLimit: number;
-  readonly durationSec: number;
+  killLimit: number;
+  durationSec: number;
   over = false;
   winner: number | null = null;
+  botDifficulty: BotDifficulty | 'mixed';
   currentSounds: readonly SoundEvent[] = [];
   private readonly coverBoxes: (AABB | null)[];
   private obstacleCoverIndex: number[] = [];
@@ -203,11 +219,77 @@ export class Room {
     this.rebuildObstacles();
     this.nav = this.bakeNav();
     this.rng = mulberry32(opts.seed ?? ((Math.random() * 0xffffffff) >>> 0));
-    const difficulty = opts.botDifficulty ?? 'mixed';
+    this.botDifficulty = opts.botDifficulty ?? 'mixed';
     for (let i = 0; i < (opts.bots ?? 0); i++) {
-      const d = difficulty === 'mixed' ? mixedDifficulty(this.botCounter++) : difficulty;
+      const d = this.botDifficulty === 'mixed' ? mixedDifficulty(this.botCounter++) : this.botDifficulty;
       this.addPlayer(`BOT-${i + 1}`, true, d);
     }
+  }
+
+  /** [M10] 房间管理：实时调整 AI 数量（守恒席位、真人优先），返回实际数量 */
+  setBotCount(target: number): number {
+    const humans = this.players.filter((p) => !p.isBot).length;
+    const want = Math.max(0, Math.min(MAX_PLAYERS - humans, Math.round(target)));
+    let cur = this.players.filter((p) => p.isBot).length;
+    while (cur > want) {
+      const bot = [...this.players].reverse().find((p) => p.isBot);
+      if (!bot) break;
+      this.removePlayer(bot.id);
+      cur--;
+    }
+    while (cur < want) {
+      const d = this.botDifficulty === 'mixed' ? mixedDifficulty(this.botCounter++) : this.botDifficulty;
+      this.addPlayer(`BOT-${++this.botCounter}`, true, d);
+      cur++;
+    }
+    return cur;
+  }
+
+  /** [M10] 房间管理：即刻切换 AI 难度（存量 + 后续新增） */
+  setBotDifficulty(d: BotDifficulty | 'mixed'): void {
+    this.botDifficulty = d;
+    for (const p of this.players) {
+      if (!p.bot) continue;
+      p.bot.difficulty = d === 'mixed' ? mixedDifficulty(this.botCounter++) : d;
+    }
+  }
+
+  /** [M10] 房间管理：规则调整（killLimit / 时长分钟），返回是否生效 */
+  setRules(killLimit: number, matchMinutes: number): void {
+    this.killLimit = Math.max(1, Math.min(100, Math.round(killLimit)));
+    this.durationSec = Math.max(60, Math.round(matchMinutes * 60));
+    this.timeLeft = Math.min(this.timeLeft, this.durationSec);
+  }
+
+  /** [M11] 死亡时修改 loadout，下一命生效；返回实际生效值 */
+  setLoadout(id: number, loadout: Loadout): Loadout {
+    const p = this.players.find((q) => q.id === id);
+    if (!p) return { ...DEFAULT_LOADOUT };
+    if (!p.alive && WEAPON_LIST.includes(loadout.primary) && WEAPON_LIST.includes(loadout.secondary)) {
+      p.loadout = { primary: loadout.primary, secondary: loadout.secondary };
+    }
+    return { ...p.loadout };
+  }
+
+  botCount(): number {
+    return this.players.filter((p) => p.isBot).length;
+  }
+
+  /** [M10] 组装 lobbyState 消息（pending 为联机「下局生效」的规则） */
+  lobbyState(
+    hostId: number | null,
+    pending?: { killLimit?: number; matchMinutes?: number },
+  ): Extract<S2CMessage, { kind: 'lobbyState' }> {
+    return {
+      kind: 'lobbyState',
+      hostId,
+      bots: this.botCount(),
+      difficulty: this.botDifficulty,
+      killLimit: this.killLimit,
+      matchMinutes: Math.round(this.durationSec / 60),
+      pendingKillLimit: pending?.killLimit,
+      pendingMatchMinutes: pending?.matchMinutes,
+    };
   }
 
   private bakeNav(): NavGrid {
@@ -235,7 +317,7 @@ export class Room {
     }
   }
 
-  addPlayer(name: string, isBot: boolean, difficulty: BotDifficulty = 'normal'): ServerPlayer {
+  addPlayer(name: string, isBot: boolean, difficulty: BotDifficulty = 'normal', loadout: Loadout = DEFAULT_LOADOUT): ServerPlayer {
     const p: ServerPlayer = {
       id: this.nextId++,
       name,
@@ -244,7 +326,8 @@ export class Room {
       alive: false,
       health: 0,
       respawnAtTick: 0,
-      weapon: 'ar',
+      loadout: { ...loadout },
+      weapon: loadout.primary,
       mags: freshMags(),
       reserve: freshReserve(),
       recoil: createRecoilState(),
@@ -301,6 +384,8 @@ export class Room {
     Object.assign(p.st, createMoveState(pick.pos[0], pick.pos[1], pick.pos[2], this.rng() * Math.PI * 2));
     p.health = MAX_HEALTH;
     p.alive = true;
+    if (p.isBot) p.loadout = randomBotLoadout(this.rng);
+    p.weapon = p.loadout.primary;
     p.mags = freshMags();
     p.reserve = freshReserve();
     p.recoil = createRecoilState();
@@ -352,7 +437,7 @@ export class Room {
       yaw: input.yaw,
       pitch: Math.max(-1.55, Math.min(1.55, input.pitch)),
       buttons: Number.isFinite(input.buttons) ? input.buttons & 511 : 0,
-      slot: Number.isInteger(input.slot) ? Math.max(0, Math.min(3, input.slot)) : 0,
+      slot: Number.isInteger(input.slot) ? Math.max(0, Math.min(2, input.slot)) : 0,
       streak: typeof input.streak === 'number' && Number.isInteger(input.streak) ? Math.max(0, Math.min(3, input.streak)) : 0,
     };
     p.lastRecvSeq = input.seq;
@@ -360,12 +445,12 @@ export class Room {
     while (p.inputQueue.length > 8) p.inputQueue.shift();
   }
 
-  addHuman(name: string): ServerPlayer {
+  addHuman(name: string, loadout: Loadout = DEFAULT_LOADOUT): ServerPlayer {
     if (this.players.length >= MAX_PLAYERS) {
       const bot = this.players.find((q) => q.isBot);
       if (bot) this.removePlayer(bot.id);
     }
-    return this.addPlayer(name, false);
+    return this.addPlayer(name, false, 'normal', loadout);
   }
 
   playerLeft(id: number): void {
@@ -424,7 +509,7 @@ export class Room {
         continue;
       }
       const input = p.isBot ? updateBot(this, p) : this.takeInput(p);
-      stepMovement(p.st, input, this.obstacles);
+      stepMovement(p.st, input, this.obstacles, TICK_DT, p.pendingWeapon ?? p.weapon);
       this.combat(p, input);
       if (p.health < MAX_HEALTH && this.tick - p.lastDamagedTick > REGEN_DELAY_TICKS) {
         p.health = Math.min(MAX_HEALTH, p.health + REGEN_PER_TICK);
@@ -548,8 +633,8 @@ export class Room {
     const w = WEAPONS[p.weapon];
     const btn = input.buttons;
     const slotIdx = input.slot - 1;
-    if (slotIdx >= 0 && slotIdx < WEAPON_SLOTS.length && this.tick >= p.meleeEndsTick) {
-      const want = WEAPON_SLOTS[slotIdx];
+    if (slotIdx >= 0 && slotIdx < 2 && this.tick >= p.meleeEndsTick) {
+      const want = slotIdx === 0 ? p.loadout.primary : p.loadout.secondary;
       if (want !== p.weapon && p.pendingWeapon !== want) {
         p.pendingWeapon = want;
         p.switchEndsTick = this.tick + Math.round(WEAPONS[want].switchTime * TICK_RATE);

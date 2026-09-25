@@ -3,16 +3,16 @@ import { BTN, WEAPONS } from 'shared';
 import { Room } from '../src';
 
 describe('weapon switch', () => {
-  it('switches to slot 3 (sr) after switch time', () => {
+  it('switches to loadout secondary (slot 2) after switch time', () => {
     const room = new Room(undefined, { seed: 5, bots: 0 });
-    const p = room.addPlayer('H', false);
+    const p = room.addPlayer('H', false, 'normal', { primary: 'ar', secondary: 'sr' });
     expect(p.weapon).toBe('ar');
-    room.enqueueInput(p.id, { seq: 1, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 3 });
+    room.enqueueInput(p.id, { seq: 1, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 2 });
     room.step();
     expect(p.weapon).toBe('ar');
     expect(p.pendingWeapon).toBe('sr');
     for (let i = 2; i <= 25; i++) {
-      room.enqueueInput(p.id, { seq: i, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 3 });
+      room.enqueueInput(p.id, { seq: i, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 2 });
       room.step();
     }
     expect(p.weapon).toBe('sr');
@@ -38,7 +38,7 @@ describe('weapon switch', () => {
       fireAt(0, i);
       room.step();
     }
-    expect(a.weapon).toBe('sg');
+    expect(a.weapon).toBe('pistol');
   });
 });
 

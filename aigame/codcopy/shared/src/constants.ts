@@ -14,7 +14,7 @@ export const ADS_SPEED = 2.8;
 export const JUMP_VELOCITY = 6.0;
 export const GRAVITY = -18;
 export const TERMINAL_VELOCITY = -40;
-export const GROUND_ACCEL_K = 18;
+export const GROUND_ACCEL_K = 25;
 export const AIR_ACCEL = 4;
 
 export const SLIDE_START_MUL = 1.15;
@@ -44,7 +44,7 @@ export const SOUND_STEP_RADIUS = 8;
 export const MEMORY_DECAY_TICKS = 240;
 
 export const EMPTY_RELOAD_EXTRA = 0.6;
-export const RECOIL_RECOVERY = 14;
+export const RECOIL_RECOVERY = 18;
 export const RECOIL_RECOVERY_DELAY = 0.15;
 export const RECOIL_MAX_PITCH = 6;
 export const RECOIL_MAX_YAW = 3;

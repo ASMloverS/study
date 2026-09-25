@@ -2,6 +2,10 @@ export type SoundKind =
   | 'ar_shot'
   | 'sg_shot'
   | 'sr_shot'
+  | 'smg_shot'
+  | 'lmg_shot'
+  | 'dmr_shot'
+  | 'pistol_shot'
   | 'hit'
   | 'headshot'
   | 'kill'
@@ -115,6 +119,22 @@ export class AudioSys {
       case 'sr_shot':
         this.burst(dest, t, 1900, 0.34, 0.42);
         this.thump(dest, t, 88, 0.1, 0.3);
+        break;
+      case 'smg_shot':
+        this.burst(dest, t, 2900, 0.11, 0.24);
+        this.thump(dest, t, 130, 0.04, 0.18);
+        break;
+      case 'lmg_shot':
+        this.burst(dest, t, 1700, 0.22, 0.4);
+        this.thump(dest, t, 80, 0.09, 0.3);
+        break;
+      case 'dmr_shot':
+        this.burst(dest, t, 2100, 0.26, 0.38);
+        this.thump(dest, t, 95, 0.08, 0.28);
+        break;
+      case 'pistol_shot':
+        this.burst(dest, t, 2600, 0.09, 0.22);
+        this.thump(dest, t, 150, 0.035, 0.16);
         break;
       case 'hit':
         this.blip(dest, t, 880, 0.045, 0.16, 'triangle');
