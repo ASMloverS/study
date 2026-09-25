@@ -4,7 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { asphaltTexture } from './textures';
+import { PALETTE, toonMat } from './palette';
 
 export type QualityTier = 'low' | 'medium' | 'high';
 
@@ -32,12 +32,12 @@ uniform vec3 sunDir;
 void main() {
   vec3 d = normalize(vDir);
   float h = clamp(d.y, -0.05, 1.0);
-  vec3 zenith = vec3(0.28, 0.5, 0.82);
-  vec3 horizon = vec3(0.82, 0.88, 0.93);
+  vec3 zenith = vec3(0.16, 0.5, 0.95);
+  vec3 horizon = vec3(0.92, 0.96, 1.0);
   vec3 col = mix(horizon, zenith, pow(max(h, 0.0), 0.55));
   float sunAmt = max(dot(d, normalize(sunDir)), 0.0);
-  col += vec3(1.0, 0.92, 0.75) * pow(sunAmt, 600.0) * 3.0;
-  col += vec3(1.0, 0.88, 0.62) * pow(sunAmt, 8.0) * 0.14;
+  col += vec3(1.0, 0.95, 0.82) * pow(sunAmt, 350.0) * 3.2;
+  col += vec3(1.0, 0.9, 0.68) * pow(sunAmt, 8.0) * 0.16;
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -55,11 +55,11 @@ function buildSky(): THREE.Mesh {
   return sky;
 }
 
-const BASE_EXPOSURE = 1.15;
+const BASE_EXPOSURE = 1.3;
 
 export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xcfdce6, 0.0028);
+  scene.fog = new THREE.FogExp2(0xdff1fb, 0.0018);
 
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 400);
   camera.rotation.order = 'YXZ';
@@ -69,23 +69,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = BASE_EXPOSURE;
 
   const sky = buildSky();
   scene.add(sky);
 
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  envScene.add(buildSky());
-  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.85;
-  pmrem.dispose();
-
-  const hemi = new THREE.HemisphereLight(0xbfd4e6, 0x4a4f52, 0.55);
+  const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x8a95a0, 0.75);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
+  const sun = new THREE.DirectionalLight(0xfff4dd, 2.8);
   sun.position.set(33, 43, 25);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -97,30 +90,23 @@ export function createScene(canvas: HTMLCanvasElement): SceneCtx {
   sun.shadow.bias = -0.0004;
   scene.add(sun);
 
-  const groundTex = asphaltTexture(256, 14);
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(140, 140),
-    new THREE.MeshStandardMaterial({
-      map: groundTex.map,
-      normalMap: groundTex.normalMap,
-      roughnessMap: groundTex.roughnessMap,
-      roughness: 1,
-      metalness: 0.02,
-      normalScale: new THREE.Vector2(0.8, 0.8),
-    }),
-  );
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), toonMat(PALETTE.ground));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const composer = new EffectComposer(renderer);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const composer = new EffectComposer(
+    renderer,
+    new THREE.WebGLRenderTarget(size.x, size.y, { samples: 4, type: THREE.HalfFloatType }),
+  );
   composer.addPass(new RenderPass(scene, camera));
-  const ssao = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
-  ssao.kernelRadius = 0.5;
+  const ssao = new SSAOPass(scene, camera, size.x, size.y);
+  ssao.kernelRadius = 0.35;
   ssao.minDistance = 0.002;
-  ssao.maxDistance = 0.12;
+  ssao.maxDistance = 0.08;
   composer.addPass(ssao);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.32, 0.55, 0.86);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.5, 0.6, 0.8);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
 

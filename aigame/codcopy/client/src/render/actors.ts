@@ -2,10 +2,12 @@ import * as THREE from 'three';
 import type { PlayerSnap, WeaponId } from 'shared';
 import { MAPS, mapToObstacles, raycastBoxes, type AABB } from 'shared';
 import type { EnemyColor } from '../input';
+import { toonMat } from './palette';
 
-/** 远端角色（M7.3）：真实比例分节骨架 + 程序化步态 + 双臂 IK 持枪 + 类 ragdoll 死亡 + 敌色名牌。 */
+/** 远端角色：真实比例分节骨架 + 程序化步态 + 双臂 IK 持枪 + 类 ragdoll 死亡 + 敌色名牌；[M13] 每人一身主色 toon + 描边加粗。 */
 
-const PALETTE = [0xc94f3f, 0x3f7fc9, 0x8fca4f, 0xc9a23a, 0x9a5fc9, 0x3fc9b0, 0xd06f9e, 0x8a8f3f];
+/** [M13] 每人一身高饱和主色（uniform=主色，gear=主色暗阶） */
+const PALETTE = [0xff4d3d, 0xff8a1e, 0xffd60a, 0x35d46a, 0x17c8e0, 0x2f8cff, 0xa35cff, 0xff5cb8];
 const INTERP_DELAY = 0.066;
 const CORPSE_FADE = 3.0;
 const NAME_RANGE = 60;
@@ -162,8 +164,8 @@ class RemoteView {
   private fallYaw = 0;
   pose: ActorPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, h: 1.8, speed: 0 };
   private walkT = 0;
-  private readonly mats: THREE.MeshStandardMaterial[];
-  private readonly bandMat: THREE.MeshStandardMaterial;
+  private readonly mats: THREE.MeshToonMaterial[];
+  private readonly bandMat: THREE.MeshToonMaterial;
   private readonly hips = new THREE.Group();
   private readonly torso = new THREE.Group();
   private readonly aim = new THREE.Group();
@@ -182,16 +184,16 @@ class RemoteView {
     toneMapped: false,
   });
   private readonly shells: THREE.Mesh[] = [];
-  private readonly bodyMats: THREE.MeshStandardMaterial[];
+  private readonly bodyMats: THREE.MeshToonMaterial[];
   private nameOccludeAt = 0;
   private nameVisible = true;
 
   constructor(color: number, name: string) {
-    const uniform = new THREE.MeshStandardMaterial({ color: 0x59604c, roughness: 0.92, metalness: 0.04 });
-    const gear = new THREE.MeshStandardMaterial({ color: 0x33362e, roughness: 0.85, metalness: 0.12 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0xc9a184, roughness: 0.88, metalness: 0 });
-    const gun = new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.45, metalness: 0.75 });
-    this.bandMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2 });
+    const uniform = toonMat(color);
+    const gear = toonMat(new THREE.Color(color).multiplyScalar(0.62).getHex());
+    const skin = toonMat(0xe8b48e);
+    const gun = toonMat(0x3a4250);
+    this.bandMat = toonMat(0xffffff);
     this.mats = [uniform, gear, skin, gun, this.bandMat];
     this.bodyMats = [uniform, gear, skin];
 
@@ -280,7 +282,7 @@ class RemoteView {
     });
     for (const mesh of meshes) {
       const shell = new THREE.Mesh(mesh.geometry, this.shellMat);
-      shell.scale.setScalar(1.08);
+      shell.scale.setScalar(1.12);
       mesh.add(shell);
       this.shells.push(shell);
     }

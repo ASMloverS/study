@@ -1,11 +1,11 @@
 import type { MapDef } from 'shared';
 
 const COVER_COLORS: Record<string, string> = {
-  wall: '#565c63',
-  lowwall: '#4a5056',
-  container: '#8a5230',
-  crate: '#6b5233',
-  barrel: '#8f7530',
+  wall: '#8fa2b4',
+  lowwall: '#7a8fa3',
+  container: '#ff7a1a',
+  crate: '#e09a3c',
+  barrel: '#ff4030',
 };
 
 export interface EnemyBlip {

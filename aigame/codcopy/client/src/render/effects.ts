@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAPS, coverToAABB, type AABB, type NadeSnap } from 'shared';
+import { toonMat } from './palette';
 
 export type Quality = 'low' | 'medium' | 'high';
 export type ImpactKind = 'metal' | 'concrete' | 'wood';
@@ -174,7 +175,7 @@ export class Effects {
     this.scene = scene;
     this.additivePool = new InstancePool(scene, 320, true);
     this.alphaPool = new InstancePool(scene, 320, false);
-    const decalMat = new THREE.MeshBasicMaterial({ color: 0x14140f, transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const decalMat = new THREE.MeshBasicMaterial({ color: 0x22262c, transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
     const decalGeo = new THREE.CircleGeometry(0.035, 10);
     for (let i = 0; i < DECAL_MAX; i++) {
       const m = new THREE.Mesh(decalGeo, decalMat);
@@ -198,7 +199,7 @@ export class Effects {
     const dir = delta.divideScalar(dist);
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(0.015, 0.015, 1.1),
-      new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     mesh.position.copy(from);
     mesh.lookAt(end);
@@ -217,7 +218,7 @@ export class Effects {
     if (kind === 'metal') {
       for (let i = 0; i < Math.round(6 * density); i++) {
         this.spawn(pos, {
-          color: i === 0 ? 0xffd98a : 0xffb04a,
+          color: i === 0 ? 0xffe896 : 0xff9a2e,
           size: 0.03,
           vel: dir.clone().multiplyScalar(2 + Math.random() * 3).add(randVec(3.5)),
           life: 0.3,
@@ -228,7 +229,7 @@ export class Effects {
     } else if (kind === 'wood') {
       for (let i = 0; i < Math.round(7 * density); i++) {
         this.spawn(pos, {
-          color: 0x9a7442,
+          color: 0xd09a4a,
           size: 0.045,
           vel: dir.clone().multiplyScalar(1.5 + Math.random() * 2).add(randVec(2.6)),
           life: 0.55,
@@ -237,10 +238,10 @@ export class Effects {
         });
       }
     } else {
-      this.spawn(pos, { color: 0x9aa0a6, size: 0.16, vel: new THREE.Vector3(0, 0.7, 0), life: 0.4, grow: 3 });
+      this.spawn(pos, { color: 0xd8dee6, size: 0.16, vel: new THREE.Vector3(0, 0.7, 0), life: 0.4, grow: 3 });
       for (let i = 0; i < Math.round(4 * density); i++) {
         this.spawn(pos, {
-          color: 0x767c82,
+          color: 0xbac4ce,
           size: 0.04,
           vel: dir.clone().multiplyScalar(2 + Math.random() * 2).add(randVec(2.8)),
           life: 0.45,
@@ -261,10 +262,10 @@ export class Effects {
   }
 
   blood(pos: THREE.Vector3): void {
-    this.spawn(pos, { color: 0x7c1f16, size: 0.22, vel: new THREE.Vector3(0, 0.9, 0), life: 0.35, grow: 4 });
+    this.spawn(pos, { color: 0xd93a2e, size: 0.22, vel: new THREE.Vector3(0, 0.9, 0), life: 0.35, grow: 4 });
     for (let i = 0; i < 8; i++) {
       this.spawn(pos, {
-        color: 0x8f2a1c,
+        color: 0xb3261d,
         size: 0.035,
         vel: randVec(3.2).add(new THREE.Vector3(0, 1.4, 0)),
         life: 0.5,
@@ -276,7 +277,7 @@ export class Effects {
   shell(pos: THREE.Vector3, fwd: THREE.Vector3, right: THREE.Vector3): void {
     if (this.quality === 'low') return;
     this.spawn(pos, {
-      color: 0xd8b45a,
+      color: 0xffd60a,
       size: 0.022,
       vel: right.clone().multiplyScalar(1.6 + Math.random()).add(new THREE.Vector3(0, 2.2, 0)).add(fwd.clone().multiplyScalar(0.3)),
       life: 1.3,
@@ -288,7 +289,7 @@ export class Effects {
 
   muzzle(pos: THREE.Vector3, dir: THREE.Vector3, scale = 1): void {
     this.spawn(pos, {
-      color: 0xffd28a,
+      color: 0xfff3b0,
       size: 0.42 * scale,
       vel: dir.clone().multiplyScalar(1.5),
       life: 0.06,
@@ -296,7 +297,7 @@ export class Effects {
       additive: true,
     });
     this.spawn(pos, {
-      color: 0x707880,
+      color: 0x9fb0bc,
       size: 0.2 * scale,
       vel: dir.clone().multiplyScalar(0.8).add(new THREE.Vector3(0, 0.5, 0)),
       life: 0.5,
@@ -312,7 +313,7 @@ export class Effects {
     }
   }
 
-  debris(pos: THREE.Vector3, color = 0x8f6b3f): void {
+  debris(pos: THREE.Vector3, color = 0xc98f42): void {
     for (let i = 0; i < 12; i++) {
       this.spawn(pos, {
         color,
@@ -325,11 +326,11 @@ export class Effects {
   }
 
   explosion(pos: THREE.Vector3): void {
-    this.spawn(pos, { color: 0xffaa33, size: 0.8, vel: new THREE.Vector3(0, 1.5, 0), life: 0.35, grow: 9, additive: true });
-    this.spawn(pos, { color: 0xffe08a, size: 0.4, vel: new THREE.Vector3(0, 2.5, 0), life: 0.25, grow: 12, additive: true });
+    this.spawn(pos, { color: 0xffb830, size: 0.8, vel: new THREE.Vector3(0, 1.5, 0), life: 0.35, grow: 9, additive: true });
+    this.spawn(pos, { color: 0xffe896, size: 0.4, vel: new THREE.Vector3(0, 2.5, 0), life: 0.25, grow: 12, additive: true });
     for (let i = 0; i < 10; i++) {
       this.spawn(pos, {
-        color: 0x3a3a3a,
+        color: 0x6a7480,
         size: 0.35,
         vel: randVec(1).multiplyScalar(3.5).add(new THREE.Vector3(0, 1.6, 0)),
         life: 1.1,
@@ -337,7 +338,7 @@ export class Effects {
         grow: 2,
       });
     }
-    this.debris(pos, 0x6a5a30);
+    this.debris(pos, 0xc98f42);
   }
 
   private spawn(pos: THREE.Vector3, o: ParticleOpts): void {
@@ -367,7 +368,7 @@ export class Effects {
     if (!v) {
       const mesh = new THREE.Mesh(
         kind === 'frag' ? new THREE.SphereGeometry(0.07, 10, 8) : new THREE.CylinderGeometry(0.045, 0.045, 0.12, 10),
-        new THREE.MeshStandardMaterial({ color: kind === 'frag' ? 0x3d4a35 : 0xcfd4d8, metalness: 0.4, roughness: 0.5 }),
+        toonMat(kind === 'frag' ? 0x3d5a4a : 0xffffff),
       );
       mesh.castShadow = false;
       this.scene.add(mesh);

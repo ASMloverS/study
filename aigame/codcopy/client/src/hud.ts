@@ -45,7 +45,7 @@ export class Hud {
   update(self: PlayerSnap | undefined, timeLeft: number, now: number, ping: number | null = null, killLimit = 30): void {
     if (self) {
       this.healthbar.style.width = `${self.hp}%`;
-      this.healthbar.style.background = self.hp > 60 ? '#7ec850' : self.hp > 30 ? '#e0b13e' : '#d84f3f';
+      this.healthbar.style.background = self.hp > 60 ? '#4cd964' : self.hp > 30 ? '#ffb020' : '#ff5040';
       this.healthtext.textContent = String(self.hp);
       this.ammo.textContent = `${self.m} / ${self.rs}`;
       this.weaponEl.textContent = weaponName(self.w);
@@ -66,7 +66,7 @@ export class Hud {
       if (sv & 2) parts.push('空袭[5]');
       if (sv & 4) parts.push('集束[6]');
       this.streaksEl.textContent = parts.length > 0 ? `连杀奖励就绪：${parts.join(' ')}` : '';
-      this.streaksEl.style.color = parts.length > 0 ? '#ffd76a' : '';
+      this.streaksEl.style.color = parts.length > 0 ? '#ffc94d' : '';
     }
     if (this.flashUntil > now) {
       const k = (this.flashUntil - now) / Math.max(1, this.flashUntil - this.flashStart);
@@ -138,7 +138,7 @@ export class Hud {
     this.breathbar.style.opacity = v !== null ? '1' : '0';
     if (v !== null) {
       this.breathfill.style.width = `${Math.round(v * 100)}%`;
-      this.breathfill.style.background = v > 0.35 ? '#5ac8dc' : '#d84f3f';
+      this.breathfill.style.background = v > 0.35 ? '#3ad4ee' : '#ff5040';
     }
   }
 

@@ -1,20 +1,21 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { WEAPONS, WEAPON_LIST, type WeaponId } from 'shared';
+import { toonMat } from './palette';
 
-/** 程序化高精度武器视图模型（M7.1）：无手臂、独立场景双 pass、逐枪 ADS 锚点对齐、换弹/泵动/栓动动画。 */
+/** 程序化高精度武器视图模型：无手臂、独立场景双 pass、逐枪 ADS 锚点对齐、换弹/泵动/栓动动画；[M13] 材质鲜艳化（几何/动画零变更）。 */
 
 const M = {
-  gunMetal: new THREE.MeshStandardMaterial({ color: 0x2e3136, metalness: 0.85, roughness: 0.34 }),
-  darkMetal: new THREE.MeshStandardMaterial({ color: 0x191b1f, metalness: 0.8, roughness: 0.42 }),
-  boltSteel: new THREE.MeshStandardMaterial({ color: 0x9aa2ad, metalness: 0.95, roughness: 0.22 }),
-  polymer: new THREE.MeshStandardMaterial({ color: 0x23262b, metalness: 0.1, roughness: 0.62 }),
-  wood: new THREE.MeshStandardMaterial({ color: 0x5e4327, metalness: 0.05, roughness: 0.55 }),
-  accent: new THREE.MeshStandardMaterial({ color: 0x3d4148, metalness: 0.7, roughness: 0.4 }),
-  shellRed: new THREE.MeshStandardMaterial({ color: 0xa33327, metalness: 0.3, roughness: 0.5 }),
-  brass: new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 0.9, roughness: 0.3 }),
-  lens: new THREE.MeshStandardMaterial({ color: 0x1a2a3a, metalness: 0.95, roughness: 0.08, envMapIntensity: 2.2 }),
-  sightDot: new THREE.MeshBasicMaterial({ color: 0xffdd66 }),
+  gunMetal: toonMat(0xeef2f6),
+  darkMetal: toonMat(0xb8c2cd),
+  boltSteel: toonMat(0xffffff),
+  polymer: toonMat(0x35424e),
+  wood: toonMat(0xe09a3c),
+  accent: toonMat(0xff7a1a),
+  shellRed: toonMat(0xff4030),
+  brass: toonMat(0xffd60a),
+  lens: new THREE.MeshBasicMaterial({ color: 0x9fd8ff }),
+  sightDot: new THREE.MeshBasicMaterial({ color: 0xffd60a }),
 };
 
 function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0, round = 0.004): THREE.Mesh {
@@ -82,12 +83,12 @@ export class ViewModel {
   private reloadPhase = 0;
 
   constructor() {
-    const hemi = new THREE.HemisphereLight(0xd8e2e8, 0x3a3f42, 0.9);
+    const hemi = new THREE.HemisphereLight(0xdff2ff, 0x8a95a0, 1.1);
     this.scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xfff0d8, 1.6);
+    const key = new THREE.DirectionalLight(0xfff6e2, 2.0);
     key.position.set(0.8, 1.4, 0.6);
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x9fb8d0, 0.5);
+    const rim = new THREE.DirectionalLight(0xbfe0f2, 0.6);
     rim.position.set(-1, 0.4, -0.8);
     this.scene.add(rim);
     this.scene.add(this.group);

@@ -1,42 +1,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { MapDef } from 'shared';
-import { cautionTexture, concreteTexture, corrugatedTexture, rustTexture, woodTexture } from './textures';
+import { PALETTE, toonMat } from './palette';
 
-/** 掩体渲染（M7.2）：按材质+程序贴图合批（UV 按世界尺寸缩放防拉伸）、圆柱油桶、装饰道具层。 */
+/** 掩体渲染：[M13] 工业波普纯色 toon 材质合批、圆柱油桶、装饰道具层（零贴图）。 */
 
 const LIFT_TRAVEL = 2;
-
-function scaleBoxUV(geo: THREE.BufferGeometry, size: [number, number, number], density: number): void {
-  const uv = geo.attributes.uv as THREE.BufferAttribute;
-  const faceScales: [number, number][] = [
-    [size[2], size[1]],
-    [size[2], size[1]],
-    [size[0], size[2]],
-    [size[0], size[2]],
-    [size[0], size[1]],
-    [size[0], size[1]],
-  ];
-  for (let f = 0; f < 6; f++) {
-    const [su, sv] = faceScales[f];
-    for (let v = 0; v < 4; v++) {
-      const i = f * 4 + v;
-      uv.setXY(i, uv.getX(i) * (su / density), uv.getY(i) * (sv / density));
-    }
-  }
-}
-
-function stdMat(t: { map: THREE.Texture; normalMap: THREE.Texture; roughnessMap: THREE.Texture }, color = 0xffffff, metalness = 0.05, roughness = 1): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    map: t.map,
-    normalMap: t.normalMap,
-    roughnessMap: t.roughnessMap,
-    color,
-    metalness,
-    roughness,
-    normalScale: new THREE.Vector2(1, 1),
-  });
-}
 
 export class MapView {
   readonly group = new THREE.Group();
@@ -51,23 +20,16 @@ export class MapView {
   }[] = [];
 
   constructor(scene: THREE.Scene, map: MapDef) {
-    const wallT = concreteTexture(256, 1);
-    const lowT = concreteTexture(256, 1);
-    const contOrangeT = corrugatedTexture(256, 1, [205, 102, 46], 'CODCOPY 42');
-    const contBlueT = corrugatedTexture(256, 1, [72, 112, 148], 'AIGAME 07');
-    const crateT = woodTexture(256, 1);
-    const rustT = rustTexture(256, 1);
-    const cautionT = cautionTexture(128, 1);
-
-    const wallMat = stdMat(wallT, 0xb6babf, 0.04, 1);
-    const lowMat = stdMat(lowT, 0x9aa0a6, 0.04, 1);
-    const contOrangeMat = stdMat(contOrangeT, 0xffffff, 0.6, 0.72);
-    const contBlueMat = stdMat(contBlueT, 0xffffff, 0.6, 0.72);
-    const crateMat = stdMat(crateT, 0xffffff, 0.05, 1);
-    const barrelMat = stdMat(rustT, 0xd8b24a, 0.5, 0.68);
-    const doorMat = stdMat(cautionT, 0xffffff, 0.35, 0.7);
-    const liftMat = stdMat(rustT, 0x6f767e, 0.65, 0.6);
-    this.ownMaterials.push(wallMat, lowMat, contOrangeMat, contBlueMat, crateMat, barrelMat, doorMat, liftMat);
+    const wallMat = toonMat(PALETTE.wall);
+    const lowMat = toonMat(PALETTE.lowWall);
+    const contOrangeMat = toonMat(PALETTE.containerOrange);
+    const contBlueMat = toonMat(PALETTE.containerBlue);
+    const crateMat = toonMat(PALETTE.crate);
+    const barrelMat = toonMat(PALETTE.barrel);
+    const doorMat = toonMat(PALETTE.band);
+    const liftMat = toonMat(PALETTE.platform);
+    const metalMat = toonMat(PALETTE.metal);
+    this.ownMaterials.push(wallMat, lowMat, contOrangeMat, contBlueMat, crateMat, barrelMat, doorMat, liftMat, metalMat);
 
     const batches = new Map<THREE.Material, THREE.BufferGeometry[]>();
 
@@ -77,7 +39,6 @@ export class MapView {
           new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]),
           c.dynamic === 'door' ? doorMat : liftMat,
         );
-        scaleBoxUV(mesh.geometry, c.size, c.dynamic === 'door' ? 1.2 : 2);
         mesh.position.set(c.pos[0], c.pos[1], c.pos[2]);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -106,7 +67,6 @@ export class MapView {
         return;
       }
       const geo = new THREE.BoxGeometry(c.size[0], c.size[1], c.size[2]);
-      scaleBoxUV(geo, c.size, c.type === 'container' ? 2.4 : c.type === 'crate' ? 1.4 : 2);
       geo.translate(c.pos[0], c.pos[1], c.pos[2]);
       const mat =
         c.type === 'container'
@@ -140,7 +100,7 @@ export class MapView {
       this.group.add(mesh);
     }
 
-    this.group.add(buildProps(crateMat, liftMat, doorMat, map));
+    this.group.add(buildProps(crateMat, metalMat, doorMat, map));
     scene.add(this.group);
   }
 
@@ -176,11 +136,11 @@ export class MapView {
   }
 }
 
-/** 装饰道具层（零碰撞 / 导航影响）：托盘堆、沿墙管道、灯柱、地面安全线、集装箱顶细节 */
+/** 装饰道具层（零碰撞 / 导航影响）：托盘堆、沿墙管道、灯柱、地面安全线、集装箱顶细节（[M13] 纯色） */
 function buildProps(
-  crateMat: THREE.MeshStandardMaterial,
-  metalMat: THREE.MeshStandardMaterial,
-  cautionMat: THREE.MeshStandardMaterial,
+  crateMat: THREE.Material,
+  metalMat: THREE.Material,
+  cautionMat: THREE.Material,
   map: MapDef,
 ): THREE.Group {
   const g = new THREE.Group();
