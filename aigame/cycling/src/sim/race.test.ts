@@ -5,7 +5,7 @@ import { RACE } from './params';
 import type { RiderCommand } from './types';
 
 const track = buildTrack();
-const cruise: RiderCommand = { gear: 1, steer: 0 };
+const cruise: RiderCommand = { gear: 1, steer: 0, cog: 6 };
 
 function run(cmd: RiderCommand, seconds: number) {
   let s = createRace(track);
@@ -59,7 +59,7 @@ describe('race', () => {
   }, 30000);
   it('reckless sprinting loses to steady pacing', () => {
     const steady = run(cruise, 900).riders[0].finishTime!;
-    const reckless = run({ gear: 3, steer: 0 }, 900).riders[0].finishTime!;
+    const reckless = run({ gear: 3, steer: 0, cog: 6 }, 900).riders[0].finishTime!;
     expect(reckless).toBeGreaterThan(steady);
   }, 30000);
 });

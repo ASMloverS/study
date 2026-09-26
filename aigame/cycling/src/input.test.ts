@@ -16,24 +16,29 @@ describe('InputController', () => {
     c.attach();
   });
 
-  it('gear up on ArrowUp', () => {
+  it('shifts cassette heavier on ArrowUp', () => {
     press('ArrowUp');
-    expect(c.command().gear).toBe(2);
+    expect(c.command().cog).toBe(7);
+  });
+  it('shifts cassette lighter on ArrowDown', () => {
+    press('ArrowDown');
+    expect(c.command().cog).toBe(5);
   });
   it('ignores auto-repeat', () => {
     press('ArrowUp');
     press('ArrowUp', true);
-    expect(c.command().gear).toBe(2);
+    expect(c.command().cog).toBe(7);
   });
-  it('gear down clamps at 0', () => {
-    press('ArrowDown');
-    press('ArrowDown');
-    press('ArrowDown');
-    expect(c.command().gear).toBe(0);
+  it('cog clamps to 0..11', () => {
+    for (let i = 0; i < 20; i++) press('ArrowDown');
+    expect(c.command().cog).toBe(0);
+    for (let i = 0; i < 20; i++) press('ArrowUp');
+    expect(c.command().cog).toBe(11);
   });
-  it('direct gear select with number keys', () => {
+  it('number keys set power gear', () => {
     press('4');
     expect(c.command().gear).toBe(3);
+    expect(c.command().cog).toBe(6);
   });
   it('steer holds while key held', () => {
     press('ArrowLeft');

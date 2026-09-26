@@ -1,11 +1,11 @@
-import type { RiderCommand, RiderState } from './types';
+import type { GearId, RiderState } from './types';
 
 export function aiCommand(
   self: RiderState,
   ahead: RiderState | null,
   remaining: number,
   gradient: number,
-): RiderCommand {
+): { gear: GearId; steer: number } {
   const e = self.energy / self.type.maxEnergy;
   let target = self.wanderTarget;
   if (ahead && ahead.dist - self.dist < 25) target = ahead.lateral * 0.8;

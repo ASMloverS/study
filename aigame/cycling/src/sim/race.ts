@@ -1,4 +1,4 @@
-import { RACE } from './params';
+import { DRIVETRAIN, RACE } from './params';
 import { rngNext } from './rng';
 import { stepEnergy, targetPower } from './energy';
 import { stepSpeed } from './physics';
@@ -34,7 +34,7 @@ const NAMES = ['你', '山神', '穿山甲', '火箭', '冲刺王', '发动机',
 function makeRider(id: number, type: RiderType, isPlayer: boolean, dist: number, lateral: number): RiderState {
   return {
     id, name: NAMES[id], isPlayer, type,
-    dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1,
+    dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1, cog: DRIVETRAIN.defaultCog,
     power: 0, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0,
   };
 }
@@ -84,16 +84,17 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
   }
   const gradients = riders.map((r) => track.sampleAt(Math.min(r.dist, s.trackLength - 0.01)).gradient);
   const cmds = riders.map<RiderCommand>((r, i) => {
-    if (r.finishTime !== null) return { gear: 0, steer: 0 };
+    if (r.finishTime !== null) return { gear: 0, steer: 0, cog: r.cog };
     if (r.isPlayer) return playerCmd;
     const a = nearestAheadIndex(r, riders);
-    return aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]);
+    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cog: r.cog };
   });
   const drafts = riders.map((_, i) => isDrafting(i, riders));
   for (let i = 0; i < riders.length; i++) {
     const r = riders[i];
     const cmd = cmds[i];
     r.gear = cmd.gear;
+    r.cog = cmd.cog;
     r.power = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
