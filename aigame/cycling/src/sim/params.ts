@@ -11,8 +11,8 @@ export const PHYS = {
 export const RACE = {
   dt: 1 / 60,
   gearRatios: [0.6, 1.0, 1.5, 2.5],
-  drainBase: 30,
-  emptyCapRatio: 0.45,
+  drainBase: 40,
+  emptyCapRatio: 0.35,
   lateralMax: 2.2,
   lateralSpeed: 1.8,
   draftGapMin: 1,
@@ -22,7 +22,7 @@ export const RACE = {
   finishWait: 30,
   trackWidth: 6,
   feedZones: [[560, 610], [2640, 2690]],
-  feedRegenRate: 0.04,
+  feedZoneGain: 0.18,
 } as const;
 
 export const GEARS = ['轻松', '巡航', '发力', '冲刺'] as const;

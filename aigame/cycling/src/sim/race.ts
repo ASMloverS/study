@@ -4,6 +4,7 @@ import { stepEnergy, targetPower } from './energy';
 import { stepSpeed } from './physics';
 import { isDrafting, nearestAheadIndex } from './draft';
 import { aiCommand } from './ai';
+import { cadence, cadenceEfficiency, aiShift } from './drivetrain';
 import type { Track } from './track';
 import type { Phase, ResultRow, RiderCommand, RiderState, RiderType } from './types';
 
@@ -17,7 +18,7 @@ export interface RaceState {
   results: ResultRow[];
 }
 
-export const PLAYER_TYPE: RiderType = { label: 'all-rounder', ftp: 300, maxEnergy: 24000, sprintDist: 250, aggression: 0.5 };
+export const PLAYER_TYPE: RiderType = { label: 'all-rounder', ftp: 300, maxEnergy: 32000, sprintDist: 250, aggression: 0.5 };
 
 export const AI_FIELD: RiderType[] = [
   { label: 'climber', ftp: 315, maxEnergy: 22000, sprintDist: 120, aggression: 0.85 },
@@ -83,11 +84,13 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     if (!r.isPlayer && rng() < 0.02) r.wanderTarget = (rng() * 2 - 1) * 0.6;
   }
   const gradients = riders.map((r) => track.sampleAt(Math.min(r.dist, s.trackLength - 0.01)).gradient);
+  const shiftTick = Math.floor((s.time + dt) / 0.5) > Math.floor(s.time / 0.5);
   const cmds = riders.map<RiderCommand>((r, i) => {
     if (r.finishTime !== null) return { gear: 0, steer: 0, cog: r.cog };
     if (r.isPlayer) return playerCmd;
     const a = nearestAheadIndex(r, riders);
-    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cog: r.cog };
+    const cog = shiftTick ? aiShift(r.speed, r.cog) : r.cog;
+    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cog };
   });
   const drafts = riders.map((_, i) => isDrafting(i, riders));
   for (let i = 0; i < riders.length; i++) {
@@ -95,12 +98,18 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     const cmd = cmds[i];
     r.gear = cmd.gear;
     r.cog = cmd.cog;
-    r.power = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
+    const effort = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
+    r.power = effort * cadenceEfficiency(cadence(r.speed, cmd.cog));
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
       r.dist += r.speed * dt;
       r.lateral = clamp(r.lateral + cmd.steer * RACE.lateralSpeed * dt, -RACE.lateralMax, RACE.lateralMax);
-      r.energy = stepEnergy(r.energy, r.power, r.type.ftp, dt);
+      r.energy = stepEnergy(r.energy, effort, r.type.ftp, dt);
+      for (const [lo, hi] of RACE.feedZones) {
+        if (r.dist >= lo && r.dist <= hi) {
+          r.energy = Math.min(r.type.maxEnergy, r.energy + RACE.feedZoneGain * r.type.maxEnergy * ((r.speed * dt) / (hi - lo)));
+        }
+      }
       r.powerSum += r.power * dt;
       r.timeSum += dt;
       if (r.dist >= s.trackLength) {
