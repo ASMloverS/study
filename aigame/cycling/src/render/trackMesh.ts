@@ -56,8 +56,8 @@ function dashes(track: Track, halfW: number, segLen: number, gap: number, color:
   return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
 }
 
-function finishGates(track: Track): THREE.Group {
-  const s = track.sampleAt(0);
+function gate(track: Track, dist: number, color: number): THREE.Group {
+  const s = track.sampleAt(dist);
   const nx = -Math.sin(s.heading), nz = Math.cos(s.heading);
   const g = new THREE.Group();
   const postMat = new THREE.MeshLambertMaterial({ color: 0x30343c });
@@ -66,7 +66,7 @@ function finishGates(track: Track): THREE.Group {
     post.position.set(s.x + nx * side * 4.5, s.y + 3, s.z + nz * side * 4.5);
     g.add(post);
   }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.8, 0.5), new THREE.MeshLambertMaterial({ color: 0xe0533d }));
+  const top = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.8, 0.5), new THREE.MeshLambertMaterial({ color }));
   top.position.set(s.x, s.y + 6.2, s.z);
   top.rotation.y = -s.heading + Math.PI / 2;
   g.add(top);
@@ -116,7 +116,10 @@ export function buildTrackMesh(track: Track): THREE.Group {
   group.add(ribbon(track, half - 0.05, half - 0.3, 0xe8e8e8, 0.008));
   group.add(ribbon(track, -half + 0.3, -half + 0.05, 0xe8e8e8, 0.008));
   group.add(dashes(track, 0.09, 3, 8, 0xffffff, 0.012));
-  group.add(finishGates(track));
+  group.add(gate(track, 0, 0xe0533d));
+  for (const [lo] of RACE.feedZones) {
+    group.add(gate(track, lo, 0x4d8fd6));
+  }
   group.add(trees(track));
   return group;
 }
