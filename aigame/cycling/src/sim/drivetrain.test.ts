@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiShift, cadence, cadenceEfficiency, gearRatio } from './drivetrain';
+import { aiShift, cadence, cadenceEfficiency, gearRatio, terrainCadence } from './drivetrain';
 
 describe('gearRatio', () => {
   it('maps cog index to 52T ratios', () => {
@@ -25,22 +25,32 @@ describe('cadence', () => {
 });
 
 describe('cadenceEfficiency', () => {
-  it('full power inside [60,115] rpm', () => {
-    expect(cadenceEfficiency(60)).toBe(1);
-    expect(cadenceEfficiency(70)).toBe(1);
+  it('full power inside [80,125] rpm', () => {
+    expect(cadenceEfficiency(80)).toBe(1);
     expect(cadenceEfficiency(100)).toBe(1);
-    expect(cadenceEfficiency(115)).toBe(1);
+    expect(cadenceEfficiency(120)).toBe(1);
+    expect(cadenceEfficiency(125)).toBe(1);
   });
-  it('linear falloff to 0.55 between 40-60 and 115-140', () => {
-    expect(cadenceEfficiency(50)).toBeCloseTo(0.775, 6);
-    expect(cadenceEfficiency(120)).toBeCloseTo(0.91, 6);
-    expect(cadenceEfficiency(125)).toBeCloseTo(0.82, 6);
+  it('linear falloff to 0.55 between 50-80 and 125-150', () => {
+    expect(cadenceEfficiency(65)).toBeCloseTo(0.775, 6);
+    expect(cadenceEfficiency(70)).toBeCloseTo(0.85, 6);
+    expect(cadenceEfficiency(140)).toBeCloseTo(0.73, 6);
   });
   it('clamps at 0.55 beyond the range', () => {
-    expect(cadenceEfficiency(40)).toBe(0.55);
-    expect(cadenceEfficiency(20)).toBe(0.55);
-    expect(cadenceEfficiency(140)).toBe(0.55);
-    expect(cadenceEfficiency(160)).toBe(0.55);
+    expect(cadenceEfficiency(50)).toBe(0.55);
+    expect(cadenceEfficiency(30)).toBe(0.55);
+    expect(cadenceEfficiency(150)).toBe(0.55);
+    expect(cadenceEfficiency(170)).toBe(0.55);
+  });
+});
+
+describe('terrainCadence', () => {
+  it('climb above +2%, descent below -2%, flat otherwise', () => {
+    expect(terrainCadence(0.025)).toBe(90);
+    expect(terrainCadence(0.02)).toBe(110);
+    expect(terrainCadence(0)).toBe(110);
+    expect(terrainCadence(-0.02)).toBe(110);
+    expect(terrainCadence(-0.025)).toBe(120);
   });
 });
 
@@ -56,5 +66,11 @@ describe('aiShift', () => {
   });
   it('keeps current cog at standstill tie', () => {
     expect(aiShift(0, 6)).toBe(6);
+  });
+  it('honors custom target 110 on flat', () => {
+    expect(aiShift(10.95, 6, 110)).toBe(5);
+  });
+  it('honors custom target 90 on climb', () => {
+    expect(aiShift(5.4, 6, 90)).toBe(1);
   });
 });

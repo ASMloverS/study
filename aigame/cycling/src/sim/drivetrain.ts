@@ -17,11 +17,17 @@ export function cadenceEfficiency(cad: number): number {
   return D.effMin + ((D.cadCeil - cad) / (D.cadCeil - D.cadFullHi)) * (1 - D.effMin);
 }
 
-export function aiShift(speed: number, currentCog: number): number {
+export function terrainCadence(gradient: number): number {
+  if (gradient > D.climbGradient) return D.climbCadence;
+  if (gradient < D.descentGradient) return D.descentCadence;
+  return D.flatCadence;
+}
+
+export function aiShift(speed: number, currentCog: number, target: number = D.aiTargetCadence): number {
   let best = currentCog;
-  let bestErr = Math.abs(cadence(speed, currentCog) - D.aiTargetCadence);
+  let bestErr = Math.abs(cadence(speed, currentCog) - target);
   for (let c = 0; c < D.cassette.length; c++) {
-    const err = Math.abs(cadence(speed, c) - D.aiTargetCadence);
+    const err = Math.abs(cadence(speed, c) - target);
     if (err < bestErr - D.aiShiftHysteresis) {
       best = c;
       bestErr = err;
