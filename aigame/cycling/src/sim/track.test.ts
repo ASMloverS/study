@@ -31,9 +31,17 @@ describe('Track', () => {
     const t = new Track(circle(100, 8, (i) => (i / 8) * 50));
     expect(t.sampleAt(t.length * 0.25).gradient).toBeGreaterThan(0.05);
   });
+  it('heading tracks ccw tangent direction', () => {
+    const t = new Track(circle(100, 8));
+    expect(t.sampleAt(0).heading).toBeCloseTo(Math.PI / 2, 2);
+    expect(t.sampleAt(t.length * 0.5).heading).toBeCloseTo(-Math.PI / 2, 2);
+  });
   it('nearest finds close point', () => {
     const n = new Track(circle(100, 8)).nearest(100, 0);
     expect(n.dist).toBeLessThan(3);
     expect(n.y).toBeCloseTo(0, 3);
+    const mid = new Track(circle(100, 8)).sampleAt(3);
+    const nm = new Track(circle(100, 8)).nearest(mid.x, mid.z);
+    expect(nm.dist).toBeLessThan(2);
   });
 });

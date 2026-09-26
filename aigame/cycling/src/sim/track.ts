@@ -71,8 +71,20 @@ export class Track {
   }
 
   nearest(x: number, z: number): { y: number; dist: number } {
-    let best = { y: this.pts[0][1], dist: Infinity };
+    let bestI = 0;
+    let bestD = Infinity;
     for (let i = 0; i < this.pts.length - 1; i += 8) {
+      const p = this.pts[i];
+      const d = Math.hypot(p[0] - x, p[2] - z);
+      if (d < bestD) {
+        bestD = d;
+        bestI = i;
+      }
+    }
+    let best = { y: this.pts[bestI][1], dist: bestD };
+    const lo = Math.max(0, bestI - 8);
+    const hi = Math.min(this.pts.length - 2, bestI + 8);
+    for (let i = lo; i <= hi; i++) {
       const p = this.pts[i];
       const d = Math.hypot(p[0] - x, p[2] - z);
       if (d < best.dist) best = { y: p[1], dist: d };
