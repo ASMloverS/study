@@ -21,6 +21,22 @@ export const RACE = {
   countdown: 3,
   finishWait: 30,
   trackWidth: 6,
+  feedZones: [[560, 610], [2640, 2690]],
+  feedRegenRate: 0.04,
 } as const;
 
 export const GEARS = ['轻松', '巡航', '发力', '冲刺'] as const;
+
+export const DRIVETRAIN = {
+  chainring: 52,
+  cassette: [36, 32, 28, 24, 21, 18, 16, 14, 13, 12, 11, 10],
+  wheelCirc: 2.096,
+  cadFullLo: 60,
+  cadFullHi: 115,
+  cadFloor: 40,
+  cadCeil: 140,
+  effMin: 0.55,
+  aiTargetCadence: 95,
+  aiShiftHysteresis: 3,
+  defaultCog: 6,
+} as const;
