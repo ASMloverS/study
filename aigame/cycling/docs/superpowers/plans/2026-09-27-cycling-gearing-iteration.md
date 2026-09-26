@@ -18,8 +18,8 @@
 |---|---|---|---|
 | 变速数据 | 12 速 10-36T | `CASSETTE = [36,32,28,24,21,18,16,14,13,12,11,10]`（索引 0=36T 最轻 → 11=10T 最重），W=cog+1 变重 | 轻重序与 +1 语义一致 |
 | AI 变速 | 每 0.5s 选最接近 95rpm | `aiShift(speed, currentCog)` 带 3rpm 滞回（改进量 >3rpm 才换），`shiftTick` 由 `Math.floor(time/0.5)` 变化判定 | 防边界抖动；无随机，确定性保持 |
-| 效率乘子接入点 | effectivePower = 目标 × eff | race 步进中 `r.power = targetPower(...) × cadenceEfficiency(cadence(r.speed, cmd.cog))`；energy/physics 均消费 `r.power` | energy.ts/physics.ts 零改动 |
-| 补给区判定 | d ∈ 两区 | `RACE.feedZones: [[560,610],[2640,2690]]` + `RACE.feedRegenRate: 0.04`（每秒 4% × maxEnergy），race 内联判定 | 参数集中可调 |
+| 效率乘子接入点 | 推进用 effective，消耗用目标功率 | race 步进中 `r.power = effort × cadenceEfficiency(...)`（推进与均功率统计），`stepEnergy(r.energy, effort, ...)`（消耗跟发力档，与齿比无关——齿比错误=费力不出功，杜绝踩空省体力 exploit） | energy.ts/physics.ts 零改动 |
+| 补给区判定 | d ∈ 两区 | `RACE.feedZones: [[560,610],[2640,2690]]` + `RACE.feedZoneGain: 0.18`（每区合计 18% × maxEnergy，按通过距离/区长比例分摊），race 内联判定 | 按距离而非时间：低速滞留无额外收益，杜绝蹭补给 |
 | 音乐文件 | 用户提供 | `public/music/{calm,intense,sprint}.mp3` + `public/music/SOURCES.md` 说明；fetch 失败/404 → 该层静音 | 后补文件即生效 |
 | 音乐档位推送 | 状态映射 | Game 持有 Music 引用，render 帧内 `setTier`（内部同档 no-op） | 无需事件系统 |
 
@@ -31,8 +31,8 @@
 - `cadence(20, 11) ≈ 110.1 rpm`（52×10 顶档 @72km/h 满效）
 - 效率边界：eff(50)=0.775、eff(70)=1、eff(100)=1、eff(120)=0.91、eff(125)=0.82、eff(40)=0.55、eff(140)=0.55、eff(20)=0.55、eff(160)=0.55
 - `aiShift(10.95, 6)=6`（保持）；`aiShift(5.4, 6)=1`；`aiShift(20, 6)=11`；`aiShift(0, 6)=6`（静止全平局→滞回保持）
-- 补给：玩家 32000×4% = 1280 J/s，净回约 1250/s（扣除巡航消耗 30/s）
-- reckless 回归预估：固定 cog 6 全程冲刺（750W×eff），32000J 池约 170s 耗尽 → 之后 135W×eff ≈ 6.8m/s → 总成绩 ≈527s vs 匀速 ≈444s， reckless 仍输 ✓（实现时以实测为准，若方向翻转报告数值而非盲目调参）
+- 补给：每区合计 0.18 × 32000 = 5760 J，~11 m/s 通过 ≈ 21 J/tick，120 tick ≈ +2500 J
+- reckless 回归预估（消耗跟发力档后）：全冲刺 187.5 J/s 恒定消耗，32000J+区2 补给 ≈ 200s 后耗尽转入 135W×eff 爬行 → 总成绩 ≈600s vs 匀速 ≈489s，reckless 仍明显输 ✓（实现时以实测为准，若方向翻转报告数值而非盲目调参）
 
 ### A3 文件清单
 
@@ -139,7 +139,7 @@ describe('aiShift', () => {
 
 ```ts
   feedZones: [[560, 610], [2640, 2690]],
-  feedRegenRate: 0.04,
+  feedZoneGain: 0.18,
 ```
 
 并在文件末尾新增导出常量（types 的 cog 字段推迟到 Task 2，保证本提交 typecheck 全绿）：
@@ -385,20 +385,29 @@ AI 分支的 cog 变为：
       cmd = { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cog };
 ```
 
-3d. 功率计算——`r.power` 行替换为（效率乘子）：
+3d. 功率与消耗分离——更新循环内替换为（推进用有效功率，消耗用发力档目标）：
 
 ```ts
-    r.power = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy) * cadenceEfficiency(cadence(r.speed, cmd.cog));
+    const effort = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
+    r.power = effort * cadenceEfficiency(cadence(r.speed, cmd.cog));
 ```
+
+（`effort` 声明于循环作用域，供下方 stepEnergy 使用；`r.power` 仍用于 stepSpeed 与均功率统计。）
 
 3e. 补给恢复——`r.energy = stepEnergy(...)` 行替换为：
 
 ```ts
-      r.energy = stepEnergy(r.energy, r.power, r.type.ftp, dt);
-      if (RACE.feedZones.some(([lo, hi]) => r.dist >= lo && r.dist <= hi)) {
-        r.energy = Math.min(r.type.maxEnergy, r.energy + RACE.feedRegenRate * r.type.maxEnergy * dt);
+      r.energy = stepEnergy(r.energy, effort, r.type.ftp, dt);
+      for (const [lo, hi] of RACE.feedZones) {
+        if (r.dist >= lo && r.dist <= hi) {
+          r.energy = Math.min(r.type.maxEnergy, r.energy + RACE.feedZoneGain * r.type.maxEnergy * ((r.speed * dt) / (hi - lo)));
+        }
       }
 ```
+
+（按通过距离分摊：每区合计 18%；~11 m/s 通过时 ≈ 21 J/tick ×120 tick ≈ +2500 J，满足新测试 `> before + 2000`。）
+
+另：Task 1 已落地的 `feedRegenRate: 0.04` 在本任务中改名为 `feedZoneGain: 0.18`（params.ts 同步修改）。
 
 - [ ] **Step 4：跑测试确认通过** — `npm test`，预期：全绿。重点核对三个既有长测的实测数值并记录在提交说明：全场完赛各车手成绩（AI 带变速应 ≈414-445s）、reckless vs steady（预估 reckless ≈520-540s 仍输）、avgPower ∈ (150,400)。若 reckless 反转或完赛超时：**不要调参**，报告 BLOCKED 与实测数据
 - [ ] **Step 5：提交** — `git add src/sim/race.ts src/sim/race.test.ts` 然后 `git commit -m "✨ feat(sim): apply cadence efficiency, ai auto-shift, feed zones and bigger player tank"`
