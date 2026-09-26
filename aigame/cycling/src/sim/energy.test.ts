@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { drainRate, stepEnergy, targetPower } from './energy';
+import { RACE } from './params';
 
 describe('energy', () => {
   it('drain scales with squared relative power', () => {
@@ -9,6 +10,7 @@ describe('energy', () => {
   });
   it('stepEnergy floors at zero', () => {
     expect(stepEnergy(1, 750, 300, 1)).toBe(0);
+    expect(stepEnergy(24000, 300, 300, RACE.dt)).toBeCloseTo(24000 - 30 * RACE.dt, 6);
   });
   it('full tank targets gear power', () => {
     expect(targetPower(3, 300, 1000)).toBe(750);
@@ -16,6 +18,7 @@ describe('energy', () => {
   it('empty tank caps power at 70% ftp', () => {
     expect(targetPower(3, 300, 0)).toBe(210);
     expect(targetPower(1, 300, 0)).toBe(210);
+    expect(targetPower(0, 300, 0)).toBe(180);
   });
   it('cruise drains full tank in ~800s', () => {
     let e = 24000;
