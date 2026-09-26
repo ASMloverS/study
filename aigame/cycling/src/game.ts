@@ -86,7 +86,12 @@ export class Game {
     const p = s.riders[0];
     return {
       speedKmh: p.speed * 3.6,
-      gearLine: `52×${DRIVETRAIN.cassette[p.cog]} · ${cadence(p.speed, p.cog).toFixed(0)}rpm · ${GEARS[p.gear]}`,
+      gearLine: (() => {
+        const cad = cadence(p.speed, p.cog);
+        const target = p.cadTerrain + p.cadOffset;
+        const rpm = Math.abs(cad - target) > 3 ? `${cad.toFixed(0)}/${target}` : cad.toFixed(0);
+        return `52×${DRIVETRAIN.cassette[p.cog]} · ${rpm}rpm · ${GEARS[p.gear]}`;
+      })(),
       energyFrac: p.energy / p.type.maxEnergy,
       gradientPct: ps.gradient * 100,
       remainingKm: Math.max(0, s.trackLength - p.dist) / 1000,
