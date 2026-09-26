@@ -124,7 +124,7 @@ describe('terrainCadence', () => {
   cadOffsetMax: 30,
 ```
 
-  `RACE.feedZoneGain: 0.18` → `0.25`。
+  `RACE.feedZoneGain: 0.18` → `0.25`（实现期修正：该值与 32000 中间态组合会翻转 reckless 红线——实测 437.3s < 445.6s，二分定位后移至 Task 3 与 40000 池同批落地）。
 
 - [ ] **Step 4：drivetrain.ts**——新增：
 
@@ -323,7 +323,7 @@ export class InputController {
 
 - [ ] **Step 2：跑测试确认失败** — cap 40000、terrain/cog 新用例失败（逻辑未接入）
 - [ ] **Step 3：`src/sim/race.ts`**
-  1. `PLAYER_TYPE.maxEnergy: 32000` → `40000`
+  1. `PLAYER_TYPE.maxEnergy: 32000` → `40000`；`RACE.feedZoneGain: 0.18` → `0.25`（自 Task 1 移入；若 reckless 红线翻转（<30s 余量），按预授权阶梯下调 `emptyCapRatio` 0.35→0.30→0.25 直至余量 ≥30s 并在提交正文记录所选值——池与补给不动，只惩罚失控管理）
   2. import 增加 `terrainCadence`（drivetrain）
   3. 更新循环内，把 Task 2 的临时 AI 变速块替换为统一逻辑：
 
