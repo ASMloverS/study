@@ -25,7 +25,7 @@ describe('stepSpeed', () => {
   });
   it('coasting decays to zero and never negative', () => {
     let v = 10;
-    for (let i = 0; i < 60 * 60; i++) v = stepSpeed(v, 0, 0, false, dt);
+    for (let i = 0; i < 60 * 180; i++) v = stepSpeed(v, 0, 0, false, dt);
     expect(v).toBe(0);
   });
   it('downhill rolls faster than flat at same power', () => {

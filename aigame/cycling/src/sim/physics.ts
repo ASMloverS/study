@@ -8,6 +8,5 @@ export function stepSpeed(speed: number, power: number, gradient: number, drafti
   const fDrag = 0.5 * PHYS.rho * dragArea * speed * speed;
   const fGrav = PHYS.mass * PHYS.g * Math.sin(theta);
   const a = (fDrive - fRoll - fDrag - fGrav) / PHYS.mass;
-  const net = power <= 0 && a < 0 ? Math.min(a, -0.25) : a;
-  return Math.max(0, speed + net * dt);
+  return Math.max(0, speed + a * dt);
 }
