@@ -13,6 +13,7 @@ import { buildTrackMesh } from './render/trackMesh';
 import { buildRiderMesh, placeRider } from './render/riders';
 import { ChaseCamera } from './render/camera';
 import { Hud } from './ui/hud';
+import type { Music } from './audio';
 
 const JERSEYS = [0xffd54a, 0xe0533d, 0x4d8fd6, 0x8a5cd6, 0x4dbd8a, 0xd68a4d, 0xd64d9e, 0x5a6a7a];
 
@@ -26,7 +27,7 @@ export class Game {
   private loop: ReturnType<typeof createLoop>;
   private tmp = new THREE.Vector3();
 
-  constructor(private hud: Hud, private input: InputController) {
+  constructor(private hud: Hud, private input: InputController, private music: Music) {
     this.ctx = createScene(document.querySelector<HTMLElement>('#app')!);
     this.ctx.scene.add(buildTerrain(this.track));
     this.ctx.scene.add(buildTrackMesh(this.track));
@@ -62,6 +63,8 @@ export class Game {
 
   private render(alpha: number, frameDt: number): void {
     const s = this.state;
+    const remaining = s.trackLength - s.riders[0].dist;
+    this.music.setTier(s.phase === 'racing' ? (remaining > 800 ? 'intense' : 'sprint') : 'calm');
     for (let i = 0; i < s.riders.length; i++) {
       const p = this.prev.riders[i];
       const c = s.riders[i];

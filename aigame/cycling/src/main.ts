@@ -7,7 +7,7 @@ import { Music } from './audio';
 const hud = new Hud();
 const input = new InputController();
 const music = new Music();
-const game = new Game(hud, input);
+const game = new Game(hud, input, music);
 window.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'm') music.toggle();
 });
