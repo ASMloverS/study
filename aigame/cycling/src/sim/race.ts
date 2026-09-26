@@ -36,6 +36,7 @@ function makeRider(id: number, type: RiderType, isPlayer: boolean, dist: number,
   return {
     id, name: NAMES[id], isPlayer, type,
     dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1, cog: DRIVETRAIN.defaultCog,
+    cadOffset: 0, cadTerrain: DRIVETRAIN.flatCadence,
     power: 0, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0,
   };
 }
@@ -86,20 +87,21 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
   const gradients = riders.map((r) => track.sampleAt(Math.min(r.dist, s.trackLength - 0.01)).gradient);
   const shiftTick = Math.floor((s.time + dt) / 0.5) > Math.floor(s.time / 0.5);
   const cmds = riders.map<RiderCommand>((r, i) => {
-    if (r.finishTime !== null) return { gear: 0, steer: 0, cog: r.cog };
+    if (r.finishTime !== null) return { gear: 0, steer: 0, cadDelta: 0 };
     if (r.isPlayer) return playerCmd;
     const a = nearestAheadIndex(r, riders);
-    const cog = shiftTick ? aiShift(r.speed, r.cog) : r.cog;
-    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cog };
+    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cadDelta: 0 };
   });
   const drafts = riders.map((_, i) => isDrafting(i, riders));
   for (let i = 0; i < riders.length; i++) {
     const r = riders[i];
     const cmd = cmds[i];
     r.gear = cmd.gear;
-    r.cog = cmd.cog;
+    if (!r.isPlayer && shiftTick) {
+      r.cog = aiShift(r.speed, r.cog);
+    }
     const effort = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
-    r.power = effort * cadenceEfficiency(cadence(r.speed, cmd.cog));
+    r.power = effort * cadenceEfficiency(cadence(r.speed, r.cog));
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
       r.dist += r.speed * dt;

@@ -16,29 +16,29 @@ describe('InputController', () => {
     c.attach();
   });
 
-  it('shifts cassette heavier on ArrowUp', () => {
+  it('W queues +5 cadence delta once', () => {
     press('ArrowUp');
-    expect(c.command().cog).toBe(7);
+    expect(c.command().cadDelta).toBe(5);
+    expect(c.command().cadDelta).toBe(0);
   });
-  it('shifts cassette lighter on ArrowDown', () => {
+  it('presses accumulate between ticks', () => {
+    press('ArrowUp');
+    press('W');
+    expect(c.command().cadDelta).toBe(10);
+  });
+  it('S queues -5 cadence delta', () => {
     press('ArrowDown');
-    expect(c.command().cog).toBe(5);
+    expect(c.command().cadDelta).toBe(-5);
   });
   it('ignores auto-repeat', () => {
     press('ArrowUp');
     press('ArrowUp', true);
-    expect(c.command().cog).toBe(7);
+    expect(c.command().cadDelta).toBe(5);
   });
-  it('cog clamps to 0..11', () => {
-    for (let i = 0; i < 20; i++) press('ArrowDown');
-    expect(c.command().cog).toBe(0);
-    for (let i = 0; i < 20; i++) press('ArrowUp');
-    expect(c.command().cog).toBe(11);
-  });
-  it('number keys set power gear', () => {
+  it('number keys set power gear and leave cadence untouched', () => {
     press('4');
     expect(c.command().gear).toBe(3);
-    expect(c.command().cog).toBe(6);
+    expect(c.command().cadDelta).toBe(0);
   });
   it('steer holds while key held', () => {
     press('ArrowLeft');

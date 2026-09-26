@@ -6,7 +6,7 @@ import { aiShift } from './drivetrain';
 import type { RiderCommand } from './types';
 
 const track = buildTrack();
-const cruise: RiderCommand = { gear: 1, steer: 0, cog: 6 };
+const cruise: RiderCommand = { gear: 1, steer: 0, cadDelta: 0 };
 
 function run(cmd: RiderCommand, seconds: number) {
   let s = createRace(track);
@@ -59,20 +59,19 @@ describe('race', () => {
     }
   }, 30000);
   it('reckless sprinting loses to steady pacing', () => {
-    const paced: RiderCommand = { gear: 1, steer: 0, cog: 6 };
     let s = createRace(track);
     let guard = 0;
-    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, paced, RACE.dt);
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
     let lastShift = 0;
     while (s.phase !== 'finished') {
       if (Math.floor(s.time / 0.5) !== lastShift) {
         lastShift = Math.floor(s.time / 0.5);
-        paced.cog = aiShift(s.riders[0].speed, paced.cog);
+        s = { ...s, riders: s.riders.map((r) => (r.isPlayer ? { ...r, cog: aiShift(r.speed, r.cog) } : r)) };
       }
-      s = stepRace(s, track, paced, RACE.dt);
+      s = stepRace(s, track, cruise, RACE.dt);
     }
     const steady = s.riders[0].finishTime!;
-    const reckless = run({ gear: 3, steer: 0, cog: 6 }, 900).riders[0].finishTime!;
+    const reckless = run({ gear: 3, steer: 0, cadDelta: 0 }, 900).riders[0].finishTime!;
     expect(reckless).toBeGreaterThan(steady);
   }, 30000);
   it('feed zone restores energy while passing through', () => {
@@ -93,8 +92,14 @@ describe('race', () => {
     expect(s.riders[0].energy).toBe(32000);
   });
   it('heavy cog over the full lap loses to default cog', () => {
-    const heavy = run({ gear: 1, steer: 0, cog: 8 }, 900).riders[0].finishTime!;
-    const base = run({ gear: 1, steer: 0, cog: 6 }, 900).riders[0].finishTime!;
+    function runCog(cog: number, seconds: number) {
+      let s = createRace(track);
+      s = { ...s, riders: s.riders.map((r) => (r.isPlayer ? { ...r, cog } : r)) };
+      for (let i = 0; i < seconds / RACE.dt; i++) s = stepRace(s, track, cruise, RACE.dt);
+      return s;
+    }
+    const heavy = runCog(8, 900).riders[0].finishTime!;
+    const base = run(cruise, 900).riders[0].finishTime!;
     expect(heavy).toBeGreaterThan(base);
   }, 30000);
 });

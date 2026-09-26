@@ -2,7 +2,7 @@ export type GearId = 0 | 1 | 2 | 3;
 
 export interface RiderCommand {
   gear: GearId;
-  cog: number;
+  cadDelta: number;
   steer: number;
 }
 
@@ -25,6 +25,8 @@ export interface RiderState {
   energy: number;
   gear: GearId;
   cog: number;
+  cadOffset: number;
+  cadTerrain: number;
   power: number;
   powerSum: number;
   timeSum: number;
