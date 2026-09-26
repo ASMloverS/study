@@ -32,5 +32,7 @@ export function buildTerrain(track: Track): THREE.Mesh {
     pos.setY(i, terrainHeight(track, pos.getX(i) + cx, pos.getZ(i) + cz) - 0.15);
   }
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x6fae57 }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x6fae57 }));
+  mesh.position.set(cx, 0, cz);
+  return mesh;
 }
