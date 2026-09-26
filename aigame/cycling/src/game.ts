@@ -3,7 +3,8 @@ import { createRace, standings, stepRace } from './sim/race';
 import type { RaceState } from './sim/race';
 import { buildTrack } from './sim/trackData';
 import type { TrackSample } from './sim/track';
-import { GEARS } from './sim/params';
+import { DRIVETRAIN, GEARS, RACE } from './sim/params';
+import { cadence } from './sim/drivetrain';
 import { createLoop } from './core/loop';
 import { InputController } from './input';
 import { createScene } from './render/scene';
@@ -35,7 +36,7 @@ export class Game {
       this.ctx.scene.add(m);
     }
     this.cam = new ChaseCamera(this.ctx.camera);
-    this.hud.setProfile(this.track);
+    this.hud.setProfile(this.track, RACE.feedZones);
     this.loop = createLoop((dt) => this.update(dt), (a, fdt) => this.render(a, fdt));
     window.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() === 'r' && this.state.phase === 'finished') this.start();
@@ -82,7 +83,7 @@ export class Game {
     const p = s.riders[0];
     return {
       speedKmh: p.speed * 3.6,
-      gearName: GEARS[p.gear],
+      gearLine: `52×${DRIVETRAIN.cassette[p.cog]} · ${cadence(p.speed, p.cog).toFixed(0)}rpm · ${GEARS[p.gear]}`,
       energyFrac: p.energy / p.type.maxEnergy,
       gradientPct: ps.gradient * 100,
       remainingKm: Math.max(0, s.trackLength - p.dist) / 1000,

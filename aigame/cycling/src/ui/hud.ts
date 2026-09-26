@@ -3,7 +3,7 @@ import type { Track } from '../sim/track';
 
 export interface HudView {
   speedKmh: number;
-  gearName: string;
+  gearLine: string;
   energyFrac: number;
   gradientPct: number;
   remainingKm: number;
@@ -18,6 +18,8 @@ export interface HudView {
 export class Hud {
   private el = new Map<string, HTMLElement>();
   private heights: number[] = [];
+  private zones: number[] = [];
+  private profileLength = 1;
 
   constructor() {
     for (const id of ['speed', 'gear', 'gradient', 'position', 'remaining', 'energy-bar', 'energy-text', 'elev', 'countdown', 'results']) {
@@ -25,10 +27,12 @@ export class Hud {
     }
   }
 
-  setProfile(track: Track): void {
+  setProfile(track: Track, zones: readonly (readonly [number, number])[]): void {
     const n = 240;
     this.heights = [];
     for (let i = 0; i < n; i++) this.heights.push(track.sampleAt((i / (n - 1)) * track.length).y);
+    this.zones = zones.map((z) => z[0]);
+    this.profileLength = track.length;
   }
 
   clearResults(): void {
@@ -38,7 +42,7 @@ export class Hud {
   update(v: HudView): void {
     const g = (id: string) => this.el.get(id)!;
     g('speed').textContent = `${v.speedKmh.toFixed(1)} km/h`;
-    g('gear').textContent = `档位 ${v.gearName}`;
+    g('gear').textContent = v.gearLine;
     g('gradient').textContent = `坡度 ${v.gradientPct.toFixed(1)}%`;
     g('position').textContent = `第 ${v.position} / ${v.fieldSize} 位`;
     g('remaining').textContent = `剩余 ${v.remainingKm.toFixed(2)} km`;
@@ -67,6 +71,10 @@ export class Hud {
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
+    ctx.fillStyle = '#4dd2ff';
+    for (const lo of this.zones) {
+      ctx.fillRect((lo / this.profileLength) * w - 1, 0, 2, h);
+    }
     ctx.fillStyle = '#ffd54a';
     ctx.fillRect(progress * w - 1, 0, 2, h);
   }
