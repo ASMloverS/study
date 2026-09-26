@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { stepSpeed } from './physics';
+import { RACE } from './params';
 
-const dt = 1 / 60;
+const dt = RACE.dt;
 
 function steadyState(power: number, gradient: number, drafting: boolean): number {
   let v = 0;
@@ -25,10 +26,17 @@ describe('stepSpeed', () => {
   });
   it('coasting decays to zero and never negative', () => {
     let v = 10;
-    for (let i = 0; i < 60 * 180; i++) v = stepSpeed(v, 0, 0, false, dt);
+    for (let i = 0; i < 60 * 180; i++) {
+      v = stepSpeed(v, 0, 0, false, dt);
+      expect(v).toBeGreaterThanOrEqual(0);
+    }
     expect(v).toBe(0);
   });
   it('downhill rolls faster than flat at same power', () => {
     expect(steadyState(300, -0.04, false)).toBeGreaterThan(steadyState(300, 0, false));
+  });
+  it('single-step behavior: accelerates from rest, decelerates without power', () => {
+    expect(stepSpeed(0, 300, 0, false, dt)).toBeGreaterThan(0);
+    expect(stepSpeed(10, 0, 0, false, dt)).toBeLessThan(10);
   });
 });
