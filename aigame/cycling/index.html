@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>公路车竞速 MVP</title>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="hud">
+    <div id="top-left">
+      <div id="speed">0.0 km/h</div>
+      <div id="gear">档位 巡航</div>
+      <div id="gradient">坡度 0.0%</div>
+    </div>
+    <div id="top-right">
+      <div id="position">第 8 / 8 位</div>
+      <div id="remaining">剩余 0.00 km</div>
+    </div>
+    <div id="bottom-left">
+      <div class="bar"><div id="energy-bar"></div></div>
+      <div id="energy-text">体力 100%</div>
+    </div>
+    <canvas id="elev" width="200" height="56"></canvas>
+  </div>
+  <div id="countdown"></div>
+  <div id="results"></div>
+  <div id="overlay-start">
+    <h1>公路车竞速</h1>
+    <p>W/S 或 ↑/↓ 切换功率档位 · A/D 或 ←/→ 左右占位 · 跟车省力，留体力终点冲刺</p>
+    <button id="btn-start">开始比赛</button>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
