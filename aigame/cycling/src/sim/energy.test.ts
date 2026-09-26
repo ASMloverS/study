@@ -20,7 +20,7 @@ describe('energy', () => {
     expect(targetPower(1, 300, 0)).toBe(105);
     expect(targetPower(0, 300, 0)).toBe(105);
   });
-  it('cruise drains full tank in ~800s', () => {
+  it('cruise drains full tank in ~600s', () => {
     let e = 24000;
     let t = 0;
     while (e > 0) {
