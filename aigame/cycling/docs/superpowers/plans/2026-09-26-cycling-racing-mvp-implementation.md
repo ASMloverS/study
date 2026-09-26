@@ -67,7 +67,7 @@ v' = max(0, v + a·dt)
 - 4 档功率 = FTP × 比例：轻松 0.6 / 巡航 1.0 / 发力 1.5 / 冲刺 2.5。
 - 消耗率 `drain(P) = (P/FTP)² × 30 W`（二次曲线：冲刺昂贵、巡航可持续）。
 - 体力池 `maxEnergy ≈ 24000 J`：巡航 300W 消耗 30W → 约 800s 耗尽（比赛约 480s，留有余量）；冲刺 750W 消耗 187.5W → 全冲约 128s 后耗尽。
-- 透支惩罚：`energy ≤ 0` 时功率上限 = 0.7 × FTP（约 210W，平路 ≈ 27 km/h 的"崩盘爬行"）。这是验收标准 3（无节制冲刺 → 掉名次）的机制来源。
+- 透支惩罚：`energy ≤ 0` 时功率上限 = 0.45 × FTP（约 135W，平路 ≈ 26 km/h 的"崩盘爬行"）。这是验收标准 3（无节制冲刺 → 掉名次）的机制来源。（实现期修正：原定 0.7×FTP ≈ 210W 惩罚过弱，单圈 4.5km 下全程冲刺反而快 23s；0.45 后实测 reckless 落后 steady 41s 且掉至全场末位。）
 
 ### A5 赛道（sim/track.ts + sim/trackData.ts）
 
@@ -380,7 +380,7 @@ export const RACE = {
   dt: 1 / 60,
   gearRatios: [0.6, 1.0, 1.5, 2.5],
   drainBase: 30,
-  emptyCapRatio: 0.7,
+  emptyCapRatio: 0.45,
   lateralMax: 2.2,
   lateralSpeed: 1.8,
   draftGapMin: 1,
@@ -520,9 +520,9 @@ describe('energy', () => {
   it('full tank targets gear power', () => {
     expect(targetPower(3, 300, 1000)).toBe(750);
   });
-  it('empty tank caps power at 70% ftp', () => {
-    expect(targetPower(3, 300, 0)).toBe(210);
-    expect(targetPower(1, 300, 0)).toBe(210);
+  it('empty tank caps power at 45% ftp', () => {
+    expect(targetPower(3, 300, 0)).toBe(135);
+    expect(targetPower(1, 300, 0)).toBe(135);
   });
   it('cruise drains full tank in ~800s', () => {
     let e = 24000;
@@ -1910,7 +1910,7 @@ git commit -m "✨ feat(game): wire sim, render and hud into playable race loop"
 1. 点击"开始比赛"，3-2-1 倒计时后出发，HUD 全部字段实时刷新。
 2. 平路巡航速度约 38~40 km/h；爬坡掉至约 20 km/h；坡度显示随地形变化。
 3. 跟在前车正后方时同样档位速度明显更高（风阻收益可感知）。
-4. 持续冲刺档 → 体力条快速下降 → 耗尽后速度被压到约 27 km/h 且名次下滑。
+4. 持续冲刺档 → 体力条快速下降 → 耗尽后速度被压到约 26 km/h 且名次下滑。
 5. AI 表现：有人爬坡进攻、被进攻者跟轮响应、体力不足者掉队、终点前发起冲刺。
 6. 冲线后弹出结算（名次/时间/均功率），按 R 可重开，结果与上局不同但机制一致。
 7. 浏览器渲染稳定 60fps（DevTools Performance 面板抽查）。
