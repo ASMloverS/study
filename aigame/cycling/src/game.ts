@@ -89,7 +89,7 @@ export class Game {
       position: standings(s).findIndex((r) => r.isPlayer) + 1,
       fieldSize: s.riders.length,
       progress: Math.min(1, p.dist / s.trackLength),
-      countdown: s.phase === 'countdown' ? Math.ceil(s.countdown) : null,
+      countdown: s.phase === 'countdown' ? Math.ceil(s.countdown) : s.time < 0.8 ? 0 : null,
       phase: s.phase,
       results: s.results,
     };
