@@ -82,21 +82,20 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
   for (const r of riders) {
     if (!r.isPlayer && rng() < 0.02) r.wanderTarget = (rng() * 2 - 1) * 0.6;
   }
+  const gradients = riders.map((r) => track.sampleAt(Math.min(r.dist, s.trackLength - 0.01)).gradient);
+  const cmds = riders.map<RiderCommand>((r, i) => {
+    if (r.finishTime !== null) return { gear: 0, steer: 0 };
+    if (r.isPlayer) return playerCmd;
+    const a = nearestAheadIndex(r, riders);
+    return aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]);
+  });
+  const drafts = riders.map((_, i) => isDrafting(i, riders));
   for (let i = 0; i < riders.length; i++) {
     const r = riders[i];
-    const gradient = track.sampleAt(Math.min(r.dist, s.trackLength - 0.01)).gradient;
-    let cmd: RiderCommand;
-    if (r.finishTime !== null) {
-      cmd = { gear: 0, steer: 0 };
-    } else if (r.isPlayer) {
-      cmd = playerCmd;
-    } else {
-      const a = nearestAheadIndex(r, riders);
-      cmd = aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradient);
-    }
+    const cmd = cmds[i];
     r.gear = cmd.gear;
     r.power = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
-    r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradient, isDrafting(i, riders), dt);
+    r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
       r.dist += r.speed * dt;
       r.lateral = clamp(r.lateral + cmd.steer * RACE.lateralSpeed * dt, -RACE.lateralMax, RACE.lateralMax);

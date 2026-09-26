@@ -32,13 +32,16 @@ describe('race', () => {
     s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: track.length - 0.1, speed: 20 })) };
     s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders.every((r) => r.finishTime !== null)).toBe(true);
+    expect(s.riders.every((r) => r.dist === track.length)).toBe(true);
   });
   it('deterministic for identical inputs', () => {
     expect(JSON.stringify(run(cruise, 120))).toBe(JSON.stringify(run(cruise, 120)));
   });
   it('standings orders by distance during race', () => {
     const st = standings(run(cruise, 60));
-    expect(st[0].dist).toBeGreaterThanOrEqual(st[st.length - 1].dist);
+    for (let i = 1; i < st.length; i++) {
+      expect(st[i - 1].dist).toBeGreaterThanOrEqual(st[i].dist);
+    }
   });
   it('full race completes with all riders finishing and sane avg power', () => {
     let s = createRace(track);
