@@ -6,7 +6,7 @@
 
 **Architecture:** 仿真核心（物理/体力/赛道/AI/比赛规则）为纯 TypeScript 模块，固定步长（1/60s）确定性步进，不依赖渲染；Three.js 仅负责渲染，渲染层每帧对前后两个仿真状态插值；HUD 为 DOM 覆盖层。仿真与渲染通过纯数据结构 `RaceState` 解耦。
 
-**Tech Stack:** TypeScript (strict) + Vite + Three.js（自带类型，无需 @types/three）+ Vitest（仅输入测试用 jsdom）+ 原生 DOM。无物理引擎、无后端。
+**Tech Stack:** TypeScript (strict) + Vite + Three.js（需 @types/three）+ Vitest（仅输入测试用 jsdom）+ 原生 DOM。无物理引擎、无后端。
 
 ---
 
