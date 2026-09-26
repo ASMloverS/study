@@ -1436,8 +1436,12 @@ function ribbon(track: Track, left: number, right: number, color: number, dy: nu
   const indices = new Uint32Array(n * 6);
   for (let i = 0; i <= n; i++) {
     const [x, y, z] = pts[i];
-    const [x2, , z2] = pts[i === n ? n - 1 : i + 1];
+    const [x2, , z2] = pts[i === n ? i - 1 : i + 1];
     let dx = x2 - x, dz = z2 - z;
+    if (i === n) {
+      dx = -dx;
+      dz = -dz;
+    }
     const len = Math.hypot(dx, dz) || 1;
     dx /= len; dz /= len;
     const nx = -dz, nz = dx;
@@ -1493,7 +1497,7 @@ function finishGates(track: Track): THREE.Group {
   }
   const top = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.8, 0.5), new THREE.MeshLambertMaterial({ color: 0xe0533d }));
   top.position.set(s.x, s.y + 6.2, s.z);
-  top.rotation.y = -s.heading;
+  top.rotation.y = -s.heading + Math.PI / 2;
   g.add(top);
   return g;
 }
