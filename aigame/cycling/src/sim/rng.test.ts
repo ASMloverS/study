@@ -20,4 +20,14 @@ describe('rng', () => {
     const [v2] = rngNext(s1);
     expect(v1).not.toBe(v2);
   });
+  it('golden values and wrapper chaining pin algorithm fidelity', () => {
+    const g42 = mulberry32(42);
+    expect(g42()).toBeCloseTo(0.6011037519201636, 15);
+    expect(g42()).toBeCloseTo(0.44829055899754167, 15);
+    const g0 = mulberry32(0);
+    expect(g0()).toBeCloseTo(0.26642920868471265, 15);
+    const w = mulberry32(7);
+    const [direct] = rngNext(7);
+    expect(w()).toBe(direct);
+  });
 });
