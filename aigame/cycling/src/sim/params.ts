@@ -12,7 +12,7 @@ export const RACE = {
   dt: 1 / 60,
   gearRatios: [0.6, 1.0, 1.5, 2.5],
   drainBase: 30,
-  emptyCapRatio: 0.7,
+  emptyCapRatio: 0.45,
   lateralMax: 2.2,
   lateralSpeed: 1.8,
   draftGapMin: 1,

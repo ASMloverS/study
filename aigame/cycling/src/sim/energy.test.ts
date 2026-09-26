@@ -15,10 +15,10 @@ describe('energy', () => {
   it('full tank targets gear power', () => {
     expect(targetPower(3, 300, 1000)).toBe(750);
   });
-  it('empty tank caps power at 70% ftp', () => {
-    expect(targetPower(3, 300, 0)).toBe(210);
-    expect(targetPower(1, 300, 0)).toBe(210);
-    expect(targetPower(0, 300, 0)).toBe(180);
+  it('empty tank caps power at 45% ftp', () => {
+    expect(targetPower(3, 300, 0)).toBe(135);
+    expect(targetPower(1, 300, 0)).toBe(135);
+    expect(targetPower(0, 300, 0)).toBe(135);
   });
   it('cruise drains full tank in ~800s', () => {
     let e = 24000;
