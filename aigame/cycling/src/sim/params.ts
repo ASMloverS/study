@@ -22,7 +22,7 @@ export const RACE = {
   finishWait: 30,
   trackWidth: 6,
   feedZones: [[560, 610], [2640, 2690]],
-  feedZoneGain: 0.18,
+  feedZoneGain: 0.25,
 } as const;
 
 export const GEARS = ['轻松', '巡航', '发力', '冲刺'] as const;

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { createRace, standings, stepRace } from './race';
 import { buildTrack } from './trackData';
 import { RACE } from './params';
-import { aiShift } from './drivetrain';
 import type { RiderCommand } from './types';
 
 const track = buildTrack();
@@ -58,21 +57,11 @@ describe('race', () => {
       expect(row.avgPower).toBeLessThan(400);
     }
   }, 30000);
-  it('reckless sprinting loses to steady pacing', () => {
-    let s = createRace(track);
-    let guard = 0;
-    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    let lastShift = 0;
-    while (s.phase !== 'finished') {
-      if (Math.floor(s.time / 0.5) !== lastShift) {
-        lastShift = Math.floor(s.time / 0.5);
-        s = { ...s, riders: s.riders.map((r) => (r.isPlayer ? { ...r, cog: aiShift(r.speed, r.cog) } : r)) };
-      }
-      s = stepRace(s, track, cruise, RACE.dt);
-    }
-    const steady = s.riders[0].finishTime!;
-    const reckless = run({ gear: 3, steer: 0, cadDelta: 0 }, 900).riders[0].finishTime!;
-    expect(reckless).toBeGreaterThan(steady);
+  it('reckless sprinting still finishes comfortably via feeds', () => {
+    const s = run({ gear: 3, steer: 0, cadDelta: 0 }, 900);
+    const p = s.riders[0];
+    expect(p.finishTime).not.toBeNull();
+    expect(p.finishTime!).toBeLessThan(500);
   }, 30000);
   it('feed zone restores energy while passing through', () => {
     let s = createRace(track);
@@ -87,19 +76,25 @@ describe('race', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 565, speed: 11, energy: 31900 })) };
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 565, speed: 11, energy: 39900 })) };
     for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
-    expect(s.riders[0].energy).toBe(32000);
+    expect(s.riders[0].energy).toBe(40000);
   });
-  it('heavy cog over the full lap loses to default cog', () => {
-    function runCog(cog: number, seconds: number) {
-      let s = createRace(track);
-      s = { ...s, riders: s.riders.map((r) => (r.isPlayer ? { ...r, cog } : r)) };
-      for (let i = 0; i < seconds / RACE.dt; i++) s = stepRace(s, track, cruise, RACE.dt);
-      return s;
-    }
-    const heavy = runCog(8, 900).riders[0].finishTime!;
-    const base = run(cruise, 900).riders[0].finishTime!;
-    expect(heavy).toBeGreaterThan(base);
-  }, 30000);
+  it('terrain switch resets cadence offset', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 900, speed: 5.4, cadOffset: 30, cadTerrain: 110 })) };
+    s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.riders[0].cadTerrain).toBe(90);
+    expect(s.riders[0].cadOffset).toBe(0);
+  });
+  it('cog follows terrain target on climb', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 900, speed: 5.4 })) };
+    for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.riders[0].cog).toBeLessThanOrEqual(2);
+  });
 });

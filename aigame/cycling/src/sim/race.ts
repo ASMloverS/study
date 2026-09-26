@@ -4,7 +4,7 @@ import { stepEnergy, targetPower } from './energy';
 import { stepSpeed } from './physics';
 import { isDrafting, nearestAheadIndex } from './draft';
 import { aiCommand } from './ai';
-import { cadence, cadenceEfficiency, aiShift } from './drivetrain';
+import { cadence, cadenceEfficiency, aiShift, terrainCadence } from './drivetrain';
 import type { Track } from './track';
 import type { Phase, ResultRow, RiderCommand, RiderState, RiderType } from './types';
 
@@ -18,7 +18,7 @@ export interface RaceState {
   results: ResultRow[];
 }
 
-export const PLAYER_TYPE: RiderType = { label: 'all-rounder', ftp: 300, maxEnergy: 32000, sprintDist: 250, aggression: 0.5 };
+export const PLAYER_TYPE: RiderType = { label: 'all-rounder', ftp: 300, maxEnergy: 40000, sprintDist: 250, aggression: 0.5 };
 
 export const AI_FIELD: RiderType[] = [
   { label: 'climber', ftp: 315, maxEnergy: 22000, sprintDist: 120, aggression: 0.85 },
@@ -97,8 +97,17 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     const r = riders[i];
     const cmd = cmds[i];
     r.gear = cmd.gear;
-    if (!r.isPlayer && shiftTick) {
-      r.cog = aiShift(r.speed, r.cog);
+    const terrain = terrainCadence(gradients[i]);
+    if (terrain !== r.cadTerrain) {
+      r.cadTerrain = terrain;
+      r.cadOffset = 0;
+    }
+    if (r.isPlayer) {
+      r.cadOffset = clamp(r.cadOffset + cmd.cadDelta, -DRIVETRAIN.cadOffsetMax, DRIVETRAIN.cadOffsetMax);
+    }
+    const cadTarget = r.isPlayer ? r.cadTerrain + r.cadOffset : DRIVETRAIN.aiTargetCadence;
+    if (shiftTick) {
+      r.cog = aiShift(r.speed, r.cog, cadTarget);
     }
     const effort = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
     r.power = effort * cadenceEfficiency(cadence(r.speed, r.cog));
