@@ -1606,6 +1606,7 @@ export function placeRider(mesh: THREE.Object3D, s: TrackSample, lateral: number
   const nx = -Math.sin(s.heading);
   const nz = Math.cos(s.heading);
   mesh.position.set(s.x + nx * lateral, s.y, s.z + nz * lateral);
+  mesh.rotation.order = 'YXZ';
   mesh.rotation.y = Math.PI / 2 - s.heading;
   mesh.rotation.x = -Math.atan(s.gradient) * 0.8;
 }
