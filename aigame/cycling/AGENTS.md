@@ -5,3 +5,5 @@
 - All rules in AGENTS.md must be mandatory and written in precise, concise English.
 - Create a git commit for every completed change to enable tracking and rollback.
 - Write or update tests for every change; ensure all tests and verification pass before delivering to the user.
+- Git commit messages must be clear, precise, and concise English.
+- Git commit message format: `<gitmoji> <type>(scope): <message>`.
