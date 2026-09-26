@@ -5,7 +5,7 @@ import { RACE } from './params';
 import type { RiderCommand } from './types';
 
 const track = buildTrack();
-const cruise: RiderCommand = { gear: 1, steer: 0, cadDelta: 0 };
+const cruise: RiderCommand = { gear: 1, steer: 0, cadDelta: 0, cogDelta: 0 };
 
 function run(cmd: RiderCommand, seconds: number) {
   let s = createRace(track);
@@ -58,7 +58,7 @@ describe('race', () => {
     }
   }, 30000);
   it('reckless sprinting still finishes comfortably via feeds', () => {
-    const s = run({ gear: 3, steer: 0, cadDelta: 0 }, 900);
+    const s = run({ gear: 3, steer: 0, cadDelta: 0, cogDelta: 0 }, 900);
     const p = s.riders[0];
     expect(p.finishTime).not.toBeNull();
     expect(p.finishTime!).toBeLessThan(500);
@@ -80,21 +80,37 @@ describe('race', () => {
     for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders[0].energy).toBe(40000);
   });
-  it('terrain switch resets cadence offset', () => {
+  it('manual cog shifts via cogDelta and clamps to cassette range', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 900, speed: 5.4, cadOffset: 30, cadTerrain: 110 })) };
-    s = stepRace(s, track, cruise, RACE.dt);
-    expect(s.riders[0].cadTerrain).toBe(90);
-    expect(s.riders[0].cadOffset).toBe(0);
+    const up: RiderCommand = { gear: 1, steer: 0, cadDelta: 0, cogDelta: 1 };
+    for (let i = 0; i < 30; i++) s = stepRace(s, track, up, RACE.dt);
+    expect(s.riders[0].cog).toBe(11);
+    const down: RiderCommand = { gear: 1, steer: 0, cadDelta: 0, cogDelta: -1 };
+    for (let i = 0; i < 30; i++) s = stepRace(s, track, down, RACE.dt);
+    expect(s.riders[0].cog).toBe(0);
   });
-  it('cog follows terrain target on climb', () => {
+  it('soft-pedal above cadence target: no power, no drain, decaying speed', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 900, speed: 5.4 })) };
-    for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
-    expect(s.riders[0].cog).toBeLessThanOrEqual(2);
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 200, speed: 12, cadTarget: 80 })) };
+    const before = s.riders[0].energy;
+    s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.riders[0].power).toBe(0);
+    expect(s.riders[0].energy).toBe(before);
+    expect(s.riders[0].speed).toBeLessThan(12);
+  });
+  it('cadence target adjusts via cadDelta and clamps to 60..150', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    const up: RiderCommand = { gear: 1, steer: 0, cadDelta: 5, cogDelta: 0 };
+    for (let i = 0; i < 20; i++) s = stepRace(s, track, up, RACE.dt);
+    expect(s.riders[0].cadTarget).toBe(150);
+    const down: RiderCommand = { gear: 1, steer: 0, cadDelta: -5, cogDelta: 0 };
+    for (let i = 0; i < 40; i++) s = stepRace(s, track, down, RACE.dt);
+    expect(s.riders[0].cadTarget).toBe(60);
   });
 });

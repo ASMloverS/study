@@ -4,12 +4,14 @@ import type { GearId, RiderCommand } from './sim/types';
 export class InputController {
   private gear: GearId = 1;
   private cadDelta = 0;
+  private cogDelta = 0;
   private steer = 0;
   private keys = new Set<string>();
 
   command(): RiderCommand {
-    const cmd = { gear: this.gear, steer: this.steer, cadDelta: this.cadDelta };
+    const cmd = { gear: this.gear, steer: this.steer, cadDelta: this.cadDelta, cogDelta: this.cogDelta };
     this.cadDelta = 0;
+    this.cogDelta = 0;
     return cmd;
   }
 
@@ -21,6 +23,7 @@ export class InputController {
   reset(): void {
     this.gear = 1;
     this.cadDelta = 0;
+    this.cogDelta = 0;
     this.steer = 0;
     this.keys.clear();
   }
@@ -30,6 +33,8 @@ export class InputController {
     const k = e.key.toLowerCase();
     if (k === 'arrowup' || k === 'w') this.cadDelta += DRIVETRAIN.cadenceStep;
     else if (k === 'arrowdown' || k === 's') this.cadDelta -= DRIVETRAIN.cadenceStep;
+    else if (k === 'e') this.cogDelta += 1;
+    else if (k === 'q') this.cogDelta -= 1;
     else if (k === '1' || k === '2' || k === '3' || k === '4') this.gear = (Number(k) - 1) as GearId;
     else {
       this.keys.add(k);

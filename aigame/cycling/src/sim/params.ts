@@ -46,4 +46,6 @@ export const DRIVETRAIN = {
   descentGradient: -0.02,
   cadenceStep: 5,
   cadOffsetMax: 30,
+  cadTargetMin: 60,
+  cadTargetMax: 150,
 } as const;

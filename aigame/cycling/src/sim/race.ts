@@ -4,7 +4,7 @@ import { stepEnergy, targetPower } from './energy';
 import { stepSpeed } from './physics';
 import { isDrafting, nearestAheadIndex } from './draft';
 import { aiCommand } from './ai';
-import { cadence, cadenceEfficiency, aiShift, terrainCadence } from './drivetrain';
+import { cadence, cadenceEfficiency, aiShift } from './drivetrain';
 import type { Track } from './track';
 import type { Phase, ResultRow, RiderCommand, RiderState, RiderType } from './types';
 
@@ -36,7 +36,7 @@ function makeRider(id: number, type: RiderType, isPlayer: boolean, dist: number,
   return {
     id, name: NAMES[id], isPlayer, type,
     dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1, cog: DRIVETRAIN.defaultCog,
-    cadOffset: 0, cadTerrain: DRIVETRAIN.flatCadence,
+    cadTarget: DRIVETRAIN.flatCadence,
     power: 0, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0,
   };
 }
@@ -87,30 +87,26 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
   const gradients = riders.map((r) => track.sampleAt(Math.min(r.dist, s.trackLength - 0.01)).gradient);
   const shiftTick = Math.floor((s.time + dt) / 0.5) > Math.floor(s.time / 0.5);
   const cmds = riders.map<RiderCommand>((r, i) => {
-    if (r.finishTime !== null) return { gear: 0, steer: 0, cadDelta: 0 };
+    if (r.finishTime !== null) return { gear: 0, steer: 0, cadDelta: 0, cogDelta: 0 };
     if (r.isPlayer) return playerCmd;
     const a = nearestAheadIndex(r, riders);
-    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cadDelta: 0 };
+    return { ...aiCommand(r, a >= 0 ? riders[a] : null, Math.max(0, s.trackLength - r.dist), gradients[i]), cadDelta: 0, cogDelta: 0 };
   });
   const drafts = riders.map((_, i) => isDrafting(i, riders));
   for (let i = 0; i < riders.length; i++) {
     const r = riders[i];
     const cmd = cmds[i];
     r.gear = cmd.gear;
-    const terrain = terrainCadence(gradients[i]);
-    if (terrain !== r.cadTerrain) {
-      r.cadTerrain = terrain;
-      r.cadOffset = 0;
-    }
     if (r.isPlayer) {
-      r.cadOffset = clamp(r.cadOffset + cmd.cadDelta, -DRIVETRAIN.cadOffsetMax, DRIVETRAIN.cadOffsetMax);
+      r.cog = clamp(r.cog + cmd.cogDelta, 0, DRIVETRAIN.cassette.length - 1);
+      r.cadTarget = clamp(r.cadTarget + cmd.cadDelta, DRIVETRAIN.cadTargetMin, DRIVETRAIN.cadTargetMax);
+    } else if (shiftTick) {
+      r.cog = aiShift(r.speed, r.cog);
     }
-    const cadTarget = r.isPlayer ? r.cadTerrain + r.cadOffset : DRIVETRAIN.aiTargetCadence;
-    if (shiftTick) {
-      r.cog = aiShift(r.speed, r.cog, cadTarget);
-    }
-    const effort = r.finishTime !== null ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
-    r.power = effort * cadenceEfficiency(cadence(r.speed, r.cog));
+    const cad = cadence(r.speed, r.cog);
+    const softPedal = r.isPlayer && cad >= r.cadTarget;
+    const effort = r.finishTime !== null || softPedal ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
+    r.power = effort * cadenceEfficiency(cad);
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
       r.dist += r.speed * dt;
