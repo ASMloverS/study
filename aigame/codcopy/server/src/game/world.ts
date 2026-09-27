@@ -863,16 +863,28 @@ export class Room {
     const t = input.streakTarget ? { x: clamp(input.streakTarget.x), z: clamp(input.streakTarget.z) } : { x: p.st.x, z: p.st.z };
     const heading =
       typeof input.streakYaw === 'number' && Number.isFinite(input.streakYaw) ? input.streakYaw : input.yaw;
-    this.events.push({ type: 'streakUse', tick: this.tick, playerId: p.id, tier: tier as 2 | 3, target: { x: t.x, y: 0.5, z: t.z }, yaw: heading });
+    this.events.push({
+      type: 'streakUse',
+      tick: this.tick,
+      playerId: p.id,
+      tier: tier as 2 | 3,
+      target: { x: t.x, y: 0.5, z: t.z },
+      yaw: heading,
+    });
     if (tier === 2) {
       const dx = -Math.sin(heading);
       const dz = -Math.cos(heading);
       for (let i = 0; i < AIRSTRIKE_COUNT; i++) {
         const off = (i - (AIRSTRIKE_COUNT - 1) / 2) * AIRSTRIKE_SPACING;
         this.pendingStrikes.push({
-          attackerId: p.id, cause: 'airstrike', exemptId: p.id,
-          x: clamp(t.x + dx * off), z: clamp(t.z + dz * off),
-          atTick: this.tick + AIRSTRIKE_DELAY_TICKS + i * 3, radius: AIRSTRIKE_RADIUS, dmg: AIRSTRIKE_DMG,
+          attackerId: p.id,
+          cause: 'airstrike',
+          exemptId: p.id,
+          x: clamp(t.x + dx * off),
+          z: clamp(t.z + dz * off),
+          atTick: this.tick + AIRSTRIKE_DELAY_TICKS + i * 3,
+          radius: AIRSTRIKE_RADIUS,
+          dmg: AIRSTRIKE_DMG,
         });
       }
     } else {
@@ -880,9 +892,14 @@ export class Room {
         const ang = this.rng() * Math.PI * 2;
         const r = Math.sqrt(this.rng()) * CLUSTER_SCATTER;
         this.pendingStrikes.push({
-          attackerId: p.id, cause: 'cluster', exemptId: p.id,
-          x: clamp(t.x + Math.cos(ang) * r), z: clamp(t.z + Math.sin(ang) * r),
-          atTick: this.tick + AIRSTRIKE_DELAY_TICKS + i * 2, radius: CLUSTER_RADIUS, dmg: CLUSTER_DMG,
+          attackerId: p.id,
+          cause: 'cluster',
+          exemptId: p.id,
+          x: clamp(t.x + Math.cos(ang) * r),
+          z: clamp(t.z + Math.sin(ang) * r),
+          atTick: this.tick + AIRSTRIKE_DELAY_TICKS + i * 2,
+          radius: CLUSTER_RADIUS,
+          dmg: CLUSTER_DMG,
         });
       }
     }

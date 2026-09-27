@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AIRSTRIKE_COUNT, MAPS } from 'shared';
+import { AIRSTRIKE_COUNT, CLUSTER_COUNT, CLUSTER_SCATTER, MAPS } from 'shared';
 import { Room } from '../src';
 import type { ServerPlayer } from '../src/game/world';
 
@@ -44,6 +44,7 @@ describe('[M15] placement targeting and self-exemption', () => {
 
   it('airstrike uses client placement target and heading', () => {
     const { room, a, c } = setup(42);
+    a.spawnProtUntil = 0;
     c.spawnProtUntil = 0;
     Object.assign(c.st, { x: 10, z: -8, vx: 0, vy: 0, vz: 0 });
     room.enqueueInput(a.id, input(1, 2, { x: 10, z: -8 }, Math.PI / 2));
@@ -62,11 +63,14 @@ describe('[M15] placement targeting and self-exemption', () => {
 
   it('caller standing at ground zero is exempt from own airstrike', () => {
     const { room, a, c } = setup(43);
+    a.spawnProtUntil = 0;
     c.spawnProtUntil = 0;
     Object.assign(a.st, { x: 10, z: -8, vx: 0, vy: 0, vz: 0 });
     Object.assign(c.st, { x: 10, z: -8, vx: 0, vy: 0, vz: 0 });
     room.enqueueInput(a.id, input(1, 2, { x: 10, z: -8 }, Math.PI / 2));
     for (let i = 0; i < 130; i++) room.step();
+    const evs = room.drainEvents();
+    expect(evs.some((e) => e.type === 'hit' && e.victimId === a.id)).toBe(false);
     expect(a.alive).toBe(true);
     expect(a.health).toBe(100);
     expect(c.alive).toBe(false);
@@ -83,5 +87,27 @@ describe('[M15] placement targeting and self-exemption', () => {
       expect(Math.abs(e.pos.x)).toBeLessThanOrEqual(23.1);
       expect(Math.abs(e.pos.z)).toBeLessThanOrEqual(23.1);
     }
+  });
+
+  it('cluster strike scatters within bounds and exempts the caller', () => {
+    // [M15] 种子 46：最近弹距中心 0.58 ≤ 3（CLUSTER_RADIUS），删除豁免必失败
+    const { room, a, b } = setup(46);
+    (room as unknown as RoomInternals).killPlayer(a, b, 'ar', false);
+    a.spawnProtUntil = 0;
+    Object.assign(a.st, { x: 3, z: -3, vx: 0, vy: 0, vz: 0 });
+    room.enqueueInput(a.id, input(1, 3, { x: 3, z: -3 }, undefined));
+    for (let i = 0; i < 130; i++) room.step();
+    const evs = room.drainEvents();
+    const blasts = evs.filter((e) => e.type === 'blast' && e.cause === 'cluster');
+    expect(blasts.length).toBe(CLUSTER_COUNT);
+    for (const e of blasts) {
+      if (e.type !== 'blast') continue;
+      expect(Math.hypot(e.pos.x - 3, e.pos.z + 3)).toBeLessThanOrEqual(CLUSTER_SCATTER + 0.1);
+      expect(Math.abs(e.pos.x)).toBeLessThanOrEqual(23.1);
+      expect(Math.abs(e.pos.z)).toBeLessThanOrEqual(23.1);
+    }
+    expect(evs.some((e) => e.type === 'hit' && e.victimId === a.id)).toBe(false);
+    expect(a.alive).toBe(true);
+    expect(a.health).toBe(100);
   });
 });
