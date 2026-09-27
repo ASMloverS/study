@@ -88,7 +88,7 @@ export class Game {
       speedKmh: p.speed * 3.6,
       gearLine: (() => {
         const cad = cadence(p.speed, p.cog);
-        const target = p.cadTarget;
+        const target = Math.round(p.cadTarget);
         const rpm = Math.abs(cad - target) > 3 ? `${cad.toFixed(0)}/${target}` : cad.toFixed(0);
         return `52×${Math.round(p.cog)} · ${rpm}rpm · ${GEARS[p.gear]}`;
       })(),
