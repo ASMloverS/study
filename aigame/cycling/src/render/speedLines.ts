@@ -39,9 +39,9 @@ export class SpeedLines {
 
   update(speed: number, frameDt: number, camera: THREE.Camera): void {
     const mat = this.lines.material as THREE.LineBasicMaterial;
-    mat.opacity = Math.max(0, Math.min(0.5, (speed - 30) / 120));
+    mat.opacity = Math.max(0, Math.min(0.55, (speed - 8) / 35));
     if (mat.opacity <= 0.01) return;
-    const len = Math.min(34, speed * 0.16);
+    const len = Math.min(28, speed * 0.55);
     this.lines.position.copy(camera.position);
     this.lines.quaternion.copy(camera.quaternion);
     for (let i = 0; i < COUNT; i++) {
