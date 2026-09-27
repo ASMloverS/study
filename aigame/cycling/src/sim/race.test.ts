@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRace, standings, stepRace } from './race';
+import { AI_FIELD, createRace, standings, stepRace } from './race';
 import { buildTrack } from './trackData';
 import { RACE } from './params';
 import type { RiderCommand } from './types';
@@ -67,7 +67,7 @@ describe('race', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 4999.5, speed: 100, lateral: 0, cadTarget: 0, energy: 20000 })) };
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 1499.5, speed: 100, lateral: 0, cadTarget: 0, energy: 20000 })) };
     const before = s.riders[0].energy;
     s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders[0].collected[1]).toBe(true);
@@ -77,7 +77,7 @@ describe('race', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 4999.5, speed: 100, lateral: 0.85, cadTarget: 0, energy: 20000 })) };
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 1499.5, speed: 100, lateral: 0.85, cadTarget: 0, energy: 20000 })) };
     const before = s.riders[0].energy;
     s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders[0].collected.every((c) => !c)).toBe(true);
@@ -87,7 +87,7 @@ describe('race', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 4999.9, speed: 2, lateral: 0, cadTarget: 0, energy: 20000 })) };
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 1499.9, speed: 2, lateral: 0, cadTarget: 0, energy: 20000 })) };
     const before = s.riders[0].energy;
     for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders[0].energy).toBeCloseTo(before + 4000, -1);
@@ -96,10 +96,15 @@ describe('race', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r, i) => (i === 4 ? { ...r, dist: 4999.5, speed: 100, lateral: 0, energy: 10000 } : r)) };
+    s = { ...s, riders: s.riders.map((r, i) => (i === 4 ? { ...r, dist: 1499.5, speed: 100, lateral: 0, energy: 10000 } : r)) };
     s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders[4].collected.some((c) => c)).toBe(true);
     expect(s.riders[4].energy).toBeCloseTo(10000 + 0.1 * s.riders[4].type.maxEnergy, -1);
+  });
+  it('scales sprint distance to stage length', () => {
+    const s = createRace(track);
+    const scale = track.length / 150000;
+    expect(s.riders[1].type.sprintDist).toBeCloseTo(AI_FIELD[0].sprintDist * scale, 0);
   });
   it('cog shifts freely with floor 1 and no upper clamp', () => {
     let s = createRace(track);

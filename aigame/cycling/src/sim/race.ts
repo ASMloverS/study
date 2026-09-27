@@ -43,9 +43,11 @@ function makeRider(id: number, type: RiderType, isPlayer: boolean, dist: number,
 }
 
 export function createRace(track: Track): RaceState {
-  const riders: RiderState[] = [makeRider(0, PLAYER_TYPE, true, 0, 0.8)];
+  const scale = track.length / 150000;
+  const riders: RiderState[] = [makeRider(0, { ...PLAYER_TYPE, sprintDist: PLAYER_TYPE.sprintDist * scale }, true, 0, 0.8)];
   for (let i = 0; i < AI_FIELD.length; i++) {
-    riders.push(makeRider(i + 1, AI_FIELD[i], false, (i + 1) * 1.6, (i % 2 === 0 ? -0.8 : 0.8)));
+    const t = AI_FIELD[i];
+    riders.push(makeRider(i + 1, { ...t, sprintDist: t.sprintDist * scale }, false, (i + 1) * 1.6, (i % 2 === 0 ? -0.8 : 0.8)));
   }
   return { phase: 'countdown', time: 0, countdown: RACE.countdown, riders, trackLength: track.length, rngState: 20260926, results: [] };
 }

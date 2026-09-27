@@ -76,7 +76,7 @@ export class Game {
   private render(alpha: number, frameDt: number): void {
     const s = this.state;
     const remaining = s.trackLength - s.riders[0].dist;
-    this.music.setTier(s.phase === 'racing' ? (remaining > 5000 ? 'intense' : 'sprint') : 'calm');
+    this.music.setTier(s.phase === 'racing' ? (remaining > s.trackLength * 0.04 ? 'intense' : 'sprint') : 'calm');
     for (let i = 0; i < s.riders.length; i++) {
       const p = this.prev.riders[i];
       const c = s.riders[i];
@@ -120,7 +120,7 @@ export class Game {
       gearLine: `52×${Math.round(p.cog)} · ${GEARS[p.gear]}`,
       cadence: cadence(p.speed, p.cog),
       cadTarget: p.cadTarget,
-      finalSprint: s.phase === 'racing' && remaining <= 5000,
+      finalSprint: s.phase === 'racing' && remaining <= s.trackLength * 0.04,
       energyFrac: p.energy / p.type.maxEnergy,
       gradientPct: ps.gradient * 100,
       remainingKm: Math.max(0, remaining) / 1000,

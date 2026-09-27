@@ -128,7 +128,7 @@ export function buildItemBoxes(): { group: THREE.Group; meshes: THREE.Mesh[] } {
   ITEM_BOXES.forEach((box, i) => {
     const cluster = Math.floor(i / 3);
     const mat = new THREE.MeshPhongMaterial({
-      color: new THREE.Color().setHSL((cluster % 29) / 29, 0.85, 0.6),
+      color: new THREE.Color().setHSL(cluster / 8, 0.85, 0.6),
       transparent: true,
       opacity: 0.55,
     });

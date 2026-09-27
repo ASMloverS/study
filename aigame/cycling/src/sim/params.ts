@@ -24,9 +24,7 @@ export const RACE = {
   countdown: 3,
   finishWait: 30,
   trackWidth: 6,
-  boxClusterEvery: 5000,
-  boxFirst: 5000,
-  boxLast: 145000,
+  stageKm: 15,
   boxOffsets: [-1.7, 0, 1.7],
   boxRadius: 0.75,
   boxGain: 0.1,
@@ -38,9 +36,10 @@ export interface ItemBox {
 }
 
 export const ITEM_BOXES: ItemBox[] = (() => {
+  const L = RACE.stageKm * 1000;
   const boxes: ItemBox[] = [];
-  for (let d = RACE.boxFirst; d <= RACE.boxLast; d += RACE.boxClusterEvery) {
-    for (const lat of RACE.boxOffsets) boxes.push({ d, lat });
+  for (let k = 1; k <= 8; k++) {
+    for (const lat of RACE.boxOffsets) boxes.push({ d: L * 0.1 * k, lat });
   }
   return boxes;
 })();

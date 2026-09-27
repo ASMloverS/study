@@ -1,25 +1,23 @@
 import { Track } from './track';
+import { RACE } from './params';
 
-const SPACING = 750;
 const COUNT = 200;
 
-const PROFILE_KM: [number, number][] = [
-  [0, 0], [10, 50], [20, 20], [30, 80], [35, 300], [38, 520], [41, 540], [44, 700],
-  [47, 680], [50, 830], [53, 850], [56, 950], [60, 930], [65, 900], [72, 880], [80, 700],
-  [85, 420], [90, 300], [95, 150], [100, 90], [105, 80], [112, 160], [120, 60], [128, 150],
-  [135, 40], [142, 30], [150, 0],
+const PROFILE_U: [number, number][] = [
+  [0, 0], [0.05, 0.10], [0.14, 0.05], [0.28, 0.30], [0.48, 0.97], [0.56, 0.90],
+  [0.64, 1.0], [0.70, 0.92], [0.88, 0.25], [0.94, 0.10], [1, 0],
 ];
 
-function elevationAtKm(km: number): number {
-  if (km <= 0) return PROFILE_KM[0][1];
-  if (km >= 150) return PROFILE_KM[PROFILE_KM.length - 1][1];
-  for (let i = 1; i < PROFILE_KM.length; i++) {
-    if (km <= PROFILE_KM[i][0]) {
-      const [k0, h0] = PROFILE_KM[i - 1];
-      const [k1, h1] = PROFILE_KM[i];
-      const t = (km - k0) / (k1 - k0);
+function elevationAt(u: number, amp: number): number {
+  if (u <= 0) return 0;
+  if (u >= 1) return 0;
+  for (let i = 1; i < PROFILE_U.length; i++) {
+    if (u <= PROFILE_U[i][0]) {
+      const [u0, f0] = PROFILE_U[i - 1];
+      const [u1, f1] = PROFILE_U[i];
+      const t = (u - u0) / (u1 - u0);
       const s = 0.5 - 0.5 * Math.cos(Math.PI * t);
-      return h0 + (h1 - h0) * s;
+      return (f0 + (f1 - f0) * s) * amp;
     }
   }
   return 0;
@@ -30,17 +28,19 @@ function turn(u: number, lo: number, hi: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function buildTrack(): Track {
+export function buildTrack(stageKm: number = RACE.stageKm): Track {
+  const spacing = (stageKm * 1000) / COUNT;
+  const amp = Math.min(999.5, 22 * stageKm);
   const ctrl: [number, number, number][] = [];
   let x = 0;
   let z = 0;
   const headingAt = (u: number) =>
     0.6 * Math.sin(u * Math.PI * 6) + Math.PI * turn(u, 0.42, 0.46) + Math.PI * turn(u, 0.78, 0.82);
   for (let i = 0; i < COUNT; i++) {
-    ctrl.push([x, elevationAtKm((i / COUNT) * 150), z]);
+    ctrl.push([x, elevationAt(i / COUNT, amp), z]);
     const mid = headingAt((i + 0.5) / COUNT);
-    x += Math.cos(mid) * SPACING;
-    z += Math.sin(mid) * SPACING;
+    x += Math.cos(mid) * spacing;
+    z += Math.sin(mid) * spacing;
   }
   return new Track(ctrl, 8000, false);
 }
