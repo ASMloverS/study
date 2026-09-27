@@ -19,10 +19,10 @@ export class InputController {
     this.lastNow = now;
     let cogDelta = this.cogPulse;
     let cadDelta = this.cadPulse;
-    if (this.keys.has('q')) cogDelta += DRIVETRAIN.cogHoldRate * held;
-    if (this.keys.has('e')) cogDelta -= DRIVETRAIN.cogHoldRate * held;
-    if (this.keys.has('w') || this.keys.has('arrowup')) cadDelta += DRIVETRAIN.cadHoldRate * held;
-    if (this.keys.has('s') || this.keys.has('arrowdown')) cadDelta -= DRIVETRAIN.cadHoldRate * held;
+    const cogUp = (this.keys.has('q') ? 1 : 0) - (this.keys.has('e') ? 1 : 0);
+    const cadUp = (this.keys.has('w') || this.keys.has('arrowup') ? 1 : 0) - (this.keys.has('s') || this.keys.has('arrowdown') ? 1 : 0);
+    cogDelta += cogUp * DRIVETRAIN.cogHoldRate * held;
+    cadDelta += cadUp * DRIVETRAIN.cadHoldRate * held;
     this.cogPulse = 0;
     this.cadPulse = 0;
     return { gear: this.gear, steer: this.steer, cadDelta, cogDelta };

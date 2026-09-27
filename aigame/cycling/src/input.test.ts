@@ -98,4 +98,10 @@ describe('InputController', () => {
     t += 0.05;
     expect(c.command().cogDelta).toBeCloseTo(0, 5);
   });
+  it('alias keys on the same axis share one hold rate', () => {
+    press('w');
+    press('ArrowUp');
+    t += 0.05;
+    expect(c.command().cadDelta).toBeCloseTo(10 + 30 * 0.05, 5);
+  });
 });
