@@ -3,14 +3,12 @@ import { KILLSTREAK_AIRSTRIKE_KILLS, KILLSTREAK_CLUSTER_KILLS, KILLSTREAK_UAV_KI
 export const STREAK_THRESHOLDS = [KILLSTREAK_UAV_KILLS, KILLSTREAK_AIRSTRIKE_KILLS, KILLSTREAK_CLUSTER_KILLS] as const;
 
 export interface StreakState {
-  /** 本条连杀内各档是否已达成（死亡清零） */
+  /** 各档是否已达成且未消耗（[M14] 死亡保留，仅激活消耗后重置） */
   earned: [boolean, boolean, boolean];
-  /** 已激活消耗 */
-  used: [boolean, boolean, boolean];
 }
 
 export function createStreakState(): StreakState {
-  return { earned: [false, false, false], used: [false, false, false] };
+  return { earned: [false, false, false] };
 }
 
 /** 击杀后推进：streak 达到阈值且未达成过的档位标记为达成，返回新达成的档位（0 基）列表 */
@@ -25,25 +23,22 @@ export function streakOnKill(s: StreakState, streak: number): number[] {
   return fresh;
 }
 
-/** 死亡清空：未使用的奖励作废（经典 MW 规则） */
-export function streakOnDeath(s: StreakState): void {
-  s.earned = [false, false, false];
-  s.used = [false, false, false];
-}
+/** [M14] 死亡不再作废奖励：计数器由调用方清零，已获未用奖励保留（MW2019 式） */
 
 /** 可用档位掩码（bit0 = UAV, bit1 = 空袭, bit2 = 集束） */
 export function streakAvailableMask(s: StreakState): number {
   let m = 0;
-  for (let i = 0; i < 3; i++) if (s.earned[i] && !s.used[i]) m |= 1 << i;
+  for (let i = 0; i < 3; i++) if (s.earned[i]) m |= 1 << i;
   return m;
 }
 
 /** 档位是否可激活（1 基 tier：1/2/3） */
 export function streakCanUse(s: StreakState, tier: number): boolean {
   const i = tier - 1;
-  return i >= 0 && i < 3 && s.earned[i] && !s.used[i];
+  return i >= 0 && i < 3 && s.earned[i];
 }
 
+/** [M14] 激活消耗：重置该档（可重新赚取；若当前计数仍 ≥ 阈值，下一次击杀即重新获得） */
 export function streakConsume(s: StreakState, tier: number): void {
-  s.used[tier - 1] = true;
+  s.earned[tier - 1] = false;
 }

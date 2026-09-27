@@ -12,13 +12,16 @@ import {
   WEAPONS,
   WEAPON_LIST,
   type Loadout,
+  type MagConfig,
   addRecoilShot,
   createRecoilState,
+  defaultMagConfig,
   eyeY,
   type GameEvent,
   jitterDir,
   type PlayerSnap,
   type S2CMessage,
+  sanitizeMagConfig,
   spreadMulFor,
   updateRecoil,
   viewDir,
@@ -53,6 +56,8 @@ const hud = new Hud();
 const audio = new AudioSys();
 const minimap = new Minimap(MAPS.warehouse);
 const settings: Settings = { ...defaultSettings, ...loadSettings() };
+// [M14] 本地存储的弹匣配置可能损坏/越界，统一清洗
+settings.mags = sanitizeMagConfig(settings.mags);
 
 const overlay = document.getElementById('startoverlay') as HTMLDivElement;
 const endoverlay = document.getElementById('endoverlay') as HTMLDivElement;
@@ -162,6 +167,20 @@ const pbotsval = document.getElementById('pbotsval') as HTMLSpanElement;
 const pkillval = document.getElementById('pkillval') as HTMLSpanElement;
 const pdurval = document.getElementById('pdurval') as HTMLSpanElement;
 const plobbyhint = document.getElementById('plobbyhint') as HTMLDivElement;
+/** [M14] 弹匣配置输入（mag_=主菜单 / pmag_=暂停面板），顺序同 WEAPON_LIST */
+const magInputs = WEAPON_LIST.map((id) => document.getElementById(`mag_${id}`) as HTMLInputElement);
+const pmagInputs = WEAPON_LIST.map((id) => document.getElementById(`pmag_${id}`) as HTMLInputElement);
+const pmagreset = document.getElementById('pmagreset') as HTMLButtonElement;
+
+function readMagInputs(inputs: HTMLInputElement[]): MagConfig {
+  const o = {} as MagConfig;
+  WEAPON_LIST.forEach((id, i) => (o[id] = Number(inputs[i].value)));
+  return sanitizeMagConfig(o);
+}
+
+function writeMagInputs(inputs: HTMLInputElement[], mags: MagConfig): void {
+  WEAPON_LIST.forEach((id, i) => (inputs[i].value = String(mags[id])));
+}
 
 function lobbyEditable(): boolean {
   return sessionIsLocal || (lobby !== null && lobby.hostId === selfId);
@@ -169,7 +188,7 @@ function lobbyEditable(): boolean {
 
 function syncLobbyUI(): void {
   const editable = lobbyEditable();
-  for (const c of [pbotsrange, pdiffsel, pkillrange, pdurrange]) c.disabled = !editable;
+  for (const c of [pbotsrange, pdiffsel, pkillrange, pdurrange, ...pmagInputs, pmagreset]) c.disabled = !editable;
   if (sessionIsLocal) plobbyhint.textContent = '单机模式：修改立即生效';
   else if (lobby === null) plobbyhint.textContent = '';
   else if (lobby.hostId === selfId) {
@@ -177,7 +196,8 @@ function syncLobbyUI(): void {
       lobby.pendingKillLimit != null || lobby.pendingMatchMinutes != null
         ? `（待下局生效：${lobby.pendingKillLimit ?? lobby.killLimit} 杀 / ${lobby.pendingMatchMinutes ?? lobby.matchMinutes} 分钟）`
         : '';
-    plobbyhint.textContent = `你是房主：AI 设置立即生效，规则改动下局生效${pend}`;
+    const magPend = lobby.pendingMags != null ? '，弹匣改动待下局' : '';
+    plobbyhint.textContent = `你是房主：AI 设置立即生效，规则改动下局生效${magPend}${pend}`;
   } else {
     plobbyhint.textContent = '仅房主可修改';
   }
@@ -189,6 +209,7 @@ function syncLobbyUI(): void {
     pkillval.textContent = String(lobby.pendingKillLimit ?? lobby.killLimit);
     pdurrange.value = String(lobby.pendingMatchMinutes ?? lobby.matchMinutes);
     pdurval.textContent = `${lobby.pendingMatchMinutes ?? lobby.matchMinutes} 分钟`;
+    if (lobby.pendingMags ?? lobby.mags) writeMagInputs(pmagInputs, (lobby.pendingMags ?? lobby.mags)!);
   }
 }
 
@@ -200,6 +221,7 @@ function sendLobby(): void {
     difficulty: pdiffsel.value as 'mixed' | 'easy' | 'normal' | 'hard',
     killLimit: Number(pkillrange.value),
     matchMinutes: Number(pdurrange.value),
+    mags: readMagInputs(pmagInputs),
   });
 }
 
@@ -217,6 +239,19 @@ for (const c of [pbotsrange, pkillrange, pdurrange]) {
   });
 }
 pdiffsel.addEventListener('change', () => sendLobby());
+// [M14] 弹匣输入：编辑期间置 lobbyEditing 防回显覆盖，input/change 同现有滑条模式
+for (const c of pmagInputs) {
+  c.addEventListener('pointerdown', () => (lobbyEditing = true));
+  c.addEventListener('input', () => sendLobby());
+  c.addEventListener('change', () => {
+    lobbyEditing = false;
+    sendLobby();
+  });
+}
+pmagreset.addEventListener('click', () => {
+  writeMagInputs(pmagInputs, defaultMagConfig());
+  sendLobby();
+});
 
 function startSession(): void {
   session?.dispose();
@@ -275,6 +310,7 @@ function startSession(): void {
       botDifficulty: settings.difficulty,
       killLimit: settings.killLimit,
       durationSec: settings.matchMinutes * 60,
+      magConfig: settings.mags,
     });
   }
   session.onMessage(onMessage);
@@ -568,6 +604,20 @@ function applyMenuSettings(): void {
   (el<HTMLSelectElement>('diffsel')).value = settings.difficulty;
   (el<HTMLSelectElement>('qualitysel')).value = settings.quality;
   (el<HTMLSelectElement>('enemycolorsel')).value = settings.enemyColor;
+  // [M14] 主菜单弹匣配置：回显 + 变更保存 + 恢复默认
+  writeMagInputs(magInputs, settings.mags);
+  for (const input of magInputs) {
+    input.addEventListener('change', () => {
+      settings.mags = readMagInputs(magInputs);
+      saveSettings(settings);
+    });
+  }
+  const magreset = el<HTMLButtonElement>('magreset');
+  magreset.addEventListener('click', () => {
+    settings.mags = defaultMagConfig();
+    writeMagInputs(magInputs, settings.mags);
+    saveSettings(settings);
+  });
 
   el<HTMLInputElement>('nameinput').addEventListener('input', () => {
     settings.name = el<HTMLInputElement>('nameinput').value.trim().slice(0, 16) || '玩家';

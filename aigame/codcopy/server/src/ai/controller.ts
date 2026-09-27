@@ -1,4 +1,4 @@
-import { BTN, TICK_DT, VIEW_DISTANCE, WEAPONS, type InputMsg, type PathPoint, type WeaponId, findPath } from 'shared';
+import { BTN, TICK_DT, VIEW_DISTANCE, type InputMsg, type PathPoint, type WeaponId, findPath } from 'shared';
 import { mulberry32 } from '../game/rng';
 import type { Room, ServerPlayer } from '../game/world';
 import { createPerception, updatePerception, type PerceptionState } from './perception';
@@ -187,7 +187,7 @@ function doEngage(ctx: Ctx): 'running' {
     b.lastTargetId = b.targetId ?? 0;
     b.reactionUntilTick = room.tick + DIFFICULTIES[b.difficulty].reaction;
   }
-  const magLow = p.mags[p.weapon] <= Math.ceil(magSize(p.weapon) * 0.2);
+  const magLow = p.mags[p.weapon] <= Math.ceil(room.effectiveMag(p.weapon) * 0.2);
   if (!b.coverSpot || room.tick > b.repathAtTick + 120) {
     b.coverSpot = findCover(ctx, { x: target.st.x, z: target.st.z });
     if (b.coverSpot) {
@@ -257,10 +257,6 @@ function nearestEnemyPos({ room, p }: Ctx): PathPoint {
     }
   }
   return best;
-}
-
-function magSize(w: WeaponId): number {
-  return WEAPONS[w].magSize;
 }
 
 // ---------- locomotion & input assembly ----------
@@ -405,7 +401,7 @@ export function updateBot(room: Room, p: ServerPlayer): InputMsg {
 
   if (
     (p.mags[p.weapon] === 0 && p.reserve[p.weapon] > 0) ||
-    (target && dist > 25 && p.mags[p.weapon] <= Math.ceil(magSize(p.weapon) * 0.2) && p.reserve[p.weapon] > 0)
+    (target && dist > 25 && p.mags[p.weapon] <= Math.ceil(room.effectiveMag(p.weapon) * 0.2) && p.reserve[p.weapon] > 0)
   ) {
     buttons |= BTN.RELOAD;
   }

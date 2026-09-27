@@ -1,4 +1,4 @@
-import { DEFAULT_LOADOUT, MAPS, SNAPSHOT_EVERY_TICKS, TICK_RATE, WEAPON_LIST, type Loadout } from 'shared';
+import { DEFAULT_LOADOUT, MAPS, SNAPSHOT_EVERY_TICKS, TICK_RATE, WEAPON_LIST, type Loadout, type MagConfig } from 'shared';
 import type { BotDifficulty } from './ai/controller';
 import { Room } from './game/world';
 import { createLocalPair, type Transport } from './transport/local';
@@ -12,7 +12,7 @@ export interface LocalGameHandle {
 }
 
 export function createLocalGame(
-  opts: { bots?: number; seed?: number; botDifficulty?: BotDifficulty | 'mixed'; killLimit?: number; durationSec?: number } = {},
+  opts: { bots?: number; seed?: number; botDifficulty?: BotDifficulty | 'mixed'; killLimit?: number; durationSec?: number; magConfig?: MagConfig } = {},
 ): LocalGameHandle {
   const room = new Room(MAPS.warehouse, {
     bots: opts.bots ?? 7,
@@ -20,6 +20,7 @@ export function createLocalGame(
     botDifficulty: opts.botDifficulty,
     killLimit: opts.killLimit,
     durationSec: opts.durationSec,
+    magConfig: opts.magConfig,
   });
   const { client, server } = createLocalPair();
   let joinedId = -1;
@@ -32,7 +33,7 @@ export function createLocalGame(
           : DEFAULT_LOADOUT;
       const p = room.addPlayer(String(msg.name || 'Player').slice(0, 16) || 'Player', false, 'normal', loadout);
       joinedId = p.id;
-      server.send({ kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec }, loadout: { ...p.loadout } });
+      server.send({ kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec, mags: room.magConfig }, loadout: { ...p.loadout } });
       server.send(room.lobbyState(joinedId));
     } else if (msg.kind === 'input') {
       room.enqueueInput(joinedId, msg.input);
@@ -44,6 +45,7 @@ export function createLocalGame(
       if (typeof msg.killLimit === 'number' && typeof msg.matchMinutes === 'number') {
         room.setRules(msg.killLimit, msg.matchMinutes);
       }
+      if (msg.mags && typeof msg.mags === 'object') room.setMagConfig(msg.mags);
       server.send(room.lobbyState(joinedId));
     }
   });

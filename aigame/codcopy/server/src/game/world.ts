@@ -52,6 +52,9 @@ import {
   DEFAULT_LOADOUT,
   type Loadout,
   type WeaponId,
+  type MagConfig,
+  effectiveReserve,
+  sanitizeMagConfig,
   addRecoilShot,
   bakeNavGrid,
   boxCenter,
@@ -86,7 +89,6 @@ import {
   streakAvailableMask,
   streakCanUse,
   streakConsume,
-  streakOnDeath,
   streakOnKill,
   type StreakState,
 } from './killstreak';
@@ -141,22 +143,12 @@ export interface RoomOptions {
   botDifficulty?: BotDifficulty | 'mixed';
   killLimit?: number;
   durationSec?: number;
+  /** [M14] 弹匣容量配置（清洗后生效，人机同规则） */
+  magConfig?: MagConfig;
 }
 
 function zeroInput(): InputMsg {
   return { seq: 0, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, slot: 0, streak: 0 };
-}
-
-function freshMags(): Record<WeaponId, number> {
-  const o = {} as Record<WeaponId, number>;
-  for (const id of WEAPON_LIST) o[id] = WEAPONS[id].magSize;
-  return o;
-}
-
-function freshReserve(): Record<WeaponId, number> {
-  const o = {} as Record<WeaponId, number>;
-  for (const id of WEAPON_LIST) o[id] = WEAPONS[id].reserve;
-  return o;
 }
 
 /** [M11] AI 随机 loadout：长枪主武器 + 副手枪/第二长枪 */
@@ -178,6 +170,8 @@ export class Room {
   timeLeft = DEFAULT_MATCH_DURATION;
   killLimit: number;
   durationSec: number;
+  /** [M14] 房间级弹匣容量（人机同规则；静态 WEAPONS 表不受影响） */
+  magConfig: MagConfig;
   over = false;
   winner: number | null = null;
   botDifficulty: BotDifficulty | 'mixed';
@@ -211,6 +205,7 @@ export class Room {
     this.map = map;
     this.killLimit = Math.max(1, Math.round(opts.killLimit ?? DEFAULT_KILL_LIMIT));
     this.durationSec = Math.max(15, Math.round(opts.durationSec ?? DEFAULT_MATCH_DURATION));
+    this.magConfig = sanitizeMagConfig(opts.magConfig);
     this.timeLeft = this.durationSec;
     this.destructibles = createDestructibles(map.covers);
     this.dynamic = createDynamicCovers(map.covers);
@@ -261,6 +256,28 @@ export class Room {
     this.timeLeft = Math.min(this.timeLeft, this.durationSec);
   }
 
+  /** [M14] 房间生效弹匣容量（人机同规则） */
+  effectiveMag(w: WeaponId): number {
+    return this.magConfig[w] ?? WEAPONS[w].magSize;
+  }
+
+  /** [M14] 即刻调整弹匣配置（单机语义：当前膛内不变，换弹上限与下次出生用新值） */
+  setMagConfig(mags: MagConfig): void {
+    this.magConfig = sanitizeMagConfig(mags);
+  }
+
+  private freshMags(): Record<WeaponId, number> {
+    const o = {} as Record<WeaponId, number>;
+    for (const id of WEAPON_LIST) o[id] = this.effectiveMag(id);
+    return o;
+  }
+
+  private freshReserve(): Record<WeaponId, number> {
+    const o = {} as Record<WeaponId, number>;
+    for (const id of WEAPON_LIST) o[id] = effectiveReserve(id, this.effectiveMag(id));
+    return o;
+  }
+
   /** [M11] 死亡时修改 loadout，下一命生效；返回实际生效值 */
   setLoadout(id: number, loadout: Loadout): Loadout {
     const p = this.players.find((q) => q.id === id);
@@ -278,7 +295,7 @@ export class Room {
   /** [M10] 组装 lobbyState 消息（pending 为联机「下局生效」的规则） */
   lobbyState(
     hostId: number | null,
-    pending?: { killLimit?: number; matchMinutes?: number },
+    pending?: { killLimit?: number; matchMinutes?: number; mags?: MagConfig },
   ): Extract<S2CMessage, { kind: 'lobbyState' }> {
     return {
       kind: 'lobbyState',
@@ -289,6 +306,8 @@ export class Room {
       matchMinutes: Math.round(this.durationSec / 60),
       pendingKillLimit: pending?.killLimit,
       pendingMatchMinutes: pending?.matchMinutes,
+      mags: this.magConfig,
+      pendingMags: pending?.mags,
     };
   }
 
@@ -328,8 +347,8 @@ export class Room {
       respawnAtTick: 0,
       loadout: { ...loadout },
       weapon: loadout.primary,
-      mags: freshMags(),
-      reserve: freshReserve(),
+      mags: this.freshMags(),
+      reserve: this.freshReserve(),
       recoil: createRecoilState(),
       pendingWeapon: null,
       switchEndsTick: 0,
@@ -386,8 +405,8 @@ export class Room {
     p.alive = true;
     if (p.isBot) p.loadout = randomBotLoadout(this.rng);
     p.weapon = p.loadout.primary;
-    p.mags = freshMags();
-    p.reserve = freshReserve();
+    p.mags = this.freshMags();
+    p.reserve = this.freshReserve();
     p.recoil = createRecoilState();
     p.pendingWeapon = null;
     p.reloadEndsTick = -1;
@@ -404,7 +423,7 @@ export class Room {
     p.prevMeleeBtn = false;
     p.prevLethalBtn = false;
     p.prevTacticalBtn = false;
-    p.streaks = createStreakState();
+    // [M14] 重生不作废连杀奖励（死亡时仅计数器清零）
     p.inputQueue.length = 0;
     p.lastInput = zeroInput();
     if (p.bot) {
@@ -490,6 +509,9 @@ export class Room {
     if (p.inputQueue.length > 0) {
       p.lastInput = p.inputQueue.shift()!;
       p.ackSeq = p.lastInput.seq;
+    } else if (p.lastInput.streak !== 0) {
+      // [M14] 空队列重放上一输入：连杀激活是一次性意图，不随重放重复触发
+      p.lastInput = { ...p.lastInput, streak: 0 };
     }
     return p.lastInput;
   }
@@ -647,8 +669,7 @@ export class Room {
     }
     if (p.fireCooldown > 0) p.fireCooldown -= TICK_DT;
     if (p.reloadEndsTick >= 0 && this.tick >= p.reloadEndsTick) {
-      const cw = WEAPONS[p.weapon];
-      const take = Math.min(cw.magSize - p.mags[p.weapon], p.reserve[p.weapon]);
+      const take = Math.min(this.effectiveMag(p.weapon) - p.mags[p.weapon], p.reserve[p.weapon]);
       p.mags[p.weapon] += take;
       p.reserve[p.weapon] -= take;
       p.reloadEndsTick = -1;
@@ -711,7 +732,7 @@ export class Room {
         this.fire(p, input);
       }
     }
-    if ((btn & BTN.RELOAD) !== 0 && p.reloadEndsTick < 0 && p.mags[p.weapon] < w.magSize && p.reserve[p.weapon] > 0) {
+    if ((btn & BTN.RELOAD) !== 0 && p.reloadEndsTick < 0 && p.mags[p.weapon] < this.effectiveMag(p.weapon) && p.reserve[p.weapon] > 0) {
       this.startReload(p);
     }
     p.prevFireBtn = fireHeld;
@@ -1045,7 +1066,7 @@ export class Room {
         this.events.push({ type: 'streakEarned', tick: this.tick, playerId: killer.id, tier: (tier + 1) as 1 | 2 | 3 });
       }
     }
-    streakOnDeath(victim.streaks);
+    // [M14] 死亡不作废连杀奖励：仅计数器清零（上文 victim.streak = 0），已获未用奖励保留
     this.events.push({
       type: 'kill',
       tick: this.tick,

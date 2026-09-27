@@ -1,5 +1,5 @@
 import { createLocalGame, type LocalGameHandle } from 'server';
-import { DEFAULT_LOADOUT, WEAPON_LIST, type Loadout } from 'shared';
+import { DEFAULT_LOADOUT, WEAPON_LIST, type Loadout, type MagConfig } from 'shared';
 
 export interface Session {
   send(msg: unknown): void;
@@ -21,7 +21,7 @@ export class LocalSession implements Session {
   private inbox: unknown[] = [];
   readonly rtt: number | null = null;
 
-  constructor(opts: { name?: string; loadout?: Loadout; bots?: number; botDifficulty?: 'mixed' | 'easy' | 'normal' | 'hard'; killLimit?: number; durationSec?: number }) {
+  constructor(opts: { name?: string; loadout?: Loadout; bots?: number; botDifficulty?: 'mixed' | 'easy' | 'normal' | 'hard'; killLimit?: number; durationSec?: number; magConfig?: MagConfig }) {
     this.handle = createLocalGame(opts);
     this.handle.transport.onMessage((m) => {
       if (this.cb) this.cb(m);

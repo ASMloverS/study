@@ -50,6 +50,7 @@ npm run dev                        # 另开终端，客户端菜单选「联机�
 | `DIFFICULTY` | `mixed` | AI 难度：`mixed` / `easy` / `normal` / `hard` |
 | `KILL_LIMIT` | `30` | 胜利击杀上限（单机菜单也可调） |
 | `MATCH_MINUTES` | `10` | 对局时长（分钟，单机菜单也可调） |
+| `MAGS` | `30,32,75,15,6,5,12` | 各枪弹匣容量（逗号分隔，顺序：AR/SMG/LMG/DMR/SG/SR/手枪；非法项回落默认；房主也可在对局中调整，下局生效） |
 
 PowerShell 示例：`$env:PORT=9000; $env:BOTS=5; npm start -w server`
 

@@ -1,6 +1,6 @@
 # Codcopy 实施路线图
 
-- 版本：v1.4
+- 版本：v1.5
 - 日期：2026-09-26
 - 里程碑：M1 → M13，每个里程碑交付「可运行、可验证」的版本
 
@@ -397,13 +397,46 @@
 
 **验收**：各枪开镜瞄具中心 = 屏幕中心 = 准星中心点；SMG 反射镜透亮、DMR 可透镜分划瞄准；typecheck + build 全绿 + 目测确认。
 
+## M14 玩法与视觉迭代（准心细环 + 连杀保留 + 弹匣配置）
+
+> 状态：✅ 已完成（2026-09-26）。验收证据：vitest 131 项全绿（25 文件，含新增 magconfig 6+3 用例与 streak 死亡保留/重赚用例）、三包 tsc 通过、vite build 成功。交付：准心环 tube 0.0022/0.002→0.0008（AR/SMG/LMG 前后环 + SMG 红点环）；连杀奖励死亡/重生保留（删除 streakOnDeath 与 spawn 重建；streakConsume 重置该档可重赚；修复 takeInput 空队列重放导致 streak 重复激活的隐性缺陷）；弹匣配置房间级（shared sanitize/default/effectiveReserve + Room.effectiveMag + AI 同规则 + 单机立即/联机 pending 下局 + MAGS env + 主菜单与 Esc 面板 7 枪输入 UI）。
+
+目标：三项迭代——① 开镜视野优化：全部准心环减细；② 连杀奖励死亡保留（MW2019 式）；③ 弹匣容量房间级可配置（人机同规则）。
+
+### M14.1 准心环减细
+
+| # | 任务 | 方案 |
+|---|---|---|
+| 1 | 环管减细 | AR 前/后环、SMG 红点环/前环、LMG 前/后环 tube 0.0022/0.002 → **0.0008**（与 DMR 镜内环一致），永久静态、腰射开镜一致 |
+| 2 | 不动项 | DMR 镜内环（已 0.0008）、装饰环（泵环/背带环/扳机护圈）、中央黄色光点（保留作精瞄点） |
+
+### M14.2 连杀奖励死亡保留
+
+| # | 任务 | 方案 |
+|---|---|---|
+| 1 | 死亡语义 | 计数器清零（`victim.streak = 0` 保留）；**已获未用奖励保留**（删除 `streakOnDeath` 及其调用），任意死因同规则 |
+| 2 | 释放语义 | `streakConsume` 改为重置该档（`earned[i]=used[i]=false`）→ 立即可重新赚取；若计数仍 ≥ 阈值，下一次击杀即重新获得 |
+| 3 | 边界 | 自杀同规则；新对局（resetRoom 重建）全清；协议/HUD/快照 `sv` 掩码链路不变；机器人只赚不用、标志跨命累积无行为影响 |
+
+### M14.3 弹匣容量配置
+
+| # | 任务 | 方案 |
+|---|---|---|
+| 1 | 配置形式 | 7 把枪独立数值，默认 30/32/75/15/6/5/12，clamp **1~999** 取整；备弹等比联动 `新reserve = round(默认reserve × 新mag / 默认mag)` |
+| 2 | shared | `weapons.ts` 增 `defaultMagConfig()` / `sanitizeMagConfig()` / `effectiveReserve()` 纯函数（客户端 UI 与服务器共用）；`protocol.ts`：`lobby` 增 `mags?`、`lobbyState` 增 `mags`+`pendingMags`、`MatchConfig` 增 `mags`；**WEAPONS 静态表不污染** |
+| 3 | server | `RoomOptions.magConfig` → Room 持 `magConfig` + `effectiveMag(w)`；`freshMags/freshReserve`、换弹上限、手动换弹判断、AI 低弹量阈值（controller 3 处直读改 `ctx.room.effectiveMag`）统一走 effectiveMag；新增 `setMagConfig()`（SP 立即生效：当前膛内不变，换弹上限与下次出生用新值）；`net.ts`：env `MAGS="30,32,75,15,6,5,12"`（按 WEAPON_LIST 顺序，非法项回落默认）、lobby 仅房主可改、pendingMags 下一局生效（与 killLimit 一致）；`headless.ts`：opts 接收 + lobby 分支立即生效 + welcome cfg 携带 |
+| 4 | client | `Settings.mags` 持久化（localStorage v1 默认合并）；启动菜单与 Esc 房间面板各增"弹匣配置"区（7 数值输入 + 恢复默认按钮，多人仅房主可编辑）；`sendLobby`/`syncLobbyUI` 双向同步（含 pending 提示）；`startSession` → LocalSession 透传 |
+| 5 | 测试 | 新增：sanitize/初始弹药/换弹上限/备弹比例/房主校验/下一局生效/SP 立即生效/AI 同规则；更新 streak 死亡保留 + 重赚用例；现有 gunplay/loadout/melee 默认值回归 |
+
+**验收**：开镜视野中准心环纤细不遮挡目标；死亡后奖励 HUD 档位保留、激活后可重赚；弹匣配置三通路（SP 菜单/SP 面板/MP 房主）生效且人机一致；typecheck + build + vitest 全绿。
+
 ## 里程碑依赖与风险提示
 
 ```
 M1（闭环） → M2（深度：AI/武器/HUD） → M3（广度：网络） → M4（打磨） → M5（手感：P0→P1→P3→P2→V）
       └── M3 的 Transport 抽象在 M1 即定型，M3 仅新增 ws 实现，风险前置消化
       └── M6（玩法还原：M6.1→M6.4 顺序推进） → M7（视觉重制：枪模→场景→角色）
-      └── M8（单机修复+持久化） → M9（视觉与敌我识别，依赖 M8 设置扩展） → M10（联机房主与 lobby） → M11（武器库+loadout） → M12（手感+辅助瞄准+手柄，依赖 M11 武器表） → M13（视觉迭代：鲜艳卡通渲染 + AA 修复，依赖 M7/M9 视觉基线）
+      └── M8（单机修复+持久化） → M9（视觉与敌我识别，依赖 M8 设置扩展） → M10（联机房主与 lobby） → M11（武器库+loadout） → M12（手感+辅助瞄准+手柄，依赖 M11 武器表） → M13（视觉迭代：鲜艳卡通渲染 + AA 修复，依赖 M7/M9 视觉基线） → M14（玩法迭代：细准心环 + 连杀保留 + 弹匣配置，依赖 M10 lobby / M11 武器表 / M13.1 准心修复）
 ```
 
 - 最大技术风险：预测/和解手感（M1 第 4 项尽早验证，不达标先调再前进）。

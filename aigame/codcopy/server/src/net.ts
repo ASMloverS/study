@@ -3,7 +3,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { DEFAULT_LOADOUT, SNAPSHOT_EVERY_TICKS, TICK_RATE, WEAPON_LIST, type Loadout, type S2CMessage } from 'shared';
+import { DEFAULT_LOADOUT, SNAPSHOT_EVERY_TICKS, TICK_RATE, WEAPON_LIST, sanitizeMagConfig, type Loadout, type MagConfig, type S2CMessage } from 'shared';
 import type { BotDifficulty } from './ai/controller';
 import { Room } from './game/world';
 
@@ -14,6 +14,8 @@ export interface NetServerOptions {
   roomResetMs?: number;
   killLimit?: number;
   durationSec?: number;
+  /** [M14] 初始弹匣配置（env MAGS 或缺省默认） */
+  magConfig?: MagConfig;
 }
 
 export interface NetServerHandle {
@@ -34,11 +36,13 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
   let lobbyDifficulty = opts.difficulty ?? 'mixed';
   let pendingKillLimit: number | undefined;
   let pendingMatchMinutes: number | undefined;
+  let pendingMags: MagConfig | undefined;
   const roomOpts = () => ({
     bots: lobbyBots,
     botDifficulty: lobbyDifficulty,
     killLimit: pendingKillLimit ?? opts.killLimit,
     durationSec: pendingMatchMinutes != null ? pendingMatchMinutes * 60 : opts.durationSec,
+    magConfig: pendingMags ?? opts.magConfig,
   });
   let room = new Room(undefined, roomOpts());
   const distDir = fileURLToPath(new URL('../../client/dist/', import.meta.url));
@@ -79,7 +83,7 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
   /** [M10] 房主：首个真人；退出移交最早加入者 */
   const hostClient = (): Client | null => (clients.size > 0 ? [...clients][0] : null);
   const broadcastLobby = () => {
-    broadcast(room.lobbyState(hostClient()?.playerId ?? null, { killLimit: pendingKillLimit, matchMinutes: pendingMatchMinutes }));
+    broadcast(room.lobbyState(hostClient()?.playerId ?? null, { killLimit: pendingKillLimit, matchMinutes: pendingMatchMinutes, mags: pendingMags }));
   };
 
   wss.on('connection', (ws) => {
@@ -100,8 +104,8 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
         const p = room.addHuman(name, loadout);
         client = { ws, playerId: p.id, name, loadout: { ...p.loadout } };
         clients.add(client);
-        send(ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec }, loadout: { ...p.loadout } });
-        send(ws, room.lobbyState(hostClient()?.playerId ?? null, { killLimit: pendingKillLimit, matchMinutes: pendingMatchMinutes }));
+        send(ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec, mags: room.magConfig }, loadout: { ...p.loadout } });
+        send(ws, room.lobbyState(hostClient()?.playerId ?? null, { killLimit: pendingKillLimit, matchMinutes: pendingMatchMinutes, mags: pendingMags }));
       } else if (msg.kind === 'input' && client) {
         room.enqueueInput(client.playerId, msg.input);
       } else if (msg.kind === 'loadout' && client) {
@@ -119,6 +123,7 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
         }
         if (typeof msg.killLimit === 'number' && msg.killLimit >= 1) pendingKillLimit = Math.round(msg.killLimit);
         if (typeof msg.matchMinutes === 'number' && msg.matchMinutes >= 1) pendingMatchMinutes = Math.round(msg.matchMinutes);
+        if (msg.mags && typeof msg.mags === 'object') pendingMags = sanitizeMagConfig(msg.mags);
         broadcastLobby();
       } else if (msg.kind === 'ping') {
         if (client) room.setRtt(client.playerId, Number(msg.rtt ?? 0));
@@ -141,10 +146,11 @@ export function startNetServer(opts: NetServerOptions): NetServerHandle {
     for (const c of old) {
       const p = room.addHuman(c.name, c.loadout);
       c.playerId = p.id;
-      send(c.ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec }, loadout: { ...p.loadout } });
+      send(c.ws, { kind: 'welcome', playerId: p.id, mapName: room.map.name, cfg: { killLimit: room.killLimit, durationSec: room.durationSec, mags: room.magConfig }, loadout: { ...p.loadout } });
     }
     pendingKillLimit = undefined;
     pendingMatchMinutes = undefined;
+    pendingMags = undefined;
     overSince = 0;
     broadcastLobby();
   };
@@ -190,12 +196,21 @@ if (process.argv[1] && process.argv[1].endsWith('net.ts')) {
   const difficulty = (['mixed', 'easy', 'normal', 'hard'] as const).includes(difficultyEnv as any)
     ? (difficultyEnv as 'mixed' | 'easy' | 'normal' | 'hard')
     : 'mixed';
+  // [M14] MAGS="30,32,75,15,6,5,12"（按 WEAPON_LIST 顺序，非法项回落默认）
+  let magConfig: MagConfig | undefined;
+  if (process.env.MAGS) {
+    const parts = String(process.env.MAGS).split(',').map((s) => Number(s.trim()));
+    const cfg = {} as MagConfig;
+    WEAPON_LIST.forEach((id, i) => (cfg[id] = parts[i]));
+    magConfig = sanitizeMagConfig(cfg);
+  }
   const handle = startNetServer({
     port,
     bots: Number(process.env.BOTS ?? 7),
     difficulty,
     killLimit: Number(process.env.KILL_LIMIT ?? 30),
     durationSec: Number(process.env.MATCH_MINUTES ?? 10) * 60,
+    magConfig,
   });
   console.log(`[codcopy] ws server listening on ws://localhost:${handle.port}`);
 }

@@ -88,6 +88,17 @@
           <option value="hard">困难</option>
         </select>
       </div>
+      <div class="setting localonly"><label>弹匣配置 <button id="magreset" type="button" class="magreset">恢复默认</button></label>
+        <div class="maggrid" id="maggrid">
+          <div><span>突击</span><input id="mag_ar" type="number" min="1" max="999" step="1" value="30" /></div>
+          <div><span>冲锋</span><input id="mag_smg" type="number" min="1" max="999" step="1" value="32" /></div>
+          <div><span>机枪</span><input id="mag_lmg" type="number" min="1" max="999" step="1" value="75" /></div>
+          <div><span>射手</span><input id="mag_dmr" type="number" min="1" max="999" step="1" value="15" /></div>
+          <div><span>霰弹</span><input id="mag_sg" type="number" min="1" max="999" step="1" value="6" /></div>
+          <div><span>狙击</span><input id="mag_sr" type="number" min="1" max="999" step="1" value="5" /></div>
+          <div><span>手枪</span><input id="mag_pistol" type="number" min="1" max="999" step="1" value="12" /></div>
+        </div>
+      </div>
       <div class="setting"><label>灵敏度 <span id="sensval">2.2</span></label><input id="sensrange" type="range" min="5" max="60" step="1" value="22" /></div>
       <div class="setting"><label>ADS 灵敏度倍率 <span id="adssensval">100%</span></label><input id="adssensrange" type="range" min="30" max="200" step="5" value="100" /></div>
       <div class="setting"><label>辅助瞄准</label>
@@ -141,6 +152,17 @@
         </div>
         <div class="setting"><label>击杀上限 <span id="pkillval">30</span></label><input id="pkillrange" type="range" min="10" max="50" step="5" value="30" disabled /></div>
         <div class="setting"><label>时长 <span id="pdurval">10 分钟</span></label><input id="pdurrange" type="range" min="5" max="15" step="1" value="10" disabled /></div>
+        <div class="setting"><label>弹匣配置 <button id="pmagreset" type="button" class="magreset" disabled>恢复默认</button></label>
+          <div class="maggrid" id="pmaggrid">
+            <div><span>突击</span><input id="pmag_ar" type="number" min="1" max="999" step="1" value="30" disabled /></div>
+            <div><span>冲锋</span><input id="pmag_smg" type="number" min="1" max="999" step="1" value="32" disabled /></div>
+            <div><span>机枪</span><input id="pmag_lmg" type="number" min="1" max="999" step="1" value="75" disabled /></div>
+            <div><span>射手</span><input id="pmag_dmr" type="number" min="1" max="999" step="1" value="15" disabled /></div>
+            <div><span>霰弹</span><input id="pmag_sg" type="number" min="1" max="999" step="1" value="6" disabled /></div>
+            <div><span>狙击</span><input id="pmag_sr" type="number" min="1" max="999" step="1" value="5" disabled /></div>
+            <div><span>手枪</span><input id="pmag_pistol" type="number" min="1" max="999" step="1" value="12" disabled /></div>
+          </div>
+        </div>
         <div id="plobbyhint"></div>
       </div>
       <div class="pauserow">

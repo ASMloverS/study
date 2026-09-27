@@ -1,4 +1,4 @@
-import type { WeaponId } from './protocol';
+import type { MagConfig, WeaponId } from './protocol';
 
 export interface WeaponDef {
   id: WeaponId;
@@ -220,4 +220,28 @@ export function falloffMul(w: WeaponDef, dist: number): number {
   if (dist >= w.falloffEnd) return w.falloffMin;
   const k = (dist - w.falloffStart) / (w.falloffEnd - w.falloffStart);
   return 1 + (w.falloffMin - 1) * k;
+}
+
+/** [M14] 默认弹匣配置（= WEAPONS 表值） */
+export function defaultMagConfig(): MagConfig {
+  const o = {} as MagConfig;
+  for (const id of WEAPON_LIST) o[id] = WEAPONS[id].magSize;
+  return o;
+}
+
+/** [M14] 清洗外部弹匣配置：仅收有限数值，取整 clamp 1~999，缺省/非法回落默认 */
+export function sanitizeMagConfig(input: unknown): MagConfig {
+  const o = defaultMagConfig();
+  if (!input || typeof input !== 'object') return o;
+  for (const id of WEAPON_LIST) {
+    const v = (input as Partial<Record<WeaponId, unknown>>)[id];
+    if (typeof v === 'number' && Number.isFinite(v)) o[id] = Math.max(1, Math.min(999, Math.round(v)));
+  }
+  return o;
+}
+
+/** [M14] 备弹等比联动：round(默认reserve × 新mag / 默认mag) */
+export function effectiveReserve(id: WeaponId, mag: number): number {
+  const w = WEAPONS[id];
+  return Math.max(0, Math.round((w.reserve * mag) / w.magSize));
 }

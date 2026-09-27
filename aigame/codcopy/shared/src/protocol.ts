@@ -1,5 +1,8 @@
 export type WeaponId = 'ar' | 'smg' | 'lmg' | 'dmr' | 'sg' | 'sr' | 'pistol';
 
+/** [M14] 房间级弹匣容量配置（每枪膛数，人机同规则） */
+export type MagConfig = Record<WeaponId, number>;
+
 /** [M11] 双武器 loadout：主/副各任选（可双长枪） */
 export interface Loadout {
   primary: WeaponId;
@@ -32,6 +35,7 @@ export interface InputMsg {
 export interface MatchConfig {
   killLimit: number;
   durationSec: number;
+  mags?: MagConfig;
 }
 
 export type KillCause = WeaponId | 'melee' | 'grenade' | 'airstrike' | 'cluster' | 'barrel' | 'suicide';
@@ -57,7 +61,7 @@ export type C2SMessage =
   | { kind: 'input'; input: InputMsg }
   | { kind: 'ping'; t: number; rtt?: number }
   | { kind: 'loadout'; loadout: Loadout }
-  | { kind: 'lobby'; bots?: number; difficulty?: LobbyDifficulty; killLimit?: number; matchMinutes?: number };
+  | { kind: 'lobby'; bots?: number; difficulty?: LobbyDifficulty; killLimit?: number; matchMinutes?: number; mags?: MagConfig };
 
 export interface PlayerSnap {
   id: number;
@@ -122,4 +126,4 @@ export type S2CMessage =
   | { kind: 'events'; events: GameEvent[] }
   | { kind: 'pong'; t: number }
   | { kind: 'loadoutAck'; loadout: Loadout }
-  | { kind: 'lobbyState'; hostId: number | null; bots: number; difficulty: LobbyDifficulty; killLimit: number; matchMinutes: number; pendingKillLimit?: number; pendingMatchMinutes?: number };
+  | { kind: 'lobbyState'; hostId: number | null; bots: number; difficulty: LobbyDifficulty; killLimit: number; matchMinutes: number; pendingKillLimit?: number; pendingMatchMinutes?: number; mags?: MagConfig; pendingMags?: MagConfig };

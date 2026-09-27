@@ -1,4 +1,4 @@
-import { BTN, DEFAULT_LOADOUT, type InputMsg, type Loadout } from 'shared';
+import { BTN, DEFAULT_LOADOUT, defaultMagConfig, type InputMsg, type Loadout, type MagConfig } from 'shared';
 import type { AssistLevel } from './aimassist';
 import { EMPTY_PAD, type PadActions } from './gamepad';
 
@@ -30,6 +30,8 @@ export interface Settings {
   padDeadzone: number;
   /** [M12] 手柄震动 */
   padRumble: boolean;
+  /** [M14] 各枪弹匣容量（单机启动配置） */
+  mags: MagConfig;
 }
 
 export const defaultSettings: Settings = {
@@ -53,6 +55,7 @@ export const defaultSettings: Settings = {
   padSensitivity: 2.4,
   padDeadzone: 0.12,
   padRumble: true,
+  mags: defaultMagConfig(),
 };
 
 export class InputSystem {

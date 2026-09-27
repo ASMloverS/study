@@ -449,7 +449,7 @@ function buildAr(): GunModel {
 
   const fsight = new THREE.Group();
   fsight.add(box(0.008, 0.026, 0.008, M.darkMetal, 0, sightY - 0.02, -0.2));
-  fsight.add(torus(0.008, 0.0022, M.darkMetal, 0, sightY, -0.2, 12));
+  fsight.add(torus(0.008, 0.0008, M.darkMetal, 0, sightY, -0.2, 12));
   const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0018, 8, 8), M.sightDot);
   dot.position.set(0, sightY, -0.2);
   fsight.add(dot);
@@ -458,7 +458,7 @@ function buildAr(): GunModel {
   const rsight = new THREE.Group();
   rsight.add(box(0.006, 0.02, 0.006, M.darkMetal, -0.014, sightY - 0.017, 0.1));
   rsight.add(box(0.006, 0.02, 0.006, M.darkMetal, 0.014, sightY - 0.017, 0.1));
-  rsight.add(torus(0.014, 0.0022, M.darkMetal, 0, sightY, 0.1, 14));
+  rsight.add(torus(0.014, 0.0008, M.darkMetal, 0, sightY, 0.1, 14));
   root.add(rsight);
 
   const mag = new THREE.Group();
@@ -528,7 +528,7 @@ function buildSmg(): GunModel {
   rd.add(box(0.03, 0.004, 0.028, M.polymer, 0, sightY - 0.013, 0.015, 0.004));
   rd.add(box(0.004, 0.03, 0.028, M.polymer, 0.013, sightY, 0.015, 0.004));
   rd.add(box(0.004, 0.03, 0.028, M.polymer, -0.013, sightY, 0.015, 0.004));
-  rd.add(torus(0.011, 0.0022, M.darkMetal, 0, sightY, 0.008, 14));
+  rd.add(torus(0.011, 0.0008, M.darkMetal, 0, sightY, 0.008, 14));
   const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0018, 8, 8), M.sightDot);
   dot.position.set(0, sightY, 0.008);
   rd.add(dot);
@@ -537,7 +537,7 @@ function buildSmg(): GunModel {
 
   const fsight = new THREE.Group();
   fsight.add(box(0.008, 0.02, 0.008, M.darkMetal, 0, sightY - 0.016, -0.17));
-  fsight.add(torus(0.008, 0.002, M.darkMetal, 0, sightY, -0.17, 12));
+  fsight.add(torus(0.008, 0.0008, M.darkMetal, 0, sightY, -0.17, 12));
   root.add(fsight);
 
   const mag = new THREE.Group();
@@ -618,11 +618,11 @@ function buildLmg(): GunModel {
   const rsight = new THREE.Group();
   rsight.add(box(0.006, 0.022, 0.006, M.darkMetal, -0.014, sightY - 0.016, 0.1));
   rsight.add(box(0.006, 0.022, 0.006, M.darkMetal, 0.014, sightY - 0.016, 0.1));
-  rsight.add(torus(0.014, 0.0022, M.darkMetal, 0, sightY, 0.1, 14));
+  rsight.add(torus(0.014, 0.0008, M.darkMetal, 0, sightY, 0.1, 14));
   root.add(rsight);
   const fsight = new THREE.Group();
   fsight.add(box(0.008, 0.026, 0.008, M.darkMetal, 0, sightY - 0.018, -0.2));
-  fsight.add(torus(0.008, 0.002, M.darkMetal, 0, sightY, -0.2, 12));
+  fsight.add(torus(0.008, 0.0008, M.darkMetal, 0, sightY, -0.2, 12));
   root.add(fsight);
 
   const mag = new THREE.Group();
