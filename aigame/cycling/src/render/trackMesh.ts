@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { ITEM_BOXES, RACE } from '../sim/params';
-import { mulberry32 } from '../sim/rng';
 import { baseHills, smoothstep } from './terrain';
 import type { Track } from '../sim/track';
 
@@ -74,8 +73,9 @@ function gate(track: Track, dist: number, color: number): THREE.Group {
 }
 
 function trees(track: Track): THREE.Group {
-  const rng = mulberry32(1234);
-  const count = 320;
+  const step = 22;
+  const perSide = Math.floor(track.length / step);
+  const count = perSide * 2;
   const trunks = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(0.35, 0.5, 2.4, 6),
     new THREE.MeshLambertMaterial({ color: 0x7a5230 }),
@@ -88,25 +88,48 @@ function trees(track: Track): THREE.Group {
   );
   const m = new THREE.Matrix4();
   let placed = 0;
-  while (placed < count) {
-    const s = track.sampleAt(rng() * track.length);
-    const side = rng() < 0.5 ? -1 : 1;
-    const off = 10 + rng() * 40;
-    const nx = -Math.sin(s.heading), nz = Math.cos(s.heading);
-    const x = s.x + nx * side * off;
-    const z = s.z + nz * side * off;
-    const sc = 0.7 + rng() * 0.9;
-    const ground = s.y + baseHills(x, z) * smoothstep(off, 12, 80) - 0.15;
-    m.makeScale(sc, sc, sc);
-    m.setPosition(x, ground + 1.2 * sc, z);
-    trunks.setMatrixAt(placed, m);
-    m.setPosition(x, ground + 5.15 * sc, z);
-    crowns.setMatrixAt(placed, m);
-    placed++;
+  for (let i = 0; i < perSide; i++) {
+    const d = (i + 0.5) * step;
+    const s = track.sampleAt(d);
+    for (const side of [-1, 1]) {
+      const h = Math.sin(d * 0.7 + side * 13.7) * 0.5 + 0.5;
+      const off = 8 + h * 27;
+      const nx = -Math.sin(s.heading), nz = Math.cos(s.heading);
+      const x = s.x + nx * side * off;
+      const z = s.z + nz * side * off;
+      const sc = 0.7 + h * 0.9;
+      const ground = s.y + baseHills(x, z) * smoothstep(off, 12, 80) - 0.15;
+      m.makeScale(sc, sc, sc);
+      m.setPosition(x, ground + 1.2 * sc, z);
+      trunks.setMatrixAt(placed, m);
+      m.setPosition(x, ground + 5.15 * sc, z);
+      crowns.setMatrixAt(placed, m);
+      placed++;
+    }
   }
   const g = new THREE.Group();
   g.add(trunks, crowns);
   return g;
+}
+
+function kmPosts(track: Track): THREE.InstancedMesh {
+  const n = Math.floor(track.length / 500);
+  const mesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.18, 1.1, 0.18),
+    new THREE.MeshLambertMaterial({ color: 0xf2f2f2 }),
+    n,
+  );
+  const m = new THREE.Matrix4();
+  for (let i = 1; i <= n; i++) {
+    const s = track.sampleAt(i * 500);
+    const nx = -Math.sin(s.heading), nz = Math.cos(s.heading);
+    const x = s.x + nx * (RACE.trackWidth / 2 + 0.6);
+    const z = s.z + nz * (RACE.trackWidth / 2 + 0.6);
+    m.identity();
+    m.setPosition(x, s.y - 0.15 + 0.55, z);
+    mesh.setMatrixAt(i - 1, m);
+  }
+  return mesh;
 }
 
 export function buildTrackMesh(track: Track): THREE.Group {
@@ -119,6 +142,7 @@ export function buildTrackMesh(track: Track): THREE.Group {
   group.add(dashes(track, 0.09, 3, 8, 0xffffff, 0.012));
   group.add(gate(track, 0, 0xe0533d));
   group.add(trees(track));
+  group.add(kmPosts(track));
   return group;
 }
 
