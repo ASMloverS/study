@@ -13,6 +13,7 @@ import { buildTrackMesh, buildItemBoxes } from './render/trackMesh';
 import { buildRiderMesh, placeRider } from './render/riders';
 import { ChaseCamera } from './render/camera';
 import { SpeedLines } from './render/speedLines';
+import { Minimap } from './render/minimap';
 import { Hud } from './ui/hud';
 import type { Music } from './audio';
 
@@ -26,6 +27,7 @@ export class Game {
   private ctx: ReturnType<typeof createScene>;
   private cam: ChaseCamera;
   private speedLines!: SpeedLines;
+  private minimap!: Minimap;
   private loop: ReturnType<typeof createLoop>;
   private tmp = new THREE.Vector3();
   private boxMeshes: THREE.Mesh[] = [];
@@ -39,6 +41,7 @@ export class Game {
     this.boxMeshes = boxes.meshes;
     this.ctx.scene.add(boxes.group);
     this.speedLines = new SpeedLines(this.ctx.scene);
+    this.minimap = new Minimap(document.querySelector('#minimap') as HTMLCanvasElement, this.track);
     for (let i = 0; i < 8; i++) {
       const m = buildRiderMesh(JERSEYS[i], i === 0);
       this.meshes.push(m);
@@ -100,6 +103,7 @@ export class Game {
     this.cam.update(this.tmp, ps.heading, ps.gradient, frameDt, s.riders[0].speed);
     this.speedLines.update(s.riders[0].speed, frameDt, this.ctx.camera);
     this.hud.update(this.view(ps));
+    this.minimap.draw(s.riders, this.track);
     this.ctx.renderer.render(this.ctx.scene, this.ctx.camera);
   }
 

@@ -10,6 +10,7 @@ body { overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; backgro
 #energy-bar { height: 100%; width: 100%; background: linear-gradient(90deg,#4dbd8a,#ffd54a,#e0533d); }
 #energy-text { font-size: 14px; margin-top: 4px; }
 #elev { position: absolute; bottom: 20px; right: 16px; background: rgba(0,0,0,.3); border-radius: 6px; }
+#minimap { position: absolute; top: 88px; right: 16px; background: rgba(10,20,30,.45); border-radius: 6px; }
 #countdown { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 120px; font-weight: 800; pointer-events: none; }
 #results { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(12,18,28,.92); padding: 28px 36px; border-radius: 12px; color: #fff; min-width: 340px; display: none; }
 #results .row { display: flex; gap: 18px; justify-content: space-between; padding: 4px 0; font-variant-numeric: tabular-nums; }
