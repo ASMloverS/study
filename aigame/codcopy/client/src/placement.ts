@@ -23,6 +23,7 @@ export class Placement {
   heading = 0;
   private self = { x: 0, z: 0, yaw: 0 };
   private uavEnemies: { x: number; z: number }[] = [];
+  private enemyRgb = '255,70,60';
   private ctx: CanvasRenderingContext2D | null = null;
 
   constructor(private map: MapDef, private canvas: HTMLCanvasElement) {}
@@ -35,11 +36,17 @@ export class Placement {
     this.heading = self.yaw;
     this.active = true;
     this.canvas.style.display = 'block';
+    (globalThis.document?.getElementById('tacmaphint') as HTMLElement | null)?.style.setProperty('display', 'block');
   }
 
   close(): void {
     this.active = false;
     this.canvas.style.display = 'none';
+    (globalThis.document?.getElementById('tacmaphint') as HTMLElement | null)?.style.setProperty('display', 'none');
+  }
+
+  setEnemyColor(rgb: string): void {
+    this.enemyRgb = rgb;
   }
 
   updateSelf(self: { x: number; z: number; yaw: number }): void {
@@ -58,7 +65,8 @@ export class Placement {
     this.heading += dir * HEADING_STEP;
   }
 
-  confirm(): PlacementResult {
+  confirm(): PlacementResult | null {
+    if (!this.active) return null;
     const r: PlacementResult = { streak: this.tier, streakTarget: { x: this.cursor.x, z: this.cursor.z }, streakYaw: this.heading };
     this.close();
     return r;
@@ -82,7 +90,7 @@ export class Placement {
     const px = (v: number) => (v + world / 2) * s;
     // UAV 敌人（UAV 激活期间显示）
     for (const e of this.uavEnemies) {
-      ctx.fillStyle = 'rgba(255,70,60,0.95)';
+      ctx.fillStyle = `rgba(${this.enemyRgb},0.95)`;
       ctx.beginPath();
       ctx.arc(px(e.x), px(e.z), 4, 0, Math.PI * 2);
       ctx.fill();
@@ -112,7 +120,7 @@ export class Placement {
       for (let i = 0; i < AIRSTRIKE_COUNT; i++) {
         const off = (i - (AIRSTRIKE_COUNT - 1) / 2) * AIRSTRIKE_SPACING;
         ctx.beginPath();
-        ctx.arc(px(this.cursor.x + dx * off), px(this.cursor.z + dz * off), 4, 0, Math.PI * 2);
+        ctx.arc(px(clampToMap(this.cursor.x + dx * off, this.map.size)), px(clampToMap(this.cursor.z + dz * off, this.map.size)), 4, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.beginPath();

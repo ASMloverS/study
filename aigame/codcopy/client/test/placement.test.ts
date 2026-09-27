@@ -33,4 +33,11 @@ describe('[M15] placement math', () => {
     expect(r.streakYaw).toBeCloseTo(0.5 + HEADING_STEP);
     expect(p.active).toBe(false);
   });
+
+  it('confirm after close returns null', () => {
+    const p = new Placement(MAPS.warehouse, stubCanvas);
+    p.open(3, { x: 0, z: 0, yaw: 0 }, []);
+    p.close();
+    expect(p.confirm()).toBeNull();
+  });
 });

@@ -37,6 +37,7 @@ import { RemoteViews, ENEMY_COLOR_RGB } from './render/actors';
 import { Effects, impactKindAt } from './render/effects';
 import { ViewModel } from './render/viewmodel';
 import { Minimap, type EnemyBlip } from './render/minimap';
+import { Placement } from './placement';
 import { Killcam } from './render/killcam';
 import { AudioSys } from './audio';
 import { LocalSession, NetSession, sanitizeLoadout, type Session } from './transport';
@@ -55,6 +56,7 @@ window.addEventListener('resize', () => vm.resize(window.innerWidth / window.inn
 const hud = new Hud();
 const audio = new AudioSys();
 const minimap = new Minimap(MAPS.warehouse);
+const placement = new Placement(MAPS.warehouse, document.getElementById('tacmap') as HTMLCanvasElement);
 const settings: Settings = { ...defaultSettings, ...loadSettings() };
 // [M14] 本地存储的弹匣配置可能损坏/越界，统一清洗
 settings.mags = sanitizeMagConfig(settings.mags);
@@ -117,6 +119,10 @@ let kcReplay: { killerId: number; deathAt: number; startAt: number } | null = nu
 let killcamViews: RemoteViews | null = null;
 
 function showPause(): void {
+  if (input.placementActive) {
+    placement.close();
+    input.placementActive = false;
+  }
   if (sessionIsLocal && session instanceof LocalSession && !sessionPaused) {
     session.pause();
     sessionPaused = true;
@@ -455,6 +461,10 @@ function onEvent(e: GameEvent): void {
       }
     }
     if (e.victimId === selfId) {
+      if (input.placementActive) {
+        placement.close();
+        input.placementActive = false;
+      }
       hud.showDeath(killer, e.cause ?? e.weapon);
       hud.showKill(`击杀回放：${killer}`);
       if (e.killerId !== selfId) {
@@ -581,6 +591,7 @@ function applyEnemyVisuals(): void {
   const shells = settings.enemyOutline && settings.quality !== 'low';
   remotes.setEnemyVisuals(settings.enemyOutline, settings.enemyColor, shells);
   minimap.setEnemyColor(ENEMY_COLOR_RGB[settings.enemyColor]);
+  placement.setEnemyColor(ENEMY_COLOR_RGB[settings.enemyColor]);
 }
 
 function applyMenuSettings(): void {
@@ -775,7 +786,10 @@ function frame(nowMs: number): void {
   prevPadSwitch = pad.switchWeapon;
   input.pad = pad;
   if (padSwitchEdge) input.requestSlot(input.currentSlotHint === 1 ? 2 : 1);
-  if (pad.streak > 0) input.requestStreak(pad.streak);
+  if (pad.streak > 0) {
+    if (pad.streak === 1) input.requestStreak(1);
+    else input.placementRequest = pad.streak as 2 | 3;
+  }
   if (padPauseEdge) {
     if (gameState === 'playing') {
       if (sessionPaused) resumeFromPause();
@@ -795,6 +809,40 @@ function frame(nowMs: number): void {
   }
   if (inputdev) inputdev.textContent = gamepad.active ? '手柄' : '键鼠';
   gamepad.markPrev(pad);
+
+  // [M15] 连杀放置模式：5/6 打开俯图（需对应奖励就绪）
+  const reqTier = input.placementRequest;
+  input.placementRequest = 0;
+  if (reqTier >= 2 && gameState === 'playing' && selfSnap?.a && !kcReplay) {
+    const svMask = selfSnap.sv ?? 0;
+    if (svMask & (reqTier === 2 ? 2 : 4)) {
+      const uavActive = nowMs2 < uavUntilLocal;
+      const st0 = predictor.state;
+      placement.open(
+        reqTier as 2 | 3,
+        { x: st0.x, z: st0.z, yaw: input.yaw },
+        uavActive ? lastPlayers.filter((p) => p.id !== selfId && p.a).map((p) => ({ x: p.x, z: p.z })) : [],
+      );
+      input.placementActive = true;
+    }
+  }
+  if (input.placementActive) {
+    const d = input.drainPlacementDeltas();
+    if (d.wheel !== 0) placement.rotate(d.wheel > 0 ? 1 : -1);
+    placement.moveCursor(d.dx, d.dy);
+    if (d.cancel) {
+      placement.close();
+      input.placementActive = false;
+    } else if (d.confirm) {
+      const r = placement.confirm();
+      input.placementActive = false;
+      if (r) input.requestStreakTargeted(r.streak, r.streakTarget, r.streakYaw);
+    } else {
+      const st1 = predictor.state;
+      placement.updateSelf({ x: st1.x, z: st1.z, yaw: input.yaw });
+    }
+    placement.render();
+  }
 
   if (gameState === 'playing' && selfId >= 0 && (input.locked || gamepad.active) && selfSnap?.a !== false) {
     acc = Math.min(acc + dt, 0.2);
