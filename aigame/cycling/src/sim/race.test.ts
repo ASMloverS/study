@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AI_FIELD, createRace, standings, stepRace } from './race';
 import { buildTrack } from './trackData';
-import { RACE } from './params';
+import { ITEM_BOXES, RACE } from './params';
 import type { RiderCommand } from './types';
 
 const track = buildTrack();
@@ -141,5 +141,11 @@ describe('race', () => {
     const down: RiderCommand = { gear: 1, steer: 0, cadDelta: -5, cogDelta: 0 };
     for (let i = 0; i < 100; i++) s = stepRace(s, track, down, RACE.dt);
     expect(s.riders[0].cadTarget).toBe(0);
+  });
+  it('item clusters span 10 to 90 percent of the stage', () => {
+    const ds = ITEM_BOXES.filter((_, i) => i % 3 === 1).map((b) => b.d);
+    expect(ds[0]).toBeCloseTo(1500, -1);
+    expect(ds[ds.length - 1]).toBeCloseTo(13500, -1);
+    expect(ds.length).toBe(9);
   });
 });

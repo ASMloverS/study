@@ -3,7 +3,7 @@ import { createRace, standings, stepRace } from './sim/race';
 import type { RaceState } from './sim/race';
 import { buildTrack } from './sim/trackData';
 import type { TrackSample } from './sim/track';
-import { GEARS, ITEM_BOXES } from './sim/params';
+import { GEARS, ITEM_BOXES, RACE } from './sim/params';
 import { cadence } from './sim/drivetrain';
 import { createLoop } from './core/loop';
 import { InputController } from './input';
@@ -48,7 +48,7 @@ export class Game {
       this.ctx.scene.add(m);
     }
     this.cam = new ChaseCamera(this.ctx.camera);
-    this.hud.setProfile(this.track, ITEM_BOXES.filter((_, i) => i % 3 === 1).map((b) => b.d));
+    this.hud.setProfile(this.track, ITEM_BOXES.filter((_, i) => i % RACE.boxOffsets.length === 1).map((b) => b.d));
     this.loop = createLoop((dt) => this.update(dt), (a, fdt) => this.render(a, fdt));
     window.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() === 'r' && this.state.phase === 'finished') this.start();

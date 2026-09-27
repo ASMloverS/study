@@ -35,10 +35,11 @@ export interface ItemBox {
   lat: number;
 }
 
+// Derived from default stageKm; endurance tracks (buildTrack(150)) reuse these 15km-relative positions (known limitation).
 export const ITEM_BOXES: ItemBox[] = (() => {
   const L = RACE.stageKm * 1000;
   const boxes: ItemBox[] = [];
-  for (let k = 1; k <= 8; k++) {
+  for (let k = 1; k <= 9; k++) {
     for (const lat of RACE.boxOffsets) boxes.push({ d: L * 0.1 * k, lat });
   }
   return boxes;

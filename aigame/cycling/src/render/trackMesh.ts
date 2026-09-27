@@ -123,12 +123,14 @@ export function buildTrackMesh(track: Track): THREE.Group {
 }
 
 export function buildItemBoxes(): { group: THREE.Group; meshes: THREE.Mesh[] } {
+  const perCluster = RACE.boxOffsets.length;
+  const clusterCount = ITEM_BOXES.length / perCluster;
   const group = new THREE.Group();
   const meshes: THREE.Mesh[] = [];
   ITEM_BOXES.forEach((box, i) => {
-    const cluster = Math.floor(i / 3);
+    const cluster = Math.floor(i / perCluster);
     const mat = new THREE.MeshPhongMaterial({
-      color: new THREE.Color().setHSL(cluster / 8, 0.85, 0.6),
+      color: new THREE.Color().setHSL(cluster / clusterCount, 0.85, 0.6),
       transparent: true,
       opacity: 0.55,
     });
