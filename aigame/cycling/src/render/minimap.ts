@@ -34,6 +34,7 @@ export class Minimap {
   private fit: Fit;
   private route: [number, number][] = [];
   private boxes: [number, number][] = [];
+  private finish: [number, number] = [0, 0];
 
   constructor(private canvas: HTMLCanvasElement, track: Track) {
     this.ctx = canvas.getContext('2d');
@@ -47,6 +48,8 @@ export class Minimap {
       const s = track.sampleAt(b.d);
       this.boxes.push(project(s.x, s.z, this.fit));
     }
+    const end = track.sampleAt(track.length);
+    this.finish = project(end.x, end.z, this.fit);
   }
 
   draw(riders: readonly RiderState[], track: Track): void {
@@ -61,6 +64,8 @@ export class Minimap {
     ctx.stroke();
     ctx.fillStyle = '#4dd2ff';
     for (const [x, y] of this.boxes) ctx.fillRect(x - 1, y - 1, 2, 2);
+    ctx.fillStyle = '#ffd54a';
+    ctx.fillRect(this.finish[0] - 2, this.finish[1] - 2, 4, 4);
     for (const r of riders) {
       const s = track.sampleAt(r.dist);
       const [x, y] = project(s.x, s.z, this.fit);
