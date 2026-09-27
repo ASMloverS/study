@@ -38,6 +38,20 @@ export class Music {
     this.applyTier();
   }
 
+  blip(): void {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.frequency.setValueAtTime(880, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1760, this.ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(this.master!);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.16);
+  }
+
   private applyTier(): void {
     const now = this.ctx?.currentTime ?? 0;
     this.gains.forEach((g, tier) => {

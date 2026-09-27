@@ -18,3 +18,26 @@ body { overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; backgro
 #overlay-start h1 { font-size: 44px; }
 #overlay-start p { opacity: .8; }
 #btn-start { font-size: 20px; padding: 10px 32px; border-radius: 8px; border: 0; background: #ffd54a; cursor: pointer; }
+
+.pickup-float {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  transform: translateX(-50%);
+  color: #4dffd2;
+  font-size: 28px;
+  font-weight: bold;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+  animation: pickup-rise 0.9s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes pickup-rise {
+  from { opacity: 1; margin-top: 0; }
+  to { opacity: 0; margin-top: -40px; }
+}
+#energy-bar.flash {
+  filter: brightness(2.5);
+}
+#energy-bar {
+  transition: filter 0.25s;
+}

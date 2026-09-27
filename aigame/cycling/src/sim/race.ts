@@ -81,7 +81,7 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     rngState = next;
     return v;
   };
-  const riders = s.riders.map((r) => ({ ...r }));
+  const riders = s.riders.map((r) => ({ ...r, collected: r.collected.slice() }));
   for (const r of riders) {
     if (!r.isPlayer && rng() < 0.02) r.wanderTarget = (rng() * 2 - 1) * 0.6;
   }

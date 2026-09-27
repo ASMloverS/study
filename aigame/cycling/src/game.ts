@@ -9,7 +9,7 @@ import { createLoop } from './core/loop';
 import { InputController } from './input';
 import { createScene } from './render/scene';
 import { buildTerrain } from './render/terrain';
-import { buildTrackMesh } from './render/trackMesh';
+import { buildTrackMesh, buildItemBoxes } from './render/trackMesh';
 import { buildRiderMesh, placeRider } from './render/riders';
 import { ChaseCamera } from './render/camera';
 import { Hud } from './ui/hud';
@@ -26,18 +26,23 @@ export class Game {
   private cam: ChaseCamera;
   private loop: ReturnType<typeof createLoop>;
   private tmp = new THREE.Vector3();
+  private boxMeshes: THREE.Mesh[] = [];
+  private pickedCount = 0;
 
   constructor(private hud: Hud, private input: InputController, private music: Music) {
     this.ctx = createScene(document.querySelector<HTMLElement>('#app')!);
     this.ctx.scene.add(buildTerrain(this.track));
     this.ctx.scene.add(buildTrackMesh(this.track));
+    const boxes = buildItemBoxes();
+    this.boxMeshes = boxes.meshes;
+    this.ctx.scene.add(boxes.group);
     for (let i = 0; i < 8; i++) {
       const m = buildRiderMesh(JERSEYS[i]);
       this.meshes.push(m);
       this.ctx.scene.add(m);
     }
     this.cam = new ChaseCamera(this.ctx.camera);
-    this.hud.setProfile(this.track, ITEM_BOXES.filter((_, i) => i % 3 === 1).map((b) => [b.d, b.d] as const));
+    this.hud.setProfile(this.track, ITEM_BOXES.filter((_, i) => i % 3 === 1).map((b) => b.d));
     this.loop = createLoop((dt) => this.update(dt), (a, fdt) => this.render(a, fdt));
     window.addEventListener('keydown', (e) => {
       if (e.key.toLowerCase() === 'r' && this.state.phase === 'finished') this.start();
@@ -47,6 +52,7 @@ export class Game {
   start(): void {
     this.state = createRace(this.track);
     this.prev = this.state;
+    this.pickedCount = 0;
     this.input.reset();
     this.hud.clearResults();
     const s = this.track.sampleAt(0);
@@ -64,11 +70,27 @@ export class Game {
   private render(alpha: number, frameDt: number): void {
     const s = this.state;
     const remaining = s.trackLength - s.riders[0].dist;
-    this.music.setTier(s.phase === 'racing' ? (remaining > 800 ? 'intense' : 'sprint') : 'calm');
+    this.music.setTier(s.phase === 'racing' ? (remaining > 5000 ? 'intense' : 'sprint') : 'calm');
     for (let i = 0; i < s.riders.length; i++) {
       const p = this.prev.riders[i];
       const c = s.riders[i];
       placeRider(this.meshes[i], this.track.sampleAt(p.dist + (c.dist - p.dist) * alpha), p.lateral + (c.lateral - p.lateral) * alpha);
+    }
+    for (let i = 0; i < this.boxMeshes.length; i++) {
+      const m = this.boxMeshes[i];
+      const smp = this.track.sampleAt(m.userData.d as number);
+      const nx = -Math.sin(smp.heading);
+      const nz = Math.cos(smp.heading);
+      m.position.set(smp.x + nx * (m.userData.lat as number), smp.y + 1.2, smp.z + nz * (m.userData.lat as number));
+      m.rotation.y += frameDt * 2;
+      m.rotation.x += frameDt;
+      m.visible = !s.riders[0].collected[i];
+    }
+    const picked = s.riders[0].collected.filter(Boolean).length;
+    if (picked > this.pickedCount) {
+      this.pickedCount = picked;
+      this.hud.flashPickup('+10%');
+      this.music.blip();
     }
     const ps = this.track.sampleAt(this.interp(this.prev.riders[0].dist, s.riders[0].dist, alpha));
     this.tmp.set(ps.x, ps.y, ps.z);

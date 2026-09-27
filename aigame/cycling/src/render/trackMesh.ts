@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RACE } from '../sim/params';
+import { ITEM_BOXES, RACE } from '../sim/params';
 import { mulberry32 } from '../sim/rng';
 import { terrainHeight } from './terrain';
 import type { Track } from '../sim/track';
@@ -119,4 +119,23 @@ export function buildTrackMesh(track: Track): THREE.Group {
   group.add(gate(track, 0, 0xe0533d));
   group.add(trees(track));
   return group;
+}
+
+export function buildItemBoxes(): { group: THREE.Group; meshes: THREE.Mesh[] } {
+  const group = new THREE.Group();
+  const meshes: THREE.Mesh[] = [];
+  ITEM_BOXES.forEach((box, i) => {
+    const cluster = Math.floor(i / 3);
+    const mat = new THREE.MeshPhongMaterial({
+      color: new THREE.Color().setHSL((cluster % 29) / 29, 0.85, 0.6),
+      transparent: true,
+      opacity: 0.55,
+    });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), mat);
+    mesh.userData.d = box.d;
+    mesh.userData.lat = box.lat;
+    group.add(mesh);
+    meshes.push(mesh);
+  });
+  return { group, meshes };
 }

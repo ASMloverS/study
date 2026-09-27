@@ -18,7 +18,7 @@ export interface HudView {
 export class Hud {
   private el = new Map<string, HTMLElement>();
   private heights: number[] = [];
-  private zones: number[] = [];
+  private zones: readonly number[] = [];
   private profileLength = 1;
 
   constructor() {
@@ -27,12 +27,24 @@ export class Hud {
     }
   }
 
-  setProfile(track: Track, zones: readonly (readonly [number, number])[]): void {
+  setProfile(track: Track, zones: readonly number[]): void {
     const n = 240;
     this.heights = [];
     for (let i = 0; i < n; i++) this.heights.push(track.sampleAt((i / (n - 1)) * track.length).y);
-    this.zones = zones.map((z) => z[0]);
+    this.zones = zones;
     this.profileLength = track.length;
+  }
+
+  flashPickup(text: string): void {
+    const host = document.querySelector('#hud')!;
+    const el = document.createElement('div');
+    el.className = 'pickup-float';
+    el.textContent = text;
+    host.appendChild(el);
+    setTimeout(() => el.remove(), 900);
+    const bar = this.el.get('energy-bar')!;
+    bar.classList.add('flash');
+    setTimeout(() => bar.classList.remove('flash'), 250);
   }
 
   clearResults(): void {
