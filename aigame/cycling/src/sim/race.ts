@@ -21,13 +21,13 @@ export interface RaceState {
 export const PLAYER_TYPE: RiderType = { label: 'all-rounder', ftp: 300, maxEnergy: 40000, sprintDist: 250, aggression: 0.5 };
 
 export const AI_FIELD: RiderType[] = [
-  { label: 'climber', ftp: 315, maxEnergy: 22000, sprintDist: 120, aggression: 0.85 },
-  { label: 'climber', ftp: 306, maxEnergy: 22500, sprintDist: 130, aggression: 0.7 },
-  { label: 'sprinter', ftp: 286, maxEnergy: 26000, sprintDist: 350, aggression: 0.4 },
-  { label: 'sprinter', ftp: 293, maxEnergy: 25500, sprintDist: 300, aggression: 0.5 },
-  { label: 'rouleur', ftp: 298, maxEnergy: 24000, sprintDist: 200, aggression: 0.55 },
-  { label: 'rouleur', ftp: 295, maxEnergy: 24500, sprintDist: 220, aggression: 0.6 },
-  { label: 'all-rounder', ftp: 300, maxEnergy: 23500, sprintDist: 240, aggression: 0.5 },
+  { label: 'climber', ftp: 283.5, maxEnergy: 22000, sprintDist: 1800, aggression: 0.85 },
+  { label: 'climber', ftp: 275.4, maxEnergy: 22500, sprintDist: 1950, aggression: 0.7 },
+  { label: 'sprinter', ftp: 257.4, maxEnergy: 26000, sprintDist: 5250, aggression: 0.4 },
+  { label: 'sprinter', ftp: 263.7, maxEnergy: 25500, sprintDist: 4500, aggression: 0.5 },
+  { label: 'rouleur', ftp: 268.2, maxEnergy: 24000, sprintDist: 3000, aggression: 0.55 },
+  { label: 'rouleur', ftp: 265.5, maxEnergy: 24500, sprintDist: 3300, aggression: 0.6 },
+  { label: 'all-rounder', ftp: 270, maxEnergy: 23500, sprintDist: 3600, aggression: 0.5 },
 ];
 
 const NAMES = ['你', '山神', '穿山甲', '火箭', '冲刺王', '发动机', '老将', '全能手'];
