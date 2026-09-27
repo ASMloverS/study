@@ -43,7 +43,7 @@ describe('race', () => {
       expect(st[i - 1].dist).toBeGreaterThanOrEqual(st[i].dist);
     }
   });
-  it('full race completes with all riders finishing and sane avg power', () => {
+  it('full race ends via finishWait with sane avg power for finishers', () => {
     let s = createRace(track);
     let steps = 0;
     while (s.phase !== 'finished' && steps < 60 * 2500) {

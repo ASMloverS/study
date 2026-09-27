@@ -11,8 +11,10 @@ export const PHYS = {
 
 export const RACE = {
   dt: 1 / 60,
+  // power multiplier per gear (ftp × r = target watts)
   gearRatios: [0.6, 1.0, 1.5, 2.5],
   drainBase: 12,
+  // drain key per gear, squared in drainRate — intentionally mirrors gearRatios tiers
   drainRatios: [0.6, 1.0, 1.5, 2.5],
   regenRate: 0.0015,
   emptyCapRatio: 0.35,
