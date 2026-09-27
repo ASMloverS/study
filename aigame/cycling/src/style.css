@@ -44,3 +44,11 @@ body { overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; backgro
 #energy-bar {
   transition: filter 0.25s;
 }
+
+#speed {
+  transition: transform 0.15s ease-out;
+  transform-origin: left center;
+}
+#speed.punch {
+  transform: scale(1.15);
+}

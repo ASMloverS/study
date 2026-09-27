@@ -81,7 +81,11 @@ export class Game {
     for (let i = 0; i < s.riders.length; i++) {
       const p = this.prev.riders[i];
       const c = s.riders[i];
-      placeRider(this.meshes[i], this.track.sampleAt(p.dist + (c.dist - p.dist) * alpha), p.lateral + (c.lateral - p.lateral) * alpha);
+      const lean = Math.max(-0.35, Math.min(0.35, (c.lateral - p.lateral) * 6));
+      placeRider(this.meshes[i], this.track.sampleAt(p.dist + (c.dist - p.dist) * alpha), p.lateral + (c.lateral - p.lateral) * alpha, lean);
+      const blurOn = cadence(c.speed, c.cog) > 120;
+      (this.meshes[i].userData.spokes as THREE.Object3D[]).forEach((sp) => (sp.visible = !blurOn));
+      (this.meshes[i].userData.blur as THREE.Mesh[]).forEach((d) => (d.visible = blurOn));
     }
     for (let i = 0; i < this.boxMeshes.length; i++) {
       const m = this.boxMeshes[i];

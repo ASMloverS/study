@@ -23,6 +23,8 @@ export class Hud {
   private heights: number[] = [];
   private zones: readonly number[] = [];
   private profileLength = 1;
+  private prevKmh = 0;
+  private punchT: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     for (const id of ['speed', 'gear', 'cad-gauge', 'gradient', 'position', 'remaining', 'energy-bar', 'energy-text', 'elev', 'countdown', 'results']) {
@@ -57,6 +59,13 @@ export class Hud {
   update(v: HudView): void {
     const g = (id: string) => this.el.get(id)!;
     g('speed').textContent = `${v.speedKmh.toFixed(0)} km/h`;
+    const acc = v.speedKmh - this.prevKmh;
+    this.prevKmh = v.speedKmh;
+    if (acc > 0.8) {
+      g('speed').classList.add('punch');
+      if (this.punchT) clearTimeout(this.punchT);
+      this.punchT = setTimeout(() => g('speed').classList.remove('punch'), 160);
+    }
     g('gear').textContent = v.gearLine;
     g('gradient').textContent = `坡度 ${v.gradientPct.toFixed(1)}%`;
     g('position').textContent = `第 ${v.position} / ${v.fieldSize} 位`;

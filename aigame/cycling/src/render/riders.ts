@@ -7,6 +7,7 @@ export function buildRiderMesh(jersey: number, isPlayer: boolean): THREE.Group {
   const bodyMat = new THREE.MeshLambertMaterial({ color: jersey, flatShading: true });
   const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.08, 12);
   const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const spokes: THREE.Object3D[] = [];
   for (const z of [0.52, -0.52]) {
     const wheel = new THREE.Mesh(wheelGeo, wheelMat);
     wheel.rotation.z = Math.PI / 2;
@@ -17,6 +18,7 @@ export function buildRiderMesh(jersey: number, isPlayer: boolean): THREE.Group {
       spoke.rotation.set((s / 8) * Math.PI, 0, 0);
       spoke.position.set(0, 0.34, z);
       group.add(spoke);
+      spokes.push(spoke);
     }
     if (isPlayer) {
       const shell = new THREE.Mesh(
@@ -64,14 +66,29 @@ export function buildRiderMesh(jersey: number, isPlayer: boolean): THREE.Group {
     group.add(limb);
   }
   if (isPlayer) group.scale.setScalar(1.15);
+  const blur: THREE.Mesh[] = [];
+  for (const z of [0.52, -0.52]) {
+    const disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34, 0.34, 0.06, 16),
+      new THREE.MeshBasicMaterial({ color: 0x1a1d22, transparent: true, opacity: 0.35 }),
+    );
+    disc.rotation.z = Math.PI / 2;
+    disc.position.set(0, 0.34, z);
+    disc.visible = false;
+    group.add(disc);
+    blur.push(disc);
+  }
+  group.userData.spokes = spokes;
+  group.userData.blur = blur;
   return group;
 }
 
-export function placeRider(mesh: THREE.Object3D, s: TrackSample, lateral: number): void {
+export function placeRider(mesh: THREE.Object3D, s: TrackSample, lateral: number, lean = 0): void {
   const nx = -Math.sin(s.heading);
   const nz = Math.cos(s.heading);
   mesh.position.set(s.x + nx * lateral, s.y, s.z + nz * lateral);
   mesh.rotation.order = 'YXZ';
   mesh.rotation.y = Math.PI / 2 - s.heading;
   mesh.rotation.x = -Math.atan(s.gradient) * 0.8;
+  mesh.rotation.z = lean;
 }
