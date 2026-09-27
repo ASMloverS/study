@@ -1,6 +1,6 @@
 import type { MapDef } from 'shared';
 
-const COVER_COLORS: Record<string, string> = {
+export const COVER_COLORS: Record<string, string> = {
   wall: '#8fa2b4',
   lowwall: '#7a8fa3',
   container: '#ff7a1a',
