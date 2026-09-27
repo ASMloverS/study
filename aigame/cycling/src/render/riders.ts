@@ -14,7 +14,7 @@ export function buildRiderMesh(jersey: number, isPlayer: boolean): THREE.Group {
     group.add(wheel);
     for (let s = 0; s < 8; s++) {
       const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.66, 4), frameMat);
-      spoke.rotation.set(0, (s / 8) * Math.PI, Math.PI / 2);
+      spoke.rotation.set((s / 8) * Math.PI, 0, 0);
       spoke.position.set(0, 0.34, z);
       group.add(spoke);
     }
