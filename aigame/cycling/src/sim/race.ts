@@ -4,7 +4,7 @@ import { stepEnergy, targetPower } from './energy';
 import { stepSpeed } from './physics';
 import { isDrafting, nearestAheadIndex } from './draft';
 import { aiCommand } from './ai';
-import { cadence, cadenceEfficiency, aiShift } from './drivetrain';
+import { cadence, aiShift } from './drivetrain';
 import type { Track } from './track';
 import type { Phase, ResultRow, RiderCommand, RiderState, RiderType } from './types';
 
@@ -98,17 +98,15 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     const cmd = cmds[i];
     r.gear = cmd.gear;
     if (r.isPlayer) {
-      r.cog = clamp(r.cog + cmd.cogDelta, DRIVETRAIN.cogMin, DRIVETRAIN.cogMax);
-      const cadHi = cmd.gear === 3 ? Infinity : Math.max(DRIVETRAIN.cadTargetMax, r.cadTarget);
-      r.cadTarget = clamp(r.cadTarget + cmd.cadDelta, DRIVETRAIN.cadTargetMin, cadHi);
+      r.cog = Math.max(DRIVETRAIN.cogFloor, r.cog + cmd.cogDelta);
+      r.cadTarget = Math.max(0, r.cadTarget + cmd.cadDelta);
     } else if (shiftTick) {
       r.cog = aiShift(r.speed, r.cog);
     }
     const cad = cadence(r.speed, r.cog);
-    const sprint = r.isPlayer && cmd.gear === 3;
     const softPedal = r.isPlayer && cad >= r.cadTarget;
     const effort = r.finishTime !== null || softPedal ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
-    r.power = effort * cadenceEfficiency(cad, sprint);
+    r.power = effort;
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
       r.dist += r.speed * dt;

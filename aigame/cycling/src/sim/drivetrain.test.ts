@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiShift, cadence, cadenceEfficiency, gearRatio, terrainCadence } from './drivetrain';
+import { aiShift, cadence, gearRatio, terrainCadence } from './drivetrain';
 
 describe('gearRatio', () => {
   it('maps cog teeth to 52T ratios', () => {
@@ -21,32 +21,6 @@ describe('cadence', () => {
   });
   it('zero speed is zero cadence', () => {
     expect(cadence(0, 16)).toBe(0);
-  });
-});
-
-describe('cadenceEfficiency', () => {
-  it('full power inside [80,125] rpm', () => {
-    expect(cadenceEfficiency(80)).toBe(1);
-    expect(cadenceEfficiency(100)).toBe(1);
-    expect(cadenceEfficiency(120)).toBe(1);
-    expect(cadenceEfficiency(125)).toBe(1);
-  });
-  it('linear falloff to 0.55 between 50-80 and 125-150', () => {
-    expect(cadenceEfficiency(65)).toBeCloseTo(0.775, 6);
-    expect(cadenceEfficiency(70)).toBeCloseTo(0.85, 6);
-    expect(cadenceEfficiency(140)).toBeCloseTo(0.73, 6);
-  });
-  it('clamps at 0.55 beyond the range', () => {
-    expect(cadenceEfficiency(50)).toBe(0.55);
-    expect(cadenceEfficiency(30)).toBe(0.55);
-    expect(cadenceEfficiency(150)).toBe(0.55);
-    expect(cadenceEfficiency(170)).toBe(0.55);
-  });
-  it('sprint flag gives full efficiency at any cadence', () => {
-    expect(cadenceEfficiency(0, true)).toBe(1);
-    expect(cadenceEfficiency(40, true)).toBe(1);
-    expect(cadenceEfficiency(150, true)).toBe(1);
-    expect(cadenceEfficiency(200, true)).toBe(1);
   });
 });
 
