@@ -12,6 +12,7 @@ import { buildTerrain } from './render/terrain';
 import { buildTrackMesh, buildItemBoxes } from './render/trackMesh';
 import { buildRiderMesh, placeRider } from './render/riders';
 import { ChaseCamera } from './render/camera';
+import { SpeedLines } from './render/speedLines';
 import { Hud } from './ui/hud';
 import type { Music } from './audio';
 
@@ -24,6 +25,7 @@ export class Game {
   private meshes: THREE.Object3D[] = [];
   private ctx: ReturnType<typeof createScene>;
   private cam: ChaseCamera;
+  private speedLines!: SpeedLines;
   private loop: ReturnType<typeof createLoop>;
   private tmp = new THREE.Vector3();
   private boxMeshes: THREE.Mesh[] = [];
@@ -36,8 +38,9 @@ export class Game {
     const boxes = buildItemBoxes();
     this.boxMeshes = boxes.meshes;
     this.ctx.scene.add(boxes.group);
+    this.speedLines = new SpeedLines(this.ctx.scene);
     for (let i = 0; i < 8; i++) {
-      const m = buildRiderMesh(JERSEYS[i]);
+      const m = buildRiderMesh(JERSEYS[i], i === 0);
       this.meshes.push(m);
       this.ctx.scene.add(m);
     }
@@ -94,7 +97,8 @@ export class Game {
     }
     const ps = this.track.sampleAt(this.interp(this.prev.riders[0].dist, s.riders[0].dist, alpha));
     this.tmp.set(ps.x, ps.y, ps.z);
-    this.cam.update(this.tmp, ps.heading, ps.gradient, frameDt);
+    this.cam.update(this.tmp, ps.heading, ps.gradient, frameDt, s.riders[0].speed);
+    this.speedLines.update(s.riders[0].speed, frameDt, this.ctx.camera);
     this.hud.update(this.view(ps));
     this.ctx.renderer.render(this.ctx.scene, this.ctx.camera);
   }
