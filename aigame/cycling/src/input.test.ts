@@ -11,8 +11,10 @@ function release(key: string) {
 
 describe('InputController', () => {
   let c: InputController;
+  let t = 0;
   beforeEach(() => {
-    c = new InputController();
+    t = 0;
+    c = new InputController(() => t);
     c.attach();
   });
 
@@ -39,15 +41,36 @@ describe('InputController', () => {
     press('q');
     expect(c.command().cogDelta).toBe(1);
   });
+  it('holding Q integrates 6T/s on top of the pulse', () => {
+    press('q');
+    t += 0.05;
+    expect(c.command().cogDelta).toBeCloseTo(1 + 6 * 0.05, 5);
+    t += 0.05;
+    expect(c.command().cogDelta).toBeCloseTo(6 * 0.05, 5);
+  });
+  it('holding W integrates 30rpm/s', () => {
+    press('w');
+    t += 0.05;
+    expect(c.command().cadDelta).toBeCloseTo(5 + 30 * 0.05, 5);
+    release('w');
+    t += 0.05;
+    expect(c.command().cadDelta).toBe(0);
+  });
+  it('caps integration dt at 100ms', () => {
+    press('q');
+    t += 10;
+    expect(c.command().cogDelta).toBeCloseTo(1 + 6 * 0.1, 5);
+  });
   it('ignores auto-repeat', () => {
     press('ArrowUp');
     press('ArrowUp', true);
     expect(c.command().cadDelta).toBe(5);
   });
-  it('number keys set power gear and leave cadence untouched', () => {
+  it('number keys set power gear and leave deltas untouched', () => {
     press('4');
     expect(c.command().gear).toBe(3);
     expect(c.command().cadDelta).toBe(0);
+    expect(c.command().cogDelta).toBe(0);
   });
   it('steer holds while key held', () => {
     press('ArrowLeft');

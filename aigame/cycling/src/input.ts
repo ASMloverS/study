@@ -3,16 +3,28 @@ import type { GearId, RiderCommand } from './sim/types';
 
 export class InputController {
   private gear: GearId = 1;
-  private cadDelta = 0;
-  private cogDelta = 0;
+  private cadPulse = 0;
+  private cogPulse = 0;
   private steer = 0;
   private keys = new Set<string>();
+  private lastNow: number;
+
+  constructor(private now: () => number = () => performance.now() / 1000) {
+    this.lastNow = now();
+  }
 
   command(): RiderCommand {
-    const cmd = { gear: this.gear, steer: this.steer, cadDelta: this.cadDelta, cogDelta: this.cogDelta };
-    this.cadDelta = 0;
-    this.cogDelta = 0;
-    return cmd;
+    const held = Math.min(0.1, Math.max(0, this.now() - this.lastNow));
+    this.lastNow = this.now();
+    let cogDelta = this.cogPulse;
+    let cadDelta = this.cadPulse;
+    if (this.keys.has('q')) cogDelta += DRIVETRAIN.cogHoldRate * held;
+    if (this.keys.has('e')) cogDelta -= DRIVETRAIN.cogHoldRate * held;
+    if (this.keys.has('w') || this.keys.has('arrowup')) cadDelta += DRIVETRAIN.cadHoldRate * held;
+    if (this.keys.has('s') || this.keys.has('arrowdown')) cadDelta -= DRIVETRAIN.cadHoldRate * held;
+    this.cogPulse = 0;
+    this.cadPulse = 0;
+    return { gear: this.gear, steer: this.steer, cadDelta, cogDelta };
   }
 
   attach(): void {
@@ -22,24 +34,23 @@ export class InputController {
 
   reset(): void {
     this.gear = 1;
-    this.cadDelta = 0;
-    this.cogDelta = 0;
+    this.cadPulse = 0;
+    this.cogPulse = 0;
     this.steer = 0;
     this.keys.clear();
+    this.lastNow = this.now();
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.repeat) return;
     const k = e.key.toLowerCase();
-    if (k === 'arrowup' || k === 'w') this.cadDelta += DRIVETRAIN.cadenceStep;
-    else if (k === 'arrowdown' || k === 's') this.cadDelta -= DRIVETRAIN.cadenceStep;
-    else if (k === 'e') this.cogDelta -= DRIVETRAIN.cogStep;
-    else if (k === 'q') this.cogDelta += DRIVETRAIN.cogStep;
+    if (k === 'arrowup' || k === 'w') this.cadPulse += DRIVETRAIN.cadenceStep;
+    else if (k === 'arrowdown' || k === 's') this.cadPulse -= DRIVETRAIN.cadenceStep;
+    else if (k === 'q') this.cogPulse += DRIVETRAIN.cogStep;
+    else if (k === 'e') this.cogPulse -= DRIVETRAIN.cogStep;
     else if (k === '1' || k === '2' || k === '3' || k === '4') this.gear = (Number(k) - 1) as GearId;
-    else {
-      this.keys.add(k);
-      this.steer = this.computeSteer();
-    }
+    this.keys.add(k);
+    this.steer = this.computeSteer();
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
