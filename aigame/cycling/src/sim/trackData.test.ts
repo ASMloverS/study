@@ -1,29 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { buildTrack } from './trackData';
 
-describe('buildTrack', () => {
-  const t = buildTrack();
-  it('length ≈ 4.4 km', () => {
-    expect(t.length).toBeGreaterThan(4100);
-    expect(t.length).toBeLessThan(4700);
+describe('buildTrack hyperspeed stage', () => {
+  const track = buildTrack();
+  it('is a ~150km point-to-point course', () => {
+    expect(track.length).toBeGreaterThan(148500);
+    expect(track.length).toBeLessThan(151500);
   });
-  it('max gradient stays below 9%', () => {
-    let max = 0;
-    for (let d = 0; d < t.length; d += 10) max = Math.max(max, Math.abs(t.sampleAt(d).gradient));
-    expect(max).toBeLessThan(0.09);
+  it('has mountain profile between 900 and 1000m max elevation', () => {
+    let max = -Infinity;
+    for (let d = 0; d < track.length; d += 100) max = Math.max(max, track.sampleAt(d).y);
+    expect(max).toBeGreaterThan(900);
+    expect(max).toBeLessThan(1000);
   });
-  it('main climb sustains gradient above 4.5% for at least 150m', () => {
-    let steep = 0;
-    let longest = 0;
-    for (let d = 0; d < t.length; d += 5) {
-      steep = t.sampleAt(d).gradient > 0.045 ? steep + 5 : 0;
-      longest = Math.max(longest, steep);
+  it('keeps gradients within ±16% with steep climbs and descents', () => {
+    let maxG = 0;
+    let minG = 0;
+    for (let d = 0; d < track.length; d += 20) {
+      const g = track.sampleAt(d).gradient;
+      maxG = Math.max(maxG, g);
+      minG = Math.min(minG, g);
     }
-    expect(longest).toBeGreaterThanOrEqual(150);
-  });
-  it('finish straight is flat', () => {
-    for (let d = t.length - 300; d < t.length; d += 10) {
-      expect(Math.abs(t.sampleAt(d).gradient)).toBeLessThan(0.005);
-    }
+    expect(maxG).toBeLessThanOrEqual(0.16);
+    expect(minG).toBeGreaterThanOrEqual(-0.16);
+    expect(maxG).toBeGreaterThanOrEqual(0.07);
+    expect(minG).toBeLessThanOrEqual(-0.05);
   });
 });

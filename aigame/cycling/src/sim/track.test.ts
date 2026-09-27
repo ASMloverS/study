@@ -36,6 +36,17 @@ describe('Track', () => {
     expect(t.sampleAt(0).heading).toBeCloseTo(Math.PI / 2, 2);
     expect(t.sampleAt(t.length * 0.5).heading).toBeCloseTo(-Math.PI / 2, 2);
   });
+  it('gradient is smooth between nearby samples', () => {
+    const t = new Track([[0, 0, 0], [100, 10, 0], [200, 10, 100], [300, 0, 100]], 200, false);
+    let maxDelta = 0;
+    let prev = t.sampleAt(0).gradient;
+    for (let d = 5; d < t.length; d += 5) {
+      const g = t.sampleAt(d).gradient;
+      maxDelta = Math.max(maxDelta, Math.abs(g - prev));
+      prev = g;
+    }
+    expect(maxDelta).toBeLessThan(0.03);
+  });
   it('nearest finds close point', () => {
     const n = new Track(circle(100, 8)).nearest(100, 0);
     expect(n.dist).toBeLessThan(3);

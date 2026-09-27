@@ -18,15 +18,18 @@ export class Track {
   readonly length: number;
   private readonly pts: Pt[];
   private readonly cum: number[];
+  private readonly grad: number[];
 
-  constructor(control: Pt[], samples = 2400) {
+  constructor(control: Pt[], samples = 2400, closed = true) {
     const n = control.length;
+    const span = closed ? n : n - 1;
     this.pts = [];
     for (let i = 0; i <= samples; i++) {
-      const t = (i / samples) * n;
+      const t = (i / samples) * span;
       const j = Math.floor(t);
       const u = t - j;
-      const g = (k: number) => control[(j + k + n) % n];
+      const g = (k: number) =>
+        closed ? control[(j + k + n) % n] : control[Math.min(n - 1, Math.max(0, j + k))];
       const [p0, p1, p2, p3] = [g(-1), g(0), g(1), g(2)];
       this.pts.push([
         catmull(p0[0], p1[0], p2[0], p3[0], u),
@@ -41,6 +44,15 @@ export class Track {
       this.cum.push(this.cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
     }
     this.length = this.cum[samples];
+    this.grad = [];
+    for (let i = 0; i <= samples; i++) {
+      const a = Math.max(0, i - 2);
+      const b = Math.min(samples, i + 2);
+      const pa = this.pts[a];
+      const pb = this.pts[b];
+      const run = Math.hypot(pb[0] - pa[0], pb[2] - pa[2]) || 1e-6;
+      this.grad.push((pb[1] - pa[1]) / run);
+    }
   }
 
   sampleAt(dist: number): TrackSample {
@@ -56,12 +68,11 @@ export class Track {
     const b = this.pts[hi];
     const seg = this.cum[hi] - this.cum[lo] || 1;
     const u = (d - this.cum[lo]) / seg;
-    const run = Math.hypot(b[0] - a[0], b[2] - a[2]) || 1e-6;
     return {
       x: a[0] + (b[0] - a[0]) * u,
       y: a[1] + (b[1] - a[1]) * u,
       z: a[2] + (b[2] - a[2]) * u,
-      gradient: (b[1] - a[1]) / run,
+      gradient: this.grad[lo] + (this.grad[hi] - this.grad[lo]) * u,
       heading: Math.atan2(b[2] - a[2], b[0] - a[0]),
     };
   }

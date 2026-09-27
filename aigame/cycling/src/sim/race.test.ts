@@ -5,7 +5,7 @@ import { RACE } from './params';
 import type { RiderCommand } from './types';
 
 const track = buildTrack();
-const cruise: RiderCommand = { gear: 1, steer: 0, cadDelta: 0, cogDelta: 0 };
+const cruise: RiderCommand = { gear: 0, steer: 0, cadDelta: 0, cogDelta: -15 };
 
 function run(cmd: RiderCommand, seconds: number) {
   let s = createRace(track);
@@ -46,7 +46,7 @@ describe('race', () => {
   it('full race completes with all riders finishing and sane avg power', () => {
     let s = createRace(track);
     let steps = 0;
-    while (s.phase !== 'finished' && steps < 60 * 1500) {
+    while (s.phase !== 'finished' && steps < 60 * 2200) {
       s = stepRace(s, track, cruise, RACE.dt);
       steps++;
     }
@@ -58,10 +58,10 @@ describe('race', () => {
     }
   }, 30000);
   it('reckless sprinting still finishes comfortably via feeds', () => {
-    const s = run({ gear: 3, steer: 0, cadDelta: 0, cogDelta: 0 }, 900);
+    const s = run({ gear: 3, steer: 0, cadDelta: 0, cogDelta: -15 }, 1600);
     const p = s.riders[0];
     expect(p.finishTime).not.toBeNull();
-    expect(p.finishTime!).toBeLessThan(500);
+    expect(p.finishTime!).toBeLessThan(1600);
   }, 30000);
   it('feed zone restores energy while passing through', () => {
     let s = createRace(track);
@@ -98,9 +98,9 @@ describe('race', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 200, speed: 12, cadTarget: 80 })) };
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 200, speed: 12, cadTarget: 80, cog: 16 })) };
     const before = s.riders[0].energy;
-    s = stepRace(s, track, cruise, RACE.dt);
+    s = stepRace(s, track, { gear: 1, steer: 0, cadDelta: 0, cogDelta: 0 }, RACE.dt);
     expect(s.riders[0].power).toBe(0);
     expect(s.riders[0].energy).toBe(before);
     expect(s.riders[0].speed).toBeLessThan(12);
