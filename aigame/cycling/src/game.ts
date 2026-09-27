@@ -77,6 +77,7 @@ export class Game {
     const s = this.state;
     const remaining = s.trackLength - s.riders[0].dist;
     this.music.setTier(s.phase === 'racing' ? (remaining > s.trackLength * 0.04 ? 'intense' : 'sprint') : 'calm');
+    this.music.setWind(s.riders[0].speed);
     for (let i = 0; i < s.riders.length; i++) {
       const p = this.prev.riders[i];
       const c = s.riders[i];

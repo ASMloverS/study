@@ -10,6 +10,8 @@ const TIERS: MusicTier[] = ['calm', 'intense', 'sprint'];
 export class Music {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private windGain: GainNode | null = null;
+  private windFilter: BiquadFilterNode | null = null;
   private gains = new Map<MusicTier, GainNode>();
   private tier: MusicTier = 'calm';
   private volume = 0.35;
@@ -22,6 +24,23 @@ export class Music {
     this.master = this.ctx.createGain();
     this.master.gain.value = this.volume;
     this.master.connect(this.ctx.destination);
+    const len = 2 * this.ctx.sampleRate;
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    this.windFilter = this.ctx.createBiquadFilter();
+    this.windFilter.type = 'bandpass';
+    this.windFilter.frequency.value = 300;
+    this.windFilter.Q.value = 0.8;
+    this.windGain = this.ctx.createGain();
+    this.windGain.gain.value = 0;
+    src.connect(this.windFilter);
+    this.windFilter.connect(this.windGain);
+    this.windGain.connect(this.master);
+    src.start();
     void this.load();
   }
 
@@ -36,6 +55,12 @@ export class Music {
     if (tier === this.tier) return;
     this.tier = tier;
     this.applyTier();
+  }
+
+  setWind(speed: number): void {
+    if (!this.ctx || !this.windGain || !this.windFilter) return;
+    this.windGain.gain.setTargetAtTime(Math.min(0.5, (speed / 40) ** 2), this.ctx.currentTime, 0.1);
+    this.windFilter.frequency.setTargetAtTime(300 + speed * 30, this.ctx.currentTime, 0.1);
   }
 
   blip(): void {
