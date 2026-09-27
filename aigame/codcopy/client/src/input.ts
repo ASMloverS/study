@@ -74,6 +74,17 @@ export class InputSystem {
   private lastSlotSent = 1;
   private pendingStreak = 0;
 
+  /** [M15] 放置模式：打开请求（0=无，2/3=tier，main 轮询）；激活期间鼠标增量/滚轮/Q-E 转发给俯图 */
+  placementRequest = 0;
+  placementActive = false;
+  private uiDX = 0;
+  private uiDY = 0;
+  private wheelSteps = 0;
+  private confirmPlacement = false;
+  private cancelPlacement = false;
+  private pendingStreakTarget: { x: number; z: number } | null = null;
+  private pendingStreakYaw = 0;
+
   constructor(private target: HTMLElement, onStart: () => void, settings: Settings) {
     this.settings = settings;
     document.addEventListener('keydown', (e) => {
@@ -82,13 +93,20 @@ export class InputSystem {
       if (e.code === 'Digit1') this.pendingSlot = 1;
       if (e.code === 'Digit2') this.pendingSlot = 2;
       if (e.code === 'Digit4') this.pendingStreak = 1;
-      if (e.code === 'Digit5') this.pendingStreak = 2;
-      if (e.code === 'Digit6') this.pendingStreak = 3;
-      if (e.code === 'KeyQ' && this.qSwapSlot > 0) this.pendingSlot = this.qSwapSlot;
+      if (e.code === 'Digit5') this.placementRequest = 2;
+      if (e.code === 'Digit6') this.placementRequest = 3;
+      if (this.placementActive && e.code === 'KeyQ') this.wheelSteps -= 1;
+      if (this.placementActive && e.code === 'KeyE') this.wheelSteps += 1;
+      if (e.code === 'KeyQ' && this.qSwapSlot > 0 && !this.placementActive) this.pendingSlot = this.qSwapSlot;
     });
     document.addEventListener('keyup', (e) => this.keys.delete(e.code));
     document.addEventListener('mousedown', (e) => {
       if (!this.locked) return;
+      if (this.placementActive) {
+        if (e.button === 0) this.confirmPlacement = true;
+        if (e.button === 2) this.cancelPlacement = true;
+        return;
+      }
       if (e.button === 0) this.fireHeld = true;
       if (e.button === 2) this.adsHeld = true;
     });
@@ -99,11 +117,20 @@ export class InputSystem {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('wheel', (e) => {
       if (!this.locked) return;
+      if (this.placementActive) {
+        this.wheelSteps += Math.sign(e.deltaY);
+        return;
+      }
       void e.deltaY;
       this.pendingSlot = this.lastSlotSent === 1 ? 2 : 1;
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
+      if (this.placementActive) {
+        this.uiDX += e.movementX;
+        this.uiDY += e.movementY;
+        return;
+      }
       const sens = this.settings.sensitivity * (this.ads ? this.settings.adsSens : 1);
       this.yaw -= e.movementX * sens;
       this.pitch -= e.movementY * sens;
@@ -131,6 +158,24 @@ export class InputSystem {
   /** [M12] 手柄连杀激活请求（1-3） */
   requestStreak(t: 0 | 1 | 2 | 3): void {
     this.pendingStreak = t;
+  }
+
+  /** [M15] 俯图确认后携带落点激活 */
+  requestStreakTargeted(streak: 2 | 3, target: { x: number; z: number }, yaw: number): void {
+    this.pendingStreak = streak;
+    this.pendingStreakTarget = target;
+    this.pendingStreakYaw = yaw;
+  }
+
+  /** [M15] 放置模式帧增量（main 每帧轮询后清零） */
+  drainPlacementDeltas(): { dx: number; dy: number; wheel: number; confirm: boolean; cancel: boolean } {
+    const r = { dx: this.uiDX, dy: this.uiDY, wheel: this.wheelSteps, confirm: this.confirmPlacement, cancel: this.cancelPlacement };
+    this.uiDX = 0;
+    this.uiDY = 0;
+    this.wheelSteps = 0;
+    this.confirmPlacement = false;
+    this.cancelPlacement = false;
+    return r;
   }
 
   private clampPitch(): void {
@@ -190,7 +235,8 @@ export class InputSystem {
     if (this.meleeHeld) buttons |= BTN.MELEE;
     if (this.lethalHeld) buttons |= BTN.LETHAL;
     if (k.has('KeyE') || pad.tactical) buttons |= BTN.TACTICAL;
-    const slot = this.pendingSlot;
+    if (this.placementActive) buttons &= BTN.JUMP | BTN.CROUCH | BTN.SPRINT;
+    const slot = this.placementActive ? 0 : this.pendingSlot;
     if (slot > 0 && slot !== this.lastSlotSent) {
       this.qSwapSlot = this.lastSlotSent;
       this.lastSlotSent = slot;
@@ -198,7 +244,11 @@ export class InputSystem {
     this.pendingSlot = 0;
     this.scoreboard = k.has('Tab') || pad.scoreboard;
     const streak = this.pendingStreak;
+    const streakTarget = this.pendingStreakTarget ?? undefined;
+    const streakYaw = this.pendingStreakTarget ? this.pendingStreakYaw : undefined;
     this.pendingStreak = 0;
-    return { seq, moveX, moveZ, yaw: this.yaw + swayYaw, pitch: this.pitch + swayPitch, buttons, slot, streak };
+    this.pendingStreakTarget = null;
+    this.pendingStreakYaw = 0;
+    return { seq, moveX, moveZ, yaw: this.yaw + swayYaw, pitch: this.pitch + swayPitch, buttons, slot, streak, streakTarget, streakYaw };
   }
 }
