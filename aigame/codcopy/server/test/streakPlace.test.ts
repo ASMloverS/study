@@ -111,3 +111,18 @@ describe('[M15] placement targeting and self-exemption', () => {
     expect(a.health).toBe(100);
   });
 });
+
+describe('[M15] strike delay', () => {
+  it('airstrike detonates after 90-tick (3s) delay, not before', () => {
+    const room = new Room(MAPS.warehouse, { seed: 45, bots: 0, killLimit: 100 });
+    const a = room.addPlayer('A', false);
+    const b = room.addPlayer('B', false);
+    const internals = room as unknown as RoomInternals;
+    for (let i = 0; i < 5; i++) internals.killPlayer(a, b, 'ar', false);
+    room.enqueueInput(a.id, input(1, 2, { x: 0, z: 0 }, 0));
+    for (let i = 0; i < 82; i++) room.step();
+    expect(room.drainEvents().filter((e) => e.type === 'blast').length).toBe(0);
+    for (let i = 0; i < 25; i++) room.step();
+    expect(room.drainEvents().filter((e) => e.type === 'blast').length).toBe(AIRSTRIKE_COUNT);
+  });
+});

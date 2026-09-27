@@ -100,7 +100,7 @@ describe('killstreak in room', () => {
     Object.assign(a.st, { x: 12, z: 5, vx: 0, vy: 0, vz: 0 });
     Object.assign(c.st, { x: 12, z: 2, vx: 0, vy: 0, vz: 0 });
     room.enqueueInput(a.id, input(1, 0, 0, -0.9, 2));
-    for (let i = 0; i < 80; i++) room.step();
+    for (let i = 0; i < 130; i++) room.step();
     const events = room.drainEvents();
     expect(events.filter((e) => e.type === 'blast' && e.cause === 'airstrike').length).toBe(AIRSTRIKE_COUNT);
     expect(c.alive).toBe(false);
