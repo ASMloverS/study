@@ -117,9 +117,6 @@ export function buildTrackMesh(track: Track): THREE.Group {
   group.add(ribbon(track, -half + 0.3, -half + 0.05, 0xe8e8e8, 0.008));
   group.add(dashes(track, 0.09, 3, 8, 0xffffff, 0.012));
   group.add(gate(track, 0, 0xe0533d));
-  for (const [lo] of RACE.feedZones) {
-    group.add(gate(track, lo, 0x4d8fd6));
-  }
   group.add(trees(track));
   return group;
 }

@@ -26,6 +26,8 @@ export interface RiderState {
   energy: number;
   gear: GearId;
   cog: number;
+  collected: boolean[];
+  boxCursor: number;
   cadTarget: number;
   power: number;
   powerSum: number;

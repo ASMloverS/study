@@ -1,4 +1,4 @@
-import { DRIVETRAIN, RACE } from './params';
+import { DRIVETRAIN, ITEM_BOXES, RACE } from './params';
 import { rngNext } from './rng';
 import { stepEnergy, targetPower } from './energy';
 import { stepSpeed } from './physics';
@@ -36,6 +36,7 @@ function makeRider(id: number, type: RiderType, isPlayer: boolean, dist: number,
   return {
     id, name: NAMES[id], isPlayer, type,
     dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1, cog: DRIVETRAIN.defaultCogTeeth,
+    collected: new Array<boolean>(ITEM_BOXES.length).fill(false), boxCursor: 0,
     cadTarget: DRIVETRAIN.flatCadence,
     power: 0, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0,
   };
@@ -109,13 +110,21 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     r.power = effort;
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
+      const prevDist = r.dist;
       r.dist += r.speed * dt;
       r.lateral = clamp(r.lateral + cmd.steer * RACE.lateralSpeed * dt, -RACE.lateralMax, RACE.lateralMax);
       if (effort > 0) r.energy = stepEnergy(r.energy, cmd.gear, r.type.maxEnergy, dt);
-      for (const [lo, hi] of RACE.feedZones) {
-        if (r.dist >= lo && r.dist <= hi) {
-          r.energy = Math.min(r.type.maxEnergy, r.energy + RACE.feedZoneGain * r.type.maxEnergy * ((r.speed * dt) / (hi - lo)));
+      while (r.boxCursor < ITEM_BOXES.length && ITEM_BOXES[r.boxCursor].d <= r.dist) {
+        const box = ITEM_BOXES[r.boxCursor];
+        if (
+          !r.collected[r.boxCursor] &&
+          prevDist < box.d &&
+          Math.abs(r.lateral - box.lat) < RACE.boxRadius
+        ) {
+          r.collected[r.boxCursor] = true;
+          r.energy = Math.min(r.type.maxEnergy, r.energy + RACE.boxGain * r.type.maxEnergy);
         }
+        r.boxCursor++;
       }
       r.powerSum += r.power * dt;
       r.timeSum += dt;

@@ -63,22 +63,43 @@ describe('race', () => {
     expect(p.finishTime).not.toBeNull();
     expect(p.finishTime!).toBeLessThan(1700);
   }, 30000);
-  it('feed zone restores energy while passing through', () => {
+  it('item box picked up when crossing at matching lateral', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 565, speed: 11, energy: 10000 })) };
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 4999.5, speed: 100, lateral: 0, cadTarget: 0, energy: 20000 })) };
+    const before = s.riders[0].energy;
+    s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.riders[0].collected[1]).toBe(true);
+    expect(s.riders[0].energy).toBeCloseTo(before + 4000, -1);
+  });
+  it('no pickup when lateral misses all boxes', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 4999.5, speed: 100, lateral: 0.85, cadTarget: 0, energy: 20000 })) };
+    const before = s.riders[0].energy;
+    s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.riders[0].collected.every((c) => !c)).toBe(true);
+    expect(s.riders[0].energy).toBe(before);
+  });
+  it('each box is evaluated exactly once per rider', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 4999.9, speed: 2, lateral: 0, cadTarget: 0, energy: 20000 })) };
     const before = s.riders[0].energy;
     for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
-    expect(s.riders[0].energy).toBeGreaterThan(before + 2000);
+    expect(s.riders[0].energy).toBeCloseTo(before + 4000, -1);
   });
-  it('energy caps at max inside feed zone', () => {
+  it('ai riders also pick up boxes', () => {
     let s = createRace(track);
     let guard = 0;
     while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
-    s = { ...s, riders: s.riders.map((r) => ({ ...r, dist: 565, speed: 11, energy: 39900 })) };
-    for (let i = 0; i < 120; i++) s = stepRace(s, track, cruise, RACE.dt);
-    expect(s.riders[0].energy).toBe(40000);
+    s = { ...s, riders: s.riders.map((r, i) => (i === 4 ? { ...r, dist: 4999.5, speed: 100, lateral: 0, energy: 10000 } : r)) };
+    s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.riders[4].collected.some((c) => c)).toBe(true);
+    expect(s.riders[4].energy).toBeCloseTo(10000 + 0.1 * s.riders[4].type.maxEnergy, -1);
   });
   it('cog shifts freely with floor 1 and no upper clamp', () => {
     let s = createRace(track);

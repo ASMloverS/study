@@ -24,9 +24,26 @@ export const RACE = {
   countdown: 3,
   finishWait: 30,
   trackWidth: 6,
-  feedZones: [[560, 610], [2640, 2690]],
-  feedZoneGain: 0.25,
+  boxClusterEvery: 5000,
+  boxFirst: 5000,
+  boxLast: 145000,
+  boxOffsets: [-1.7, 0, 1.7],
+  boxRadius: 0.75,
+  boxGain: 0.1,
 } as const;
+
+export interface ItemBox {
+  d: number;
+  lat: number;
+}
+
+export const ITEM_BOXES: ItemBox[] = (() => {
+  const boxes: ItemBox[] = [];
+  for (let d = RACE.boxFirst; d <= RACE.boxLast; d += RACE.boxClusterEvery) {
+    for (const lat of RACE.boxOffsets) boxes.push({ d, lat });
+  }
+  return boxes;
+})();
 
 export const GEARS = ['轻松', '巡航', '发力', '冲刺'] as const;
 
