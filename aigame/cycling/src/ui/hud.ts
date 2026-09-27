@@ -4,6 +4,9 @@ import type { Track } from '../sim/track';
 export interface HudView {
   speedKmh: number;
   gearLine: string;
+  cadence: number;
+  cadTarget: number;
+  finalSprint: boolean;
   energyFrac: number;
   gradientPct: number;
   remainingKm: number;
@@ -22,7 +25,7 @@ export class Hud {
   private profileLength = 1;
 
   constructor() {
-    for (const id of ['speed', 'gear', 'gradient', 'position', 'remaining', 'energy-bar', 'energy-text', 'elev', 'countdown', 'results']) {
+    for (const id of ['speed', 'gear', 'cad-gauge', 'gradient', 'position', 'remaining', 'energy-bar', 'energy-text', 'elev', 'countdown', 'results']) {
       this.el.set(id, document.querySelector(`#${id}`) as HTMLElement);
     }
   }
@@ -53,16 +56,61 @@ export class Hud {
 
   update(v: HudView): void {
     const g = (id: string) => this.el.get(id)!;
-    g('speed').textContent = `${v.speedKmh.toFixed(1)} km/h`;
+    g('speed').textContent = `${v.speedKmh.toFixed(0)} km/h`;
     g('gear').textContent = v.gearLine;
     g('gradient').textContent = `坡度 ${v.gradientPct.toFixed(1)}%`;
     g('position').textContent = `第 ${v.position} / ${v.fieldSize} 位`;
-    g('remaining').textContent = `剩余 ${v.remainingKm.toFixed(2)} km`;
+    g('remaining').textContent = `${v.finalSprint ? '最后' : '剩余'} ${v.remainingKm.toFixed(0)} km`;
+    g('remaining').classList.toggle('final', v.finalSprint);
     g('energy-bar').style.width = `${Math.max(0, v.energyFrac * 100).toFixed(1)}%`;
     g('energy-text').textContent = `体力 ${(v.energyFrac * 100).toFixed(0)}%`;
+    this.drawGauge(v.cadence, v.cadTarget);
     this.drawElev(v.progress);
     g('countdown').textContent = v.countdown === null ? '' : v.countdown > 0 ? String(v.countdown) : 'GO!';
     if (v.phase === 'finished') this.showResults(v.results);
+  }
+
+  private drawGauge(cad: number, target: number): void {
+    const canvas = this.el.get('cad-gauge') as HTMLCanvasElement;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h - 10, r = Math.min(w / 2 - 8, h - 16);
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, Math.PI, 0);
+    ctx.stroke();
+    const MAX = 240;
+    const ang = (v: number) => Math.PI + (Math.min(Math.max(v, 0), MAX) / MAX) * Math.PI;
+    ctx.strokeStyle = '#4dd2ff';
+    ctx.lineWidth = 3;
+    for (let t = 0; t <= MAX; t += 60) {
+      const a = ang(t);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6));
+      ctx.lineTo(cx + Math.cos(a) * (r + 4), cy + Math.sin(a) * (r + 4));
+      ctx.stroke();
+    }
+    const ta = ang(target);
+    ctx.strokeStyle = '#ff5a5a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(ta) * (r - 8), cy + Math.sin(ta) * (r - 8));
+    ctx.lineTo(cx + Math.cos(ta) * (r + 6), cy + Math.sin(ta) * (r + 6));
+    ctx.stroke();
+    const ca = ang(cad);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ca) * (r - 10), cy + Math.sin(ca) * (r - 10));
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${Math.round(cad)} / ${Math.round(target)}`, cx, cy - 4);
   }
 
   private drawElev(progress: number): void {

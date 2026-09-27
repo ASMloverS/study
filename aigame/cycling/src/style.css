@@ -5,6 +5,8 @@ body { overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; backgro
 #top-left { position: absolute; top: 16px; left: 16px; font-size: 20px; line-height: 1.6; }
 #top-right { position: absolute; top: 16px; right: 16px; font-size: 20px; line-height: 1.6; text-align: right; }
 #speed { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#cad-gauge { margin: 4px 0; }
+#remaining.final { color: #ff6a6a; font-weight: bold; }
 #bottom-left { position: absolute; bottom: 20px; left: 16px; width: 260px; }
 .bar { height: 14px; background: rgba(0,0,0,.35); border-radius: 7px; overflow: hidden; }
 #energy-bar { height: 100%; width: 100%; background: linear-gradient(90deg,#4dbd8a,#ffd54a,#e0533d); }

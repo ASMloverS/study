@@ -62,7 +62,7 @@ export class Game {
     this.input.reset();
     this.hud.clearResults();
     const s = this.track.sampleAt(0);
-    this.ctx.camera.position.set(s.x - Math.cos(s.heading) * 8.5, s.y + 3.2, s.z - Math.sin(s.heading) * 8.5);
+    this.ctx.camera.position.set(s.x - Math.cos(s.heading) * 6, s.y + 2.4, s.z - Math.sin(s.heading) * 6);
     this.ctx.camera.lookAt(s.x, s.y + 1.2, s.z);
     this.loop.stop();
     this.loop.start();
@@ -114,17 +114,16 @@ export class Game {
   private view(ps: TrackSample) {
     const s = this.state;
     const p = s.riders[0];
+    const remaining = s.trackLength - p.dist;
     return {
       speedKmh: p.speed * 3.6,
-      gearLine: (() => {
-        const cad = cadence(p.speed, p.cog);
-        const target = Math.round(p.cadTarget);
-        const rpm = Math.abs(cad - target) > 3 ? `${cad.toFixed(0)}/${target}` : cad.toFixed(0);
-        return `52×${Math.round(p.cog)} · ${rpm}rpm · ${GEARS[p.gear]}`;
-      })(),
+      gearLine: `52×${Math.round(p.cog)} · ${GEARS[p.gear]}`,
+      cadence: cadence(p.speed, p.cog),
+      cadTarget: p.cadTarget,
+      finalSprint: s.phase === 'racing' && remaining <= 5000,
       energyFrac: p.energy / p.type.maxEnergy,
       gradientPct: ps.gradient * 100,
-      remainingKm: Math.max(0, s.trackLength - p.dist) / 1000,
+      remainingKm: Math.max(0, remaining) / 1000,
       position: standings(s).findIndex((r) => r.isPlayer) + 1,
       fieldSize: s.riders.length,
       progress: Math.min(1, p.dist / s.trackLength),
