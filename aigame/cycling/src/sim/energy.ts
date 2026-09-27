@@ -1,8 +1,8 @@
 import { RACE } from './params';
 import type { GearId } from './types';
 
-export function drainRate(power: number, ftp: number): number {
-  const r = power / ftp;
+export function drainRate(gear: GearId): number {
+  const r = RACE.drainRatios[gear];
   return r * r * RACE.drainBase;
 }
 
@@ -11,6 +11,8 @@ export function targetPower(gear: GearId, ftp: number, energy: number): number {
   return energy <= 0 ? Math.min(raw, ftp * RACE.emptyCapRatio) : raw;
 }
 
-export function stepEnergy(energy: number, power: number, ftp: number, dt: number): number {
-  return Math.max(0, energy - drainRate(power, ftp) * dt);
+export function stepEnergy(energy: number, gear: GearId, maxEnergy: number, dt: number): number {
+  let e = energy - drainRate(gear) * dt;
+  if (gear <= 1) e += RACE.regenRate * maxEnergy * dt;
+  return Math.min(maxEnergy, Math.max(0, e));
 }

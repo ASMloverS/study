@@ -111,7 +111,7 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     if (r.finishTime === null) {
       r.dist += r.speed * dt;
       r.lateral = clamp(r.lateral + cmd.steer * RACE.lateralSpeed * dt, -RACE.lateralMax, RACE.lateralMax);
-      r.energy = stepEnergy(r.energy, effort, r.type.ftp, dt);
+      if (effort > 0) r.energy = stepEnergy(r.energy, cmd.gear, r.type.maxEnergy, dt);
       for (const [lo, hi] of RACE.feedZones) {
         if (r.dist >= lo && r.dist <= hi) {
           r.energy = Math.min(r.type.maxEnergy, r.energy + RACE.feedZoneGain * r.type.maxEnergy * ((r.speed * dt) / (hi - lo)));

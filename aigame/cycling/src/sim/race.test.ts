@@ -53,8 +53,8 @@ describe('race', () => {
     expect(s.phase).toBe('finished');
     expect(s.riders.every((r) => r.finishTime !== null)).toBe(true);
     for (const row of s.results) {
-      expect(row.avgPower).toBeGreaterThan(150);
-      expect(row.avgPower).toBeLessThan(400);
+      expect(row.avgPower).toBeGreaterThan(100);
+      expect(row.avgPower).toBeLessThan(2500);
     }
   }, 30000);
   it('reckless sprinting still finishes comfortably via feeds', () => {

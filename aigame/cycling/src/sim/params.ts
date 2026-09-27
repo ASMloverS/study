@@ -3,15 +3,18 @@ export const PHYS = {
   g: 9.81,
   Crr: 0.005,
   rho: 1.226,
-  CdA: 0.32,
+  CdA: 0.002,
   draftDrag: 0.7,
   minSpeed: 1,
+  maxDriveForce: 450,
 } as const;
 
 export const RACE = {
   dt: 1 / 60,
-  gearRatios: [0.6, 1.0, 1.5, 2.5],
-  drainBase: 40,
+  gearRatios: [3.6, 6.0, 9.0, 15.0],
+  drainBase: 12,
+  drainRatios: [0.6, 1.0, 1.5, 2.5],
+  regenRate: 0.0015,
   emptyCapRatio: 0.35,
   lateralMax: 2.2,
   lateralSpeed: 1.8,
