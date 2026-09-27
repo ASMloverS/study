@@ -29,4 +29,11 @@ describe('ribbon terrain', () => {
       expect(Math.abs(pos[o + 1] + 0.15 - pts[r * 3][1])).toBeLessThan(0.005);
     }
   });
+  it('ribbon faces upward', () => {
+    const geo = mesh.geometry;
+    const normals = geo.attributes.normal.array as Float32Array;
+    let up = 0;
+    for (let i = 1; i < normals.length; i += 3) if (normals[i] > 0.5) up++;
+    expect(up).toBeGreaterThan(normals.length / 3 * 0.9);
+  });
 });

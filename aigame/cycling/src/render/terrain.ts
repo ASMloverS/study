@@ -41,7 +41,7 @@ export function buildTerrain(track: Track): THREE.Mesh {
   for (let r = 0; r < rows - 1; r++) {
     for (let c = 0; c < cols - 1; c++) {
       const a = r * cols + c;
-      idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+      idx.push(a, a + 1, a + cols, a + 1, a + cols + 1, a + cols);
     }
   }
   const geo = new THREE.BufferGeometry();
