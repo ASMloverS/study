@@ -128,6 +128,9 @@ describe('race', () => {
     const down: RiderCommand = { gear: 1, steer: 0, cadDelta: -5, cogDelta: 0 };
     s = stepRace(s, track, down, RACE.dt);
     expect(s.riders[0].cadTarget).toBe(205);
+    const upNudge: RiderCommand = { gear: 1, steer: 0, cadDelta: 5, cogDelta: 0 };
+    s = stepRace(s, track, upNudge, RACE.dt);
+    expect(s.riders[0].cadTarget).toBe(205);
   });
   it('sprint gear keeps full efficiency at extreme cadence', () => {
     let s = createRace(track);
@@ -138,5 +141,15 @@ describe('race', () => {
     expect(s.riders[0].power).toBeCloseTo(750, 5);
     s = stepRace(s, track, cruise, RACE.dt);
     expect(s.riders[0].power).toBeCloseTo(165, 5);
+  });
+  it('ai gear 3 does not trigger sprint efficiency', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    s = { ...s, riders: s.riders.map((r, i) => (i === 4 ? { ...r, dist: track.length - 100, speed: 20, cog: 16 } : r)) };
+    s = stepRace(s, track, cruise, RACE.dt);
+    const ai = s.riders[4];
+    expect(ai.gear).toBe(3);
+    expect(ai.power).toBeCloseTo(293 * 2.5 * 0.55, 5);
   });
 });
