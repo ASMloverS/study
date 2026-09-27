@@ -47,6 +47,13 @@ describe('Track', () => {
     }
     expect(maxDelta).toBeLessThan(0.03);
   });
+  it('open track clamps beyond-finish distances to the endpoint', () => {
+    const t = new Track([[0, 0, 0], [100, 10, 0], [200, 10, 100], [300, 0, 100]], 200, false);
+    const beyond = t.sampleAt(t.length + 500);
+    expect(beyond.x).toBeCloseTo(300, 6);
+    expect(beyond.y).toBeCloseTo(0, 6);
+    expect(beyond.z).toBeCloseTo(100, 6);
+  });
   it('nearest finds close point', () => {
     const n = new Track(circle(100, 8)).nearest(100, 0);
     expect(n.dist).toBeLessThan(3);

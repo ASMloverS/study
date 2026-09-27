@@ -19,8 +19,10 @@ export class Track {
   private readonly pts: Pt[];
   private readonly cum: number[];
   private readonly grad: number[];
+  private readonly closed: boolean;
 
   constructor(control: Pt[], samples = 2400, closed = true) {
+    this.closed = closed;
     const n = control.length;
     const span = closed ? n : n - 1;
     this.pts = [];
@@ -56,7 +58,9 @@ export class Track {
   }
 
   sampleAt(dist: number): TrackSample {
-    const d = ((dist % this.length) + this.length) % this.length;
+    const d = this.closed
+      ? ((dist % this.length) + this.length) % this.length
+      : Math.min(Math.max(dist, 0), this.length);
     let lo = 0;
     let hi = this.cum.length - 1;
     while (hi - lo > 1) {
