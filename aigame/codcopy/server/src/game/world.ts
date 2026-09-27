@@ -458,6 +458,11 @@ export class Room {
       buttons: Number.isFinite(input.buttons) ? input.buttons & 511 : 0,
       slot: Number.isInteger(input.slot) ? Math.max(0, Math.min(2, input.slot)) : 0,
       streak: typeof input.streak === 'number' && Number.isInteger(input.streak) ? Math.max(0, Math.min(3, input.streak)) : 0,
+      streakTarget:
+        input.streakTarget && Number.isFinite(input.streakTarget.x) && Number.isFinite(input.streakTarget.z)
+          ? { x: input.streakTarget.x, z: input.streakTarget.z }
+          : undefined,
+      streakYaw: typeof input.streakYaw === 'number' && Number.isFinite(input.streakYaw) ? input.streakYaw : undefined,
     };
     p.lastRecvSeq = input.seq;
     p.inputQueue.push(sanitized);
@@ -511,7 +516,7 @@ export class Room {
       p.ackSeq = p.lastInput.seq;
     } else if (p.lastInput.streak !== 0) {
       // [M14] 空队列重放上一输入：连杀激活是一次性意图，不随重放重复触发
-      p.lastInput = { ...p.lastInput, streak: 0 };
+      p.lastInput = { ...p.lastInput, streak: 0, streakTarget: undefined, streakYaw: undefined };
     }
     return p.lastInput;
   }

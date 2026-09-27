@@ -30,6 +30,9 @@ export interface InputMsg {
   buttons: number;
   slot: number;
   streak?: number;
+  /** [M15] 放置模式落点（世界坐标，服务端激活时二次 clamp）与空袭航线角（rad） */
+  streakTarget?: { x: number; z: number };
+  streakYaw?: number;
 }
 
 export interface MatchConfig {
