@@ -63,6 +63,7 @@ export class Game {
     this.hud.clearResults();
     const s = this.track.sampleAt(0);
     this.ctx.camera.position.set(s.x - Math.cos(s.heading) * 6, s.y + 2.4, s.z - Math.sin(s.heading) * 6);
+    this.cam.reset(this.ctx.camera.position);
     this.ctx.camera.lookAt(s.x, s.y + 1.2, s.z);
     this.loop.stop();
     this.loop.start();

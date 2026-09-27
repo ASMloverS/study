@@ -6,6 +6,10 @@ export class ChaseCamera {
 
   constructor(private camera: THREE.PerspectiveCamera) {}
 
+  reset(pos: THREE.Vector3): void {
+    this.basePos.copy(pos);
+  }
+
   update(target: THREE.Vector3, heading: number, gradient: number, frameDt: number, speed: number): void {
     const fx = Math.cos(heading);
     const fz = Math.sin(heading);
