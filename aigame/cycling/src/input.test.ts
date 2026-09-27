@@ -78,4 +78,24 @@ describe('InputController', () => {
     release('ArrowLeft');
     expect(c.command().steer).toBe(0);
   });
+  it('clamps negative clock drift to zero integration', () => {
+    press('q');
+    t += 0.05;
+    c.command();
+    t -= 0.05;
+    expect(c.command().cogDelta).toBe(0);
+  });
+  it('reset clears held keys and re-baselines the clock', () => {
+    press('q');
+    c.reset();
+    t += 0.05;
+    expect(c.command().cogDelta).toBe(0);
+    expect(c.command().steer).toBe(0);
+  });
+  it('opposite keys held together cancel out', () => {
+    press('q');
+    press('e');
+    t += 0.05;
+    expect(c.command().cogDelta).toBeCloseTo(0, 5);
+  });
 });

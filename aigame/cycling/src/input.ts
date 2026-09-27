@@ -14,8 +14,9 @@ export class InputController {
   }
 
   command(): RiderCommand {
-    const held = Math.min(0.1, Math.max(0, this.now() - this.lastNow));
-    this.lastNow = this.now();
+    const now = this.now();
+    const held = Math.min(0.1, Math.max(0, now - this.lastNow));
+    this.lastNow = now;
     let cogDelta = this.cogPulse;
     let cadDelta = this.cadPulse;
     if (this.keys.has('q')) cogDelta += DRIVETRAIN.cogHoldRate * held;
@@ -30,6 +31,10 @@ export class InputController {
   attach(): void {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.steer = 0;
+    });
   }
 
   reset(): void {
