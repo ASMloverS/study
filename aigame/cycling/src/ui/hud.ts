@@ -56,12 +56,12 @@ export class Hud {
     this.el.get('results')!.style.display = 'none';
   }
 
-  update(v: HudView): void {
+  update(v: HudView, frameDt: number): void {
     const g = (id: string) => this.el.get(id)!;
     g('speed').textContent = `${v.speedKmh.toFixed(0)} km/h`;
     const acc = v.speedKmh - this.prevKmh;
     this.prevKmh = v.speedKmh;
-    if (acc > 0.8) {
+    if (acc > 48 * frameDt) {
       g('speed').classList.add('punch');
       if (this.punchT) clearTimeout(this.punchT);
       this.punchT = setTimeout(() => g('speed').classList.remove('punch'), 160);
@@ -152,7 +152,7 @@ export class Hud {
     const box = this.el.get('results')!;
     box.style.display = 'block';
     box.innerHTML = `<h2>比赛结果</h2>` + rows.map((r, i) =>
-      `<div class="row${r.id === 0 ? ' me' : ''}"><span>${i + 1}. ${r.name}</span><span>${r.time.toFixed(1)}s</span><span>${r.avgPower.toFixed(0)}W</span></div>`
+      `<div class="row${r.id === 0 ? ' me' : ''}"><span>${i + 1}. ${r.name}</span><span>${r.dnf ? 'DNF' : `${r.time.toFixed(1)}s`}</span><span>${r.avgPower.toFixed(0)}W</span></div>`
     ).join('') + `<p>按 R 重新开始</p>`;
   }
 }

@@ -40,6 +40,7 @@ export interface ResultRow {
   id: number;
   name: string;
   time: number;
+  dnf: boolean;
   avgPower: number;
 }
 

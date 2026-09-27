@@ -151,4 +151,18 @@ describe('race', () => {
     expect(ds[ds.length - 1]).toBeCloseTo(13500, -1);
     expect(ds.length).toBe(9);
   });
+  it('marks cut riders as dnf in results', () => {
+    let s = createRace(track);
+    let guard = 0;
+    while (s.phase === 'countdown' && guard++ < 60 * 10) s = stepRace(s, track, cruise, RACE.dt);
+    s = { ...s, riders: s.riders.map((r, i) => (i === 0 || i === 4 ? { ...r, dist: track.length - 0.1, speed: 20 } : r)) };
+    s = stepRace(s, track, cruise, RACE.dt);
+    for (let i = 0; i < 60 * 60; i++) s = stepRace(s, track, cruise, RACE.dt);
+    expect(s.phase).toBe('finished');
+    const row = s.results.find((r) => r.id === 4);
+    expect(row!.dnf).toBe(false);
+    expect(s.results.some((r) => r.dnf)).toBe(true);
+    const cut = s.results.filter((r) => r.dnf);
+    expect(cut.length).toBeLessThanOrEqual(7);
+  });
 });

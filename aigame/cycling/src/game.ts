@@ -107,7 +107,7 @@ export class Game {
     this.tmp.set(ps.x, ps.y, ps.z);
     this.cam.update(this.tmp, ps.heading, ps.gradient, frameDt, s.riders[0].speed);
     this.speedLines.update(s.riders[0].speed, frameDt, this.ctx.camera);
-    this.hud.update(this.view(ps));
+    this.hud.update(this.view(ps), frameDt);
     this.minimap.draw(s.riders, this.track);
     this.ctx.renderer.render(this.ctx.scene, this.ctx.camera);
   }

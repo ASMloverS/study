@@ -63,6 +63,7 @@ export function buildResults(riders: readonly RiderState[]): ResultRow[] {
       id: r.id,
       name: r.name,
       time: r.finishTime ?? r.dist,
+      dnf: r.finishTime === null,
       avgPower: r.timeSum > 0 ? r.powerSum / r.timeSum : 0,
     }));
 }
