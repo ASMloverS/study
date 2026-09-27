@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ITEM_BOXES, RACE } from '../sim/params';
 import { mulberry32 } from '../sim/rng';
-import { terrainHeight } from './terrain';
+import { baseHills, smoothstep } from './terrain';
 import type { Track } from '../sim/track';
 
 function ribbon(track: Track, left: number, right: number, color: number, dy: number): THREE.Mesh {
@@ -96,10 +96,11 @@ function trees(track: Track): THREE.Group {
     const x = s.x + nx * side * off;
     const z = s.z + nz * side * off;
     const sc = 0.7 + rng() * 0.9;
+    const ground = s.y + baseHills(x, z) * smoothstep(off, 12, 80) - 0.15;
     m.makeScale(sc, sc, sc);
-    m.setPosition(x, terrainHeight(track, x, z) + 1.2 * sc, z);
+    m.setPosition(x, ground + 1.2 * sc, z);
     trunks.setMatrixAt(placed, m);
-    m.setPosition(x, terrainHeight(track, x, z) + 5.15 * sc, z);
+    m.setPosition(x, ground + 5.15 * sc, z);
     crowns.setMatrixAt(placed, m);
     placed++;
   }

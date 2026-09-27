@@ -10,29 +10,43 @@ export function smoothstep(v: number, e0: number, e1: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function terrainHeight(track: Track, x: number, z: number): number {
-  const near = track.nearest(x, z);
-  return near.y + baseHills(x, z) * smoothstep(near.dist, 12, 80);
-}
+const LATERAL = [-400, -250, -150, -80, -40, -15, 0, 15, 40, 80, 150, 250, 400];
 
 export function buildTerrain(track: Track): THREE.Mesh {
   const pts = track.densePoints();
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const [x, , z] of pts) {
-    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-    minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+  const sections: [number, number, number, number, number][] = [];
+  for (let i = 0; i < pts.length - 1; i += 3) {
+    const [x, y, z] = pts[i];
+    const dx = pts[i + 1][0] - x;
+    const dz = pts[i + 1][2] - z;
+    const len = Math.hypot(dx, dz) || 1;
+    sections.push([x, y, z, -dz / len, dx / len]);
   }
-  const margin = 300;
-  const geo = new THREE.PlaneGeometry(maxX - minX + margin * 2, maxZ - minZ + margin * 2, 150, 150);
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const cx = (minX + maxX) / 2;
-  const cz = (minZ + maxZ) / 2;
-  for (let i = 0; i < pos.count; i++) {
-    pos.setY(i, terrainHeight(track, pos.getX(i) + cx, pos.getZ(i) + cz) - 0.15);
+  const rows = sections.length;
+  const cols = LATERAL.length;
+  const pos = new Float32Array(rows * cols * 3);
+  for (let r = 0; r < rows; r++) {
+    const [x, y, z, lx, lz] = sections[r];
+    for (let c = 0; c < cols; c++) {
+      const off = LATERAL[c];
+      const px = x + lx * off;
+      const pz = z + lz * off;
+      const o = (r * cols + c) * 3;
+      pos[o] = px;
+      pos[o + 1] = y + baseHills(px, pz) * smoothstep(off, 12, 80) - 0.15;
+      pos[o + 2] = pz;
+    }
   }
+  const idx: number[] = [];
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const a = r * cols + c;
+      idx.push(a, a + cols, a + 1, a + 1, a + cols, a + cols + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x6fae57 }));
-  mesh.position.set(cx, 0, cz);
-  return mesh;
+  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x6fae57 }));
 }
