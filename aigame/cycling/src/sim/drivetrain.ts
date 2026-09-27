@@ -1,14 +1,15 @@
 import { DRIVETRAIN as D } from './params';
 
 export function gearRatio(cog: number): number {
-  return D.chainring / D.cassette[cog];
+  return D.chainring / cog;
 }
 
 export function cadence(speed: number, cog: number): number {
   return (speed / (gearRatio(cog) * D.wheelCirc)) * 60;
 }
 
-export function cadenceEfficiency(cad: number): number {
+export function cadenceEfficiency(cad: number, sprint = false): number {
+  if (sprint) return 1;
   if (cad >= D.cadFullLo && cad <= D.cadFullHi) return 1;
   if (cad <= D.cadFloor || cad >= D.cadCeil) return D.effMin;
   if (cad < D.cadFullLo) {
@@ -24,14 +25,8 @@ export function terrainCadence(gradient: number): number {
 }
 
 export function aiShift(speed: number, currentCog: number, target: number = D.aiTargetCadence): number {
-  let best = currentCog;
-  let bestErr = Math.abs(cadence(speed, currentCog) - target);
-  for (let c = 0; c < D.cassette.length; c++) {
-    const err = Math.abs(cadence(speed, c) - target);
-    if (err < bestErr - D.aiShiftHysteresis) {
-      best = c;
-      bestErr = err;
-    }
-  }
-  return best;
+  if (speed < D.aiShiftMinSpeed) return currentCog;
+  const ideal = Math.min(D.cogMax, Math.max(D.cogMin, (target * D.chainring * D.wheelCirc) / (speed * 60)));
+  const err = (cog: number) => Math.abs(cadence(speed, cog) - target);
+  return err(ideal) < err(currentCog) - D.aiShiftHysteresis ? ideal : currentCog;
 }

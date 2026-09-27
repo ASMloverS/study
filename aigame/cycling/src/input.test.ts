@@ -30,14 +30,14 @@ describe('InputController', () => {
     press('ArrowDown');
     expect(c.command().cadDelta).toBe(-5);
   });
-  it('E queues +1 cog delta once', () => {
+  it('E queues -1 cog delta once', () => {
     press('e');
-    expect(c.command().cogDelta).toBe(1);
+    expect(c.command().cogDelta).toBe(-1);
     expect(c.command().cogDelta).toBe(0);
   });
-  it('Q queues -1 cog delta', () => {
+  it('Q queues +1 cog delta', () => {
     press('q');
-    expect(c.command().cogDelta).toBe(-1);
+    expect(c.command().cogDelta).toBe(1);
   });
   it('ignores auto-repeat', () => {
     press('ArrowUp');

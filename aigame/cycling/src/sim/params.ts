@@ -29,7 +29,12 @@ export const GEARS = ['轻松', '巡航', '发力', '冲刺'] as const;
 
 export const DRIVETRAIN = {
   chainring: 52,
-  cassette: [36, 32, 28, 24, 21, 18, 16, 14, 13, 12, 11, 10],
+  cogMin: 10,
+  cogMax: 36,
+  cogStep: 1,
+  cogHoldRate: 6,
+  cadHoldRate: 30,
+  defaultCogTeeth: 16,
   wheelCirc: 2.096,
   cadFullLo: 80,
   cadFullHi: 125,
@@ -38,7 +43,7 @@ export const DRIVETRAIN = {
   effMin: 0.55,
   aiTargetCadence: 95,
   aiShiftHysteresis: 3,
-  defaultCog: 6,
+  aiShiftMinSpeed: 0.5,
   climbCadence: 90,
   flatCadence: 110,
   descentCadence: 120,
@@ -46,6 +51,6 @@ export const DRIVETRAIN = {
   descentGradient: -0.02,
   cadenceStep: 5,
   cadOffsetMax: 30,
-  cadTargetMin: 60,
+  cadTargetMin: 80,
   cadTargetMax: 150,
 } as const;

@@ -35,7 +35,7 @@ const NAMES = ['你', '山神', '穿山甲', '火箭', '冲刺王', '发动机',
 function makeRider(id: number, type: RiderType, isPlayer: boolean, dist: number, lateral: number): RiderState {
   return {
     id, name: NAMES[id], isPlayer, type,
-    dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1, cog: DRIVETRAIN.defaultCog,
+    dist, lateral, speed: 0, energy: type.maxEnergy, gear: 1, cog: DRIVETRAIN.defaultCogTeeth,
     cadTarget: DRIVETRAIN.flatCadence,
     power: 0, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0,
   };
@@ -98,15 +98,17 @@ export function stepRace(s: RaceState, track: Track, playerCmd: RiderCommand, dt
     const cmd = cmds[i];
     r.gear = cmd.gear;
     if (r.isPlayer) {
-      r.cog = clamp(r.cog + cmd.cogDelta, 0, DRIVETRAIN.cassette.length - 1);
-      r.cadTarget = clamp(r.cadTarget + cmd.cadDelta, DRIVETRAIN.cadTargetMin, DRIVETRAIN.cadTargetMax);
+      r.cog = clamp(r.cog + cmd.cogDelta, DRIVETRAIN.cogMin, DRIVETRAIN.cogMax);
+      const cadHi = cmd.gear === 3 ? Infinity : Math.max(DRIVETRAIN.cadTargetMax, r.cadTarget);
+      r.cadTarget = clamp(r.cadTarget + cmd.cadDelta, DRIVETRAIN.cadTargetMin, cadHi);
     } else if (shiftTick) {
       r.cog = aiShift(r.speed, r.cog);
     }
     const cad = cadence(r.speed, r.cog);
+    const sprint = r.isPlayer && cmd.gear === 3;
     const softPedal = r.isPlayer && cad >= r.cadTarget;
     const effort = r.finishTime !== null || softPedal ? 0 : targetPower(cmd.gear, r.type.ftp, r.energy);
-    r.power = effort * cadenceEfficiency(cad);
+    r.power = effort * cadenceEfficiency(cad, sprint);
     r.speed = r.finishTime !== null ? Math.max(0, r.speed - 2 * dt) : stepSpeed(r.speed, r.power, gradients[i], drafts[i], dt);
     if (r.finishTime === null) {
       r.dist += r.speed * dt;

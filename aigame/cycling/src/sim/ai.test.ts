@@ -3,7 +3,7 @@ import { aiCommand } from './ai';
 import type { RiderState, RiderType } from './types';
 
 function rider(over: Partial<RiderState>, type: RiderType = { label: 't', ftp: 300, maxEnergy: 24000, sprintDist: 250, aggression: 0.5 }): RiderState {
-  return { id: 1, name: 'ai', isPlayer: false, type, dist: 1000, lateral: 0, speed: 9, energy: 20000, gear: 1, cog: 6, cadTarget: 110, power: 300, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0, ...over };
+  return { id: 1, name: 'ai', isPlayer: false, type, dist: 1000, lateral: 0, speed: 9, energy: 20000, gear: 1, cog: 16, cadTarget: 110, power: 300, powerSum: 0, timeSum: 0, finishTime: null, wanderTarget: 0, ...over };
 }
 
 describe('aiCommand', () => {

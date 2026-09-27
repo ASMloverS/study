@@ -3,7 +3,7 @@ import { createRace, standings, stepRace } from './sim/race';
 import type { RaceState } from './sim/race';
 import { buildTrack } from './sim/trackData';
 import type { TrackSample } from './sim/track';
-import { DRIVETRAIN, GEARS, RACE } from './sim/params';
+import { GEARS, RACE } from './sim/params';
 import { cadence } from './sim/drivetrain';
 import { createLoop } from './core/loop';
 import { InputController } from './input';
@@ -90,7 +90,7 @@ export class Game {
         const cad = cadence(p.speed, p.cog);
         const target = p.cadTarget;
         const rpm = Math.abs(cad - target) > 3 ? `${cad.toFixed(0)}/${target}` : cad.toFixed(0);
-        return `52×${DRIVETRAIN.cassette[p.cog]} · ${rpm}rpm · ${GEARS[p.gear]}`;
+        return `52×${Math.round(p.cog)} · ${rpm}rpm · ${GEARS[p.gear]}`;
       })(),
       energyFrac: p.energy / p.type.maxEnergy,
       gradientPct: ps.gradient * 100,

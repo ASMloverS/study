@@ -33,8 +33,8 @@ export class InputController {
     const k = e.key.toLowerCase();
     if (k === 'arrowup' || k === 'w') this.cadDelta += DRIVETRAIN.cadenceStep;
     else if (k === 'arrowdown' || k === 's') this.cadDelta -= DRIVETRAIN.cadenceStep;
-    else if (k === 'e') this.cogDelta += 1;
-    else if (k === 'q') this.cogDelta -= 1;
+    else if (k === 'e') this.cogDelta -= DRIVETRAIN.cogStep;
+    else if (k === 'q') this.cogDelta += DRIVETRAIN.cogStep;
     else if (k === '1' || k === '2' || k === '3' || k === '4') this.gear = (Number(k) - 1) as GearId;
     else {
       this.keys.add(k);
