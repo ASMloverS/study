@@ -84,9 +84,14 @@ const GEO = {
   gunStock: new THREE.BoxGeometry(0.045, 0.07, 0.2),
   gunScope: new THREE.BoxGeometry(0.04, 0.05, 0.18),
   gunPump: new THREE.BoxGeometry(0.05, 0.05, 0.16),
+  gunDrum: new THREE.BoxGeometry(0.09, 0.1, 0.11),
+  gunBarrel: new THREE.BoxGeometry(0.028, 0.028, 0.36),
+  gunBipod: new THREE.BoxGeometry(0.012, 0.16, 0.012),
+  gunWire: new THREE.BoxGeometry(0.01, 0.01, 0.22),
+  gunSlide: new THREE.BoxGeometry(0.038, 0.028, 0.15),
 };
 
-function gunFor(w: WeaponId, mat: THREE.Material): THREE.Group {
+export function gunFor(w: WeaponId, mat: THREE.Material): THREE.Group {
   const g = new THREE.Group();
   const add = (geo: THREE.BufferGeometry, x: number, y: number, z: number) => {
     const m = new THREE.Mesh(geo, mat);
@@ -99,23 +104,31 @@ function gunFor(w: WeaponId, mat: THREE.Material): THREE.Group {
     add(GEO.gunMag, 0, -0.09, 0.02);
     add(GEO.gunStock, 0, -0.01, 0.26);
     add(GEO.gunScope, 0, 0.07, 0.04);
+    add(GEO.gunBarrel, 0, 0.01, -0.36);
   } else if (w === 'sg') {
     add(GEO.gunBody, 0, 0.01, -0.08);
     add(GEO.gunPump, 0, -0.05, -0.14);
     add(GEO.gunStock, 0, -0.02, 0.24);
+    add(GEO.gunBarrel, 0, 0.035, -0.3);
+    add(GEO.gunScope, 0, 0.05, 0.05);
   } else if (w === 'sr') {
     add(GEO.gunBody, 0, 0.01, -0.16);
     add(GEO.gunMag, 0, -0.08, -0.02);
     add(GEO.gunStock, 0, -0.01, 0.3);
     add(GEO.gunScope, 0, 0.09, -0.04);
+    add(GEO.gunBarrel, 0, 0.01, -0.52);
   } else if (w === 'smg') {
     add(GEO.gunBody, 0, 0, -0.02);
     add(GEO.gunMag, 0, -0.1, 0.04);
-    add(GEO.gunStock, 0, 0, 0.2);
+    add(GEO.gunWire, 0.014, 0.02, 0.24);
+    add(GEO.gunWire, -0.014, 0.02, 0.24);
     add(GEO.gunScope, 0, 0.06, 0);
   } else if (w === 'lmg') {
     add(GEO.gunBody, 0, 0, -0.1);
-    add(GEO.gunMag, 0, -0.1, 0);
+    add(GEO.gunDrum, 0, -0.11, 0.02);
+    add(GEO.gunBarrel, 0, 0.01, -0.42);
+    add(GEO.gunBipod, 0.024, -0.1, -0.3);
+    add(GEO.gunBipod, -0.024, -0.1, -0.3);
     add(GEO.gunStock, 0, -0.01, 0.28);
     add(GEO.gunScope, 0, 0.07, 0.06);
   } else if (w === 'dmr') {
@@ -123,9 +136,11 @@ function gunFor(w: WeaponId, mat: THREE.Material): THREE.Group {
     add(GEO.gunMag, 0, -0.07, 0);
     add(GEO.gunStock, 0, -0.01, 0.28);
     add(GEO.gunScope, 0, 0.08, -0.02);
+    add(GEO.gunBarrel, 0, 0.01, -0.4);
   } else {
-    add(GEO.gunBody, 0, 0.01, 0.1);
+    add(GEO.gunBody, 0, 0.01, 0.08);
     add(GEO.gunMag, 0, -0.07, 0.12);
+    add(GEO.gunSlide, 0, 0.045, 0.06);
   }
   return g;
 }
