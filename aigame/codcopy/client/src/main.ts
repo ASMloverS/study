@@ -119,16 +119,21 @@ let kcReplay: { killerId: number; deathAt: number; startAt: number } | null = nu
 let killcamViews: RemoteViews | null = null;
 
 function showPause(): void {
-  if (input.placementActive) {
-    placement.close();
-    input.placementActive = false;
-  }
+  closePlacement();
   if (sessionIsLocal && session instanceof LocalSession && !sessionPaused) {
     session.pause();
     sessionPaused = true;
   }
   pausetitle.textContent = sessionIsLocal ? '已暂停' : '菜单';
   pauseoverlay.classList.add('show');
+}
+
+/** [M15] 统一关闭俯图：清 active + 排空残留的放置增量（confirm/cancel 竞态防护） */
+function closePlacement(): void {
+  if (!input.placementActive) return;
+  placement.close();
+  input.placementActive = false;
+  input.drainPlacementDeltas();
 }
 
 function hidePause(): void {
@@ -322,10 +327,7 @@ function startSession(): void {
   session.onMessage(onMessage);
   session.onDisconnect(() => {
     if (gameState !== 'playing' && gameState !== 'ended') return;
-    if (input.placementActive) {
-      placement.close();
-      input.placementActive = false;
-    }
+    closePlacement();
     session = null;
     gameState = 'menu';
     hidePause();
@@ -465,10 +467,7 @@ function onEvent(e: GameEvent): void {
       }
     }
     if (e.victimId === selfId) {
-      if (input.placementActive) {
-        placement.close();
-        input.placementActive = false;
-      }
+      closePlacement();
       hud.showDeath(killer, e.cause ?? e.weapon);
       hud.showKill(`击杀回放：${killer}`);
       if (e.killerId !== selfId) {
@@ -575,10 +574,7 @@ function onEvent(e: GameEvent): void {
       audio.playAt('uav', e.target.x, 2, e.target.z);
     }
   } else if (e.type === 'gameOver') {
-    if (input.placementActive) {
-      placement.close();
-      input.placementActive = false;
-    }
+    closePlacement();
     gameState = 'ended';
     document.exitPointerLock();
     hud.showEnd(e.winnerId === selfId, e.standings, selfId);
@@ -796,7 +792,7 @@ function frame(nowMs: number): void {
   if (padSwitchEdge) input.requestSlot(input.currentSlotHint === 1 ? 2 : 1);
   if (pad.streak > 0) {
     if (pad.streak === 1) input.requestStreak(1);
-    else input.placementRequest = pad.streak as 2 | 3;
+    else if (!input.placementActive) input.placementRequest = pad.streak as 2 | 3;
   }
   if (padPauseEdge) {
     if (gameState === 'playing') {
@@ -836,8 +832,7 @@ function frame(nowMs: number): void {
   }
   if (input.placementActive) {
     if (gameState !== 'playing') {
-      placement.close();
-      input.placementActive = false;
+      closePlacement();
     } else {
       const d = input.drainPlacementDeltas();
       for (let i = 0; i < Math.abs(d.wheel); i++) placement.rotate(d.wheel > 0 ? 1 : -1);
