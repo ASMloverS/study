@@ -125,7 +125,7 @@ export function gunFor(w: WeaponId, mat: THREE.Material): THREE.Group {
     add(GEO.gunScope, 0, 0.06, 0);
   } else if (w === 'lmg') {
     add(GEO.gunBody, 0, 0, -0.1);
-    add(GEO.gunDrum, 0, -0.11, 0.02);
+    add(GEO.gunDrum, 0, -0.09, 0.02);
     add(GEO.gunBarrel, 0, 0.01, -0.42);
     add(GEO.gunBipod, 0.024, -0.1, -0.3);
     add(GEO.gunBipod, -0.024, -0.1, -0.3);
