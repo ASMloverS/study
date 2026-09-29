@@ -1,6 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import {
+  AIRSTRIKE_DELAY_TICKS,
   BTN,
   DEG2RAD,
   FLASH_MAX_BLIND_MS,
@@ -574,7 +575,7 @@ function onEvent(e: GameEvent): void {
     if (e.tier !== 1 && e.target) {
       audio.jetFlyby(e.target.x, e.target.z, e.yaw ?? 0);
       fx.smokeMarker(new THREE.Vector3(e.target.x, 0.8, e.target.z));
-      minimap.addStrikeWarning(e.target.x, e.target.z, now + 3000);
+      minimap.addStrikeWarning(e.target.x, e.target.z, now + (AIRSTRIKE_DELAY_TICKS / TICK_RATE) * 1000);
     }
   } else if (e.type === 'gameOver') {
     closePlacement();
@@ -820,7 +821,7 @@ function frame(nowMs: number): void {
   // [M15] 连杀放置模式：5/6 打开俯图（需对应奖励就绪）
   const reqTier = input.placementRequest;
   input.placementRequest = 0;
-  if (reqTier >= 2 && gameState === 'playing' && selfSnap?.a && !kcReplay) {
+  if (reqTier >= 2 && gameState === 'playing' && selfSnap?.a && !kcReplay && !sessionPaused) {
     const svMask = selfSnap.sv ?? 0;
     if (svMask & (reqTier === 2 ? 2 : 4)) {
       const uavActive = nowMs2 < uavUntilLocal;
