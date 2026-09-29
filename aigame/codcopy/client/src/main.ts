@@ -322,6 +322,10 @@ function startSession(): void {
   session.onMessage(onMessage);
   session.onDisconnect(() => {
     if (gameState !== 'playing' && gameState !== 'ended') return;
+    if (input.placementActive) {
+      placement.close();
+      input.placementActive = false;
+    }
     session = null;
     gameState = 'menu';
     hidePause();
@@ -571,6 +575,10 @@ function onEvent(e: GameEvent): void {
       audio.playAt('uav', e.target.x, 2, e.target.z);
     }
   } else if (e.type === 'gameOver') {
+    if (input.placementActive) {
+      placement.close();
+      input.placementActive = false;
+    }
     gameState = 'ended';
     document.exitPointerLock();
     hud.showEnd(e.winnerId === selfId, e.standings, selfId);
@@ -827,21 +835,26 @@ function frame(nowMs: number): void {
     }
   }
   if (input.placementActive) {
-    const d = input.drainPlacementDeltas();
-    if (d.wheel !== 0) placement.rotate(d.wheel > 0 ? 1 : -1);
-    placement.moveCursor(d.dx, d.dy);
-    if (d.cancel) {
+    if (gameState !== 'playing') {
       placement.close();
       input.placementActive = false;
-    } else if (d.confirm) {
-      const r = placement.confirm();
-      input.placementActive = false;
-      if (r) input.requestStreakTargeted(r.streak, r.streakTarget, r.streakYaw);
     } else {
-      const st1 = predictor.state;
-      placement.updateSelf({ x: st1.x, z: st1.z, yaw: input.yaw });
+      const d = input.drainPlacementDeltas();
+      for (let i = 0; i < Math.abs(d.wheel); i++) placement.rotate(d.wheel > 0 ? 1 : -1);
+      placement.moveCursor(d.dx, d.dy);
+      if (d.cancel) {
+        placement.close();
+        input.placementActive = false;
+      } else if (d.confirm) {
+        const r = placement.confirm();
+        input.placementActive = false;
+        if (r) input.requestStreakTargeted(r.streak, r.streakTarget, r.streakYaw);
+      } else {
+        const st1 = predictor.state;
+        placement.updateSelf({ x: st1.x, z: st1.z, yaw: input.yaw });
+      }
+      placement.render();
     }
-    placement.render();
   }
 
   if (gameState === 'playing' && selfId >= 0 && (input.locked || gamepad.active) && selfSnap?.a !== false) {

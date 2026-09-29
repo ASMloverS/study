@@ -100,27 +100,5 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #111; }
 #plobbyhint { font-size: 12px; opacity: 0.65; min-height: 14px; }
 #lobbyset .setting input:disabled, #lobbyset .setting select:disabled { opacity: 0.45; }
 .hosttag { color: #ffc94d; font-size: 11px; border: 1px solid #ffc94d; border-radius: 2px; padding: 0 3px; margin-left: 4px; }
-#tacmap {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: none;
-  border: 2px solid rgba(255, 201, 77, 0.7);
-  border-radius: 8px;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.85);
-  z-index: 30;
-}
-#tacmaphint {
-  position: absolute;
-  left: 50%;
-  bottom: 18%;
-  transform: translateX(-50%);
-  display: none;
-  color: #ffc94d;
-  font-size: 14px;
-  background: rgba(12, 16, 20, 0.85);
-  padding: 6px 14px;
-  border-radius: 6px;
-  z-index: 31;
-}
+#tacmap { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; border: 2px solid rgba(255, 201, 77, 0.7); border-radius: 8px; box-shadow: 0 0 40px rgba(0, 0, 0, 0.85); z-index: 30; }
+#tacmaphint { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); display: none; color: #ffc94d; font-size: 14px; background: rgba(12, 16, 20, 0.85); padding: 6px 14px; border-radius: 6px; z-index: 31; }

@@ -93,8 +93,8 @@ export class InputSystem {
       if (e.code === 'Digit1') this.pendingSlot = 1;
       if (e.code === 'Digit2') this.pendingSlot = 2;
       if (e.code === 'Digit4') this.pendingStreak = 1;
-      if (e.code === 'Digit5') this.placementRequest = 2;
-      if (e.code === 'Digit6') this.placementRequest = 3;
+      if (e.code === 'Digit5' && !this.placementActive) this.placementRequest = 2;
+      if (e.code === 'Digit6' && !this.placementActive) this.placementRequest = 3;
       if (this.placementActive && e.code === 'KeyQ') this.wheelSteps -= 1;
       if (this.placementActive && e.code === 'KeyE') this.wheelSteps += 1;
       if (e.code === 'KeyQ' && this.qSwapSlot > 0 && !this.placementActive) this.pendingSlot = this.qSwapSlot;
