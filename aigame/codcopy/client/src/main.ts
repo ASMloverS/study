@@ -9,6 +9,8 @@ import {
   PLAYER_EYE_RATIO,
   SHOT_MAX_DISTANCE,
   TICK_DT,
+  TICK_RATE,
+  UAV_DURATION_TICKS,
   WEAPONS,
   WEAPON_LIST,
   type Loadout,
@@ -546,8 +548,8 @@ function onEvent(e: GameEvent): void {
     audio.playAt('explode', p.x, p.y, p.z);
     const s = predictor.state;
     const dist = Math.hypot(p.x - s.x, p.y - s.y - 1, p.z - s.z);
-    if (dist < 10) {
-      shake = Math.max(shake, 0.45 * (1 - dist / 10));
+    if (dist < 18) {
+      shake = Math.max(shake, 0.45 * (1 - dist / 18));
       if (settings.padRumble) gamepad.rumble(now, 120, 0.6, 1);
     }
   } else if (e.type === 'streakEarned') {
@@ -558,20 +560,21 @@ function onEvent(e: GameEvent): void {
       audio.announce(`${names[e.tier]}已就绪`);
     }
   } else if (e.type === 'streakUse') {
-    if (e.playerId === selfId) {
-      if (e.tier === 1) {
-        uavUntilLocal = now + 15000;
-        hud.showKill('UAV 已启动：敌人位置已标记');
-      } else {
-        hud.showKill(e.tier === 2 ? '精准空袭已呼叫！' : '集束炸弹已投放！');
-      }
+    if (e.playerId === selfId && e.tier === 1) {
+      uavUntilLocal = now + (UAV_DURATION_TICKS / TICK_RATE) * 1000;
+      hud.showKill('UAV 已启动：敌人位置已标记');
       audio.playLocal('uav');
+    } else if (e.playerId === selfId) {
+      hud.showKill(e.tier === 2 ? '精准空袭已呼叫！' : '集束炸弹已投放！');
     } else if (e.tier === 1) {
       hud.showKill('⚠ 敌方 UAV 已启动');
       audio.playLocal('uav');
       audio.announce('警告，敌方无人侦察机已升空');
-    } else if (e.target) {
-      audio.playAt('uav', e.target.x, 2, e.target.z);
+    }
+    if (e.tier !== 1 && e.target) {
+      audio.jetFlyby(e.target.x, e.target.z, e.yaw ?? 0);
+      fx.smokeMarker(new THREE.Vector3(e.target.x, 0.8, e.target.z));
+      minimap.addStrikeWarning(e.target.x, e.target.z, now + 3000);
     }
   } else if (e.type === 'gameOver') {
     closePlacement();

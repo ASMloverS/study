@@ -326,19 +326,33 @@ export class Effects {
   }
 
   explosion(pos: THREE.Vector3): void {
-    this.spawn(pos, { color: 0xffb830, size: 0.8, vel: new THREE.Vector3(0, 1.5, 0), life: 0.35, grow: 9, additive: true });
-    this.spawn(pos, { color: 0xffe896, size: 0.4, vel: new THREE.Vector3(0, 2.5, 0), life: 0.25, grow: 12, additive: true });
-    for (let i = 0; i < 10; i++) {
+    this.spawn(pos, { color: 0xffb830, size: 1.1, vel: new THREE.Vector3(0, 1.5, 0), life: 0.35, grow: 11, additive: true });
+    this.spawn(pos, { color: 0xffe896, size: 0.6, vel: new THREE.Vector3(0, 2.5, 0), life: 0.25, grow: 14, additive: true });
+    for (let i = 0; i < 14; i++) {
       this.spawn(pos, {
         color: 0x6a7480,
         size: 0.35,
         vel: randVec(1).multiplyScalar(3.5).add(new THREE.Vector3(0, 1.6, 0)),
-        life: 1.1,
+        life: 1.3,
         gravity: -1,
         grow: 2,
       });
     }
     this.debris(pos, 0xc98f42);
+  }
+
+  /** [M15] 空袭/集束落点红烟标记（持续约 3s 的上升烟柱） */
+  smokeMarker(pos: THREE.Vector3): void {
+    for (let i = 0; i < 42; i++) {
+      this.spawn(pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.6, Math.random() * 0.4, (Math.random() - 0.5) * 1.6)), {
+        color: Math.random() < 0.7 ? 0xd8382f : 0x8a1f18,
+        size: 0.45,
+        vel: new THREE.Vector3((Math.random() - 0.5) * 0.8, 1.6 + Math.random() * 1.2, (Math.random() - 0.5) * 0.8),
+        life: 2.6 + Math.random() * 0.8,
+        gravity: -0.6,
+        grow: 2.2,
+      });
+    }
   }
 
   private spawn(pos: THREE.Vector3, o: ParticleOpts): void {

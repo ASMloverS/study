@@ -18,6 +18,7 @@ export class Minimap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly canvas: HTMLCanvasElement;
   private enemyRgb = '255,70,60';
+  private warnings: { x: number; z: number; until: number }[] = [];
 
   constructor(private map: MapDef) {
     this.canvas = document.getElementById('minimap') as HTMLCanvasElement;
@@ -26,6 +27,10 @@ export class Minimap {
 
   setEnemyColor(rgb: string): void {
     this.enemyRgb = rgb;
+  }
+
+  addStrikeWarning(x: number, z: number, until: number): void {
+    this.warnings.push({ x, z, until });
   }
 
   render(self: { x: number; z: number; yaw: number }, enemies: Map<number, EnemyBlip>, now: number, uavEnemies: { x: number; z: number }[] = []): void {
@@ -58,6 +63,15 @@ export class Minimap {
       ctx.arc((e.x + world / 2) * s, (e.z + world / 2) * s, 3.4, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,200,90,0.8)';
+      ctx.stroke();
+    }
+    this.warnings = this.warnings.filter((w) => now <= w.until);
+    for (const w of this.warnings) {
+      const k = 0.55 + 0.45 * Math.sin(now / 120);
+      ctx.strokeStyle = `rgba(255,64,48,${k.toFixed(2)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc((w.x + world / 2) * s, (w.z + world / 2) * s, 6 + 2 * Math.sin(now / 120), 0, Math.PI * 2);
       ctx.stroke();
     }
     const sx = (self.x + world / 2) * s;

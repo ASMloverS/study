@@ -104,6 +104,43 @@ export class AudioSys {
     this.emit(kind, panner);
   }
 
+  /** [M15] 喷气机呼啸掠过（空袭/集束 incoming，所有客户端 3D 可闻） */
+  jetFlyby(x: number, z: number, yaw: number): void {
+    if (!this.ctx || !this.master) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const dx = -Math.sin(yaw);
+    const dz = -Math.cos(yaw);
+    const panner = ctx.createPanner();
+    panner.panningModel = 'equalpower';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 12;
+    panner.maxDistance = 160;
+    panner.rolloffFactor = 0.9;
+    panner.positionY.value = 8;
+    panner.positionX.setValueAtTime(x - dx * 40, t);
+    panner.positionZ.setValueAtTime(z - dz * 40, t);
+    panner.positionX.linearRampToValueAtTime(x + dx * 40, t + 1.6);
+    panner.positionZ.linearRampToValueAtTime(z + dz * 40, t + 1.6);
+    panner.connect(this.master);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(2400, t);
+    bp.frequency.exponentialRampToValueAtTime(420, t + 1.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+    src.connect(bp).connect(g).connect(panner);
+    src.start(t);
+    src.stop(t + 1.75);
+    this.thump(panner, t + 0.4, 75, 1.1, 0.28);
+  }
+
   private emit(kind: SoundKind, dest: AudioNode): void {
     const ctx = this.ctx!;
     const t = ctx.currentTime;
