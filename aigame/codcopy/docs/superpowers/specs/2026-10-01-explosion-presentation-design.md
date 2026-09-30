@@ -62,7 +62,7 @@ M16 修复引爆高度后，空袭/集束的 blast 事件链路、位置、伤�
   - 轰鸣 `burst(850Hz→, 0.75s, 0.6×mag)`
   - 低频 `thump(52→~35Hz, 0.9s, 0.55×mag)` + `thump(90Hz, 0.3s, 0.3×mag)`（延迟 0.05s）
   - **接入混响总线**：轰鸣层额外 send 至 `tailBus`（gain 0.5×mag）→ 1.8s 卷积滚雷尾
-- **远距可闻**：`playAt` 对 `'explode'` 使用专属距离模型——refDistance 10 / rolloff 1.0 / maxDistance 200 / 低通 `max(240, min(8000, 8000 - dist×55))`（全图可闻沉闷轰鸣）。
+- **远距可闻**：`playAt` 对 `'explode'` 使用专属距离模型——refDistance 10 / rolloff 1.0 / maxDistance 200 / 低通 `max(240, min(8000, 8000 - dist×95))`（比枪声更早压暗高频，配合放宽的距离模型 → 全图可闻沉闷低频轰鸣）。
 - `playAt(kind, x, y, z, mag = 1)` 增加可选 mag；手雷/油桶调用传 1。
 - 主通道压缩机（-12dB / ratio 6）已存在，多爆叠加防削波 ✓。
 
