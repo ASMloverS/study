@@ -511,7 +511,18 @@ export class Room {
   }
 
   private takeInput(p: ServerPlayer): InputMsg {
-    while (p.inputQueue.length > 3) p.inputQueue.shift();
+    // [M15] 裁剪会整帧丢弃:一次性连杀意图必须合并进幸存帧,否则堆积时激活静默丢失
+    while (p.inputQueue.length > 3) {
+      const dropped = p.inputQueue.shift()!;
+      if (dropped.streak !== 0) {
+        const head = p.inputQueue[0];
+        if (head.streak === 0) {
+          head.streak = dropped.streak;
+          head.streakTarget = dropped.streakTarget;
+          head.streakYaw = dropped.streakYaw;
+        }
+      }
+    }
     if (p.inputQueue.length > 0) {
       p.lastInput = p.inputQueue.shift()!;
       p.ackSeq = p.lastInput.seq;
