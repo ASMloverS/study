@@ -175,6 +175,7 @@ frame(rAF):
 - 协议 v1.1 变更 [M5]：`PlayerSnap` 增加 `rs`（reserve 备弹）与 `rl`（换弹剩余秒数）字段，快照体积预算复测通过（< 6.2KB 断言维持）；`ping` 消息增加可选 `rtt`（客户端实测回传，用于服务端回滚）；其余消息结构不变。
 - 协议 v1.2 变更 [M6/M7]：`InputMsg.buttons` 扩至 9 bit（+MELEE/LETHAL/TACTICAL，LETHAL 为按住语义支持烹煮）并新增连杀激活档字段；`PlayerSnap` 增加 `st`（连杀数）/`sv`（可用奖励掩码）/`sp`（重生保护剩余）/`le`+`ta`（装备余量）/`ps`（姿态枚举 [M7]）；快照顶层增加 `nades`（活动投掷物位置列表）；`kill` 事件增加 `hs`（爆头）与 `cause`（死因：武器/近战/手雷/空袭/集束/自杀）；`welcome` 携带对局配置；新增 `streakEarned`/`streakUse`/`grenadeThrow`/`melee` 事件。快照体积断言随新字段复测。
 - 协议 v1.3 变更 [M8~M12]：`join` 增加 `loadout`；新增 C→S `loadout`（死亡时改装备）与 `lobby`、S→C `lobbyState`（房主制房间管理，补齐 v1.2 文档规划未实现项）；`welcome` 增加 loadout 确认。单机暂停/重开不走协议（LocalSession 同进程直调 headless API）[M8]；辅助瞄准为纯客户端视角层，零协议变更 [M12]。快照结构不变，体积断言维持。
+- 协议 v1.4 变更 [M15/M16]：`InputMsg` 新增 `streakTarget`（放置落点，服务端激活时二次 clamp）与 `streakYaw`（空袭航线角）；`streakUse` 事件 tier 2/3 携带 `target`（`{x,z}` 平面落点）/`yaw`，驱动呼啸音、红烟标记与小地图预警圈；空袭/集束延迟 45→90 tick（3s），按落点表面高度（`surfaceYAt` 含掩体顶面）引爆。
 
 ## 6. 共享库（shared）
 
