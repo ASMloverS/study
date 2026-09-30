@@ -54,6 +54,7 @@ describe('surfaceYAt', () => {
   it('returns highest top among overlapping covers', () => {
     expect(surfaceYAt([crate, container], 5, -2)).toBeCloseTo(2.6, 5);
     expect(surfaceYAt([crate, boxCenter(5, 1.8, -2, 1.2, 1.2, 1.2)], 5, -2)).toBeCloseTo(2.4, 5);
+    expect(surfaceYAt([container, boxCenter(5, 2.0, -2, 1.2, 2.4, 1.2)], 5, -2)).toBeCloseTo(3.2, 5);
   });
 
   it('returns 0 for empty obstacle list', () => {
