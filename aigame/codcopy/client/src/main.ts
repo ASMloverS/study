@@ -22,10 +22,12 @@ import {
   eyeY,
   type GameEvent,
   jitterDir,
+  mapToObstacles,
   type PlayerSnap,
   type S2CMessage,
   sanitizeMagConfig,
   spreadMulFor,
+  surfaceYAt,
   updateRecoil,
   viewDir,
   type WeaponId,
@@ -60,6 +62,7 @@ const hud = new Hud();
 const audio = new AudioSys();
 const minimap = new Minimap(MAPS.warehouse);
 const placement = new Placement(MAPS.warehouse, document.getElementById('tacmap') as HTMLCanvasElement);
+const MAP_OBSTACLES = mapToObstacles(MAPS.warehouse);
 const settings: Settings = { ...defaultSettings, ...loadSettings() };
 // [M14] 本地存储的弹匣配置可能损坏/越界，统一清洗
 settings.mags = sanitizeMagConfig(settings.mags);
@@ -574,7 +577,7 @@ function onEvent(e: GameEvent): void {
     }
     if (e.tier !== 1 && e.target) {
       audio.jetFlyby(e.target.x, e.target.z, e.yaw ?? 0);
-      fx.smokeMarker(new THREE.Vector3(e.target.x, 0.8, e.target.z));
+      fx.smokeMarker(new THREE.Vector3(e.target.x, surfaceYAt(MAP_OBSTACLES, e.target.x, e.target.z) + 0.8, e.target.z));
       minimap.addStrikeWarning(e.target.x, e.target.z, now + (AIRSTRIKE_DELAY_TICKS / TICK_RATE) * 1000);
     }
   } else if (e.type === 'gameOver') {
