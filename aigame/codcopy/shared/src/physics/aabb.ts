@@ -52,3 +52,12 @@ export function moveBodyAxis(b: Body, axis: Axis, delta: number, obstacles: read
   }
   return blocked;
 }
+
+/** [M16] 垂直采样 (x,z) 处最高表面（含掩体顶面，footprint 边界含端点），地面为 0；空袭/集束按此高度引爆 */
+export function surfaceYAt(boxes: readonly AABB[], x: number, z: number): number {
+  let top = 0;
+  for (const b of boxes) {
+    if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ && b.maxY > top) top = b.maxY;
+  }
+  return top;
+}
