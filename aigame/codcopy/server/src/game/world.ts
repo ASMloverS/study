@@ -58,6 +58,7 @@ import {
   addRecoilShot,
   bakeNavGrid,
   boxCenter,
+  surfaceYAt,
   coverToAABB,
   createMoveState,
   createRecoilState,
@@ -921,7 +922,9 @@ export class Room {
       const s = this.pendingStrikes[i];
       if (this.tick < s.atTick) continue;
       this.pendingStrikes.splice(i, 1);
-      this.explodeAt(s.attackerId, s.x, 0.6, s.z, s.radius, s.dmg, s.cause, s.exemptId);
+      // [M16] 引爆时刻采样实时表面（含掩体顶面；掩体被摧毁则弹落回地面）
+      const y = surfaceYAt(this.obstacles, s.x, s.z) + 0.6;
+      this.explodeAt(s.attackerId, s.x, y, s.z, s.radius, s.dmg, s.cause, s.exemptId);
     }
   }
 
