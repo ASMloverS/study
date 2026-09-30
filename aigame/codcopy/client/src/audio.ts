@@ -53,6 +53,16 @@ export function distanceCutoff(dist: number): number {
   return Math.max(500, Math.min(8000, 8000 - dist * 90));
 }
 
+/** [M17] 爆炸声专属远距低通：低频传得远，下限 240Hz */
+export function explodeCutoff(dist: number): number {
+  return Math.max(240, Math.min(8000, 8000 - dist * 95));
+}
+
+/** [M17] 连杀余烬声节流：冷却窗口内只放行一轮燃烧声（防 5-8 枚落弹各触发一份） */
+export function burnWindowOpen(lastBurnAt: number, now: number, cooldownMs = 5000): boolean {
+  return now - lastBurnAt >= cooldownMs;
+}
+
 export class AudioSys {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -140,23 +150,24 @@ export class AudioSys {
     this.emit(kind, this.master);
   }
 
-  playAt(kind: SoundKind, x: number, y: number, z: number): void {
+  playAt(kind: SoundKind, x: number, y: number, z: number, mag = 1): void {
     if (!this.ctx || !this.master) return;
     const panner = this.ctx.createPanner();
     panner.panningModel = 'equalpower';
     panner.distanceModel = 'inverse';
-    panner.refDistance = 4;
-    panner.maxDistance = 80;
-    panner.rolloffFactor = 1.4;
+    const boom = kind === 'explode';
+    panner.refDistance = boom ? 10 : 4;
+    panner.maxDistance = boom ? 200 : 80;
+    panner.rolloffFactor = boom ? 1.0 : 1.4;
     panner.positionX.value = x;
     panner.positionY.value = y;
     panner.positionZ.value = z;
     const dist = Math.hypot(x - this.listenerPos.x, y - this.listenerPos.y, z - this.listenerPos.z);
     const lp = this.ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = distanceCutoff(dist);
+    lp.frequency.value = boom ? explodeCutoff(dist) : distanceCutoff(dist);
     panner.connect(lp).connect(this.master);
-    this.emit(kind, panner);
+    this.emit(kind, panner, mag);
   }
 
   /** [M15] 喷气机呼啸掠过（空袭/集束 incoming，所有客户端 3D 可闻） */
@@ -196,7 +207,40 @@ export class AudioSys {
     this.thump(panner, t + 0.4, 75, 1.1, 0.28);
   }
 
-  private emit(kind: SoundKind, dest: AudioNode): void {
+  /** [M17] 落弹区持续燃烧轰鸣 + 随机噼啪（3D 定位，durSec 线性渐弱） */
+  burningLoop(x: number, z: number, durSec = 7): void {
+    if (!this.ctx || !this.master || !this.noise) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const panner = ctx.createPanner();
+    panner.panningModel = 'equalpower';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 6;
+    panner.maxDistance = 60;
+    panner.rolloffFactor = 1.2;
+    panner.positionX.value = x;
+    panner.positionY.value = 0.8;
+    panner.positionZ.value = z;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 180;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.linearRampToValueAtTime(0.0001, t + durSec);
+    src.connect(lp).connect(g).connect(panner).connect(this.master);
+    src.start(t);
+    src.stop(t + durSec + 0.05);
+    let at = t + 0.4;
+    while (at < t + durSec - 0.2) {
+      this.snap(panner, at, 1800 + Math.random() * 900, 0.03, 0.15);
+      at += 0.3 + Math.random() * 0.4;
+    }
+  }
+
+  private emit(kind: SoundKind, dest: AudioNode, mag = 1): void {
     const ctx = this.ctx!;
     const t = ctx.currentTime;
     switch (kind) {
@@ -251,12 +295,20 @@ export class AudioSys {
       case 'ui':
         this.blip(dest, t, 740, 0.03, 0.1, 'triangle');
         break;
-      case 'explode':
-        this.burst(dest, t, 900, 0.65, 0.55);
-        this.thump(dest, t, 45, 0.5, 0.4);
-        this.thump(dest, t, 52, 0.45, 0.5);
-        this.thump(dest, t + 0.06, 90, 0.25, 0.3);
+      case 'explode': {
+        this.snap(dest, t, 2200, 0.05, 0.3 * mag);
+        this.burst(dest, t, 850, 0.75, 0.6 * mag);
+        this.thump(dest, t, 52, 0.9, 0.55 * mag);
+        this.thump(dest, t + 0.05, 90, 0.3, 0.3 * mag);
+        if (this.tailBus) {
+          // [M17] 轰鸣层送混响总线 → 1.8s 滚雷回响尾
+          const send = this.ctx!.createGain();
+          send.gain.value = 0.5 * mag;
+          this.burst(send, t, 700, 0.6, 0.5);
+          send.connect(this.tailBus);
+        }
         break;
+      }
       case 'break':
         this.burst(dest, t, 2600, 0.14, 0.24);
         this.blip(dest, t + 0.02, 320, 0.04, 0.12, 'square');
