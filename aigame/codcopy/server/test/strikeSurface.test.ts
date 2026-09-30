@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AIRSTRIKE_COUNT, MAPS } from 'shared';
+import { AIRSTRIKE_COUNT, AIRSTRIKE_DMG, AIRSTRIKE_RADIUS, CLUSTER_DMG, CLUSTER_RADIUS, MAPS, MAX_HEALTH } from 'shared';
 import { Room } from '../src';
 import type { ServerPlayer } from '../src/game/world';
 
@@ -59,5 +59,11 @@ describe('[M16] strike surface detonation', () => {
     const evs = room.drainEvents();
     expect(c.alive).toBe(true);
     expect(evs.some((e) => e.type === 'kill' && e.victimId === c.id)).toBe(false);
+  });
+
+  it('direct-hit damage invariant: single blast kills a full-health standing player', () => {
+    const chestGap = 1.8 * 0.6 - 0.6; // 站立胸口到爆心（surface+0.6）的垂直距离
+    expect(AIRSTRIKE_DMG * (1 - chestGap / AIRSTRIKE_RADIUS)).toBeGreaterThanOrEqual(MAX_HEALTH);
+    expect(CLUSTER_DMG * (1 - chestGap / CLUSTER_RADIUS)).toBeGreaterThanOrEqual(MAX_HEALTH);
   });
 });
