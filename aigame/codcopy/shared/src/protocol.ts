@@ -120,7 +120,7 @@ export type GameEvent =
   | { type: 'grenadeThrow'; tick: number; ownerId: number; nadeId: number; kind: 'frag' | 'flash'; pos: Vec3; vel: Vec3 }
   | { type: 'flashPop'; tick: number; ownerId: number; pos: Vec3 }
   | { type: 'streakEarned'; tick: number; playerId: number; tier: 1 | 2 | 3 }
-  | { type: 'streakUse'; tick: number; playerId: number; tier: 1 | 2 | 3; target?: Vec3; yaw?: number }
+  | { type: 'streakUse'; tick: number; playerId: number; tier: 1 | 2 | 3; target?: { x: number; z: number }; yaw?: number }
   | { type: 'gameOver'; tick: number; winnerId: number | null; standings: Standing[] };
 
 export type S2CMessage =

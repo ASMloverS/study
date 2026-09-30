@@ -880,7 +880,7 @@ export class Room {
       tick: this.tick,
       playerId: p.id,
       tier: tier as 2 | 3,
-      target: { x: t.x, y: 0.5, z: t.z },
+      target: { x: t.x, z: t.z },
       yaw: heading,
     });
     if (tier === 2) {
