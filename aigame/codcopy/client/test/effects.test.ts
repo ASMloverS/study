@@ -60,3 +60,26 @@ describe('[M17] explosion layers', () => {
     expect(visibleOf(med.scorches)).toBe(0);
   });
 });
+
+describe('[M17] burn aftermath emitters', () => {
+  it('registers emitter, spawns fire+smoke over time, expires at until', () => {
+    const fx = new Effects(new THREE.Scene());
+    fx.update(0.016, 5000);
+    fx.aftermath(3, -3, 3000);
+    const ems = () => (fx as unknown as { emitters: { x: number; z: number; until: number; nextAt: number }[] }).emitters;
+    expect(ems().length).toBe(1);
+    fx.update(0.016, 5200); // ≥2 个 120ms 间隔
+    expect((fx as unknown as { live: unknown[] }).live.length).toBeGreaterThanOrEqual(4);
+    fx.update(0.016, 9000); // past until=8000
+    expect(ems().length).toBe(0);
+  });
+
+  it('caps emitters at 4 with FIFO eviction', () => {
+    const fx = new Effects(new THREE.Scene());
+    fx.update(0.016, 1000);
+    for (let i = 0; i < 5; i++) fx.aftermath(i, 0, 5000);
+    const ems = (fx as unknown as { emitters: { x: number }[] }).emitters;
+    expect(ems.length).toBe(4);
+    expect(ems[0].x).toBe(1); // 第一个（x=0）被淘汰
+  });
+});

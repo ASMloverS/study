@@ -172,6 +172,7 @@ export class Effects {
   private lightBlastIdx = 0;
   private readonly scorches: THREE.Mesh[] = [];
   private scorchIdx = 0;
+  private readonly emitters: { x: number; z: number; until: number; nextAt: number }[] = [];
   private nowMs = performance.now();
   private readonly nadeViews = new Map<number, { mesh: THREE.Mesh; target: THREE.Vector3 }>();
   private readonly additivePool: InstancePool;
@@ -433,6 +434,12 @@ export class Effects {
     }
   }
 
+  /** [M17] 连杀落弹区余烬：durMs 内持续火苗 + 浓烟（池 4，FIFO 淘汰） */
+  aftermath(x: number, z: number, durMs = 7000): void {
+    if (this.emitters.length >= 4) this.emitters.shift();
+    this.emitters.push({ x, z, until: this.nowMs + durMs, nextAt: this.nowMs });
+  }
+
   private spawn(pos: THREE.Vector3, o: ParticleOpts): void {
     const pool = o.additive ? this.additivePool : this.alphaPool;
     const slot = pool.acquire();
@@ -532,6 +539,21 @@ export class Effects {
         continue;
       }
       (s.material as THREE.MeshBasicMaterial).opacity = 0.82 * (1 - k);
+    }
+    // [M17] 余烬发射器：每 120ms 火苗 + 浓烟
+    for (let i = this.emitters.length - 1; i >= 0; i--) {
+      const em = this.emitters[i];
+      if (now >= em.until) {
+        this.emitters.splice(i, 1);
+        continue;
+      }
+      while (now >= em.nextAt) {
+        const px = em.x + (Math.random() - 0.5) * 2.4;
+        const pz = em.z + (Math.random() - 0.5) * 2.4;
+        this.spawn(new THREE.Vector3(px, 0.3, pz), { color: 0xff9040, size: 0.25, vel: new THREE.Vector3(0, 1.4, 0), life: 0.5, additive: true });
+        this.spawn(new THREE.Vector3(px, 0.5, pz), { color: 0x3c424a, size: 0.7, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.8, (Math.random() - 0.5) * 0.6), life: 3, grow: 3 });
+        em.nextAt += 120;
+      }
     }
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];
