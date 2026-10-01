@@ -14,8 +14,9 @@ Mandatory rules for this repository. No exceptions.
 ## C Code
 
 - C code MUST follow `docs/language/28-style-c.md`.
-- All build output MUST go to `build/` only. No other output directories are allowed.
+- All build output MUST go to `build/` only. Creating multiple build directories is forbidden.
 - Exactly one executable target (`ms`). Building separate executables per feature is forbidden.
+- Every rebuild MUST overwrite the existing executable in place. Generating a different executable file per build is forbidden.
 
 ## ms Code
 
