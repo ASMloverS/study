@@ -6,18 +6,18 @@
 
 ```c
 typedef enum MsValueType {
-    MS_VAL_NIL, MS_VAL_BOOL, MS_VAL_I64, MS_VAL_F64,
-    MS_VAL_OBJ                       /* 其余皆为堆对象指针 */
+  MS_VAL_NIL, MS_VAL_BOOL, MS_VAL_I64, MS_VAL_F64,
+  MS_VAL_OBJ  // 其余皆为堆对象指针
 } MsValueType;
 
 typedef struct MsValue {
-    MsValueType type;
-    union {
-        bool     b;
-        int64_t  i;
-        double   f;
-        MsObj*   obj;
-    } as;
+  MsValueType type;
+  union {
+    bool     b;
+    int64_t  i;
+    double   f;
+    MsObj*   obj;
+  } as;
 } MsValue;
 ```
 
@@ -28,9 +28,9 @@ typedef struct MsValue {
 
 ```c
 typedef struct MsObj {
-    uint8_t  type;        /* MsObjType */
-    uint8_t  flags;       /* mark 颜色位 | 世代位 | 杂项 */
-    struct MsObj* next;   /* 全堆链表（GC 枚举） */
+  uint8_t       type;   // MsObjType
+  uint8_t       flags;  // mark 颜色位 | 世代位 | 杂项
+  struct MsObj* next;   // 全堆链表（GC 枚举）
 } MsObj;
 ```
 
@@ -60,13 +60,13 @@ typedef struct MsObj {
 
 ```c
 typedef struct MsObjString {
-    MsObj    head;
-    uint32_t hash;        /* FNV-1a，创建时计算 */
-    uint32_t byteLen;
-    uint32_t charLen;     /* ASCII 时 = byteLen；否则惰性计算 */
-    bool     isAscii;     /* 创建时一次扫描判定 */
-    int32*   runeIndex;   /* 非 ASCII 且首次需要 rune 索引时构建（字节偏移表） */
-    /* FAM: char bytes[] */
+  MsObj    head;
+  uint32_t hash;      // FNV-1a，创建时计算
+  uint32_t byteLen;
+  uint32_t charLen;   // ASCII 时 = byteLen；否则惰性计算
+  bool     isAscii;   // 创建时一次扫描判定
+  int32_t* runeIndex; // 非 ASCII 且首次需要 rune 索引时构建（字节偏移表）
+  // FAM: char bytes[]
 } MsObjString;
 ```
 

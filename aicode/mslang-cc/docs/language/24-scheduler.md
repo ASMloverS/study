@@ -45,11 +45,11 @@ await/chan阻塞/net IO   sleep/timer
 
 ```c
 typedef struct MsObjChannel {
-    MsObj head;
-    MsRing  buf;          /* 环形缓冲（容量 cap，cap=0 无缓冲） */
-    Wq     sendQ, recvQ;  /* 等待 G 队列（FIFO，唤醒保证公平） */
-    bool   closed;
-    Mutex  mu;            /* 细粒度锁：仅保护本 channel */
+  MsObj  head;
+  MsRing buf;          // 环形缓冲（容量 cap，cap=0 无缓冲）
+  Wq     sendQ, recvQ; // 等待 G 队列（FIFO，唤醒保证公平）
+  bool   closed;
+  Mutex  mu;           // 细粒度锁：仅保护本 channel
 } MsObjChannel;
 ```
 

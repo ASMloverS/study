@@ -19,14 +19,14 @@
 
 ```c
 typedef struct Chunk {
-    uint8_t* code;        /* 指令流 */
-    int32_t  codeLen;
-    MsValue* consts;      /* 常量池：字面量、函数原型、类原型 */
-    int32_t  constsLen;
-    SourceRun* lines;     /* RLE 行号 */
-    int32_t  nUpvalues;   /* 闭包捕获描述（函数 chunk） */
-    uint16_t nIcSlots;    /* 内联缓存槽数 */
-    ...
+  uint8_t*   code;      // 指令流
+  int32_t    codeLen;
+  MsValue*   consts;    // 常量池：字面量、函数原型、类原型
+  int32_t    constsLen;
+  SourceRun* lines;     // RLE 行号
+  int32_t    nUpvalues; // 闭包捕获描述（函数 chunk）
+  uint16_t   nIcSlots;  // 内联缓存槽数
+  ...
 } Chunk;
 ```
 
