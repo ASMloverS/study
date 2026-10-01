@@ -2,6 +2,10 @@
 
 Mandatory rules for this repository. No exceptions.
 
+## AGENTS.md Rules
+
+- All rules added to this file MUST be clear, unambiguous, concise, and written as mandatory English statements.
+
 ## Text Files
 
 - All text files MUST be UTF-8 (no BOM) with LF line endings.
@@ -28,3 +32,9 @@ Mandatory rules for this repository. No exceptions.
 - Commit messages: clear, concise English.
 - Format: `<gitmoji> <type>(<scope>): <message>`
 - Example: `✨ feat(stdlib/strings): add format function`
+- Every completed change MUST be committed as a corresponding git commit for tracking and rollback.
+
+## Testing
+
+- Every change MUST include new or updated tests.
+- All tests and verification MUST pass before delivery to the user.
