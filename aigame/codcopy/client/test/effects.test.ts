@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { Effects } from '../src/render/effects';
+import { Effects, jetPath } from '../src/render/effects';
 
 const v = new THREE.Vector3(5, 0.6, -5);
 
@@ -81,5 +81,29 @@ describe('[M17] burn aftermath emitters', () => {
     const ems = (fx as unknown as { emitters: { x: number }[] }).emitters;
     expect(ems.length).toBe(4);
     expect(ems[0].x).toBe(1); // 第一个（x=0）被淘汰
+  });
+});
+
+describe('[M17] jet flyby', () => {
+  it('jetPath runs along heading through the target at y=14', () => {
+    const start = jetPath(0, 0, 0, 0);
+    expect(start.z).toBeCloseTo(70, 5); // 航线后方 70m
+    expect(start.y).toBe(14);
+    const mid = jetPath(0, 0, 0, 70 / 90);
+    expect(mid.x).toBeCloseTo(0, 3);
+    expect(mid.z).toBeCloseTo(0, 3);
+    const end = jetPath(0, 0, 0, 140 / 90);
+    expect(end.z).toBeCloseTo(-70, 3);
+  });
+
+  it('jet mesh is added on jet() and disposed after the run', () => {
+    const scene = new THREE.Scene();
+    const fx = new Effects(scene);
+    const before = scene.children.length;
+    fx.update(0.016, 1000);
+    fx.jet(5, -5, 0);
+    expect(scene.children.length).toBe(before + 1);
+    fx.update(0.016, 1000 + 1700); // run = 140/90 ≈ 1.556s
+    expect(scene.children.length).toBe(before);
   });
 });

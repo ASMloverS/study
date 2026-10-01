@@ -173,6 +173,7 @@ export class Effects {
   private readonly scorches: THREE.Mesh[] = [];
   private scorchIdx = 0;
   private readonly emitters: { x: number; z: number; until: number; nextAt: number }[] = [];
+  private jetView: { x: number; z: number; yaw: number; born: number; group: THREE.Group; lastTrail: number } | null = null;
   private nowMs = performance.now();
   private readonly nadeViews = new Map<number, { mesh: THREE.Mesh; target: THREE.Vector3 }>();
   private readonly additivePool: InstancePool;
@@ -440,6 +441,37 @@ export class Effects {
     this.emitters.push({ x, z, until: this.nowMs + durMs, nextAt: this.nowMs });
   }
 
+  /** [M17] 可见喷气机：沿航线 y=14 掠过（~1.56s，与 jetFlyby 音效对齐），双翼尖尾迹 */
+  jet(x: number, z: number, yaw: number): void {
+    this.disposeJet();
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 5.6), toonMat(0x2a2e34));
+    g.add(body);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.12, 1.3), toonMat(0x33383f));
+    wing.position.z = 0.6;
+    g.add(wing);
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.1, 0.8), toonMat(0x33383f));
+    tail.position.z = 2.4;
+    g.add(tail);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.1, 1), toonMat(0x33383f));
+    fin.position.set(0, 0.6, 2.5);
+    g.add(fin);
+    g.rotation.y = yaw;
+    this.scene.add(g);
+    this.jetView = { x, z, yaw, born: this.nowMs, group: g, lastTrail: this.nowMs };
+  }
+
+  private disposeJet(): void {
+    if (!this.jetView) return;
+    this.scene.remove(this.jetView.group);
+    for (const m of this.jetView.group.children) {
+      const mesh = m as THREE.Mesh;
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.jetView = null;
+  }
+
   private spawn(pos: THREE.Vector3, o: ParticleOpts): void {
     const pool = o.additive ? this.additivePool : this.alphaPool;
     const slot = pool.acquire();
@@ -555,6 +587,24 @@ export class Effects {
         em.nextAt += 120;
       }
     }
+    // [M17] 喷气机：航迹推进 + 翼尖尾迹
+    if (this.jetView) {
+      const j = this.jetView;
+      const t = (now - j.born) / 1000;
+      if (t >= (JET_HALF_RUN * 2) / JET_SPEED) {
+        this.disposeJet();
+      } else {
+        j.group.position.copy(jetPath(j.x, j.z, j.yaw, t));
+        if (now - j.lastTrail >= 30) {
+          j.lastTrail = now;
+          const px = -(-Math.cos(j.yaw));
+          const pz = -(-Math.sin(j.yaw));
+          for (const side of [-3.2, 3.2]) {
+            this.spawn(new THREE.Vector3(j.group.position.x + px * side, JET_Y - 0.2, j.group.position.z + pz * side), { color: 0xdfe6ec, size: 0.5, vel: new THREE.Vector3(0, -0.2, 0), life: 1.8, grow: 2 });
+          }
+        }
+      }
+    }
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];
       t.at += TRACER_SPEED * dt;
@@ -601,6 +651,17 @@ export class Effects {
     this.additivePool.flagUpdate();
     this.alphaPool.flagUpdate();
   }
+}
+
+export const JET_SPEED = 90;
+const JET_Y = 14;
+const JET_HALF_RUN = 70;
+
+/** [M17] 喷气机航迹（纯函数）：tSec 秒时机身位置，从航线后方 70m 掠过目标至前方 70m */
+export function jetPath(x: number, z: number, yaw: number, tSec: number): THREE.Vector3 {
+  const dx = -Math.sin(yaw);
+  const dz = -Math.cos(yaw);
+  return new THREE.Vector3(x - dx * JET_HALF_RUN + dx * JET_SPEED * tSec, JET_Y, z - dz * JET_HALF_RUN + dz * JET_SPEED * tSec);
 }
 
 function randVec(scale: number): THREE.Vector3 {
