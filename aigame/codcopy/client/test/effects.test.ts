@@ -14,11 +14,13 @@ describe('[M17] explosion layers', () => {
     fx.update(0.016, 1000);
     fx.explosion(v, 1.6);
     const live = (fx as unknown as { live: { size: number; pool: unknown }[] }).live;
-    expect(live.length).toBeGreaterThanOrEqual(70);
-    expect(live.length).toBeLessThanOrEqual(85);
+    expect(live.length).toBe(77);
     const additivePool = (fx as unknown as { additivePool: unknown }).additivePool;
     const maxAdd = Math.max(...live.filter((p) => p.pool === additivePool).map((p) => p.size));
     expect(maxAdd).toBeCloseTo(2.4, 1); // 白热核心 1.5×1.6
+    const fxAny = fx as unknown as { blastLights: THREE.PointLight[]; scorches: THREE.Mesh[] };
+    expect(fxAny.blastLights[0].userData.peak).toBe(88); // 55×1.6
+    expect(fxAny.scorches[0].scale.x).toBeCloseTo(3.84, 2); // 2.4×1.6
   });
 
   it('mag=1 spawns exactly the base set (2+22+34+12)', () => {

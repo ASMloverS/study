@@ -123,10 +123,10 @@ class InstancePool {
     this.free.push(i);
   }
 
-  write(i: number, p: LiveParticle, k: number): void {
+  write(i: number, p: LiveParticle, k: number, now: number): void {
     this.dummy.position.copy(p.pos);
     this.dummy.rotation.set(p.rotX, 0, p.rotZ);
-    const s = Math.max(0.0001, p.size * (1 + p.grow * ((performance.now() - p.born) / 1000)));
+    const s = Math.max(0.0001, p.size * (1 + p.grow * ((now - p.born) / 1000)));
     this.dummy.scale.setScalar(s);
     this.dummy.updateMatrix();
     this.mesh.setMatrixAt(i, this.dummy.matrix);
@@ -413,7 +413,6 @@ export class Effects {
       s.visible = true;
       s.position.set(pos.x, 0.02, pos.z);
       s.scale.setScalar(2.4 * mag);
-      s.rotation.z = Math.random() * Math.PI * 2;
       s.userData.born = this.nowMs;
       s.userData.dur = 12000;
       (s.material as THREE.MeshBasicMaterial).opacity = 0.82;
@@ -442,7 +441,7 @@ export class Effects {
       slot,
       pool,
       vel: o.vel.clone(),
-      born: performance.now(),
+      born: this.nowMs,
       life: o.life,
       gravity: o.gravity ?? 0,
       grow: o.grow ?? 0,
@@ -575,7 +574,7 @@ export class Effects {
         p.rotX += p.spin * dt;
         p.rotZ += p.spin * 0.7 * dt;
       }
-      p.pool.write(p.slot, p, k);
+      p.pool.write(p.slot, p, k, now);
     }
     this.additivePool.flagUpdate();
     this.alphaPool.flagUpdate();
