@@ -6,7 +6,7 @@ CPython 式管线，Go 式运行时（并发调度 + 并发 GC），纯 C11 单�
 
 ```
         .ms 源文件
-            │ Scanner        ASI、插值切分、raw/rune 字面量、嵌套注释
+            │ Scanner        ASI、插值切分、raw/rune 字面量、/// 文档注释标记
             ▼
          Token 流
             │ Parser         递归下降（非单遍 Pratt），产出完整 AST
