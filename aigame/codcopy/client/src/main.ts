@@ -44,7 +44,7 @@ import { ViewModel } from './render/viewmodel';
 import { Minimap, type EnemyBlip } from './render/minimap';
 import { Placement } from './placement';
 import { Killcam } from './render/killcam';
-import { AudioSys } from './audio';
+import { AudioSys, burnWindowOpen } from './audio';
 import { LocalSession, NetSession, sanitizeLoadout, type Session } from './transport';
 import { GamepadSys } from './gamepad';
 import { ASSIST_LEVELS, applyAimAssist } from './aimassist';
@@ -548,11 +548,25 @@ function onEvent(e: GameEvent): void {
     }
   } else if (e.type === 'blast') {
     const p = new THREE.Vector3(e.pos.x, e.pos.y, e.pos.z);
-    fx.explosion(p);
-    audio.playAt('explode', p.x, p.y, p.z);
+    const streakBlast = e.cause === 'airstrike' || e.cause === 'cluster';
+    const mag = streakBlast ? 1.6 : 1;
+    fx.explosion(p, mag);
+    audio.playAt('explode', p.x, p.y, p.z, mag);
     const s = predictor.state;
     const dist = Math.hypot(p.x - s.x, p.y - s.y - 1, p.z - s.z);
-    if (dist < 18) {
+    if (streakBlast) {
+      // [M17] 连杀爆炸：更大震感 + 持续余烬 + 近距闪光
+      if (dist < 45) {
+        shake = Math.max(shake, 0.75 * (1 - dist / 45));
+        if (settings.padRumble) gamepad.rumble(now, 120, 0.6, 1);
+      }
+      if (burnWindowOpen(lastBurnAt, now / 1000, 5)) {
+        lastBurnAt = now / 1000;
+        audio.burningLoop(p.x, p.z);
+        fx.aftermath(p.x, p.z);
+      }
+      if (dist < 28) hud.blastFlash(Math.max(0, 1 - dist / 28) * 0.9);
+    } else if (dist < 18) {
       shake = Math.max(shake, 0.45 * (1 - dist / 18));
       if (settings.padRumble) gamepad.rumble(now, 120, 0.6, 1);
     }
@@ -577,6 +591,7 @@ function onEvent(e: GameEvent): void {
     }
     if (e.tier !== 1 && e.target) {
       audio.jetFlyby(e.target.x, e.target.z, e.yaw ?? 0);
+      fx.jet(e.target.x, e.target.z, e.yaw ?? 0);
       fx.smokeMarker(new THREE.Vector3(e.target.x, surfaceYAt(MAP_OBSTACLES, e.target.x, e.target.z) + 0.8, e.target.z));
       minimap.addStrikeWarning(e.target.x, e.target.z, now + (AIRSTRIKE_DELAY_TICKS / TICK_RATE) * 1000);
     }
@@ -779,6 +794,7 @@ document.getElementById('playbtn')!.addEventListener('click', () => {
 });
 
 let seq = 0;
+let lastBurnAt = -1e9;
 let acc = 0;
 let last = performance.now();
 

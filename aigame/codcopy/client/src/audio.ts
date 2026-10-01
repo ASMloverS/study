@@ -58,7 +58,7 @@ export function explodeCutoff(dist: number): number {
   return Math.max(240, Math.min(8000, 8000 - dist * 95));
 }
 
-/** [M17] 连杀余烬声节流：冷却窗口内只放行一轮燃烧声（防 5-8 枚落弹各触发一份） */
+/** [M17] 连杀余烬声节流：冷却窗口内只放行一轮燃烧声（防 5-8 枚落弹各触发一份）。时间单位随调用方：main.ts 传秒并显式给 5 */
 export function burnWindowOpen(lastBurnAt: number, now: number, cooldownMs = 5000): boolean {
   return now - lastBurnAt >= cooldownMs;
 }
