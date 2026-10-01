@@ -11,6 +11,7 @@ export class Hud {
   private readonly killfeed = el<HTMLUListElement>('killfeed');
   private readonly hitmarker = el<HTMLDivElement>('hitmarker');
   private readonly vignette = el<HTMLDivElement>('vignette');
+  private readonly blastflash = el<HTMLDivElement>('blastflash');
   private readonly deathoverlay = el<HTMLDivElement>('deathoverlay');
   private readonly deathtext = el<HTMLDivElement>('deathtext');
   private readonly respawncount = el<HTMLDivElement>('respawncount');
@@ -118,6 +119,12 @@ export class Hud {
   damageFlash(): void {
     this.vignette.style.opacity = '0.9';
     setTimeout(() => (this.vignette.style.opacity = '0'), 180);
+  }
+
+  /** [M17] 近距爆炸橙白闪光（强度 0-1） */
+  blastFlash(a: number): void {
+    this.blastflash.style.opacity = String(a);
+    setTimeout(() => (this.blastflash.style.opacity = '0'), 120);
   }
 
   flash(ms: number): void {
