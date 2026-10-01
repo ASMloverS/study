@@ -597,8 +597,8 @@ export class Effects {
         j.group.position.copy(jetPath(j.x, j.z, j.yaw, t));
         if (now - j.lastTrail >= 30) {
           j.lastTrail = now;
-          const px = -(-Math.cos(j.yaw));
-          const pz = -(-Math.sin(j.yaw));
+          const px = Math.cos(j.yaw);
+          const pz = -Math.sin(j.yaw);
           for (const side of [-3.2, 3.2]) {
             this.spawn(new THREE.Vector3(j.group.position.x + px * side, JET_Y - 0.2, j.group.position.z + pz * side), { color: 0xdfe6ec, size: 0.5, vel: new THREE.Vector3(0, -0.2, 0), life: 1.8, grow: 2 });
           }

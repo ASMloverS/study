@@ -106,4 +106,22 @@ describe('[M17] jet flyby', () => {
     fx.update(0.016, 1000 + 1700); // run = 140/90 ≈ 1.556s
     expect(scene.children.length).toBe(before);
   });
+
+  it('wingtip contrails are perpendicular to the flight path at diagonal headings', () => {
+    const fx = new Effects(new THREE.Scene());
+    fx.update(0.016, 1000);
+    fx.jet(0, 0, Math.PI / 4);
+    fx.update(0.016, 1031); // 触发一次尾迹生成（30ms 间隔）
+    const live = (fx as unknown as { live: { pos: THREE.Vector3 }[] }).live;
+    expect(live.length).toBe(2);
+    const dx = -Math.sin(Math.PI / 4);
+    const dz = -Math.cos(Math.PI / 4);
+    // 中点 ≈ 机体中心（在航线上）；断言翼尖相对中点的偏移垂直于航线
+    const mid = live[0].pos.clone().add(live[1].pos).multiplyScalar(0.5);
+    for (const p of live) {
+      const off = p.pos.clone().sub(mid);
+      const dot = off.x * dx + off.z * dz;
+      expect(Math.abs(dot)).toBeLessThan(0.01);
+    }
+  });
 });
