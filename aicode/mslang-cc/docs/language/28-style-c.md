@@ -1,6 +1,6 @@
 # 28 C 编码规范
 
-以 Google C++ Style Guide 为基础，命名约定按 Java Guide 映射到 C（用户确认：**C 缩进 2 空格**）。`.clang-format` 固化，CI 校验。
+以 Google C++ Style Guide 为基础（继承：2 空格缩进、K&R、头保护宏、自包含头、include 顺序），命名按 Java Guide 映射到 C；显式覆盖项见 §12 偏离清单。`.clang-format` 固化，CI 校验。
 
 ## 1. 命名总表
 
@@ -8,7 +8,9 @@
 |------|------|------|
 | 文件 | lower_snake_case | `gc_young.c`、`obj_string.c` |
 | 类型（struct/enum/typedef） | UpperCamelCase；公共 API 加 `Ms` 前缀 | `MsValue`、`Chunk`、`SchedWorker` |
-| 函数 | lowerCamelCase + 模块前缀；公共 API `ms` 前缀 | `msNewVM`、`gcCollectYoung`、`valueIsNil` |
+| 函数 | lowerCamelCase + 模块前缀；公共 API `ms` 前缀 | `msNewVM`、`gcCollectYoung` |
+| 参数 | lowerCamelCase | `heap`、`grayCount` |
+| bool 谓词 | `is/has` 开头，模块/`ms` 前缀紧邻其后 | `msIsNil`、`isValueNil`、`hasFlag` |
 | 局部变量 | lowerCamelCase | `grayCount` |
 | 全局变量（慎用） | `g` 前缀 lowerCamelCase | `gVmCount` |
 | 常量/枚举值/宏 | SCREAMING_SNAKE_CASE | `MS_VAL_NIL`、`GC_MAX_AGE`、`MS_ARRAY_PUSH` |
@@ -24,7 +26,7 @@
 
 ## 3. 格式
 
-- **缩进 2 空格**（禁 Tab）；行宽 80（硬限 100）。
+- **缩进 2 空格**（禁 Tab）；行宽建议 120（硬限 150），注释/字符串字面量同限。
 - K&R 大括号；单行函数体仍需大括号（`if (x) { return 1; }` 允许单行）。
 - 指针星号靠类型：`MsValue* v`。
 - 返回类型与函数名同行；长参数列表断行对齐。
@@ -40,7 +42,7 @@
 ## 5. 函数
 
 - 函数 ≤ 80 行建议；参数 ≤ 6 建议。
-- 第一参数为"self"（对象式 C）：`bool valueIsNil(MsValue v)`、`void gcCollectYoung(GcHeap* h)`。
+- 第一参数为"self"（对象式 C）：`bool isValueNil(MsValue v)`、`void gcCollectYoung(GcHeap* h)`。
 - `static` 优先；非 static 需头文件声明。
 - 禁 `goto`，**唯一例外**：错误清理跳转 `goto cleanup`（集中单出口模式）。
 
@@ -64,9 +66,10 @@
 
 ## 9. 注释
 
-- **why 而非 what**；公共 API 注释进 `.h`（Doxygen 风格 `/** */`，ms doc 管线）。
-- GC/调度器等算法处引用设计文档：`/* 见 docs/language/23-gc.md §4 */`。
-- 禁尾注释块遮蔽结构（对齐适度）。
+- **仅 `//`；`/* */` 一律禁用**（含文件头横幅、数据表、临时注释）。
+- **why 而非 what**；公共 API 注释进 `.h`（纯 `//`，格式由 ms doc 管线另行约定）。
+- GC/调度器等算法处引用设计文档：`// 见 docs/language/23-gc.md §4`。
+- 多行注释逐行 `//`，与代码同缩进；禁尾注释块遮蔽结构（对齐适度）。
 
 ## 10. 测试与构建
 
@@ -81,3 +84,11 @@
 - 手写 memcpy 可重叠（用 memmove）。
 - 线程局部存储滥用（仅调度器 per-worker 指针）。
 - `#pragma once`（用头保护宏，跨编译器保守）。
+- 块注释 `/* */`（仅 `//`，见 §9）。
+
+## 12. 对 Google C++ Guide 的偏离
+
+- 函数/变量 lowerCamelCase（Google C++ 为 lower_snake；采 Java 方法命名）。
+- 行宽建议 120/硬限 150（Google 80）。
+- 注释仅 `//`（Google 允许 `/* */`）。
+- 定宽整数优先 `uint8_t/int64_t`（Google 倾向 `int`，按需定宽）。
