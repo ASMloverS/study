@@ -166,6 +166,13 @@ export class Effects {
   private decalIdx = 0;
   private readonly muzzleLights: THREE.PointLight[] = [];
   private lightIdx = 0;
+  private readonly rings: THREE.Mesh[] = [];
+  private ringIdx = 0;
+  private readonly blastLights: THREE.PointLight[] = [];
+  private lightBlastIdx = 0;
+  private readonly scorches: THREE.Mesh[] = [];
+  private scorchIdx = 0;
+  private nowMs = performance.now();
   private readonly nadeViews = new Map<number, { mesh: THREE.Mesh; target: THREE.Vector3 }>();
   private readonly additivePool: InstancePool;
   private readonly alphaPool: InstancePool;
@@ -173,8 +180,8 @@ export class Effects {
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
-    this.additivePool = new InstancePool(scene, 320, true);
-    this.alphaPool = new InstancePool(scene, 320, false);
+    this.additivePool = new InstancePool(scene, 1024, true);
+    this.alphaPool = new InstancePool(scene, 1024, false);
     const decalMat = new THREE.MeshBasicMaterial({ color: 0x22262c, transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
     const decalGeo = new THREE.CircleGeometry(0.035, 10);
     for (let i = 0; i < DECAL_MAX; i++) {
@@ -188,6 +195,31 @@ export class Effects {
       l.visible = false;
       scene.add(l);
       this.muzzleLights.push(l);
+    }
+    // [M17] 冲击波环池 ×8（全画质档）
+    const ringGeo = new THREE.RingGeometry(0.86, 1, 40);
+    for (let i = 0; i < 8; i++) {
+      const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffc890, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      scene.add(m);
+      this.rings.push(m);
+    }
+    // [M17] 爆炸闪光灯池 ×3（中/高档）
+    for (let i = 0; i < 3; i++) {
+      const l = new THREE.PointLight(0xffa050, 0, 22);
+      l.visible = false;
+      scene.add(l);
+      this.blastLights.push(l);
+    }
+    // [M17] 地面焦痕池 ×12（中/高档，12s 渐隐）
+    const scorchGeo = new THREE.CircleGeometry(1, 24);
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(scorchGeo, new THREE.MeshBasicMaterial({ color: 0x14161a, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      scene.add(m);
+      this.scorches.push(m);
     }
   }
 
@@ -313,8 +345,8 @@ export class Effects {
     }
   }
 
-  debris(pos: THREE.Vector3, color = 0xc98f42): void {
-    for (let i = 0; i < 12; i++) {
+  debris(pos: THREE.Vector3, color = 0xc98f42, count = 12): void {
+    for (let i = 0; i < count; i++) {
       this.spawn(pos, {
         color,
         size: 0.16,
@@ -325,20 +357,67 @@ export class Effects {
     }
   }
 
-  explosion(pos: THREE.Vector3): void {
-    this.spawn(pos, { color: 0xffb830, size: 1.1, vel: new THREE.Vector3(0, 1.5, 0), life: 0.35, grow: 11, additive: true });
-    this.spawn(pos, { color: 0xffe896, size: 0.6, vel: new THREE.Vector3(0, 2.5, 0), life: 0.25, grow: 14, additive: true });
-    for (let i = 0; i < 14; i++) {
+  explosion(pos: THREE.Vector3, mag = 1): void {
+    const density = this.quality === 'low' ? 0.4 : this.quality === 'medium' ? 0.7 : 1;
+    // 白热核心 + 橙红火球（additive 双层，峰值 ~5.2×mag）
+    this.spawn(pos, { color: 0xfff6d0, size: 1.5 * mag, vel: new THREE.Vector3(0, 1.2, 0), life: 0.5, grow: 5, additive: true });
+    this.spawn(pos, { color: 0xff9a2e, size: 0.8 * mag, vel: new THREE.Vector3(0, 2.2, 0), life: 0.4, grow: 9, additive: true });
+    // 冲击波环：贴地扩散至 7×mag
+    const ring = this.rings[this.ringIdx];
+    this.ringIdx = (this.ringIdx + 1) % this.rings.length;
+    ring.visible = true;
+    ring.position.set(pos.x, 0.15, pos.z);
+    ring.scale.setScalar(0.6 * mag);
+    ring.userData.born = this.nowMs;
+    ring.userData.dur = 450;
+    ring.userData.mag = mag;
+    (ring.material as THREE.MeshBasicMaterial).opacity = 0.85;
+    // 上升烟柱（蘑菇状烟云）
+    for (let i = 0; i < Math.round(34 * density); i++) {
       this.spawn(pos, {
-        color: 0x6a7480,
-        size: 0.35,
-        vel: randVec(1).multiplyScalar(3.5).add(new THREE.Vector3(0, 1.6, 0)),
-        life: 1.3,
-        gravity: -1,
-        grow: 2,
+        color: Math.random() < 0.5 ? 0x4a525c : 0x6a7480,
+        size: 0.5 + Math.random() * 0.4,
+        vel: new THREE.Vector3((Math.random() - 0.5) * 1.6, 2.2 + Math.random() * 1.4, (Math.random() - 0.5) * 1.6),
+        life: 2.6 + Math.random() * 1.6,
+        gravity: -0.6,
+        grow: 2.5,
       });
     }
-    this.debris(pos, 0xc98f42);
+    // 余烬火星
+    for (let i = 0; i < Math.round(22 * density); i++) {
+      this.spawn(pos, {
+        color: Math.random() < 0.5 ? 0xffc356 : 0xff8432,
+        size: 0.06 + Math.random() * 0.04,
+        vel: randVec(1).multiplyScalar(5 + Math.random() * 4).add(new THREE.Vector3(0, 3, 0)),
+        life: 0.9 + Math.random() * 0.7,
+        gravity: 12,
+        additive: true,
+      });
+    }
+    this.debris(pos, 0xc98f42, Math.round(12 * mag));
+    // 爆炸闪光灯（中/高档）
+    if (this.quality !== 'low') {
+      const l = this.blastLights[this.lightBlastIdx];
+      this.lightBlastIdx = (this.lightBlastIdx + 1) % this.blastLights.length;
+      l.visible = true;
+      l.intensity = 55 * mag;
+      l.position.set(pos.x, pos.y + 1.5, pos.z);
+      l.userData.born = this.nowMs;
+      l.userData.dur = 400;
+      l.userData.peak = 55 * mag;
+    }
+    // 地面焦痕（中/高档）
+    if (this.quality !== 'low') {
+      const s = this.scorches[this.scorchIdx];
+      this.scorchIdx = (this.scorchIdx + 1) % this.scorches.length;
+      s.visible = true;
+      s.position.set(pos.x, 0.02, pos.z);
+      s.scale.setScalar(2.4 * mag);
+      s.rotation.z = Math.random() * Math.PI * 2;
+      s.userData.born = this.nowMs;
+      s.userData.dur = 12000;
+      (s.material as THREE.MeshBasicMaterial).opacity = 0.82;
+    }
   }
 
   /** [M15] 空袭/集束落点红烟标记（持续约 3s 的上升烟柱） */
@@ -410,8 +489,8 @@ export class Effects {
     }
   }
 
-  update(dt: number): void {
-    const now = performance.now();
+  update(dt: number, now: number = performance.now()): void {
+    this.nowMs = now;
     for (const v of this.nadeViews.values()) {
       v.mesh.position.lerp(v.target, Math.min(1, 14 * dt));
       v.mesh.rotation.x += 6 * dt;
@@ -422,6 +501,38 @@ export class Effects {
         l.visible = false;
         l.intensity = 0;
       }
+    }
+    // [M17] 冲击波环：扩散 + 淡出
+    for (const r of this.rings) {
+      if (!r.visible) continue;
+      const k = (now - r.userData.born) / r.userData.dur;
+      if (k >= 1) {
+        r.visible = false;
+        continue;
+      }
+      r.scale.setScalar((0.6 + 6.4 * k) * (r.userData.mag as number));
+      (r.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k);
+    }
+    // [M17] 爆炸灯：二次方衰减
+    for (const l of this.blastLights) {
+      if (!l.visible) continue;
+      const k = (now - l.userData.born) / l.userData.dur;
+      if (k >= 1) {
+        l.visible = false;
+        l.intensity = 0;
+        continue;
+      }
+      l.intensity = (l.userData.peak as number) * (1 - k) * (1 - k);
+    }
+    // [M17] 焦痕：12s 线性渐隐
+    for (const s of this.scorches) {
+      if (!s.visible) continue;
+      const k = (now - s.userData.born) / s.userData.dur;
+      if (k >= 1) {
+        s.visible = false;
+        continue;
+      }
+      (s.material as THREE.MeshBasicMaterial).opacity = 0.82 * (1 - k);
     }
     for (let i = this.tracers.length - 1; i >= 0; i--) {
       const t = this.tracers[i];
