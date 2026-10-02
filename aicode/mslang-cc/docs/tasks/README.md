@@ -3,66 +3,66 @@
 基于 `docs/language/` 设计文档拆分的实现任务总索引。任务编号按依赖顺序全局递增，每个任务是可独立运行、可测试验证的最小交付单元（对应一次可合并的变更）。
 
 - 任务文档命名：`T0NN-slug.md`（本目录内）
-- 状态更新：开工时改任务文档头部与下表"状态"列；完成须满足该任务 DoD 且全部相关测试通过
+- 状态更新：开工时改任务文档头部与下表"状态"列（仅 emoji，含义见状态图例）；完成须满足该任务 DoD 且全部相关测试通过
 - 阶段划分与 `29-roadmap.md` §3 的 12 期一一对应（P0-P12）
 
 ## 状态图例
 
 | 状态 | 含义 |
 |------|------|
-| 未开始 | 尚未动工 |
-| 进行中 | 已开工未达 DoD |
-| 已完成 | DoD 全部满足、ctest 全绿、已提交 |
-| 阻塞 | 被依赖或外部因素阻塞（在任务文档备注原因） |
+| ⬜ | 未开始：尚未动工 |
+| 🚧 | 进行中：已开工未达 DoD |
+| ✅ | 已完成：DOD 全部满足、ctest 全绿、已提交 |
+| ⛔ | 阻塞：被依赖或外部因素阻塞（在任务文档备注原因） |
 
 ## 总表
 
-| 编号 | 任务 | 阶段 | 依赖 | 规模 | 状态 |
-|------|------|------|------|------|------|
-| [T001](T001-project-skeleton.md) | 项目骨架：构建体系与平台层 | P0 | - | M | 未开始 |
-| [T002](T002-test-infra.md) | 测试基础设施：单测框架与 golden 跑器 | P0 | T001 | M | 未开始 |
-| [T003](T003-token-diagnostic.md) | Token 定义与诊断基础设施 | P1 | T002 | S | 未开始 |
-| [T004](T004-scanner-core.md) | Scanner 核心：标识符/数字/运算符/ASI | P1 | T003 | M | 未开始 |
-| [T005](T005-scanner-string-rune.md) | Scanner 字符串与 rune 字面量 | P1 | T004 | M | 未开始 |
-| [T006](T006-ast-basic-statements.md) | AST 定义与声明/基础语句解析 | P2 | T005 | M | 未开始 |
-| [T007](T007-expression-parsing.md) | 表达式解析：优先级与后缀链 | P2 | T006 | L | 未开始 |
-| [T008](T008-complex-statements.md) | 复合语句与函数/类声明解析 | P2 | T007 | L | 未开始 |
-| [T009](T009-binder.md) | Binder：作用域分析与 conformance 快照 | P2 | T008 | M | 未开始 |
-| [T010](T010-instruction-compiler.md) | 指令集定义与 Compiler 基础 | P3 | T009 | L | 未开始 |
-| [T011](T011-vm-basic-control-flow.md) | VM 基础：dispatch 循环与控制流 | P3 | T010 | L | 未开始 |
-| [T012](T012-heap-basic-gc.md) | 堆与对象基础 + 临时标记清除 GC | P4 | T011 | M | 未开始 |
-| [T013](T013-string-object.md) | string 对象：UTF-8 与方法族 | P4 | T012 | L | 未开始 |
-| [T014](T014-list-destructuring.md) | list 与解构赋值 | P4 | T013 | M | 未开始 |
-| [T015](T015-map-set-tuple.md) | map / set / tuple | P4 | T013 | L | 未开始 |
-| [T016](T016-bigint-numerics.md) | bigint 与数值塔 | P4 | T012 | L | 未开始 |
-| [T017](T017-tier0-builtins-iteration.md) | Tier0 内置函数与迭代协议 | P4 | T013-T016 | L | 未开始 |
-| [T018](T018-functions-closures.md) | 函数、调用与闭包 | P5 | T017 | L | 未开始 |
-| [T019](T019-generators.md) | 生成器 | P5 | T018 | M | 未开始 |
-| [T020](T020-classes-inheritance.md) | class 与继承 mixin | P5 | T018 | L | 未开始 |
-| [T021](T021-dunder-protocol.md) | dunder 全协议 | P5 | T020 | L | 未开始 |
-| [T022](T022-shape-inline-cache.md) | Shape 与内联缓存 | P5 | T021 | M | 未开始 |
-| [T023](T023-exceptions-defer.md) | 异常系统与 defer | P6 | T020 | L | 未开始 |
-| [T024](T024-modules.md) | 模块系统 | P6 | T018 | L | 未开始 |
-| [T025](T025-msc-cache.md) | .msc 字节码缓存 | P6 | T024 | M | 未开始 |
-| [T026](T026-generational-young.md) | 分代 young GC | P7 | T023 | L | 未开始 |
-| [T027](T027-concurrent-mark.md) | 并发标记 major + WeakRef | P7 | T026 | L | 未开始 |
-| [T028](T028-scheduler-core.md) | 调度器骨架与可增长栈 | P8 | T027 | L | 未开始 |
-| [T029](T029-preemption-go-future.md) | 抢占与 go 语句/Future | P8 | T028 | M | 未开始 |
-| [T030](T030-channel-select.md) | channel 与 select | P8 | T029 | L | 未开始 |
-| [T031](T031-async-await.md) | async/await 协程 | P9 | T029 | L | 未开始 |
-| [T032](T032-timers-netpoller.md) | timers/netpoller/bpool 与 time 模块 | P9 | T028 | L | 未开始 |
-| [T033](T033-capi-extensions.md) | ms.h C API 与扩展加载 | P10 | T027, T028 | L | 未开始 |
-| [T034](T034-tier1-pure.md) | Tier1 组 A：math/strings/errors/sort/random | P10 | T033 | L | 未开始 |
-| [T035](T035-tier1-io.md) | Tier1 组 B：os/sys/io/bufio/bytes/path/collections/sync | P10 | T032, T033 | L | 未开始 |
-| [T036](T036-tier1-runtime.md) | Tier1 组 C：json/log/runtime | P10 | T027, T029 | M | 未开始 |
-| [T037](T037-run-repl.md) | ms run 完整化与 REPL | P11 | T024 | M | 未开始 |
-| [T038](T038-fmt.md) | ms fmt 格式化器 | P11 | T009 | L | 未开始 |
-| [T039](T039-test-command.md) | ms test 与 testing 模块 | P11 | T037 | M | 未开始 |
-| [T040](T040-dump-debug.md) | ms dump 完整化与 debug TUI | P11 | T029 | L | 未开始 |
-| [T041](T041-build-bundle.md) | ms build 与 .msb bundle | P12 | T025 | M | 未开始 |
-| [T042](T042-pkg-doc.md) | ms pkg 与 ms doc | P12 | T009, T041 | M | 未开始 |
-| [T043](T043-tier2-stdlib.md) | Tier2 标准库 | P12 | T032, T035 | L | 未开始 |
-| [T044](T044-benchmark-release.md) | 基准门禁与 v0.1 收尾 | P12 | T039, T043 | M | 未开始 |
+| 编号 | 任务 | 文档 | 阶段 | 依赖 | 规模 | 状态 |
+|------|------|------|------|------|------|------|
+| T001 | 项目骨架 | [T001](T001-project-skeleton.md) | P0 | - | M | ⬜ |
+| T002 | 测试基础设施 | [T002](T002-test-infra.md) | P0 | T001 | M | ⬜ |
+| T003 | Token 定义与诊断 | [T003](T003-token-diagnostic.md) | P1 | T002 | S | ⬜ |
+| T004 | Scanner 核心 | [T004](T004-scanner-core.md) | P1 | T003 | M | ⬜ |
+| T005 | Scanner 字符串/rune | [T005](T005-scanner-string-rune.md) | P1 | T004 | M | ⬜ |
+| T006 | AST 与基础语句 | [T006](T006-ast-basic-statements.md) | P2 | T005 | M | ⬜ |
+| T007 | 表达式解析 | [T007](T007-expression-parsing.md) | P2 | T006 | L | ⬜ |
+| T008 | 复合语句与函数/类 | [T008](T008-complex-statements.md) | P2 | T007 | L | ⬜ |
+| T009 | Binder | [T009](T009-binder.md) | P2 | T008 | M | ⬜ |
+| T010 | 指令集与 Compiler | [T010](T010-instruction-compiler.md) | P3 | T009 | L | ⬜ |
+| T011 | VM 基础 | [T011](T011-vm-basic-control-flow.md) | P3 | T010 | L | ⬜ |
+| T012 | 堆与临时 GC | [T012](T012-heap-basic-gc.md) | P4 | T011 | M | ⬜ |
+| T013 | string 对象 | [T013](T013-string-object.md) | P4 | T012 | L | ⬜ |
+| T014 | list 与解构赋值 | [T014](T014-list-destructuring.md) | P4 | T013 | M | ⬜ |
+| T015 | map / set / tuple | [T015](T015-map-set-tuple.md) | P4 | T013 | L | ⬜ |
+| T016 | bigint 与数值塔 | [T016](T016-bigint-numerics.md) | P4 | T012 | L | ⬜ |
+| T017 | Tier0 内置与迭代 | [T017](T017-tier0-builtins-iteration.md) | P4 | T013-T016 | L | ⬜ |
+| T018 | 函数与闭包 | [T018](T018-functions-closures.md) | P5 | T017 | L | ⬜ |
+| T019 | 生成器 | [T019](T019-generators.md) | P5 | T018 | M | ⬜ |
+| T020 | class 与继承 mixin | [T020](T020-classes-inheritance.md) | P5 | T018 | L | ⬜ |
+| T021 | dunder 全协议 | [T021](T021-dunder-protocol.md) | P5 | T020 | L | ⬜ |
+| T022 | Shape 与内联缓存 | [T022](T022-shape-inline-cache.md) | P5 | T021 | M | ⬜ |
+| T023 | 异常系统与 defer | [T023](T023-exceptions-defer.md) | P6 | T020 | L | ⬜ |
+| T024 | 模块系统 | [T024](T024-modules.md) | P6 | T018 | L | ⬜ |
+| T025 | .msc 字节码缓存 | [T025](T025-msc-cache.md) | P6 | T024 | M | ⬜ |
+| T026 | 分代 young GC | [T026](T026-generational-young.md) | P7 | T023 | L | ⬜ |
+| T027 | 并发标记 major + WeakRef | [T027](T027-concurrent-mark.md) | P7 | T026 | L | ⬜ |
+| T028 | 调度器骨架 | [T028](T028-scheduler-core.md) | P8 | T027 | L | ⬜ |
+| T029 | 抢占与 go 语句/Future | [T029](T029-preemption-go-future.md) | P8 | T028 | M | ⬜ |
+| T030 | channel 与 select | [T030](T030-channel-select.md) | P8 | T029 | L | ⬜ |
+| T031 | async/await 协程 | [T031](T031-async-await.md) | P9 | T029 | L | ⬜ |
+| T032 | timers/netpoller/time | [T032](T032-timers-netpoller.md) | P9 | T028 | L | ⬜ |
+| T033 | ms.h C API 与扩展加载 | [T033](T033-capi-extensions.md) | P10 | T027, T028 | L | ⬜ |
+| T034 | Tier1 组 A | [T034](T034-tier1-pure.md) | P10 | T033 | L | ⬜ |
+| T035 | Tier1 组 B | [T035](T035-tier1-io.md) | P10 | T032, T033 | L | ⬜ |
+| T036 | Tier1 组 C | [T036](T036-tier1-runtime.md) | P10 | T027, T029 | M | ⬜ |
+| T037 | ms run 完整化与 REPL | [T037](T037-run-repl.md) | P11 | T024 | M | ⬜ |
+| T038 | ms fmt 格式化器 | [T038](T038-fmt.md) | P11 | T009 | L | ⬜ |
+| T039 | ms test 与 testing 模块 | [T039](T039-test-command.md) | P11 | T037 | M | ⬜ |
+| T040 | ms dump 完整化与 debug TUI | [T040](T040-dump-debug.md) | P11 | T029 | L | ⬜ |
+| T041 | ms build 与 .msb bundle | [T041](T041-build-bundle.md) | P12 | T025 | M | ⬜ |
+| T042 | ms pkg 与 ms doc | [T042](T042-pkg-doc.md) | P12 | T009, T041 | M | ⬜ |
+| T043 | Tier2 标准库 | [T043](T043-tier2-stdlib.md) | P12 | T032, T035 | L | ⬜ |
+| T044 | 基准门禁与 v0.1 收尾 | [T044](T044-benchmark-release.md) | P12 | T039, T043 | M | ⬜ |
 
 ## 依赖关系
 
