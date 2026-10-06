@@ -2,7 +2,6 @@
 #define INCLUDE_MS_COMMON_COMMON_H_
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -23,6 +22,8 @@ typedef double ms_f64;
 #endif
 
 // 统一动态数组增长：容量从 0 起按 2 倍扩张，arr/count/cap 均为左值
+// Release（NDEBUG）下 OOM 为设计上致命：断言被剔除后直接解引用 NULL 崩溃
+// count 与 cap 在宏内各被求值多次，禁止传入带副作用的表达式
 #define MS_ARRAY_PUSH(arr, count, cap, elem)                  \
   do {                                                        \
     if ((count) == (cap)) {                                   \
