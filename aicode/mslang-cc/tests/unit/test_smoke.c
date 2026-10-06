@@ -28,6 +28,9 @@ static FILE* smokeReopen(const char* path, const char* mode, FILE* stream) {
 // 捕获 fn 写往 stderr 的文本（dup + freopen + dup2 恢复）；outCap 含结尾 NUL
 static bool captureStderr(void (*fn)(TestCtx*), TestCtx* ctx, char* out, size_t outCap) {
   const char* capturePath = "test_smoke_capture.tmp";
+  if (outCap == 0) {
+    return false;
+  }
   fflush(stderr);
   int saved = SMOKE_DUP(SMOKE_FILENO(stderr));
   if (saved < 0) {

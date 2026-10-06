@@ -1,5 +1,5 @@
 // C 单测断言宏族（T002 §2）：失败打印 file:line 与 expected/got 并计数，不中断用例
-// EXPECT_EQ/EXPECT_F64_EQ/EXPECT_STREQ 的实参会被求值两次，禁止传入带副作用的表达式
+// EXPECT_EQ 的实参会被求值两次，禁止传入带副作用的表达式；EXPECT_F64_EQ/EXPECT_STREQ 仅求值一次
 #ifndef INCLUDE_MS_TESTS_UNIT_TEST_HARNESS_H_
 #define INCLUDE_MS_TESTS_UNIT_TEST_HARNESS_H_
 
