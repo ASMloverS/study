@@ -1,0 +1,45 @@
+name: mslang-ci
+
+on:
+  push:
+    paths: ["aicode/mslang-cc/**"]
+  pull_request:
+    paths: ["aicode/mslang-cc/**"]
+
+defaults:
+  run:
+    working-directory: aicode/mslang-cc
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, preset: msvc, config: Debug }
+          - { os: windows-latest, preset: msvc, config: Release }
+          - { os: ubuntu-latest, preset: debug }
+          - { os: ubuntu-latest, preset: release }
+          - { os: macos-latest, preset: debug }
+          - { os: macos-latest, preset: release }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset ${{ matrix.preset }}
+      - if: matrix.config == ''
+        run: cmake --build build
+      - if: matrix.config != ''
+        run: cmake --build build --config ${{ matrix.config }}
+      - if: matrix.config == ''
+        run: ctest --test-dir build --output-on-failure
+      - if: matrix.config != ''
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: clang-format check
+        run: |
+          find src tools tests \( -name '*.c' -o -name '*.h' \) -print0 |
+            xargs -0 -n1 clang-format --dry-run --Werror
