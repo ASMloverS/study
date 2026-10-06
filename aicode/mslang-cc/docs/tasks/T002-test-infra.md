@@ -36,7 +36,8 @@ typedef struct TestCtx { int failures; } TestCtx;
 ## 3. 涉及文件
 
 新增: `tests/unit/test_harness.h`、`tests/unit/test_smoke.c`、`tests/unit/test_runner_selftest.c`、`tools/test_runner.c`、`cmake/Tests.cmake`、`tests/fixtures/smoke/hello.ms`（占位）、`tests/fixtures/smoke/hello.out`、`tests/conformance/README.md`（命名约定说明）
-修改: `CMakeLists.txt`（引入 Tests.cmake）、`.github/workflows/ci.yml`（ctest 全标签）
+修改: `CMakeLists.txt`（引入 Tests.cmake）、`tests/CMakeLists.txt`（改用 ms_add_test）、`tools/ms.c`（`ms <file>.ms` run 占位，T011 替换）、`.gitignore`（`!tests/**/*.out`，根 `*.out` 取反）
+未改: `.github/workflows/ci.yml`（现有无过滤全量 ctest 已覆盖全部标签，设计决策）
 
 ## 4. 验收标准（DoD）
 
