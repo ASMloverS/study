@@ -443,6 +443,12 @@ static int runCase(const char* msExe, const char* casePath) {
     failed = 1;
   } else {
     normalizeLf(expectedOut);
+    if (run.out.data != NULL) {
+      normalizeLf(run.out.data);
+    }
+    if (run.err.data != NULL) {
+      normalizeLf(run.err.data);
+    }
     const char* actualOut = bufText(&run.out);
     if (strcmp(actualOut, expectedOut) != 0) {
       printf("FAIL %s: stdout mismatch\n", casePath);
