@@ -17,6 +17,7 @@
 **Files:**
 - Create: `CMakeLists.txt`、`CMakePresets.json`、`cmake/CompilerWarnings.cmake`
 - Create: `src/<mod>/<mod>.c`（mod = scanner/parser/binder/compiler/vm/obj/gc/sched/reactor/module/ms_api/stdlib，共 12 个占位空编译单元）
+- Create: `src/plat/plat_thread.c`、`src/plat/plat_time.c`（占位，CMakeLists 已引用；Task 3 覆盖）
 - Create: `tools/ms.c`、`.clang-format`、`.editorconfig`、`.gitignore`
 
 - [ ] **Step 1: 写顶层 CMakeLists.txt**
@@ -149,9 +150,14 @@ endif()
 $enc = New-Object System.Text.UTF8Encoding($false)
 foreach ($m in @('scanner','parser','binder','compiler','vm','obj','gc','sched','reactor','module','ms_api','stdlib')) {
   New-Item -ItemType Directory -Force "src/$m" | Out-Null
-  [IO.File]::WriteAllText("$PWD/src/$m/$m.c", "// 占位编译单元：本目录内容由后续任务按 docs/tasks/README.md 填入`n", $enc)
+  $text = "// 占位编译单元：本目录内容由后续任务按 docs/tasks/README.md 填入`n" +
+    "// typedef 消除空翻译单元（MSVC /W4 /WX 视为 C4206 错误），本文件被后续任务覆盖时自然移除`n" +
+    "typedef int ms_placeholder;`n"
+  [IO.File]::WriteAllText("$PWD/src/$m/$m.c", $text, $enc)
 }
 ```
+
+同因（C4206）：`src/plat/plat_thread.c` 与 `src/plat/plat_time.c` 本任务先建同款占位（CMakeLists 已引用），Task 3 整体覆盖。
 
 - [ ] **Step 6: 写 tools/ms.c**
 
@@ -190,10 +196,13 @@ int main(int argc, char** argv) {
 #endif
 ```
 
-`src/common/common.c`（Task 1 最小版）：
+`src/common/common.c`（Task 1 最小版；typedef 同为消 C4206，Task 2 移除）：
 
 ```c
 #include "common.h"
+
+// 占位：消除空翻译单元（MSVC /W4 /WX 视为 C4206 错误），Task 2 扩充实现时移除
+typedef int ms_placeholder;
 ```
 
 - [ ] **Step 7: 写 .clang-format / .editorconfig / .gitignore**
@@ -261,6 +270,11 @@ Expected: `build/` 不出现（被忽略），无其他位置产物
 git add CMakeLists.txt CMakePresets.json cmake/ tests/CMakeLists.txt src/ tools/ .clang-format .editorconfig .gitignore
 git commit -m "🎉 feat(build): scaffold CMake build with platform placeholders and ms version"
 ```
+
+> **执行勘误（已落地，commit `1169311c1` + `4c7f1704c`）：**
+> 1. 占位 `.c` 内容为两行注释 + `typedef int ms_placeholder;`（空翻译单元在 MSVC /W4 /WX 触发 C4206 错误）；`src/plat/plat_thread.c`、`plat_time.c` 同款占位（CMakeLists 已引用，Task 3 覆盖）
+> 2. `.clang-format` 为 `PointerAlignment: Left`（28-style-c.md §3 契约 `MsValue* v`，本文件下方 `.clang-format` 样例中的 Right 作废）
+> 3. CMakeLists 增补：foreach 模块库 `target_link_libraries(ms_${mod} PUBLIC ms_common)`；sanitizer 加 `-fno-sanitize-recover=all`（编译+链接）；`MS_SANITIZERS` + MSVC 时 FATAL_ERROR；computed goto 探测改用 CMakePushCheckState 包裹（删除冗余 -std=c11，MSVC 恒否机理见代码注释）；CompilerWarnings 非 WIN32 分支编译侧也加 `-pthread`
 
 ---
 
