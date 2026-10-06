@@ -12,9 +12,10 @@ endif()
 
 include(cmake/CompilerWarnings.cmake)
 
-# 探测 computed goto：GCC/Clang 可用则定义，MSVC 因 -std=c11 无法解析而恒为否（见 T011 dispatch 双路径）
+# 探测 computed goto：MSVC 从不支持 labels-as-values（cl 忽略 GCC 式 -std 参数，探测恒否），GCC/Clang 依探测结果定义 MS_USE_COMPUTED_GOTO（见 T011 dispatch 双路径）
 include(CheckCSourceCompiles)
-set(CMAKE_REQUIRED_FLAGS "-std=c11")
+include(CMakePushCheckState)
+cmake_push_check_state()
 check_c_source_compiles("
 int main(void) {
   static void* table[] = {&&label};
@@ -23,15 +24,18 @@ label:
   return 0;
 }
 " MS_HAVE_COMPUTED_GOTO)
-unset(CMAKE_REQUIRED_FLAGS)
+cmake_pop_check_state()
 if(MS_HAVE_COMPUTED_GOTO)
   add_compile_definitions(MS_USE_COMPUTED_GOTO=1)
 endif()
 
 option(MS_SANITIZERS "Enable ASan+UBSan (GCC/Clang only)" OFF)
+if(MS_SANITIZERS AND MSVC)
+  message(FATAL_ERROR "MS_SANITIZERS requires GCC/Clang")
+endif()
 if(MS_SANITIZERS AND NOT MSVC)
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
-  add_link_options(-fsanitize=address,undefined)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+  add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
 endif()
 
 add_library(ms_common STATIC src/common/common.c)
@@ -45,6 +49,7 @@ target_link_libraries(ms_plat PUBLIC ms_common)
 foreach(mod IN ITEMS scanner parser binder compiler vm obj gc sched reactor module ms_api stdlib)
   add_library(ms_${mod} STATIC src/${mod}/${mod}.c)
   target_include_directories(ms_${mod} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(ms_${mod} PUBLIC ms_common)
 endforeach()
 
 add_executable(ms tools/ms.c)
