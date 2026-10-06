@@ -3,7 +3,7 @@
 - 阶段: P0 骨架（roadmap 期 0）
 - 依赖: 无
 - 规模: M
-- 状态: 未开始
+- 状态: 已完成
 - 设计文档: `docs/language/29-roadmap.md` §1-§2、`20-architecture.md` §4 §7、`28-style-c.md`
 
 ## 1. 目标与范围
@@ -48,11 +48,11 @@ void platMutexUnlock(PlatMutex* m);
 
 ## 4. 验收标准（DoD）
 
-- [ ] Windows（MSVC 2022）本地 Debug/Release 构建通过、零警告
-- [ ] `build/ms version` 打印版本串（如 `mslang 0.0.1 (dev)`）退出码 0
-- [ ] `build/` 外无任何构建产物
-- [ ] CI 三平台矩阵全绿（构建 + 空 ctest + 格式检查）
-- [ ] `clang-format --dry-run --Werror` 对全部 `.c/.h` 通过
+- [x] Windows（MSVC 2022）本地 Debug/Release 构建通过、零警告
+- [x] `build/ms version` 打印版本串（如 `mslang 0.0.1 (dev)`）退出码 0
+- [x] `build/` 外无任何构建产物
+- [ ] CI 三平台矩阵全绿（构建 + 空 ctest + 格式检查）：CI 工作流已就位（项目内路径，GitHub 暂不执行）；拆库或根工作流接入后补验
+- [x] `clang-format --dry-run --Werror` 对全部 `.c/.h` 通过
 
 ## 5. 测试计划
 

@@ -19,7 +19,7 @@
 
 | 编号 | 任务 | 文档 | 阶段 | 依赖 | 规模 | 状态 |
 |------|------|------|------|------|------|------|
-| T001 | 项目骨架 | [T001](T001-project-skeleton.md) | P0 | - | M | ⬜ |
+| T001 | 项目骨架 | [T001](T001-project-skeleton.md) | P0 | - | M | ✅ |
 | T002 | 测试基础设施 | [T002](T002-test-infra.md) | P0 | T001 | M | ⬜ |
 | T003 | Token 定义与诊断 | [T003](T003-token-diagnostic.md) | P1 | T002 | S | ⬜ |
 | T004 | Scanner 核心 | [T004](T004-scanner-core.md) | P1 | T003 | M | ⬜ |
