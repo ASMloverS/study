@@ -78,6 +78,7 @@ static void testAtomicSmoke(void) {
   CHECK(platAtomicLoad(&a, memory_order_relaxed) == 100);
   ms_i64 wrong = 999;
   CHECK(!platAtomicCas(&a, &wrong, 0, memory_order_acq_rel));
+  CHECK(wrong == 100);
   CHECK(platAtomicLoad(&a, memory_order_relaxed) == 100);
 }
 

@@ -2,14 +2,16 @@
 
 #include <stdlib.h>
 
+#if defined(_WIN32)
+#include <process.h>
+#endif
+
 typedef struct ThreadStart {
   PlatThreadFn fn;
   void* arg;
 } ThreadStart;
 
 #if defined(_WIN32)
-
-#include <process.h>
 
 struct PlatThread {
   HANDLE handle;
