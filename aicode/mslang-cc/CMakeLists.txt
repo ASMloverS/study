@@ -59,4 +59,5 @@ target_link_libraries(
 )
 
 enable_testing()
+include(cmake/Tests.cmake)
 add_subdirectory(tests)
