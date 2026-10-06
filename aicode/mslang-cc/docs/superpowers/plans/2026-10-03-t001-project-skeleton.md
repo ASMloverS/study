@@ -863,6 +863,14 @@ git add src/plat/ tests/unit/test_common.c
 git commit -m "✨ feat(plat): add thread/atomic/time wrappers and io placeholder with tests"
 ```
 
+> **执行勘误（已落地，commits `cf575a9be` + `62697960f`）：**
+> 1. Task 2 遗留：common.h 最终不含 `<stdbool.h>`（未被本头使用）；test 补 `ms_u64` 静态断言、嵌入 NUL FNV 向量（32=`0x10f3abd2u`、64=`0xe5d29919042666b2ULL`，Python 独立计算）、cap 边界增长断言
+> 2. `platAtomicCas` 最终签名：`bool platAtomicCas(PlatAtomic* a, ms_i64* expected, ms_i64 desired, memory_order order)`——expected 改指针（CAS-retry 失败观测），内部推导 failure order（release/acq_rel 降为 acquire，C11 §7.17.7.4 禁止更强 failure 序）；MSVC `/experimental:c11atomics` 内建为单序转发（底层 `_Atomic_compare_exchange_strong64` 丢弃 failure 实参），故含 `(void)fail;` 消 C4189，x64 全栅栏语义无损
+> 3. Windows 线程创建用 `_beginthreadex`（非 `CreateThread`，CRT 线程安全），trampoline 为 `static unsigned __stdcall`
+> 4. plat_thread.h 补契约注释（create→join 恰一次→destroy；CondWait 需谓词循环防虚假唤醒；TryLock 非阻塞）
+> 5. 测试补强：CAS 失败分支、4 线程无锁 fetch_add 并发原子性、1000 采样单调不回退、线程 create 失败提前返回
+> 6. 遗留微瑕（下次触碰相关文件时顺路）：CAS 失败分支补 `CHECK(wrong == 100)`（失败回写观测）；plat_thread.c Win32 分支 `process.h` 上移顶部 include 块
+
 ---
 
 ### Task 4: CI 工作流与全量格式门禁
