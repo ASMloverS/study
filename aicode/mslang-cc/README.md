@@ -19,6 +19,19 @@ print(fib(10))  // 55
 
 设计阶段，实现未开始。语言设计见 [docs/language/00-overview.md](docs/language/00-overview.md)，实现任务索引见 [docs/tasks/README.md](docs/tasks/README.md)。
 
+## 构建与测试
+
+Windows（MSVC VS2022 生成器，多配置）：
+
+```powershell
+cmake --preset msvc                      # 配置（首次），输出到 build/
+cmake --build build --config Debug       # 构建（Release 同理）
+ctest --test-dir build -C Debug --output-on-failure
+.\build\Debug\ms.exe version             # 冒烟：mslang 0.0.1 (dev)
+```
+
+Linux / macOS（或本地 Ninja+clang）：`cmake --preset debug`（或 `release` / `asan`）→ `cmake --build build` → `ctest --test-dir build`（无需 `-C`）。各预设共用 `build/`，切换生成器需先删 `build/`。
+
 ## 仓库结构
 
 | 路径 | 内容 |
