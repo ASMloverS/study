@@ -3,7 +3,7 @@
 - 阶段: P0 骨架（roadmap 期 0）
 - 依赖: T001
 - 规模: M
-- 状态: 未开始
+- 状态: 进行中
 - 设计文档: `docs/language/28-style-c.md` §10、`29-roadmap.md` §2 §3
 
 ## 1. 目标与范围
