@@ -160,6 +160,7 @@ static bool readOptionalInt(const char* path, int* value) {
 #include <poll.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -197,6 +198,7 @@ typedef struct SpawnResult {
   bool spawned;
   bool timedOut;
   int exitCode;
+  unsigned long spawnError;
   Buffer out;
   Buffer err;
 } SpawnResult;
@@ -220,7 +222,7 @@ static void drainPipe(HANDLE readEnd, Buffer* buf) {
 }
 
 static SpawnResult spawnCapture(const char* exe, const char* script, int timeoutSec) {
-  SpawnResult result = {false, false, -1, {NULL, 0}, {NULL, 0}};
+  SpawnResult result = {false, false, -1, 0, {NULL, 0}, {NULL, 0}};
   SECURITY_ATTRIBUTES inheritable = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
   HANDLE outRead = NULL;
   HANDLE outWrite = NULL;
@@ -249,10 +251,12 @@ static SpawnResult spawnCapture(const char* exe, const char* script, int timeout
   char command[RUNNER_MAX_PATH * 2];
   snprintf(command, sizeof(command), "\"%s\" \"%s\"", exe, script);
   if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process)) {
+    DWORD spawnError = GetLastError();
     CloseHandle(outRead);
     CloseHandle(outWrite);
     CloseHandle(errRead);
     CloseHandle(errWrite);
+    result.spawnError = spawnError;
     return result;
   }
   result.spawned = true;
@@ -288,7 +292,7 @@ static SpawnResult spawnCapture(const char* exe, const char* script, int timeout
 
 #else
 
-static void drainFd(int fd, Buffer* buf, bool* open) {
+static void drainFd(int fd, Buffer* buf, bool* isOpen) {
   char chunk[4096];
   for (;;) {
     ssize_t got = read(fd, chunk, sizeof(chunk));
@@ -296,21 +300,21 @@ static void drainFd(int fd, Buffer* buf, bool* open) {
       bufAppend(buf, chunk, (size_t)got);
       continue;
     }
-    if (got == 0 || errno != EAGAIN) {
-      *open = false;
+    if (got == 0 || (got < 0 && errno != EAGAIN && errno != EINTR)) {
+      *isOpen = false;
     }
     return;
   }
 }
 
-static long nowMs(void) {
+static long long nowMs(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (long)ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+  return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
 static SpawnResult spawnCapture(const char* exe, const char* script, int timeoutSec) {
-  SpawnResult result = {false, false, -1, {NULL, 0}, {NULL, 0}};
+  SpawnResult result = {false, false, -1, 0, {NULL, 0}, {NULL, 0}};
   int outPipe[2];
   int errPipe[2];
   if (pipe(outPipe) != 0) {
@@ -345,7 +349,7 @@ static SpawnResult spawnCapture(const char* exe, const char* script, int timeout
   fcntl(errPipe[0], F_SETFL, O_NONBLOCK);
 
   result.spawned = true;
-  long deadline = nowMs() + (long)timeoutSec * 1000L;
+  long long deadline = nowMs() + (long long)timeoutSec * 1000LL;
   bool outOpen = true;
   bool errOpen = true;
   int status = 0;
@@ -401,8 +405,12 @@ static bool joinPath(char* out, size_t outCap, const char* base, const char* suf
 
 static int runCase(const char* msExe, const char* casePath) {
   size_t caseLen = strlen(casePath);
-  if (caseLen < 4 || caseLen + 1 > RUNNER_MAX_PATH || strcmp(casePath + caseLen - 3, ".ms") != 0) {
+  if (caseLen < 4 || strcmp(casePath + caseLen - 3, ".ms") != 0) {
     printf("FAIL %s: case path must end with .ms\n", casePath);
+    return 1;
+  }
+  if (caseLen + 1 > RUNNER_MAX_PATH) {
+    printf("FAIL %s: case path too long\n", casePath);
     return 1;
   }
   char base[RUNNER_MAX_PATH];
@@ -436,7 +444,7 @@ static int runCase(const char* msExe, const char* casePath) {
   SpawnResult run = spawnCapture(msExe, casePath, timeoutSec);
   int failed = 0;
   if (!run.spawned) {
-    printf("FAIL %s: failed to spawn %s\n", casePath, msExe);
+    printf("FAIL %s: failed to spawn %s (error %lu)\n", casePath, msExe, run.spawnError);
     failed = 1;
   } else if (run.timedOut) {
     printf("FAIL %s: timed out after %ds\n", casePath, timeoutSec);
