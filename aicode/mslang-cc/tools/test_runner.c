@@ -51,16 +51,17 @@ static char* slurpFile(const char* path, size_t* outLen) {
 }
 
 // 就地 CRLF -> LF（孤立 \r 保留）；要求 NUL 结尾
+// 局部名用 src/dst：独立构建时本 TU 会引入 <unistd.h>（Task 4），read/write 会与 POSIX 同名符号冲突
 static void normalizeLf(char* text) {
-  char* read = text;
-  char* write = text;
-  while (*read != '\0') {
-    if (read[0] == '\r' && read[1] == '\n') {
-      read++;
+  char* src = text;
+  char* dst = text;
+  while (*src != '\0') {
+    if (src[0] == '\r' && src[1] == '\n') {
+      src++;
     }
-    *write++ = *read++;
+    *dst++ = *src++;
   }
-  *write = '\0';
+  *dst = '\0';
 }
 
 // 首个差异行号（1 起，按 \n 切行：尾随 \n 计一空行）；相等返回 0
@@ -89,6 +90,9 @@ static int firstDiffLine(const char* expected, const char* actual) {
 }
 
 static const char* lineAt(const char* text, int line) {
+  if (*text == '\0') {
+    return NULL;
+  }
   int current = 1;
   for (const char* p = text; *p != '\0'; p++) {
     if (current == line) {

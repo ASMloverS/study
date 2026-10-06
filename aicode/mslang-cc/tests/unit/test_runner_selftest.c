@@ -38,6 +38,26 @@ TEST(printDiffMarksFirstLine) {
   EXPECT(ctx, strstr(log, "line 2") != NULL);
   EXPECT(ctx, strstr(log, "beta") != NULL);
   EXPECT(ctx, strstr(log, "BETA") != NULL);
+  // 精确字节比对：两空格缩进 + 行号行 + expected/actual 各一行（label "actual  " 自带补位空格）
+  const char* want = "  first difference at line 2:\n  expected: beta\n  actual  : BETA\n";
+  EXPECT(ctx, got == strlen(want) && memcmp(log, want, strlen(want)) == 0);
+}
+
+TEST(lineAtEmptyTextHasNoLines) {
+  EXPECT(ctx, lineAt("", 1) == NULL);
+  FILE* file = tmpfile();
+  EXPECT(ctx, file != NULL);
+  if (file == NULL) {
+    return;
+  }
+  printDiff(file, "expected line 1\n", "");
+  rewind(file);
+  char log[512];
+  size_t got = fread(log, 1, sizeof(log) - 1, file);
+  log[got] = '\0';
+  fclose(file);
+  EXPECT(ctx, strstr(log, "first difference at line 1") != NULL);
+  EXPECT(ctx, strstr(log, "(no such line)") != NULL);
 }
 
 TEST(slurpReadsBinaryExact) {
@@ -60,6 +80,32 @@ TEST(slurpReadsBinaryExact) {
   EXPECT(ctx, slurpFile("definitely_missing_file.abc", &len) == NULL);
 }
 
+TEST(slurpGrowsBeyondInitialCap) {
+  char big[10000];
+  for (size_t i = 0; i < sizeof(big); i++) {
+    big[i] = (char)('0' + i % 10);
+  }
+  FILE* file = fopen(SELFTEST_TMP, "wb");
+  EXPECT(ctx, file != NULL);
+  if (file == NULL) {
+    return;
+  }
+  EXPECT(ctx, fwrite(big, 1, sizeof(big), file) == sizeof(big));
+  fclose(file);
+  size_t len = 0;
+  char* text = slurpFile(SELFTEST_TMP, &len);
+  remove(SELFTEST_TMP);
+  EXPECT(ctx, text != NULL);
+  if (text == NULL) {
+    return;
+  }
+  EXPECT_EQ(ctx, 10000, len);
+  EXPECT_EQ(ctx, '0', text[0]);
+  EXPECT_EQ(ctx, '9', text[4999]);
+  EXPECT_EQ(ctx, '9', text[9999]);
+  free(text);
+}
+
 TEST(readOptionalIntParses) {
   FILE* file = fopen(SELFTEST_TMP, "wb");
   EXPECT(ctx, file != NULL);
@@ -73,6 +119,10 @@ TEST(readOptionalIntParses) {
   EXPECT_EQ(ctx, 42, value);
   // MSVC 适配：赋值形 fopen 触发 C4996，改声明即初始化形（同上两处）保持告警干净
   FILE* again = fopen(SELFTEST_TMP, "wb");
+  EXPECT(ctx, again != NULL);
+  if (again == NULL) {
+    return;
+  }
   fprintf(again, "bad");
   fclose(again);
   EXPECT(ctx, !readOptionalInt(SELFTEST_TMP, &value));
@@ -86,7 +136,9 @@ int main(void) {
   normalizeLfStripsCr(&ctx);
   firstDiffLineFinds(&ctx);
   printDiffMarksFirstLine(&ctx);
+  lineAtEmptyTextHasNoLines(&ctx);
   slurpReadsBinaryExact(&ctx);
+  slurpGrowsBeyondInitialCap(&ctx);
   readOptionalIntParses(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
