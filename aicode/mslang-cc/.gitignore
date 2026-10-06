@@ -1,3 +1,4 @@
 build/
 __mscache__/
 ms_packages/
+.vs/

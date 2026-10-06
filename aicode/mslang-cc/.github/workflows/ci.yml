@@ -22,6 +22,7 @@ jobs:
           - { os: ubuntu-latest, preset: release }
           - { os: macos-latest, preset: debug }
           - { os: macos-latest, preset: release }
+          - { os: ubuntu-latest, preset: asan }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
