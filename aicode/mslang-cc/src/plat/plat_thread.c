@@ -9,11 +9,13 @@ typedef struct ThreadStart {
 
 #if defined(_WIN32)
 
+#include <process.h>
+
 struct PlatThread {
   HANDLE handle;
 };
 
-static DWORD WINAPI threadTrampoline(LPVOID param) {
+static unsigned __stdcall threadTrampoline(void* param) {
   ThreadStart start = *(ThreadStart*)param;
   free(param);
   start.fn(start.arg);
@@ -33,7 +35,7 @@ bool platThreadCreate(PlatThread** t, PlatThreadFn fn, void* arg) {
   }
   start->fn = fn;
   start->arg = arg;
-  (*t)->handle = CreateThread(NULL, 0, threadTrampoline, start, 0, NULL);
+  (*t)->handle = (HANDLE)_beginthreadex(NULL, 0, threadTrampoline, start, 0, NULL);
   if ((*t)->handle == NULL) {
     free(start);
     free(*t);

@@ -5,6 +5,7 @@
 #include "common/common.h"
 #include "plat/plat_atomic.h"
 #include "plat/plat_thread.h"
+#include "plat/plat_time.h"
 
 _Static_assert(sizeof(ms_u8) == 1, "ms_u8 must be 8 bits");
 _Static_assert(sizeof(ms_i32) == 4, "ms_i32 must be 32 bits");
@@ -72,7 +73,11 @@ static void testAtomicSmoke(void) {
   CHECK(platAtomicLoad(&a, memory_order_acquire) == 42);
   CHECK(platAtomicAdd(&a, 1, memory_order_relaxed) == 42);
   CHECK(platAtomicLoad(&a, memory_order_relaxed) == 43);
-  CHECK(platAtomicCas(&a, 43, 100, memory_order_acq_rel));
+  ms_i64 expected = 43;
+  CHECK(platAtomicCas(&a, &expected, 100, memory_order_acq_rel));
+  CHECK(platAtomicLoad(&a, memory_order_relaxed) == 100);
+  ms_i64 wrong = 999;
+  CHECK(!platAtomicCas(&a, &wrong, 0, memory_order_acq_rel));
   CHECK(platAtomicLoad(&a, memory_order_relaxed) == 100);
 }
 
@@ -96,7 +101,11 @@ static void testThreadSmoke(void) {
   counter.value = 0;
   PlatThread* threads[4];
   for (int i = 0; i < 4; i++) {
-    CHECK(platThreadCreate(&threads[i], incrementWorker, &counter));
+    if (!platThreadCreate(&threads[i], incrementWorker, &counter)) {
+      CHECK(false);
+      platMutexDestroy(&counter.mutex);
+      return;
+    }
   }
   for (int i = 0; i < 4; i++) {
     platThreadJoin(threads[i]);
@@ -106,12 +115,53 @@ static void testThreadSmoke(void) {
   platMutexDestroy(&counter.mutex);
 }
 
+typedef struct AtomicArgs {
+  PlatAtomic* counter;
+} AtomicArgs;
+
+static void atomicAddWorker(void* arg) {
+  AtomicArgs* args = arg;
+  for (int i = 0; i < 10000; i++) {
+    platAtomicAdd(args->counter, 1, memory_order_relaxed);
+  }
+}
+
+static void testAtomicConcurrent(void) {
+  PlatAtomic counter;
+  platAtomicInit(&counter, 0);
+  AtomicArgs args;
+  args.counter = &counter;
+  PlatThread* threads[4];
+  for (int i = 0; i < 4; i++) {
+    if (!platThreadCreate(&threads[i], atomicAddWorker, &args)) {
+      CHECK(false);
+      return;
+    }
+  }
+  for (int i = 0; i < 4; i++) {
+    platThreadJoin(threads[i]);
+    platThreadDestroy(threads[i]);
+  }
+  CHECK(platAtomicLoad(&counter, memory_order_acquire) == 40000);
+}
+
+static void testTimeMonotonic(void) {
+  ms_i64 previous = platTimeMonotonicNs();
+  for (int i = 0; i < 1000; i++) {
+    ms_i64 now = platTimeMonotonicNs();
+    CHECK(now >= previous);
+    previous = now;
+  }
+}
+
 int main(void) {
   testFnv1a32();
   testFnv1a64();
   testArrayPush();
   testAtomicSmoke();
   testThreadSmoke();
+  testAtomicConcurrent();
+  testTimeMonotonic();
   if (gFailures == 0) {
     printf("all tests passed\n");
     return 0;
