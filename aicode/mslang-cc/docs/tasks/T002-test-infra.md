@@ -3,7 +3,7 @@
 - 阶段: P0 骨架（roadmap 期 0）
 - 依赖: T001
 - 规模: M
-- 状态: 进行中
+- 状态: 已完成
 - 设计文档: `docs/language/28-style-c.md` §10、`29-roadmap.md` §2 §3
 
 ## 1. 目标与范围
@@ -40,11 +40,11 @@ typedef struct TestCtx { int failures; } TestCtx;
 
 ## 4. 验收标准（DoD）
 
-- [ ] `ctest -L unit` 通过（smoke + 跑器自测）
-- [ ] golden 跑器对"期望不符"能正确报 FAIL 并输出 diff（用临时失败用例验证后删除）
-- [ ] 新增 `.ms` + `.out` 用例无需改 CMake 即被注册执行
-- [ ] 子进程超时保护生效（临时死循环用例 10s 被杀并判 FAIL）
-- [ ] CI 运行 `ctest --output-on-failure` 全绿
+- [x] `ctest -L unit` 通过（smoke + 跑器自测）
+- [x] golden 跑器对"期望不符"能正确报 FAIL 并输出 diff（用临时失败用例验证后删除）
+- [x] 新增 `.ms` + `.out` 用例无需改 CMake 即被注册执行
+- [x] 子进程超时保护生效（临时死循环用例 10s 被杀并判 FAIL）
+- [ ] CI 运行 `ctest --output-on-failure` 全绿（ci.yml 已运行无过滤全量 ctest，天然覆盖 unit/fixture/conformance 全标签；monorepo 内工作流待远端接入后补验，同 T001）
 
 ## 5. 测试计划
 
