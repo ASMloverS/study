@@ -46,7 +46,7 @@ TEST(diagFormatMatchesDesign) {
 }
 
 TEST(diagFormatMultibyteColIsRuneBased) {
-  // "a 中 b"：中占 3 字节，b 的 rune 列 = 4；^ 缩进按 rune 列而非字节列
+  // "a 中 b"：中占 3 字节（rune 列 3）；col=4 指向 b 前的空格，^ 缩进按 rune 列而非字节列
   MsDiagnostic diag = {MS_DIAG_ERROR, 2, "f.ms", 2, 4, 1, "bad"};
   const char* source = "x = 1\na 中 b\n";
   char out[256];
@@ -68,6 +68,10 @@ TEST(diagFormatEdgeCases) {
   // 行号越界：仅头部行
   msDiagFormat(&noSrc, source, out, sizeof(out));
   EXPECT_STREQ(ctx, "s.ms:9:9: error[MSE0003]: no src\n", out);
+  // 源以换行结尾时，lines+1 行视为越界（尾部空行不存在）
+  MsDiagnostic tailMiss = {MS_DIAG_ERROR, 5, "t.ms", 2, 1, 1, "tail"};
+  msDiagFormat(&tailMiss, source, out, sizeof(out));
+  EXPECT_STREQ(ctx, "t.ms:2:1: error[MSE0005]: tail\n", out);
   // 缓冲不足：截断且 NUL 结尾、头部前缀保留
   MsDiagnostic diag = {MS_DIAG_ERROR, 4, "f.ms", 1, 1, 1, "trunc"};
   char tiny[8];

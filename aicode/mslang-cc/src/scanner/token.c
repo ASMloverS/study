@@ -97,6 +97,9 @@ static const char* diagFindLine(const char* source, int32_t lineNum, const char*
     }
     line++;
   }
+  if (lineNum > 1 && *line == '\0') {
+    return NULL;
+  }
   const char* lineEnd = strchr(line, '\n');
   *end = lineEnd != NULL ? lineEnd : line + strlen(line);
   return line;
