@@ -2,7 +2,7 @@
 # 契约见 docs/tasks/T002-test-infra.md §2：新增 .ms+.out 用例只需落盘，reconfigure 自动注册
 function(ms_add_test name)
   add_executable(test_${name} unit/test_${name}.c)
-  target_link_libraries(test_${name} PRIVATE ms_common ms_plat)
+  target_link_libraries(test_${name} PRIVATE ms_common ms_plat ${ARGN})
   add_test(NAME ${name} COMMAND test_${name})
   set_tests_properties(${name} PROPERTIES LABELS unit)
 endfunction()
