@@ -11,7 +11,7 @@ typedef struct MsKeywordEntry {
 } MsKeywordEntry;
 
 // 01-lexical.md §2 恰好 37 保留字（字典序）；struct/interface/package/type 不是关键字
-static const MsKeywordEntry kKeywords[] = {
+static const MsKeywordEntry KEYWORDS[] = {
     {"and", TK_AND},
     {"as", TK_AS},
     {"async", TK_ASYNC},
@@ -51,13 +51,13 @@ static const MsKeywordEntry kKeywords[] = {
     {"yield", TK_YIELD},
 };
 
-_Static_assert(sizeof(kKeywords) / sizeof(kKeywords[0]) == 37, "01-lexical.md §2 fixes exactly 37 keywords");
+_Static_assert(sizeof(KEYWORDS) / sizeof(KEYWORDS[0]) == 37, "01-lexical.md §2 fixes exactly 37 keywords");
 
 MsTokenType msKeywordLookup(const char* start, int32_t len) {
-  for (size_t i = 0; i < sizeof(kKeywords) / sizeof(kKeywords[0]); i++) {
-    const char* name = kKeywords[i].name;
+  for (size_t i = 0; i < sizeof(KEYWORDS) / sizeof(KEYWORDS[0]); i++) {
+    const char* name = KEYWORDS[i].name;
     if ((int32_t)strlen(name) == len && memcmp(start, name, (size_t)len) == 0) {
-      return kKeywords[i].type;
+      return KEYWORDS[i].type;
     }
   }
   return TK_ID;
@@ -125,9 +125,15 @@ void msDiagFormat(const MsDiagnostic* diag, const char* source, char* out, size_
   int32_t indent = diag->col > 1 ? diag->col - 1 : 0;
   int32_t carets = diag->len > 0 ? diag->len : 1;
   for (int32_t i = 0; i < indent; i++) {
+    if (pos == outCap - 1) {
+      break;
+    }
     diagAppend(out, outCap, &pos, " ");
   }
   for (int32_t i = 0; i < carets; i++) {
+    if (pos == outCap - 1) {
+      break;
+    }
     diagAppend(out, outCap, &pos, "^");
   }
   diagAppend(out, outCap, &pos, "\n");
