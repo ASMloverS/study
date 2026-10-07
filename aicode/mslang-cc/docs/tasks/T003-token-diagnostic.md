@@ -3,7 +3,7 @@
 - 阶段: P1 词法（roadmap 期 1）
 - 依赖: T002
 - 规模: S
-- 状态: 未开始
+- 状态: 进行中
 - 设计文档: `docs/language/01-lexical.md` §2 §4 §8、`20-architecture.md` §1（诊断）
 
 ## 1. 目标与范围
