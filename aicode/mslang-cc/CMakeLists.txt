@@ -52,6 +52,9 @@ foreach(mod IN ITEMS scanner parser binder compiler vm obj gc sched reactor modu
   target_link_libraries(ms_${mod} PUBLIC ms_common)
 endforeach()
 
+# scanner：占位循环之外追加 T003 起的实际源文件（后续任务按目录继续 target_sources）
+target_sources(ms_scanner PRIVATE src/scanner/token.c)
+
 add_executable(ms tools/ms.c)
 target_link_libraries(
   ms PRIVATE ms_common ms_plat ms_scanner ms_parser ms_binder ms_compiler ms_vm ms_obj ms_gc ms_sched
