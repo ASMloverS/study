@@ -61,10 +61,13 @@ MsTokenType msKeywordLookup(const char* start, int32_t len) {
   return TK_ID;
 }
 
-// TDD RED 占位：循环 2-3 依次以真实实现替换
+// TDD RED 占位：循环 3 以真实实现替换
 void msDiagAdd(MsDiagSink* sink, const MsDiagnostic* diag) {
-  (void)sink;
-  (void)diag;
+  if (sink->count >= MS_DIAG_MAX) {
+    sink->overflow++;
+    return;
+  }
+  sink->items[sink->count++] = *diag;
 }
 
 void msDiagFormat(const MsDiagnostic* diag, const char* source, char* out, size_t outCap) {
