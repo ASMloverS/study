@@ -37,11 +37,53 @@ TEST(diagSinkStoresAndOverflows) {
   EXPECT_EQ(ctx, 19, sink.items[19].code);
 }
 
+TEST(diagFormatMatchesDesign) {
+  MsDiagnostic diag = {MS_DIAG_ERROR, 1, "f.ms", 2, 5, 3, "msg"};
+  const char* source = "line one\nlet msg here ok\nline three\n";
+  char out[256];
+  msDiagFormat(&diag, source, out, sizeof(out));
+  EXPECT_STREQ(ctx, "f.ms:2:5: error[MSE0001]: msg\nlet msg here ok\n    ^^^\n", out);
+}
+
+TEST(diagFormatMultibyteColIsRuneBased) {
+  // "a 中 b"：中占 3 字节，b 的 rune 列 = 4；^ 缩进按 rune 列而非字节列
+  MsDiagnostic diag = {MS_DIAG_ERROR, 2, "f.ms", 2, 4, 1, "bad"};
+  const char* source = "x = 1\na 中 b\n";
+  char out[256];
+  msDiagFormat(&diag, source, out, sizeof(out));
+  EXPECT_STREQ(ctx, "f.ms:2:4: error[MSE0002]: bad\na 中 b\n   ^\n", out);
+}
+
+TEST(diagFormatEdgeCases) {
+  const char* source = "first line\n";
+  char out[256];
+  // len<1 时 ^ 最少 1 个；warning 级别小写
+  MsDiagnostic zeroLen = {MS_DIAG_WARNING, 100, "w.ms", 1, 1, 0, "wmsg"};
+  msDiagFormat(&zeroLen, source, out, sizeof(out));
+  EXPECT_STREQ(ctx, "w.ms:1:1: warning[MSE0100]: wmsg\nfirst line\n^\n", out);
+  // 无源码：仅头部行
+  MsDiagnostic noSrc = {MS_DIAG_ERROR, 3, "s.ms", 9, 9, 9, "no src"};
+  msDiagFormat(&noSrc, NULL, out, sizeof(out));
+  EXPECT_STREQ(ctx, "s.ms:9:9: error[MSE0003]: no src\n", out);
+  // 行号越界：仅头部行
+  msDiagFormat(&noSrc, source, out, sizeof(out));
+  EXPECT_STREQ(ctx, "s.ms:9:9: error[MSE0003]: no src\n", out);
+  // 缓冲不足：截断且 NUL 结尾、头部前缀保留
+  MsDiagnostic diag = {MS_DIAG_ERROR, 4, "f.ms", 1, 1, 1, "trunc"};
+  char tiny[8];
+  msDiagFormat(&diag, source, tiny, sizeof(tiny));
+  EXPECT(ctx, strlen(tiny) < sizeof(tiny));
+  EXPECT(ctx, strncmp(tiny, "f.ms:1", 6) == 0);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   keywordLookupHits(&ctx);
   keywordLookupNonKeywords(&ctx);
   diagSinkStoresAndOverflows(&ctx);
+  diagFormatMatchesDesign(&ctx);
+  diagFormatMultibyteColIsRuneBased(&ctx);
+  diagFormatEdgeCases(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
