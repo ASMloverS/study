@@ -335,6 +335,34 @@ static bool scanOperator(Scanner* s, MsToken* out) {
   return true;
 }
 
+// 01 §7：换行前最后 token 属于该集合时回补分号（<- 与运算符天然不在集合内）
+static bool canEndStatement(MsTokenType type) {
+  switch (type) {
+    case TK_ID:
+    case TK_INT:
+    case TK_FLOAT:
+    case TK_BIGINT:
+    case TK_STRING:
+    case TK_RUNE:
+    case TK_BREAK:
+    case TK_CONTINUE:
+    case TK_RETURN:
+    case TK_THROW:
+    case TK_DEFER:
+    case TK_YIELD:
+    case TK_TRUE:
+    case TK_FALSE:
+    case TK_NIL:
+    case TK_THIS:
+    case TK_RPAREN:
+    case TK_RBRACKET:
+    case TK_RBRACE:
+      return true;
+    default:
+      return false;
+  }
+}
+
 void scannerInit(Scanner* s, const char* src, int32_t len, const char* file, MsDiagSink* diags) {
   s->src = src;
   s->len = len;
@@ -354,9 +382,19 @@ bool scannerNext(Scanner* s, MsToken* out) {
     if (c == 0) {
       makeToken(s, out, TK_EOF, s->pos, s->line, s->col);
       out->len = 0;
-      return false;
+      return false;  // EOF 不补分号（01 §7 仅换行触发）
     }
-    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+    if (c == '\n') {
+      if (s->pendingAsi && s->parenDepth == 0) {
+        makeToken(s, out, TK_SEMICOLON, s->pos, s->line, s->col);
+        out->len = 0;
+        s->pendingAsi = false;
+        return true;
+      }
+      advanceRune(s);
+      continue;
+    }
+    if (c == ' ' || c == '\t' || c == '\r') {
       advanceRune(s);
       continue;
     }
@@ -377,22 +415,28 @@ bool scannerNext(Scanner* s, MsToken* out) {
       bool overflow = false;
       scanDigits(s, 10, &overflow);
       makeToken(s, out, TK_FLOAT, start, line, col);
-      return true;
-    }
-    if (digitOfBase(c, 10) >= 0) {
+    } else if (digitOfBase(c, 10) >= 0) {
       scanNumber(s, out);
-      return true;
+    } else {
+      int32_t width = 0;
+      uint32_t cp = utf8Decode(s->src + s->pos, s->len - s->pos, &width);
+      if (cp != 0 && msUnicodeIdStart(cp)) {
+        scanIdentifier(s, out);
+      } else if (scanOperator(s, out)) {
+        // out 已由 scanOperator 填充
+      } else {
+        addDiag(s, MSE_UNEXPECTED_CHAR, line, col, width, "unexpected character");
+        advanceRune(s);
+        continue;
+      }
     }
-    int32_t width = 0;
-    uint32_t cp = utf8Decode(s->src + s->pos, s->len - s->pos, &width);
-    if (cp != 0 && msUnicodeIdStart(cp)) {
-      scanIdentifier(s, out);
-      return true;
+    // 真实 token 统一收口：括号深度（01 §7 细则 1）与 ASI 触发态
+    if (out->type == TK_LPAREN || out->type == TK_LBRACKET || out->type == TK_LBRACE) {
+      s->parenDepth++;
+    } else if ((out->type == TK_RPAREN || out->type == TK_RBRACKET || out->type == TK_RBRACE) && s->parenDepth > 0) {
+      s->parenDepth--;
     }
-    if (scanOperator(s, out)) {
-      return true;
-    }
-    addDiag(s, MSE_UNEXPECTED_CHAR, line, col, width, "unexpected character");
-    advanceRune(s);
+    s->pendingAsi = canEndStatement(out->type);
+    return true;
   }
 }

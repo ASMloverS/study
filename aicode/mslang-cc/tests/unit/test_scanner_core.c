@@ -259,6 +259,98 @@ TEST(scanMemberAccessExemptFromDotDiag) {
   EXPECT_EQ(ctx, 0, diags.count);
 }
 
+TEST(asiBasic) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("a\nb", &toks, &diags);
+  EXPECT_EQ(ctx, TK_ID, toks.items[0].type);
+  EXPECT(ctx, tokIs(&toks.items[1], TK_SEMICOLON, ""));
+  EXPECT_EQ(ctx, 1, toks.items[1].line);
+  EXPECT_EQ(ctx, 2, toks.items[1].col);  // ; 定位在换行符处
+  EXPECT_EQ(ctx, TK_ID, toks.items[2].type);
+  EXPECT_EQ(ctx, TK_EOF, toks.items[3].type);  // EOF 不补分号
+  EXPECT_EQ(ctx, 4, toks.count);
+}
+
+TEST(asiParenSuppress) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("f(\na\n)", &toks, &diags);
+  EXPECT_EQ(ctx, 5, toks.count);  // f ( a ) EOF，括号内换行不产生分号（细则 1）
+  EXPECT_EQ(ctx, TK_RPAREN, toks.items[3].type);
+  EXPECT_EQ(ctx, TK_EOF, toks.items[4].type);
+}
+
+TEST(asiLarrowSuppress) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("ch <-\n1", &toks, &diags);
+  EXPECT_EQ(ctx, 4, toks.count);  // ch <- 1 EOF，行尾 <- 抑制（细则 3）
+  EXPECT_EQ(ctx, TK_LARROW, toks.items[1].type);
+  EXPECT_EQ(ctx, TK_INT, toks.items[2].type);
+}
+
+TEST(asiReturnBreaksStatement) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("return\nx", &toks, &diags);
+  EXPECT_EQ(ctx, TK_RETURN, toks.items[0].type);
+  EXPECT(ctx, tokIs(&toks.items[1], TK_SEMICOLON, ""));
+  EXPECT_EQ(ctx, 7, toks.items[1].col);  // return 后换行立即断句（细则 4）
+  EXPECT_EQ(ctx, TK_ID, toks.items[2].type);
+  EXPECT_EQ(ctx, 4, toks.count);
+}
+
+TEST(asiLiteralAndKeywordTriggers) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("true\nnil\nthis\n1.5\n2n\nbreak\ncontinue\nthrow\ndefer\nyield", &toks, &diags);
+  EXPECT_EQ(ctx, 20, toks.count);  // 10 token + 9 ; + EOF（结尾无换行）
+  for (int i = 0; i < 9; i++) {
+    EXPECT_EQ(ctx, TK_SEMICOLON, toks.items[2 * i + 1].type);
+  }
+  EXPECT_EQ(ctx, TK_YIELD, toks.items[18].type);
+  EXPECT_EQ(ctx, TK_EOF, toks.items[19].type);
+}
+
+TEST(asiClosingBracketTriggers) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("a[1]\nb\n{\nc\n}\n", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_ID,        TK_LBRACKET, TK_INT, TK_RBRACKET, TK_SEMICOLON,
+      TK_ID,        TK_SEMICOLON, TK_LBRACE, TK_ID,    TK_RBRACE,
+      TK_SEMICOLON, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 12, toks.count);
+  for (int i = 0; i < 12; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+}
+
+TEST(asiParenDepthMixed) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("x = ([1])\ny", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_ID, TK_EQ, TK_LPAREN, TK_LBRACKET, TK_INT, TK_RBRACKET, TK_RPAREN,
+      TK_SEMICOLON, TK_ID, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 10, toks.count);
+  for (int i = 0; i < 10; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, 10, toks.items[7].col);  // ; 位于 ([1]) 之后的换行处
+}
+
+TEST(asiOperatorNoSemicolon) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("a +\nb", &toks, &diags);
+  EXPECT_EQ(ctx, 4, toks.count);  // a + b EOF，行尾运算符不触发
+  EXPECT_EQ(ctx, TK_PLUS, toks.items[1].type);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   tokenTypeNameMatchesEnum(&ctx);
@@ -277,6 +369,14 @@ int main(void) {
   scanOperatorMatrix(&ctx);
   scanTrailingDotRecovers(&ctx);
   scanMemberAccessExemptFromDotDiag(&ctx);
+  asiBasic(&ctx);
+  asiParenSuppress(&ctx);
+  asiLarrowSuppress(&ctx);
+  asiReturnBreaksStatement(&ctx);
+  asiLiteralAndKeywordTriggers(&ctx);
+  asiClosingBracketTriggers(&ctx);
+  asiParenDepthMixed(&ctx);
+  asiOperatorNoSemicolon(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
