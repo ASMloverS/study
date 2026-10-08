@@ -22,7 +22,7 @@
 | T001 | 项目骨架 | [T001](T001-project-skeleton.md) | P0 | - | M | ✅ |
 | T002 | 测试基础设施 | [T002](T002-test-infra.md) | P0 | T001 | M | ✅ |
 | T003 | Token 定义与诊断 | [T003](T003-token-diagnostic.md) | P1 | T002 | S | ✅ |
-| T004 | Scanner 核心 | [T004](T004-scanner-core.md) | P1 | T003 | M | ⬜ |
+| T004 | Scanner 核心 | [T004](T004-scanner-core.md) | P1 | T003 | M | 🚧 |
 | T005 | Scanner 字符串/rune | [T005](T005-scanner-string-rune.md) | P1 | T004 | M | ⬜ |
 | T006 | AST 与基础语句 | [T006](T006-ast-basic-statements.md) | P2 | T005 | M | ⬜ |
 | T007 | 表达式解析 | [T007](T007-expression-parsing.md) | P2 | T006 | L | ⬜ |
