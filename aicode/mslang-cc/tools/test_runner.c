@@ -1,6 +1,7 @@
 // golden fixture 跑器（T002）：拉起 ms 子进程执行 .ms 用例，捕获 stdout/退出码与期望文件比对
 // 契约见 docs/tasks/T002-test-infra.md §2：<case>.ms + 同名 .out（比对前 LF 归一化）；
-// 可选 .code（期望退出码，缺省 0）、.err（期望 stderr 首行前缀）、.timeout（秒，缺省 10）
+// 可选 .code（期望退出码，缺省 0）、.err（期望 stderr 子串：取 .err 首行，在 stderr 任意位置命中即通过）、
+// .timeout（秒，缺省 10）、.args（空白分隔参数，插在 ms 与脚本之间，如 --dump-tokens）
 // 自测（tests/unit/test_runner_selftest.c）以 MS_TEST_RUNNER_NO_MAIN 屏蔽驱动段后包含本文件
 #include <stdbool.h>
 #include <stdio.h>
@@ -144,6 +145,30 @@ static bool readOptionalInt(const char* path, int* value) {
   return ok;
 }
 
+#define RUNNER_MAX_EXTRA_ARGS 16
+
+// 就地切分空白分隔参数（写入 argvOut，指针指向 text 内部）；返回个数
+static int splitArgs(char* text, const char* argvOut[], int maxArgs) {
+  int count = 0;
+  char* p = text;
+  while (*p != '\0' && count < maxArgs) {
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+      p++;
+    }
+    if (*p == '\0') {
+      break;
+    }
+    argvOut[count++] = p;
+    while (*p != '\0' && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
+      p++;
+    }
+    if (*p != '\0') {
+      *p++ = '\0';
+    }
+  }
+  return count;
+}
+
 #ifndef MS_TEST_RUNNER_NO_MAIN
 
 #if defined(_WIN32)
@@ -221,7 +246,7 @@ static void drainPipe(HANDLE readEnd, Buffer* buf) {
   }
 }
 
-static SpawnResult spawnCapture(const char* exe, const char* script, int timeoutSec) {
+static SpawnResult spawnCapture(char* const* argv, int timeoutSec) {
   SpawnResult result = {false, false, -1, 0, {NULL, 0}, {NULL, 0}};
   SECURITY_ATTRIBUTES inheritable = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
   HANDLE outRead = NULL;
@@ -249,7 +274,14 @@ static SpawnResult spawnCapture(const char* exe, const char* script, int timeout
   startup.hStdOutput = outWrite;
   startup.hStdError = errWrite;
   char command[RUNNER_MAX_PATH * 2];
-  snprintf(command, sizeof(command), "\"%s\" \"%s\"", exe, script);
+  size_t pos = 0;
+  for (int i = 0; argv[i] != NULL; i++) {
+    int written = snprintf(command + pos, sizeof(command) - pos, "%s\"%s\"", i == 0 ? "" : " ", argv[i]);
+    if (written < 0 || (size_t)written >= sizeof(command) - pos) {
+      break;
+    }
+    pos += (size_t)written;
+  }
   if (!CreateProcessA(NULL, command, NULL, NULL, TRUE, 0, NULL, NULL, &startup, &process)) {
     DWORD spawnError = GetLastError();
     CloseHandle(outRead);
@@ -313,7 +345,7 @@ static long long nowMs(void) {
   return (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
-static SpawnResult spawnCapture(const char* exe, const char* script, int timeoutSec) {
+static SpawnResult spawnCapture(char* const* argv, int timeoutSec) {
   SpawnResult result = {false, false, -1, 0, {NULL, 0}, {NULL, 0}};
   int outPipe[2];
   int errPipe[2];
@@ -333,7 +365,7 @@ static SpawnResult spawnCapture(const char* exe, const char* script, int timeout
     close(outPipe[1]);
     close(errPipe[0]);
     close(errPipe[1]);
-    execl(exe, exe, script, (char*)NULL);
+    execv(argv[0], argv);
     _exit(127);
   }
   if (pid < 0) {
@@ -441,7 +473,24 @@ static int runCase(const char* msExe, const char* casePath) {
     expectedErr = slurpFile(path, &expectedLen);
   }
 
-  SpawnResult run = spawnCapture(msExe, casePath, timeoutSec);
+  char* extraArgsText = NULL;
+  const char* extraArgs[RUNNER_MAX_EXTRA_ARGS];
+  int extraArgCount = 0;
+  if (joinPath(path, sizeof(path), base, ".args")) {
+    extraArgsText = slurpFile(path, &expectedLen);
+    if (extraArgsText != NULL) {
+      extraArgCount = splitArgs(extraArgsText, extraArgs, RUNNER_MAX_EXTRA_ARGS);
+    }
+  }
+  char* spawnArgv[RUNNER_MAX_EXTRA_ARGS + 3];
+  spawnArgv[0] = (char*)msExe;
+  for (int i = 0; i < extraArgCount; i++) {
+    spawnArgv[1 + i] = (char*)extraArgs[i];
+  }
+  spawnArgv[1 + extraArgCount] = (char*)casePath;
+  spawnArgv[2 + extraArgCount] = NULL;
+
+  SpawnResult run = spawnCapture(spawnArgv, timeoutSec);
   int failed = 0;
   if (!run.spawned) {
     printf("FAIL %s: failed to spawn %s (error %lu)\n", casePath, msExe, run.spawnError);
@@ -467,14 +516,15 @@ static int runCase(const char* msExe, const char* casePath) {
       printf("FAIL %s: exit code expected %d got %d\n", casePath, expectedCode, run.exitCode);
       failed = 1;
     }
-    if (expectedErr != NULL) {
+    if (expectedErr != NULL && expectedErr[0] != '\0') {
       normalizeLf(expectedErr);
+      char* nl = strchr(expectedErr, '\n');
+      if (nl != NULL) {
+        *nl = '\0';  // .err 首行为子串针：stderr 任意位置命中即通过（路径无关）
+      }
       const char* actualErr = bufText(&run.err);
-      const char* prefixEnd = strchr(expectedErr, '\n');
-      size_t prefixLen = prefixEnd == NULL ? strlen(expectedErr) : (size_t)(prefixEnd - expectedErr);
-      if (strncmp(actualErr, expectedErr, prefixLen) != 0) {
-        printf("FAIL %s: stderr first line mismatch\n", casePath);
-        printDiffLine(stdout, "expected", expectedErr, 1);
+      if (strstr(actualErr, expectedErr) == NULL) {
+        printf("FAIL %s: stderr missing \"%s\"\n", casePath, expectedErr);
         printDiffLine(stdout, "actual  ", actualErr, 1);
         failed = 1;
       }
@@ -485,6 +535,7 @@ static int runCase(const char* msExe, const char* casePath) {
   }
   free(expectedOut);
   free(expectedErr);
+  free(extraArgsText);
   bufFree(&run.out);
   bufFree(&run.err);
   return failed;

@@ -131,6 +131,20 @@ TEST(readOptionalIntParses) {
   EXPECT(ctx, !readOptionalInt(SELFTEST_TMP, &value));
 }
 
+TEST(splitArgsSplitsWhitespace) {
+  char text[] = " --dump-tokens \t foo\r\n";
+  const char* args[RUNNER_MAX_EXTRA_ARGS];
+  EXPECT_EQ(ctx, 2, splitArgs(text, args, RUNNER_MAX_EXTRA_ARGS));
+  EXPECT_STREQ(ctx, "--dump-tokens", args[0]);
+  EXPECT_STREQ(ctx, "foo", args[1]);
+}
+
+TEST(splitArgsEmptyYieldsNone) {
+  char text[] = " \r\n\t ";
+  const char* args[RUNNER_MAX_EXTRA_ARGS];
+  EXPECT_EQ(ctx, 0, splitArgs(text, args, RUNNER_MAX_EXTRA_ARGS));
+}
+
 int main(void) {
   TestCtx ctx = {0};
   normalizeLfStripsCr(&ctx);
@@ -140,6 +154,8 @@ int main(void) {
   slurpReadsBinaryExact(&ctx);
   slurpGrowsBeyondInitialCap(&ctx);
   readOptionalIntParses(&ctx);
+  splitArgsSplitsWhitespace(&ctx);
+  splitArgsEmptyYieldsNone(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
