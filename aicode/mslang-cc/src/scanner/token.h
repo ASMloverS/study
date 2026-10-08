@@ -8,98 +8,104 @@
 #include <stdint.h>
 
 // 37 保留字单列（01-lexical.md §2）+ 标识符/字面量 + 全部运算符标点（01 §4）+ EOF
+// X-macro 单一事实源：枚举值与 token.c 名表共用（新增类型只改此清单）
+#define MS_TOKEN_LIST                       \
+  X(EOF)                                    \
+  X(ID)                                     \
+  X(INT)                                    \
+  X(FLOAT)                                  \
+  X(BIGINT)                                 \
+  X(STRING)                                 \
+  X(RUNE)                                   \
+  X(FUNC)                                   \
+  X(VAR)                                    \
+  X(CONST)                                  \
+  X(IF)                                     \
+  X(ELSE)                                   \
+  X(FOR)                                    \
+  X(WHILE)                                  \
+  X(SWITCH)                                 \
+  X(CASE)                                   \
+  X(DEFAULT)                                \
+  X(BREAK)                                  \
+  X(CONTINUE)                               \
+  X(RETURN)                                 \
+  X(CLASS)                                  \
+  X(TRAIT)                                  \
+  X(THIS)                                   \
+  X(TRUE)                                   \
+  X(FALSE)                                  \
+  X(NIL)                                    \
+  X(AND)                                    \
+  X(OR)                                     \
+  X(NOT)                                    \
+  X(IN)                                     \
+  X(IS)                                     \
+  X(TRY)                                    \
+  X(CATCH)                                  \
+  X(FINALLY)                                \
+  X(THROW)                                  \
+  X(DEFER)                                  \
+  X(GO)                                     \
+  X(CHAN)                                   \
+  X(ASYNC)                                  \
+  X(AWAIT)                                  \
+  X(IMPORT)                                 \
+  X(FROM)                                   \
+  X(AS)                                     \
+  X(YIELD)                                  \
+  X(PLUS)                                   \
+  X(MINUS)                                  \
+  X(STAR)                                   \
+  X(SLASH)                                  \
+  X(PERCENT)                                \
+  X(STAR_STAR)                              \
+  X(EQ_EQ)                                  \
+  X(BANG_EQ)                                \
+  X(LT)                                     \
+  X(LT_EQ)                                  \
+  X(GT)                                     \
+  X(GT_EQ)                                  \
+  X(AMP_AMP)                                \
+  X(PIPE_PIPE)                              \
+  X(BANG)                                   \
+  X(AMP)                                    \
+  X(PIPE)                                   \
+  X(CARET)                                  \
+  X(LT_LT)                                  \
+  X(GT_GT)                                  \
+  X(TILDE)                                  \
+  X(EQ)                                     \
+  X(PLUS_EQ)                                \
+  X(MINUS_EQ)                               \
+  X(STAR_EQ)                                \
+  X(SLASH_EQ)                               \
+  X(PERCENT_EQ)                             \
+  X(STAR_STAR_EQ)                           \
+  X(AMP_EQ)                                 \
+  X(PIPE_EQ)                                \
+  X(CARET_EQ)                               \
+  X(LT_LT_EQ)                               \
+  X(GT_GT_EQ)                               \
+  X(COLON_EQ)                               \
+  X(ARROW)                                  \
+  X(LARROW)                                 \
+  X(QUESTION)                               \
+  X(COLON)                                  \
+  X(DOT)                                    \
+  X(COMMA)                                  \
+  X(SEMICOLON)                              \
+  X(LPAREN)                                 \
+  X(RPAREN)                                 \
+  X(LBRACKET)                               \
+  X(RBRACKET)                               \
+  X(LBRACE)                                 \
+  X(RBRACE)
+
 typedef enum MsTokenType {
-  TK_EOF,
-  TK_ID,
-  TK_INT,
-  TK_FLOAT,
-  TK_BIGINT,
-  TK_STRING,
-  TK_RUNE,
-  TK_FUNC,
-  TK_VAR,
-  TK_CONST,
-  TK_IF,
-  TK_ELSE,
-  TK_FOR,
-  TK_WHILE,
-  TK_SWITCH,
-  TK_CASE,
-  TK_DEFAULT,
-  TK_BREAK,
-  TK_CONTINUE,
-  TK_RETURN,
-  TK_CLASS,
-  TK_TRAIT,
-  TK_THIS,
-  TK_TRUE,
-  TK_FALSE,
-  TK_NIL,
-  TK_AND,
-  TK_OR,
-  TK_NOT,
-  TK_IN,
-  TK_IS,
-  TK_TRY,
-  TK_CATCH,
-  TK_FINALLY,
-  TK_THROW,
-  TK_DEFER,
-  TK_GO,
-  TK_CHAN,
-  TK_ASYNC,
-  TK_AWAIT,
-  TK_IMPORT,
-  TK_FROM,
-  TK_AS,
-  TK_YIELD,
-  TK_PLUS,
-  TK_MINUS,
-  TK_STAR,
-  TK_SLASH,
-  TK_PERCENT,
-  TK_STAR_STAR,
-  TK_EQ_EQ,
-  TK_BANG_EQ,
-  TK_LT,
-  TK_LT_EQ,
-  TK_GT,
-  TK_GT_EQ,
-  TK_AMP_AMP,
-  TK_PIPE_PIPE,
-  TK_BANG,
-  TK_AMP,
-  TK_PIPE,
-  TK_CARET,
-  TK_LT_LT,
-  TK_GT_GT,
-  TK_TILDE,
-  TK_EQ,
-  TK_PLUS_EQ,
-  TK_MINUS_EQ,
-  TK_STAR_EQ,
-  TK_SLASH_EQ,
-  TK_PERCENT_EQ,
-  TK_STAR_STAR_EQ,
-  TK_AMP_EQ,
-  TK_PIPE_EQ,
-  TK_CARET_EQ,
-  TK_LT_LT_EQ,
-  TK_GT_GT_EQ,
-  TK_COLON_EQ,
-  TK_ARROW,
-  TK_LARROW,
-  TK_QUESTION,
-  TK_COLON,
-  TK_DOT,
-  TK_COMMA,
-  TK_SEMICOLON,
-  TK_LPAREN,
-  TK_RPAREN,
-  TK_LBRACKET,
-  TK_RBRACKET,
-  TK_LBRACE,
-  TK_RBRACE,
+#define X(name) TK_##name,
+  MS_TOKEN_LIST
+#undef X
 } MsTokenType;
 
 typedef struct MsToken {
@@ -141,5 +147,8 @@ void msDiagAdd(MsDiagSink* sink, const MsDiagnostic* diag);
 // 格式化到调用方缓冲：file:line:col: error[MSE%04u]: message + 源码行 + ^ 指示
 // source 为 NULL 或行越界时仅输出头部行；容量不足时截断（保持 NUL 结尾）
 void msDiagFormat(const MsDiagnostic* diag, const char* source, char* out, size_t outCap);
+
+// 类型名（枚举名去 TK_，如 "ID"/"STAR_STAR_EQ"）；非法值返回 "?"
+const char* msTokenTypeName(MsTokenType type);
 
 #endif

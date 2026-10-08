@@ -138,3 +138,15 @@ void msDiagFormat(const MsDiagnostic* diag, const char* source, char* out, size_
   }
   diagAppend(out, outCap, &pos, "\n");
 }
+
+const char* msTokenTypeName(MsTokenType type) {
+  switch (type) {
+#define X(name)   \
+  case TK_##name: \
+    return #name;
+    MS_TOKEN_LIST
+#undef X
+    default:
+      return "?";
+  }
+}
