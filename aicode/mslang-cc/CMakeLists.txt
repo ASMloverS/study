@@ -55,6 +55,16 @@ endforeach()
 # scanner：占位循环之外追加 T003 起的实际源文件（后续任务按目录继续 target_sources）
 target_sources(ms_scanner PRIVATE src/scanner/token.c)
 
+# T004：Unicode 类别表再生成（生成物已入库；改脚本/升 Python 后手动构建本目标）
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+  add_custom_target(gen_unicode_table
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_unicode_table.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "regenerate src/scanner/unicode_table.h"
+    VERBATIM)
+endif()
+
 add_executable(ms tools/ms.c)
 target_link_libraries(
   ms PRIVATE ms_common ms_plat ms_scanner ms_parser ms_binder ms_compiler ms_vm ms_obj ms_gc ms_sched
