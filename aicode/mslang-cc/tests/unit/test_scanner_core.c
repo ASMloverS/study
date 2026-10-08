@@ -195,6 +195,70 @@ TEST(scanNumericErrors) {
   }
 }
 
+TEST(scanOperatorMaxMunch) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("a **= b x := y <- ch", &toks, &diags);
+  EXPECT(ctx, tokIs(&toks.items[0], TK_ID, "a"));
+  EXPECT(ctx, tokIs(&toks.items[1], TK_STAR_STAR_EQ, "**="));
+  EXPECT(ctx, tokIs(&toks.items[2], TK_ID, "b"));
+  EXPECT(ctx, tokIs(&toks.items[3], TK_ID, "x"));
+  EXPECT(ctx, tokIs(&toks.items[4], TK_COLON_EQ, ":="));
+  EXPECT(ctx, tokIs(&toks.items[5], TK_ID, "y"));
+  EXPECT(ctx, tokIs(&toks.items[6], TK_LARROW, "<-"));
+  EXPECT(ctx, tokIs(&toks.items[7], TK_ID, "ch"));
+  EXPECT_EQ(ctx, 9, toks.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(scanOperatorMatrix) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("+ += - -= -> * *= ** **= / /= % %= = == ! != < <= << <<= > >= >> >>= "
+          "& && &= | || |= ^ ^= ~ ? : := . , ; ( ) [ ] { }",
+          &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_PLUS,       TK_PLUS_EQ,     TK_MINUS,      TK_MINUS_EQ,     TK_ARROW,
+      TK_STAR,       TK_STAR_EQ,     TK_STAR_STAR,  TK_STAR_STAR_EQ, TK_SLASH,
+      TK_SLASH_EQ,   TK_PERCENT,     TK_PERCENT_EQ, TK_EQ,           TK_EQ_EQ,
+      TK_BANG,       TK_BANG_EQ,     TK_LT,         TK_LT_EQ,        TK_LT_LT,
+      TK_LT_LT_EQ,   TK_GT,          TK_GT_EQ,      TK_GT_GT,        TK_GT_GT_EQ,
+      TK_AMP,        TK_AMP_AMP,     TK_AMP_EQ,     TK_PIPE,         TK_PIPE_PIPE,
+      TK_PIPE_EQ,    TK_CARET,       TK_CARET_EQ,   TK_TILDE,        TK_QUESTION,
+      TK_COLON,      TK_COLON_EQ,    TK_DOT,        TK_COMMA,        TK_SEMICOLON,
+      TK_LPAREN,     TK_RPAREN,      TK_LBRACKET,   TK_RBRACKET,     TK_LBRACE,
+      TK_RBRACE,
+  };
+  EXPECT_EQ(ctx, (int)(sizeof(types) / sizeof(types[0])), toks.count - 1);  // 46 运算符 + EOF
+  EXPECT_EQ(ctx, 0, diags.count);
+  for (int i = 0; i < (int)(sizeof(types) / sizeof(types[0])); i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, TK_EOF, toks.items[toks.count - 1].type);
+}
+
+TEST(scanTrailingDotRecovers) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("5.", &toks, &diags);
+  EXPECT(ctx, tokIs(&toks.items[0], TK_INT, "5"));
+  EXPECT(ctx, tokIs(&toks.items[1], TK_DOT, "."));
+  EXPECT_EQ(ctx, 3, toks.count);  // INT DOT EOF
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_FLOAT_TRAILING_DOT, (int)diags.items[0].code);
+}
+
+TEST(scanMemberAccessExemptFromDotDiag) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("5.toString", &toks, &diags);
+  EXPECT(ctx, tokIs(&toks.items[0], TK_INT, "5"));
+  EXPECT(ctx, tokIs(&toks.items[1], TK_DOT, "."));
+  EXPECT(ctx, tokIs(&toks.items[2], TK_ID, "toString"));
+  EXPECT_EQ(ctx, 4, toks.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   tokenTypeNameMatchesEnum(&ctx);
@@ -209,6 +273,10 @@ int main(void) {
   scanFloatForms(&ctx);
   scanIntOverflowToBigint(&ctx);
   scanNumericErrors(&ctx);
+  scanOperatorMaxMunch(&ctx);
+  scanOperatorMatrix(&ctx);
+  scanTrailingDotRecovers(&ctx);
+  scanMemberAccessExemptFromDotDiag(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

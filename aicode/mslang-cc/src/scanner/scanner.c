@@ -268,6 +268,73 @@ static void scanNumber(Scanner* s, MsToken* out) {
   }
 }
 
+// 运算符/标点：首字符分发 + 最长匹配（**= 优先于 ** 与 *=；<- 归一为一个 token）
+static bool scanOperator(Scanner* s, MsToken* out) {
+  int32_t start = s->pos, line = s->line, col = s->col;
+  uint8_t c = peek(s);
+  uint8_t n1 = peekAt(s, 1);
+  uint8_t n2 = peekAt(s, 2);
+  MsTokenType type;
+  int32_t width;
+  switch (c) {
+    case '+': type = n1 == '=' ? TK_PLUS_EQ : TK_PLUS; width = n1 == '=' ? 2 : 1; break;
+    case '-':
+      if (n1 == '=') { type = TK_MINUS_EQ; width = 2; }
+      else if (n1 == '>') { type = TK_ARROW; width = 2; }
+      else { type = TK_MINUS; width = 1; }
+      break;
+    case '*':
+      if (n1 == '*') { type = n2 == '=' ? TK_STAR_STAR_EQ : TK_STAR_STAR; width = n2 == '=' ? 3 : 2; }
+      else if (n1 == '=') { type = TK_STAR_EQ; width = 2; }
+      else { type = TK_STAR; width = 1; }
+      break;
+    case '/': type = n1 == '=' ? TK_SLASH_EQ : TK_SLASH; width = n1 == '=' ? 2 : 1; break;
+    case '%': type = n1 == '=' ? TK_PERCENT_EQ : TK_PERCENT; width = n1 == '=' ? 2 : 1; break;
+    case '=': type = n1 == '=' ? TK_EQ_EQ : TK_EQ; width = n1 == '=' ? 2 : 1; break;
+    case '!': type = n1 == '=' ? TK_BANG_EQ : TK_BANG; width = n1 == '=' ? 2 : 1; break;
+    case '<':
+      if (n1 == '<') { type = n2 == '=' ? TK_LT_LT_EQ : TK_LT_LT; width = n2 == '=' ? 3 : 2; }
+      else if (n1 == '=') { type = TK_LT_EQ; width = 2; }
+      else if (n1 == '-') { type = TK_LARROW; width = 2; }
+      else { type = TK_LT; width = 1; }
+      break;
+    case '>':
+      if (n1 == '>') { type = n2 == '=' ? TK_GT_GT_EQ : TK_GT_GT; width = n2 == '=' ? 3 : 2; }
+      else if (n1 == '=') { type = TK_GT_EQ; width = 2; }
+      else { type = TK_GT; width = 1; }
+      break;
+    case '&':
+      if (n1 == '&') { type = TK_AMP_AMP; width = 2; }
+      else if (n1 == '=') { type = TK_AMP_EQ; width = 2; }
+      else { type = TK_AMP; width = 1; }
+      break;
+    case '|':
+      if (n1 == '|') { type = TK_PIPE_PIPE; width = 2; }
+      else if (n1 == '=') { type = TK_PIPE_EQ; width = 2; }
+      else { type = TK_PIPE; width = 1; }
+      break;
+    case '^': type = n1 == '=' ? TK_CARET_EQ : TK_CARET; width = n1 == '=' ? 2 : 1; break;
+    case '~': type = TK_TILDE; width = 1; break;
+    case '?': type = TK_QUESTION; width = 1; break;
+    case ':': type = n1 == '=' ? TK_COLON_EQ : TK_COLON; width = n1 == '=' ? 2 : 1; break;
+    case '.': type = TK_DOT; width = 1; break;
+    case ',': type = TK_COMMA; width = 1; break;
+    case ';': type = TK_SEMICOLON; width = 1; break;
+    case '(': type = TK_LPAREN; width = 1; break;
+    case ')': type = TK_RPAREN; width = 1; break;
+    case '[': type = TK_LBRACKET; width = 1; break;
+    case ']': type = TK_RBRACKET; width = 1; break;
+    case '{': type = TK_LBRACE; width = 1; break;
+    case '}': type = TK_RBRACE; width = 1; break;
+    default: return false;
+  }
+  for (int32_t i = 0; i < width; i++) {
+    advanceRune(s);
+  }
+  makeToken(s, out, type, start, line, col);
+  return true;
+}
+
 void scannerInit(Scanner* s, const char* src, int32_t len, const char* file, MsDiagSink* diags) {
   s->src = src;
   s->len = len;
@@ -322,7 +389,9 @@ bool scannerNext(Scanner* s, MsToken* out) {
       scanIdentifier(s, out);
       return true;
     }
-    // 运算符由后续任务落地；此前一律按非法字符跳过恢复
+    if (scanOperator(s, out)) {
+      return true;
+    }
     addDiag(s, MSE_UNEXPECTED_CHAR, line, col, width, "unexpected character");
     advanceRune(s);
   }
