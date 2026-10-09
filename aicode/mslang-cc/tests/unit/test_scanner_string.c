@@ -306,7 +306,7 @@ TEST(runeFormsAndValues) {
   EXPECT_EQ(ctx, 65, (int)msRuneLiteralValue(&toks.items[2]));
   EXPECT_EQ(ctx, 0x4E2D, (int)msRuneLiteralValue(&toks.items[3]));
   EXPECT_EQ(ctx, 0x4E2D, (int)msRuneLiteralValue(&toks.items[4]));
-  EXPECT_EQ(ctx, 27, toks.items[4].col);  // col 按 rune 计
+  EXPECT_EQ(ctx, 28, toks.items[4].col);  // col 按 rune 计：'\u{4E2D}' 占 10 列（17-26）
   EXPECT_EQ(ctx, 0, diags.count);
 }
 
@@ -344,16 +344,17 @@ TEST(runeValueHelperGuards) {
 TEST(stringInterpNestedThreeDeep) {
   MsDiagSink diags = {0};
   TokList toks;
-  scanAll("\"${ \"${ '${a}' }\" }\"", &toks, &diags);
+  scanAll("\"${\"${\"${x}\"}\"}\"", &toks, &diags);
   static const MsTokenType types[] = {
       TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_INTERP_BEGIN,
-      TK_RUNE, TK_INTERP_END, TK_STRING, TK_INTERP_END, TK_STRING, TK_INTERP_END,
+      TK_ID, TK_INTERP_END, TK_STRING, TK_INTERP_END, TK_STRING, TK_INTERP_END,
       TK_STRING, TK_EOF,
   };
   EXPECT_EQ(ctx, 14, toks.count);
   for (int i = 0; i < 14; i++) {
     EXPECT_EQ(ctx, types[i], toks.items[i].type);
   }
+  EXPECT(ctx, tokIs(&toks.items[6], TK_ID, "x"));
   EXPECT_EQ(ctx, 0, diags.count);
 }
 
@@ -378,6 +379,10 @@ int main(void) {
   rawStringMultilineBytes(&ctx);
   rawStringUnterminatedEof(&ctx);
   rawStringAsiAfterEnd(&ctx);
+  runeFormsAndValues(&ctx);
+  runeInvalidForms(&ctx);
+  runeValueHelperGuards(&ctx);
+  stringInterpNestedThreeDeep(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

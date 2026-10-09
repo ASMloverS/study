@@ -383,6 +383,42 @@ static bool scanEscape(Scanner* s, uint32_t* outValue) {
   }
 }
 
+// rune 字面量（01 §3.4）：'a' '\n' '\x41' '\u{4E2D}' '中'；空/多字符/未闭合发 MSE_RUNE_INVALID
+// 恢复：仍产出 RUNE token（多字符吞到闭引号，未闭合停在行尾/EOF）
+static void scanRune(Scanner* s, MsToken* out) {
+  int32_t start = s->pos, line = s->line, col = s->col;
+  advanceRune(s);  // 开 '
+  uint8_t c = peek(s);
+  if (c == '\'') {
+    advanceRune(s);
+    addDiag(s, MSE_RUNE_INVALID, line, col, 2, "rune literal cannot be empty");
+  } else if (c == '\n' || c == 0) {
+    addDiag(s, MSE_RUNE_INVALID, line, col, 1, "unterminated rune literal");
+  } else {
+    if (c == '\\') {
+      uint32_t value = 0;
+      scanEscape(s, &value);  // 非法转义在此诊断（MSE_ESCAPE）
+    } else {
+      advanceRune(s);  // 单 rune（多字节一并）
+    }
+    c = peek(s);
+    if (c == '\'') {
+      advanceRune(s);
+    } else {  // 多字符或未闭合：吞到闭 ' / 换行 / EOF
+      while (s->pos < s->len && peek(s) != '\'' && peek(s) != '\n') {
+        advanceRune(s);
+      }
+      if (peek(s) == '\'') {
+        advanceRune(s);
+        addDiag(s, MSE_RUNE_INVALID, line, col, s->pos - start, "rune literal must contain exactly one character");
+      } else {
+        addDiag(s, MSE_RUNE_INVALID, line, col, s->pos - start, "unterminated rune literal");
+      }
+    }
+  }
+  makeToken(s, out, TK_RUNE, start, line, col);
+}
+
 // 压入 STR 域（T005）；超深发 MSE 后不压（后续按普通 token 流恢复）
 static void pushStr(Scanner* s, int32_t line, int32_t col) {
   if (s->depth >= MS_LEX_MAX_DEPTH) {
@@ -608,6 +644,8 @@ bool scannerNext(Scanner* s, MsToken* out) {
         advanceRune(s);
         makeToken(s, out, TK_STRING, start, line, col);  // STR_BEGIN
         pushStr(s, line, col);
+      } else if (c == '\'') {
+        scanRune(s, out);
       } else if (c == '`') {
         scanRawString(s, out);
       } else if (c == '.' && digitOfBase(peekAt(s, 1), 10) >= 0) {
@@ -650,4 +688,54 @@ bool scannerNext(Scanner* s, MsToken* out) {
     s->pendingAsi = canEndStatement(out->type);
     return true;
   }
+}
+
+// RUNE token 文本解码为码点（扫描已校验；未知/残缺文本回退 0xFFFD）——T006 解析器复用
+uint32_t msRuneLiteralValue(const MsToken* tok) {
+  if (tok->type != TK_RUNE || tok->len < 3) {
+    return 0xFFFD;
+  }
+  const char* p = tok->start + 1;
+  int32_t avail = tok->len - 2;
+  if (p[0] == '\\') {
+    uint8_t c = (uint8_t)p[1];
+    switch (c) {
+      case 'n': return '\n';
+      case 'r': return '\r';
+      case 't': return '\t';
+      case '\\': return '\\';
+      case '"': return '"';
+      case '\'': return '\'';
+      case '0': return 0;
+      case 'x': {
+        if (avail < 4) {
+          return 0xFFFD;
+        }
+        int hi = digitOfBase((uint8_t)p[2], 16), lo = digitOfBase((uint8_t)p[3], 16);
+        return hi < 0 || lo < 0 ? 0xFFFD : (uint32_t)(hi * 16 + lo);
+      }
+      case 'u': {
+        if (avail < 4 || p[2] != '{') {
+          return 0xFFFD;
+        }
+        uint32_t value = 0;
+        int32_t digits = 0;
+        for (int32_t i = 3; i < avail && p[i] != '}'; i++) {
+          int d = digitOfBase((uint8_t)p[i], 16);
+          if (d < 0 || digits >= 6) {
+            return 0xFFFD;
+          }
+          value = value * 16 + (uint32_t)d;
+          digits++;
+        }
+        if (digits == 0 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+          return 0xFFFD;
+        }
+        return value;
+      }
+      default: return 0xFFFD;
+    }
+  }
+  int32_t width = 0;
+  return utf8Decode(p, avail, &width);
 }
