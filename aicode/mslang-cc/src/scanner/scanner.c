@@ -268,6 +268,50 @@ static void scanNumber(Scanner* s, MsToken* out) {
   }
 }
 
+// 压入 STR 域（T005）；超深发 MSE 后不压（后续按普通 token 流恢复）
+static void pushStr(Scanner* s, int32_t line, int32_t col) {
+  if (s->depth >= MS_LEX_MAX_DEPTH) {
+    addDiag(s, MSE_LEX_DEPTH, line, col, 1, "string interpolation nested too deeply");
+    return;
+  }
+  LexFrame* frame = &s->frames[s->depth++];
+  frame->domain = LEX_STR;
+  frame->openLine = line;
+  frame->openCol = col;
+  frame->partStart = s->pos;
+  frame->partLine = s->line;
+  frame->partCol = s->col;
+}
+
+// 常量段出栈：token 指向原始字节（转义校验不解码，解码归 T010/T013）
+static void emitStrPart(Scanner* s, LexFrame* frame, MsToken* out) {
+  makeToken(s, out, TK_STR_PART, frame->partStart, frame->partLine, frame->partCol);
+  frame->partStart = s->pos;
+  frame->partLine = s->line;
+  frame->partCol = s->col;
+}
+
+// STR 域扫描（01 §3.3）：一次产出一 token——常量段 STR_PART 或边界（" 闭合 / ${ 开插值 / 裸换行恢复）
+// 多字节字符按 rune 计列（advanceRune 统一处理）
+static void scanStrDomain(Scanner* s, MsToken* out) {
+  LexFrame* frame = &s->frames[s->depth - 1];
+  for (;;) {
+    uint8_t c = peek(s);
+    if (s->pos > frame->partStart && c == '"') {
+      emitStrPart(s, frame, out);
+      return;
+    }
+    if (c == '"') {  // STR_END（与 STR_BEGIN 同型复用 TK_STRING，01 §3.3）
+      int32_t line = s->line, col = s->col;
+      advanceRune(s);
+      makeToken(s, out, TK_STRING, s->pos - 1, line, col);
+      s->depth--;
+      return;
+    }
+    advanceRune(s);  // 普通内容（$ 不带 {、多字节 rune 等）
+  }
+}
+
 // 运算符/标点：首字符分发 + 最长匹配（**= 优先于 ** 与 *=；<- 归一为一个 token）
 static bool scanOperator(Scanner* s, MsToken* out) {
   int32_t start = s->pos, line = s->line, col = s->col;
@@ -374,63 +418,72 @@ void scannerInit(Scanner* s, const char* src, int32_t len, const char* file, MsD
   s->diags = diags;
   s->pendingAsi = false;
   s->docLine = -1;
+  s->depth = 0;
 }
 
 bool scannerNext(Scanner* s, MsToken* out) {
   for (;;) {
-    uint8_t c = peek(s);
-    if (c == 0) {
-      makeToken(s, out, TK_EOF, s->pos, s->line, s->col);
-      out->len = 0;
-      return false;  // EOF 不补分号（01 §7 仅换行触发）
-    }
-    if (c == '\n') {
-      if (s->pendingAsi && s->parenDepth == 0) {
-        makeToken(s, out, TK_SEMICOLON, s->pos, s->line, s->col);
-        out->len = 0;
-        s->pendingAsi = false;
-        return true;
-      }
-      advanceRune(s);
-      continue;
-    }
-    if (c == ' ' || c == '\t' || c == '\r') {
-      advanceRune(s);
-      continue;
-    }
-    if (c == '/' && peekAt(s, 1) == '/') {
-      skipLineComment(s);
-      continue;
-    }
-    if (c == '/' && peekAt(s, 1) == '*') {
-      skipBlockComment(s);
-      continue;
-    }
-    int32_t start = s->pos;
-    int32_t line = s->line, col = s->col;
-    if (c == '.' && digitOfBase(peekAt(s, 1), 10) >= 0) {
-      // .5：缺整数部（01 §3.2），恢复为 FLOAT
-      addDiag(s, MSE_FLOAT_LEADING_DOT, line, col, 1, "integer part expected before '.'");
-      advanceRune(s);
-      bool overflow = false;
-      scanDigits(s, 10, &overflow);
-      makeToken(s, out, TK_FLOAT, start, line, col);
-    } else if (digitOfBase(c, 10) >= 0) {
-      scanNumber(s, out);
+    if (s->depth > 0 && s->frames[s->depth - 1].domain == LEX_STR) {
+      scanStrDomain(s, out);  // STR 域自成一体：空白/注释/换行均为内容（01 §3.3）
     } else {
-      int32_t width = 0;
-      uint32_t cp = utf8Decode(s->src + s->pos, s->len - s->pos, &width);
-      if (cp != 0 && msUnicodeIdStart(cp)) {
-        scanIdentifier(s, out);
-      } else if (scanOperator(s, out)) {
-        // out 已由 scanOperator 填充
-      } else {
-        addDiag(s, MSE_UNEXPECTED_CHAR, line, col, width, "unexpected character");
+      uint8_t c = peek(s);
+      if (c == 0) {
+        makeToken(s, out, TK_EOF, s->pos, s->line, s->col);
+        out->len = 0;
+        return false;  // EOF 不补分号（01 §7 仅换行触发）
+      }
+      if (c == '\n') {
+        if (s->pendingAsi && s->parenDepth == 0) {
+          makeToken(s, out, TK_SEMICOLON, s->pos, s->line, s->col);
+          out->len = 0;
+          s->pendingAsi = false;
+          return true;
+        }
         advanceRune(s);
         continue;
       }
+      if (c == ' ' || c == '\t' || c == '\r') {
+        advanceRune(s);
+        continue;
+      }
+      if (c == '/' && peekAt(s, 1) == '/') {
+        skipLineComment(s);
+        continue;
+      }
+      if (c == '/' && peekAt(s, 1) == '*') {
+        skipBlockComment(s);
+        continue;
+      }
+      int32_t start = s->pos;
+      int32_t line = s->line, col = s->col;
+      if (c == '"') {
+        advanceRune(s);
+        makeToken(s, out, TK_STRING, start, line, col);  // STR_BEGIN
+        pushStr(s, line, col);
+      } else if (c == '.' && digitOfBase(peekAt(s, 1), 10) >= 0) {
+        // .5：缺整数部（01 §3.2），恢复为 FLOAT
+        addDiag(s, MSE_FLOAT_LEADING_DOT, line, col, 1, "integer part expected before '.'");
+        advanceRune(s);
+        bool overflow = false;
+        scanDigits(s, 10, &overflow);
+        makeToken(s, out, TK_FLOAT, start, line, col);
+      } else if (digitOfBase(c, 10) >= 0) {
+        scanNumber(s, out);
+      } else {
+        int32_t width = 0;
+        uint32_t cp = utf8Decode(s->src + s->pos, s->len - s->pos, &width);
+        if (cp != 0 && msUnicodeIdStart(cp)) {
+          scanIdentifier(s, out);
+        } else if (scanOperator(s, out)) {
+          // out 已由 scanOperator 填充
+        } else {
+          addDiag(s, MSE_UNEXPECTED_CHAR, line, col, width, "unexpected character");
+          advanceRune(s);
+          continue;
+        }
+      }
     }
-    // 真实 token 统一收口：括号深度（01 §7 细则 1）与 ASI 触发态
+    // 真实 token 统一收口：括号深度（01 §7 细则 1）与 ASI 触发态（STR 域 token 同样过此收口）
     if (out->type == TK_LPAREN || out->type == TK_LBRACKET || out->type == TK_LBRACE) {
       s->parenDepth++;
     } else if ((out->type == TK_RPAREN || out->type == TK_RBRACKET || out->type == TK_RBRACE) && s->parenDepth > 0) {

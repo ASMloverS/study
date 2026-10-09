@@ -17,6 +17,10 @@
   X(BIGINT)                                 \
   X(STRING)                                 \
   X(RUNE)                                   \
+  X(STR_PART)                               \
+  X(INTERP_BEGIN)                           \
+  X(INTERP_END)                             \
+  X(RAW_STR)                                \
   X(FUNC)                                   \
   X(VAR)                                    \
   X(CONST)                                  \
