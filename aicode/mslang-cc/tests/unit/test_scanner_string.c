@@ -265,7 +265,7 @@ TEST(rawStringMultilineBytes) {
   TokList toks;
   scanAll("`a\nb` x", &toks, &diags);
   EXPECT(ctx, tokIs(&toks.items[0], TK_RAW_STR, "`a\nb`"));
-  EXPECT_EQ(ctx, 6, toks.items[0].len);  // 6 字节：跨行换行原样保留
+  EXPECT_EQ(ctx, 5, toks.items[0].len);  // 5 字节：跨行换行原样保留
   EXPECT(ctx, tokIs(&toks.items[1], TK_ID, "x"));
   EXPECT_EQ(ctx, 2, toks.items[1].line);
   EXPECT_EQ(ctx, 4, toks.items[1].col);
@@ -293,6 +293,70 @@ TEST(rawStringAsiAfterEnd) {
   EXPECT_EQ(ctx, 0, diags.count);
 }
 
+TEST(runeFormsAndValues) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("'a' '\\n' '\\x41' '\\u{4E2D}' '\xe4\xb8\xad'", &toks, &diags);
+  EXPECT_EQ(ctx, 6, toks.count);  // 5 RUNE + EOF
+  for (int i = 0; i < 5; i++) {
+    EXPECT_EQ(ctx, TK_RUNE, toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, 97, (int)msRuneLiteralValue(&toks.items[0]));
+  EXPECT_EQ(ctx, 10, (int)msRuneLiteralValue(&toks.items[1]));
+  EXPECT_EQ(ctx, 65, (int)msRuneLiteralValue(&toks.items[2]));
+  EXPECT_EQ(ctx, 0x4E2D, (int)msRuneLiteralValue(&toks.items[3]));
+  EXPECT_EQ(ctx, 0x4E2D, (int)msRuneLiteralValue(&toks.items[4]));
+  EXPECT_EQ(ctx, 27, toks.items[4].col);  // col 按 rune 计
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(runeInvalidForms) {
+  struct {
+    const char* src;
+    const char* text;
+    int code;
+  } cases[] = {
+      {"''", "''", MSE_RUNE_INVALID},
+      {"'ab'", "'ab'", MSE_RUNE_INVALID},
+      {"'a", "'a", MSE_RUNE_INVALID},
+      {"'\\q'", "'\\q'", MSE_ESCAPE},
+  };
+  for (int i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); i++) {
+    MsDiagSink diags = {0};
+    TokList toks;
+    scanAll(cases[i].src, &toks, &diags);
+    EXPECT(ctx, tokIs(&toks.items[0], TK_RUNE, cases[i].text));
+    EXPECT_EQ(ctx, 1, diags.count);
+    EXPECT_EQ(ctx, cases[i].code, (int)diags.items[0].code);
+  }
+}
+
+TEST(runeValueHelperGuards) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("x ''", &toks, &diags);
+  EXPECT_EQ(ctx, 0xFFFD, (int)msRuneLiteralValue(&toks.items[0]));  // 非 RUNE
+  EXPECT_EQ(ctx, 0xFFFD, (int)msRuneLiteralValue(&toks.items[1]));  // 空 rune 文本
+  EXPECT_EQ(ctx, 3, toks.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+}
+
+TEST(stringInterpNestedThreeDeep) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("\"${ \"${ '${a}' }\" }\"", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_INTERP_BEGIN,
+      TK_RUNE, TK_INTERP_END, TK_STRING, TK_INTERP_END, TK_STRING, TK_INTERP_END,
+      TK_STRING, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 14, toks.count);
+  for (int i = 0; i < 14; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   stringEmptyAndPlain(&ctx);
@@ -310,6 +374,10 @@ int main(void) {
   stringInterpNested(&ctx);
   stringInterpUnterminatedEof(&ctx);
   stringInterpDepthCapped(&ctx);
+  rawStringPreservedVerbatim(&ctx);
+  rawStringMultilineBytes(&ctx);
+  rawStringUnterminatedEof(&ctx);
+  rawStringAsiAfterEnd(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

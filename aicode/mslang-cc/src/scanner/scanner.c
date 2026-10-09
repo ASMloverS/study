@@ -268,6 +268,21 @@ static void scanNumber(Scanner* s, MsToken* out) {
   }
 }
 
+// 原始字符串（01 §3.3）：`...` 无转义无插值，跨行保留原样；token 文本含首尾反引号
+static void scanRawString(Scanner* s, MsToken* out) {
+  int32_t start = s->pos, line = s->line, col = s->col;
+  advanceRune(s);  // 开 `
+  while (s->pos < s->len && peek(s) != '`') {
+    advanceRune(s);
+  }
+  if (s->pos < s->len) {
+    advanceRune(s);  // 闭 `
+  } else {
+    addDiag(s, MSE_RAW_UNTERMINATED, line, col, 1, "unterminated raw string literal");
+  }
+  makeToken(s, out, TK_RAW_STR, start, line, col);
+}
+
 // 压入 INTERP 域（T005）；超深发 MSE 后不压（后续按普通 token 流恢复）
 static void pushInterp(Scanner* s, int32_t line, int32_t col) {
   if (s->depth >= MS_LEX_MAX_DEPTH) {
@@ -510,6 +525,7 @@ static bool canEndStatement(MsTokenType type) {
     case TK_BIGINT:
     case TK_STRING:
     case TK_RUNE:
+    case TK_RAW_STR:
     case TK_BREAK:
     case TK_CONTINUE:
     case TK_RETURN:
@@ -592,6 +608,8 @@ bool scannerNext(Scanner* s, MsToken* out) {
         advanceRune(s);
         makeToken(s, out, TK_STRING, start, line, col);  // STR_BEGIN
         pushStr(s, line, col);
+      } else if (c == '`') {
+        scanRawString(s, out);
       } else if (c == '.' && digitOfBase(peekAt(s, 1), 10) >= 0) {
         // .5：缺整数部（01 §3.2），恢复为 FLOAT
         addDiag(s, MSE_FLOAT_LEADING_DOT, line, col, 1, "integer part expected before '.'");
