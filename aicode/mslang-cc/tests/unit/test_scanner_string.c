@@ -145,6 +145,154 @@ TEST(stringUnterminatedEof) {
   EXPECT_EQ(ctx, MSE_STRING_UNTERMINATED, (int)diags.items[0].code);
 }
 
+TEST(stringInterpSplit) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("\"a = ${a}, sum = ${a + b}\"", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_STRING,   TK_STR_PART,     TK_INTERP_BEGIN, TK_ID,     TK_INTERP_END,
+      TK_STR_PART, TK_INTERP_BEGIN, TK_ID,           TK_PLUS,   TK_ID,
+      TK_INTERP_END, TK_STRING,     TK_EOF,
+  };
+  EXPECT_EQ(ctx, 13, toks.count);
+  for (int i = 0; i < 13; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT(ctx, tokIs(&toks.items[1], TK_STR_PART, "a = "));
+  EXPECT(ctx, tokIs(&toks.items[5], TK_STR_PART, ", sum = "));
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(stringInterpNewlineNoAsi) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("\"${1 +\n2}b\"", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_STRING, TK_INTERP_BEGIN, TK_INT, TK_PLUS, TK_INT, TK_INTERP_END,
+      TK_STR_PART, TK_STRING, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 9, toks.count);  // 插值内换行无 ;（01 §7 细则 2）
+  for (int i = 0; i < 9; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT(ctx, tokIs(&toks.items[6], TK_STR_PART, "b"));
+  EXPECT_EQ(ctx, 2, toks.items[6].line);  // 段起点跟随插值内换行
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(stringInterpBraceMatching) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("\"${ {1: 2} }\"", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_STRING, TK_INTERP_BEGIN, TK_LBRACE, TK_INT, TK_COLON, TK_INT, TK_RBRACE,
+      TK_INTERP_END, TK_STRING, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 10, toks.count);
+  for (int i = 0; i < 10; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(stringInterpNested) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("\"${\"in${x}\"}\"", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_STR_PART, TK_INTERP_BEGIN, TK_ID,
+      TK_INTERP_END, TK_STRING, TK_INTERP_END, TK_STRING, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 11, toks.count);
+  for (int i = 0; i < 11; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(stringInterpUnterminatedEof) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("\"a${x", &toks, &diags);
+  static const MsTokenType types[] = {
+      TK_STRING, TK_STR_PART, TK_INTERP_BEGIN, TK_ID, TK_STRING, TK_EOF,
+  };
+  EXPECT_EQ(ctx, 6, toks.count);
+  for (int i = 0; i < 6; i++) {
+    EXPECT_EQ(ctx, types[i], toks.items[i].type);
+  }
+  EXPECT_EQ(ctx, 2, diags.count);  // 插值域 + 字符串域各一
+  EXPECT_EQ(ctx, MSE_STRING_UNTERMINATED, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, MSE_STRING_UNTERMINATED, (int)diags.items[1].code);
+}
+
+TEST(stringInterpDepthCapped) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  char src[MS_LEX_MAX_DEPTH * 4 + 64];
+  int32_t n = 0;
+  for (int32_t i = 0; i < MS_LEX_MAX_DEPTH + 1; i++) {
+    memcpy(src + n, "\"${", 3);
+    n += 3;
+  }
+  memcpy(src + n, "x", 1);
+  n += 1;
+  for (int32_t i = 0; i < MS_LEX_MAX_DEPTH + 1; i++) {
+    memcpy(src + n, "}\"", 2);
+    n += 2;
+  }
+  src[n] = '\0';
+  scanAll(src, &toks, &diags);
+  bool sawDepth = false;
+  for (int32_t i = 0; i < diags.count; i++) {
+    sawDepth = sawDepth || diags.items[i].code == MSE_LEX_DEPTH;
+  }
+  EXPECT(ctx, sawDepth);
+  EXPECT(ctx, toks.count >= 2);
+}
+
+TEST(rawStringPreservedVerbatim) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("`a\\t${x}\\n`", &toks, &diags);
+  EXPECT(ctx, tokIs(&toks.items[0], TK_RAW_STR, "`a\\t${x}\\n`"));  // 字节级原样（含反引号）
+  EXPECT_EQ(ctx, 2, toks.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(rawStringMultilineBytes) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("`a\nb` x", &toks, &diags);
+  EXPECT(ctx, tokIs(&toks.items[0], TK_RAW_STR, "`a\nb`"));
+  EXPECT_EQ(ctx, 6, toks.items[0].len);  // 6 字节：跨行换行原样保留
+  EXPECT(ctx, tokIs(&toks.items[1], TK_ID, "x"));
+  EXPECT_EQ(ctx, 2, toks.items[1].line);
+  EXPECT_EQ(ctx, 4, toks.items[1].col);
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
+TEST(rawStringUnterminatedEof) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("`abc", &toks, &diags);
+  EXPECT(ctx, tokIs(&toks.items[0], TK_RAW_STR, "`abc"));
+  EXPECT_EQ(ctx, 2, toks.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_RAW_UNTERMINATED, (int)diags.items[0].code);
+}
+
+TEST(rawStringAsiAfterEnd) {
+  MsDiagSink diags = {0};
+  TokList toks;
+  scanAll("`a`\nx", &toks, &diags);
+  EXPECT_EQ(ctx, TK_RAW_STR, toks.items[0].type);
+  EXPECT_EQ(ctx, TK_SEMICOLON, toks.items[1].type);
+  EXPECT_EQ(ctx, TK_ID, toks.items[2].type);
+  EXPECT_EQ(ctx, 4, toks.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   stringEmptyAndPlain(&ctx);
@@ -156,6 +304,12 @@ int main(void) {
   stringEscapeMalformed(&ctx);
   stringUnterminatedNewlineRecovers(&ctx);
   stringUnterminatedEof(&ctx);
+  stringInterpSplit(&ctx);
+  stringInterpNewlineNoAsi(&ctx);
+  stringInterpBraceMatching(&ctx);
+  stringInterpNested(&ctx);
+  stringInterpUnterminatedEof(&ctx);
+  stringInterpDepthCapped(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

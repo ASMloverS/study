@@ -268,6 +268,30 @@ static void scanNumber(Scanner* s, MsToken* out) {
   }
 }
 
+// 压入 INTERP 域（T005）；超深发 MSE 后不压（后续按普通 token 流恢复）
+static void pushInterp(Scanner* s, int32_t line, int32_t col) {
+  if (s->depth >= MS_LEX_MAX_DEPTH) {
+    addDiag(s, MSE_LEX_DEPTH, line, col, 2, "string interpolation nested too deeply");
+    return;
+  }
+  LexFrame* frame = &s->frames[s->depth++];
+  frame->domain = LEX_INTERP;
+  frame->brace = 0;
+  frame->openLine = line;
+  frame->openCol = col;
+}
+
+// INTERP 域收尾：弹出并复位下层 STR 域的常量段起点
+static void popInterp(Scanner* s) {
+  s->depth--;
+  if (s->depth > 0 && s->frames[s->depth - 1].domain == LEX_STR) {
+    LexFrame* str = &s->frames[s->depth - 1];
+    str->partStart = s->pos;
+    str->partLine = s->line;
+    str->partCol = s->col;
+  }
+}
+
 // \ 起始转义（01 §3.3）：\n \r \t \\ \" \' \0 \xHH \u{XXXXXX}
 // 合法消费并返回 true；非法发 MSE 诊断后按形状恢复消费（\<换行> 仅吃反斜杠，换行留给域判定）
 static bool scanEscape(Scanner* s, uint32_t* outValue) {
@@ -373,15 +397,25 @@ static void scanStrDomain(Scanner* s, MsToken* out) {
   LexFrame* frame = &s->frames[s->depth - 1];
   for (;;) {
     uint8_t c = peek(s);
-    if (s->pos > frame->partStart && (c == '"' || c == '\n' || c == 0)) {
-      emitStrPart(s, frame, out);
-      return;
+    if (s->pos > frame->partStart && (c == '"' || c == '$' || c == '\n' || c == 0)) {
+      if (c != '$' || peekAt(s, 1) == '{') {  // $ 不带 { 时为普通内容
+        emitStrPart(s, frame, out);
+        return;
+      }
     }
     if (c == '"') {  // STR_END（与 STR_BEGIN 同型复用 TK_STRING，01 §3.3）
       int32_t line = s->line, col = s->col;
       advanceRune(s);
       makeToken(s, out, TK_STRING, s->pos - 1, line, col);
       s->depth--;
+      return;
+    }
+    if (c == '$' && peekAt(s, 1) == '{') {  // INTERP_BEGIN：插值域开启（01 §3.3）
+      int32_t line = s->line, col = s->col;
+      advanceRune(s);
+      advanceRune(s);
+      makeToken(s, out, TK_INTERP_BEGIN, s->pos - 2, line, col);
+      pushInterp(s, line, col);
       return;
     }
     if (c == '\n' || c == 0) {  // 裸换行/EOF：未闭合（普通串单行）；换行不吞，可触发 ASI
@@ -516,12 +550,18 @@ bool scannerNext(Scanner* s, MsToken* out) {
     } else {
       uint8_t c = peek(s);
       if (c == 0) {
+        if (s->depth > 0) {  // 必为 INTERP 域（STR 域在 scanStrDomain 内自处置 EOF）
+          LexFrame* frame = &s->frames[s->depth - 1];
+          addDiag(s, MSE_STRING_UNTERMINATED, frame->openLine, frame->openCol, 2, "unterminated interpolation");
+          popInterp(s);
+          continue;
+        }
         makeToken(s, out, TK_EOF, s->pos, s->line, s->col);
         out->len = 0;
         return false;  // EOF 不补分号（01 §7 仅换行触发）
       }
       if (c == '\n') {
-        if (s->pendingAsi && s->parenDepth == 0) {
+        if (s->pendingAsi && s->parenDepth == 0 && s->depth == 0) {  // 细则 1/2：括号内与插值串内不补
           makeToken(s, out, TK_SEMICOLON, s->pos, s->line, s->col);
           out->len = 0;
           s->pendingAsi = false;
@@ -544,7 +584,11 @@ bool scannerNext(Scanner* s, MsToken* out) {
       }
       int32_t start = s->pos;
       int32_t line = s->line, col = s->col;
-      if (c == '"') {
+      if (s->depth > 0 && c == '}' && s->frames[s->depth - 1].brace == 0) {
+        advanceRune(s);
+        makeToken(s, out, TK_INTERP_END, start, line, col);  // 本插值域闭合 }
+        popInterp(s);
+      } else if (c == '"') {
         advanceRune(s);
         makeToken(s, out, TK_STRING, start, line, col);  // STR_BEGIN
         pushStr(s, line, col);
@@ -571,11 +615,19 @@ bool scannerNext(Scanner* s, MsToken* out) {
         }
       }
     }
-    // 真实 token 统一收口：括号深度（01 §7 细则 1）与 ASI 触发态（STR 域 token 同样过此收口）
+    // 真实 token 统一收口：括号深度（01 §7 细则 1，插值域内延续）与 ASI 触发态
     if (out->type == TK_LPAREN || out->type == TK_LBRACKET || out->type == TK_LBRACE) {
       s->parenDepth++;
     } else if ((out->type == TK_RPAREN || out->type == TK_RBRACKET || out->type == TK_RBRACE) && s->parenDepth > 0) {
       s->parenDepth--;
+    }
+    if (s->depth > 0 && s->frames[s->depth - 1].domain == LEX_INTERP) {
+      LexFrame* interp = &s->frames[s->depth - 1];
+      if (out->type == TK_LBRACE) {
+        interp->brace++;  // 表达式内 { 配对，寻找本域闭合 }
+      } else if (out->type == TK_RBRACE && interp->brace > 0) {
+        interp->brace--;
+      }
     }
     s->pendingAsi = canEndStatement(out->type);
     return true;
