@@ -1,0 +1,7 @@
+1:1 RAW_STR `a\t${x}\n`
+1:12 SEMICOLON
+2:1 RAW_STR `line1
+line2`
+3:8 ID x
+3:9 SEMICOLON
+4:1 EOF

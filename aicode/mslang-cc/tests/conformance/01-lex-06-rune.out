@@ -1,0 +1,7 @@
+1:1 RUNE 'a'
+1:5 RUNE '\n'
+1:10 RUNE '\x41'
+1:17 RUNE '\u{4E2D}'
+1:28 RUNE '中'
+1:31 SEMICOLON
+2:1 EOF
