@@ -150,9 +150,8 @@ TEST(stringInterpSplit) {
   TokList toks;
   scanAll("\"a = ${a}, sum = ${a + b}\"", &toks, &diags);
   static const MsTokenType types[] = {
-      TK_STRING,   TK_STR_PART,     TK_INTERP_BEGIN, TK_ID,     TK_INTERP_END,
-      TK_STR_PART, TK_INTERP_BEGIN, TK_ID,           TK_PLUS,   TK_ID,
-      TK_INTERP_END, TK_STRING,     TK_EOF,
+      TK_STRING, TK_STR_PART, TK_INTERP_BEGIN, TK_ID,         TK_INTERP_END, TK_STR_PART, TK_INTERP_BEGIN,
+      TK_ID,     TK_PLUS,     TK_ID,           TK_INTERP_END, TK_STRING,     TK_EOF,
   };
   EXPECT_EQ(ctx, 13, toks.count);
   for (int i = 0; i < 13; i++) {
@@ -168,8 +167,7 @@ TEST(stringInterpNewlineNoAsi) {
   TokList toks;
   scanAll("\"${1 +\n2}b\"", &toks, &diags);
   static const MsTokenType types[] = {
-      TK_STRING, TK_INTERP_BEGIN, TK_INT, TK_PLUS, TK_INT, TK_INTERP_END,
-      TK_STR_PART, TK_STRING, TK_EOF,
+      TK_STRING, TK_INTERP_BEGIN, TK_INT, TK_PLUS, TK_INT, TK_INTERP_END, TK_STR_PART, TK_STRING, TK_EOF,
   };
   EXPECT_EQ(ctx, 9, toks.count);  // 插值内换行无 ;（01 §7 细则 2）
   for (int i = 0; i < 9; i++) {
@@ -185,8 +183,7 @@ TEST(stringInterpBraceMatching) {
   TokList toks;
   scanAll("\"${ {1: 2} }\"", &toks, &diags);
   static const MsTokenType types[] = {
-      TK_STRING, TK_INTERP_BEGIN, TK_LBRACE, TK_INT, TK_COLON, TK_INT, TK_RBRACE,
-      TK_INTERP_END, TK_STRING, TK_EOF,
+      TK_STRING, TK_INTERP_BEGIN, TK_LBRACE, TK_INT, TK_COLON, TK_INT, TK_RBRACE, TK_INTERP_END, TK_STRING, TK_EOF,
   };
   EXPECT_EQ(ctx, 10, toks.count);
   for (int i = 0; i < 10; i++) {
@@ -200,8 +197,8 @@ TEST(stringInterpNested) {
   TokList toks;
   scanAll("\"${\"in${x}\"}\"", &toks, &diags);
   static const MsTokenType types[] = {
-      TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_STR_PART, TK_INTERP_BEGIN, TK_ID,
-      TK_INTERP_END, TK_STRING, TK_INTERP_END, TK_STRING, TK_EOF,
+      TK_STRING,     TK_INTERP_BEGIN, TK_STRING,     TK_STR_PART, TK_INTERP_BEGIN, TK_ID,
+      TK_INTERP_END, TK_STRING,       TK_INTERP_END, TK_STRING,   TK_EOF,
   };
   EXPECT_EQ(ctx, 11, toks.count);
   for (int i = 0; i < 11; i++) {
@@ -346,9 +343,8 @@ TEST(stringInterpNestedThreeDeep) {
   TokList toks;
   scanAll("\"${\"${\"${x}\"}\"}\"", &toks, &diags);
   static const MsTokenType types[] = {
-      TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_INTERP_BEGIN, TK_STRING, TK_INTERP_BEGIN,
-      TK_ID, TK_INTERP_END, TK_STRING, TK_INTERP_END, TK_STRING, TK_INTERP_END,
-      TK_STRING, TK_EOF,
+      TK_STRING,     TK_INTERP_BEGIN, TK_STRING,     TK_INTERP_BEGIN, TK_STRING,     TK_INTERP_BEGIN, TK_ID,
+      TK_INTERP_END, TK_STRING,       TK_INTERP_END, TK_STRING,       TK_INTERP_END, TK_STRING,       TK_EOF,
   };
   EXPECT_EQ(ctx, 14, toks.count);
   for (int i = 0; i < 14; i++) {

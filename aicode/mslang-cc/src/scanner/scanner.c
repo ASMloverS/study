@@ -42,9 +42,7 @@ static uint32_t utf8Decode(const char* p, int32_t avail, int32_t* width) {
   return cp;
 }
 
-static uint8_t peek(const Scanner* s) {
-  return s->pos < s->len ? (uint8_t)s->src[s->pos] : 0;
-}
+static uint8_t peek(const Scanner* s) { return s->pos < s->len ? (uint8_t)s->src[s->pos] : 0; }
 
 static uint8_t peekAt(const Scanner* s, int32_t off) {
   int32_t i = s->pos + off;
@@ -260,7 +258,8 @@ static void scanNumber(Scanner* s, MsToken* out) {
     makeToken(s, out, TK_FLOAT, start, line, col);
   } else if (isBig || overflow || value > (uint64_t)INT64_MAX) {
     if (!isBig) {
-      addDiag(s, MSE_INT_OVERFLOW, line, col, s->pos - start, "integer literal exceeds int64 range; promoted to bigint");
+      addDiag(s, MSE_INT_OVERFLOW, line, col, s->pos - start,
+              "integer literal exceeds int64 range; promoted to bigint");
     }
     makeToken(s, out, TK_BIGINT, start, line, col);
   } else {
@@ -315,13 +314,34 @@ static bool scanEscape(Scanner* s, uint32_t* outValue) {
   advanceRune(s);
   uint8_t c = peek(s);
   switch (c) {
-    case 'n': *outValue = '\n'; advanceRune(s); return true;
-    case 'r': *outValue = '\r'; advanceRune(s); return true;
-    case 't': *outValue = '\t'; advanceRune(s); return true;
-    case '\\': *outValue = '\\'; advanceRune(s); return true;
-    case '"': *outValue = '"'; advanceRune(s); return true;
-    case '\'': *outValue = '\''; advanceRune(s); return true;
-    case '0': *outValue = 0; advanceRune(s); return true;
+    case 'n':
+      *outValue = '\n';
+      advanceRune(s);
+      return true;
+    case 'r':
+      *outValue = '\r';
+      advanceRune(s);
+      return true;
+    case 't':
+      *outValue = '\t';
+      advanceRune(s);
+      return true;
+    case '\\':
+      *outValue = '\\';
+      advanceRune(s);
+      return true;
+    case '"':
+      *outValue = '"';
+      advanceRune(s);
+      return true;
+    case '\'':
+      *outValue = '\'';
+      advanceRune(s);
+      return true;
+    case '0':
+      *outValue = 0;
+      advanceRune(s);
+      return true;
     case '\n':
       addDiag(s, MSE_ESCAPE, line, col, 1, "unknown escape sequence");
       *outValue = 0xFFFD;
@@ -494,56 +514,155 @@ static bool scanOperator(Scanner* s, MsToken* out) {
   MsTokenType type;
   int32_t width;
   switch (c) {
-    case '+': type = n1 == '=' ? TK_PLUS_EQ : TK_PLUS; width = n1 == '=' ? 2 : 1; break;
+    case '+':
+      type = n1 == '=' ? TK_PLUS_EQ : TK_PLUS;
+      width = n1 == '=' ? 2 : 1;
+      break;
     case '-':
-      if (n1 == '=') { type = TK_MINUS_EQ; width = 2; }
-      else if (n1 == '>') { type = TK_ARROW; width = 2; }
-      else { type = TK_MINUS; width = 1; }
+      if (n1 == '=') {
+        type = TK_MINUS_EQ;
+        width = 2;
+      } else if (n1 == '>') {
+        type = TK_ARROW;
+        width = 2;
+      } else {
+        type = TK_MINUS;
+        width = 1;
+      }
       break;
     case '*':
-      if (n1 == '*') { type = n2 == '=' ? TK_STAR_STAR_EQ : TK_STAR_STAR; width = n2 == '=' ? 3 : 2; }
-      else if (n1 == '=') { type = TK_STAR_EQ; width = 2; }
-      else { type = TK_STAR; width = 1; }
+      if (n1 == '*') {
+        type = n2 == '=' ? TK_STAR_STAR_EQ : TK_STAR_STAR;
+        width = n2 == '=' ? 3 : 2;
+      } else if (n1 == '=') {
+        type = TK_STAR_EQ;
+        width = 2;
+      } else {
+        type = TK_STAR;
+        width = 1;
+      }
       break;
-    case '/': type = n1 == '=' ? TK_SLASH_EQ : TK_SLASH; width = n1 == '=' ? 2 : 1; break;
-    case '%': type = n1 == '=' ? TK_PERCENT_EQ : TK_PERCENT; width = n1 == '=' ? 2 : 1; break;
-    case '=': type = n1 == '=' ? TK_EQ_EQ : TK_EQ; width = n1 == '=' ? 2 : 1; break;
-    case '!': type = n1 == '=' ? TK_BANG_EQ : TK_BANG; width = n1 == '=' ? 2 : 1; break;
+    case '/':
+      type = n1 == '=' ? TK_SLASH_EQ : TK_SLASH;
+      width = n1 == '=' ? 2 : 1;
+      break;
+    case '%':
+      type = n1 == '=' ? TK_PERCENT_EQ : TK_PERCENT;
+      width = n1 == '=' ? 2 : 1;
+      break;
+    case '=':
+      type = n1 == '=' ? TK_EQ_EQ : TK_EQ;
+      width = n1 == '=' ? 2 : 1;
+      break;
+    case '!':
+      type = n1 == '=' ? TK_BANG_EQ : TK_BANG;
+      width = n1 == '=' ? 2 : 1;
+      break;
     case '<':
-      if (n1 == '<') { type = n2 == '=' ? TK_LT_LT_EQ : TK_LT_LT; width = n2 == '=' ? 3 : 2; }
-      else if (n1 == '=') { type = TK_LT_EQ; width = 2; }
-      else if (n1 == '-') { type = TK_LARROW; width = 2; }
-      else { type = TK_LT; width = 1; }
+      if (n1 == '<') {
+        type = n2 == '=' ? TK_LT_LT_EQ : TK_LT_LT;
+        width = n2 == '=' ? 3 : 2;
+      } else if (n1 == '=') {
+        type = TK_LT_EQ;
+        width = 2;
+      } else if (n1 == '-') {
+        type = TK_LARROW;
+        width = 2;
+      } else {
+        type = TK_LT;
+        width = 1;
+      }
       break;
     case '>':
-      if (n1 == '>') { type = n2 == '=' ? TK_GT_GT_EQ : TK_GT_GT; width = n2 == '=' ? 3 : 2; }
-      else if (n1 == '=') { type = TK_GT_EQ; width = 2; }
-      else { type = TK_GT; width = 1; }
+      if (n1 == '>') {
+        type = n2 == '=' ? TK_GT_GT_EQ : TK_GT_GT;
+        width = n2 == '=' ? 3 : 2;
+      } else if (n1 == '=') {
+        type = TK_GT_EQ;
+        width = 2;
+      } else {
+        type = TK_GT;
+        width = 1;
+      }
       break;
     case '&':
-      if (n1 == '&') { type = TK_AMP_AMP; width = 2; }
-      else if (n1 == '=') { type = TK_AMP_EQ; width = 2; }
-      else { type = TK_AMP; width = 1; }
+      if (n1 == '&') {
+        type = TK_AMP_AMP;
+        width = 2;
+      } else if (n1 == '=') {
+        type = TK_AMP_EQ;
+        width = 2;
+      } else {
+        type = TK_AMP;
+        width = 1;
+      }
       break;
     case '|':
-      if (n1 == '|') { type = TK_PIPE_PIPE; width = 2; }
-      else if (n1 == '=') { type = TK_PIPE_EQ; width = 2; }
-      else { type = TK_PIPE; width = 1; }
+      if (n1 == '|') {
+        type = TK_PIPE_PIPE;
+        width = 2;
+      } else if (n1 == '=') {
+        type = TK_PIPE_EQ;
+        width = 2;
+      } else {
+        type = TK_PIPE;
+        width = 1;
+      }
       break;
-    case '^': type = n1 == '=' ? TK_CARET_EQ : TK_CARET; width = n1 == '=' ? 2 : 1; break;
-    case '~': type = TK_TILDE; width = 1; break;
-    case '?': type = TK_QUESTION; width = 1; break;
-    case ':': type = n1 == '=' ? TK_COLON_EQ : TK_COLON; width = n1 == '=' ? 2 : 1; break;
-    case '.': type = TK_DOT; width = 1; break;
-    case ',': type = TK_COMMA; width = 1; break;
-    case ';': type = TK_SEMICOLON; width = 1; break;
-    case '(': type = TK_LPAREN; width = 1; break;
-    case ')': type = TK_RPAREN; width = 1; break;
-    case '[': type = TK_LBRACKET; width = 1; break;
-    case ']': type = TK_RBRACKET; width = 1; break;
-    case '{': type = TK_LBRACE; width = 1; break;
-    case '}': type = TK_RBRACE; width = 1; break;
-    default: return false;
+    case '^':
+      type = n1 == '=' ? TK_CARET_EQ : TK_CARET;
+      width = n1 == '=' ? 2 : 1;
+      break;
+    case '~':
+      type = TK_TILDE;
+      width = 1;
+      break;
+    case '?':
+      type = TK_QUESTION;
+      width = 1;
+      break;
+    case ':':
+      type = n1 == '=' ? TK_COLON_EQ : TK_COLON;
+      width = n1 == '=' ? 2 : 1;
+      break;
+    case '.':
+      type = TK_DOT;
+      width = 1;
+      break;
+    case ',':
+      type = TK_COMMA;
+      width = 1;
+      break;
+    case ';':
+      type = TK_SEMICOLON;
+      width = 1;
+      break;
+    case '(':
+      type = TK_LPAREN;
+      width = 1;
+      break;
+    case ')':
+      type = TK_RPAREN;
+      width = 1;
+      break;
+    case '[':
+      type = TK_LBRACKET;
+      width = 1;
+      break;
+    case ']':
+      type = TK_RBRACKET;
+      width = 1;
+      break;
+    case '{':
+      type = TK_LBRACE;
+      width = 1;
+      break;
+    case '}':
+      type = TK_RBRACE;
+      width = 1;
+      break;
+    default:
+      return false;
   }
   for (int32_t i = 0; i < width; i++) {
     advanceRune(s);
@@ -700,13 +819,20 @@ uint32_t msRuneLiteralValue(const MsToken* tok) {
   if (p[0] == '\\') {
     uint8_t c = (uint8_t)p[1];
     switch (c) {
-      case 'n': return '\n';
-      case 'r': return '\r';
-      case 't': return '\t';
-      case '\\': return '\\';
-      case '"': return '"';
-      case '\'': return '\'';
-      case '0': return 0;
+      case 'n':
+        return '\n';
+      case 'r':
+        return '\r';
+      case 't':
+        return '\t';
+      case '\\':
+        return '\\';
+      case '"':
+        return '"';
+      case '\'':
+        return '\'';
+      case '0':
+        return 0;
       case 'x': {
         if (avail < 4) {
           return 0xFFFD;
@@ -733,7 +859,8 @@ uint32_t msRuneLiteralValue(const MsToken* tok) {
         }
         return value;
       }
-      default: return 0xFFFD;
+      default:
+        return 0xFFFD;
     }
   }
   int32_t width = 0;
