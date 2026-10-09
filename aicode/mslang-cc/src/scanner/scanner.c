@@ -268,6 +268,82 @@ static void scanNumber(Scanner* s, MsToken* out) {
   }
 }
 
+// \ 起始转义（01 §3.3）：\n \r \t \\ \" \' \0 \xHH \u{XXXXXX}
+// 合法消费并返回 true；非法发 MSE 诊断后按形状恢复消费（\<换行> 仅吃反斜杠，换行留给域判定）
+static bool scanEscape(Scanner* s, uint32_t* outValue) {
+  int32_t start = s->pos;
+  int32_t line = s->line, col = s->col;
+  advanceRune(s);
+  uint8_t c = peek(s);
+  switch (c) {
+    case 'n': *outValue = '\n'; advanceRune(s); return true;
+    case 'r': *outValue = '\r'; advanceRune(s); return true;
+    case 't': *outValue = '\t'; advanceRune(s); return true;
+    case '\\': *outValue = '\\'; advanceRune(s); return true;
+    case '"': *outValue = '"'; advanceRune(s); return true;
+    case '\'': *outValue = '\''; advanceRune(s); return true;
+    case '0': *outValue = 0; advanceRune(s); return true;
+    case '\n':
+      addDiag(s, MSE_ESCAPE, line, col, 1, "unknown escape sequence");
+      *outValue = 0xFFFD;
+      return false;
+    case 'x': {
+      advanceRune(s);
+      int32_t digits = 0;
+      uint32_t value = 0;
+      while (digits < 2 && digitOfBase(peek(s), 16) >= 0) {
+        value = value * 16 + (uint32_t)digitOfBase(peek(s), 16);
+        advanceRune(s);
+        digits++;
+      }
+      if (digits == 2) {
+        *outValue = value;
+        return true;
+      }
+      addDiag(s, MSE_ESCAPE, line, col, s->pos - start, "\\x expects two hex digits");
+      *outValue = 0xFFFD;
+      return false;
+    }
+    case 'u': {
+      advanceRune(s);
+      if (peek(s) != '{') {
+        addDiag(s, MSE_ESCAPE, line, col, s->pos - start, "\\u expects '{'");
+        *outValue = 0xFFFD;
+        return false;
+      }
+      advanceRune(s);
+      uint32_t value = 0;
+      int32_t digits = 0;
+      while (digits < 6 && digitOfBase(peek(s), 16) >= 0) {
+        value = value * 16 + (uint32_t)digitOfBase(peek(s), 16);
+        advanceRune(s);
+        digits++;
+      }
+      if (digits > 0 && peek(s) == '}') {
+        advanceRune(s);
+        if (value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+          addDiag(s, MSE_ESCAPE_VALUE, line, col, s->pos - start, "\\u{} value out of Unicode range");
+          *outValue = 0xFFFD;
+          return false;
+        }
+        *outValue = value;
+        return true;
+      }
+      addDiag(s, MSE_ESCAPE, line, col, s->pos - start, "\\u{} expects 1-6 hex digits and '}'");
+      if (peek(s) == '}') {
+        advanceRune(s);  // \u{}：吞掉空括号
+      }
+      *outValue = 0xFFFD;
+      return false;
+    }
+    default:
+      addDiag(s, MSE_ESCAPE, line, col, s->pos - start + 1, "unknown escape sequence");
+      advanceRune(s);  // 非法字符一并吞掉（EOF 时为空操作）
+      *outValue = 0xFFFD;
+      return false;
+  }
+}
+
 // 压入 STR 域（T005）；超深发 MSE 后不压（后续按普通 token 流恢复）
 static void pushStr(Scanner* s, int32_t line, int32_t col) {
   if (s->depth >= MS_LEX_MAX_DEPTH) {
@@ -297,7 +373,7 @@ static void scanStrDomain(Scanner* s, MsToken* out) {
   LexFrame* frame = &s->frames[s->depth - 1];
   for (;;) {
     uint8_t c = peek(s);
-    if (s->pos > frame->partStart && c == '"') {
+    if (s->pos > frame->partStart && (c == '"' || c == '\n' || c == 0)) {
       emitStrPart(s, frame, out);
       return;
     }
@@ -307,6 +383,18 @@ static void scanStrDomain(Scanner* s, MsToken* out) {
       makeToken(s, out, TK_STRING, s->pos - 1, line, col);
       s->depth--;
       return;
+    }
+    if (c == '\n' || c == 0) {  // 裸换行/EOF：未闭合（普通串单行）；换行不吞，可触发 ASI
+      addDiag(s, MSE_STRING_UNTERMINATED, frame->openLine, frame->openCol, 1, "unterminated string literal");
+      makeToken(s, out, TK_STRING, s->pos, s->line, s->col);  // 恢复性 STR_END（零宽）
+      out->len = 0;
+      s->depth--;
+      return;
+    }
+    if (c == '\\') {
+      uint32_t value = 0;
+      scanEscape(s, &value);  // 非法已诊断，坏字节并入当前段
+      continue;
     }
     advanceRune(s);  // 普通内容（$ 不带 {、多字节 rune 等）
   }
