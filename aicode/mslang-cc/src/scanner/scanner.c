@@ -1,4 +1,4 @@
-// Scanner 主循环（T004）：标识符/数字/运算符/ASI；字符串/rune/插值归 T005
+// Scanner 主循环（T004/T005）：标识符/数字/运算符/ASI + 字符串/插值/rune 域栈
 #include "scanner/scanner.h"
 
 #include "scanner/unicode_table.h"

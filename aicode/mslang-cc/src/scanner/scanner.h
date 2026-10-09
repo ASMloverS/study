@@ -1,4 +1,4 @@
-// Scanner 主循环（T004）：标识符/数字/运算符/ASI；字符串/rune/插值归 T005
+// Scanner 主循环（T004/T005）：标识符/数字/运算符/ASI + 字符串/插值/rune 域栈
 // 前端零分配：一律借用源缓冲指针；源须已 LF 归一化（读取层完成，01-lexical.md）
 #ifndef INCLUDE_MS_SCANNER_SCANNER_H_
 #define INCLUDE_MS_SCANNER_SCANNER_H_
@@ -16,7 +16,7 @@ typedef enum MseLexCode {
   MSE_UNDERSCORE = 4,            // 下划线分组错位（1_ / 1__0）
   MSE_FLOAT_TRAILING_DOT = 5,    // 5. 缺小数位（. 后非数字且非成员访问）
   MSE_FLOAT_LEADING_DOT = 6,     // .5 缺整数部
-  MSE_UNEXPECTED_CHAR = 7,       // 非法字符（含 " ' `；字符串/rune 归 T005）
+  MSE_UNEXPECTED_CHAR = 7,       // 非法字符（字符串/rune 已由 T005 接管）
   MSE_BLOCK_COMMENT = 8,         // /* */ 块注释（01 §5 非法）
   MSE_BASE_PREFIX = 9,           // 基前缀后缺数字（0x / 0o）
   MSE_DIGIT_BASE = 10,           // 数字超出进制（0o8 / 0b2）
