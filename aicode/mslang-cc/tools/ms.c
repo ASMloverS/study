@@ -115,6 +115,30 @@ static int dumpTokens(const char* path) {
   return diags.count > 0 ? 1 : 0;
 }
 
+// run 占位（T002）：T005 起先做词法检查——诊断打印 stderr、退出码 3（27 §10 编译错误；真实执行 T011 接入）
+static int runScript(const char* path) {
+  size_t len = 0;
+  char* src = slurpFile(path, &len);
+  if (src == NULL) {
+    fprintf(stderr, "ms: cannot read %s\n", path);
+    return 2;
+  }
+  len = normalizeLf(src);
+  MsDiagSink diags = {0};
+  Scanner s;
+  scannerInit(&s, src, (int32_t)len, path, &diags);
+  MsToken tok;
+  while (scannerNext(&s, &tok)) {
+  }
+  for (int32_t i = 0; i < diags.count; i++) {
+    char buf[512];
+    msDiagFormat(&diags.items[i], src, buf, sizeof(buf));
+    fputs(buf, stderr);
+  }
+  free(src);
+  return diags.count > 0 ? 3 : 0;
+}
+
 int main(int argc, char** argv) {
   if (argc == 2 && strcmp(argv[1], "version") == 0) {
     printf("mslang %s\n", MS_VERSION);
@@ -123,9 +147,9 @@ int main(int argc, char** argv) {
   if (argc == 3 && strcmp(argv[1], "--dump-tokens") == 0 && isMsPath(argv[2])) {
     return dumpTokens(argv[2]);
   }
-  // run 占位（T002）：让 golden 用例可跑通（注释脚本期望空输出）；T011 起替换为真实执行
+  // run 占位（T002）：T005 起先做词法检查（词法错即编译错）；T011 起替换为真实执行
   if (argc == 2 && isMsPath(argv[1])) {
-    return 0;
+    return runScript(argv[1]);
   }
   printUsage(argv[0]);
   return 1;
