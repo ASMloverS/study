@@ -55,6 +55,9 @@ endforeach()
 # scanner：占位循环之外追加 T003 起的实际源文件（后续任务按目录继续 target_sources）
 target_sources(ms_scanner PRIVATE src/scanner/token.c)
 
+# T006：parser 逐 token 拉取，依赖 scanner
+target_link_libraries(ms_parser PUBLIC ms_scanner)
+
 # T004：Unicode 类别表再生成（生成物已入库；改脚本/升 Python 后手动构建本目标）
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
