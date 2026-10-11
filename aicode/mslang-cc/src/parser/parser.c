@@ -63,7 +63,300 @@ AstNode** astNewNodeArray(AstArena* arena, int32_t count) {
 
 size_t astArenaBytesUsed(const AstArena* arena) { return arena->bytesUsed; }
 
-// ---------------- Parser API（Task 2 起充实） ----------------
+// ---------------- token 助手与诊断 ----------------
+
+static bool check(const Parser* p, MsTokenType type) { return p->cur.type == type; }
+
+static void advance(Parser* p) { scannerNext(&p->scan, &p->cur); }  // EOF 幂等
+
+static bool match(Parser* p, MsTokenType type) {
+  if (check(p, type)) {
+    advance(p);
+    return true;
+  }
+  return false;
+}
+
+static void diagPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code,
+                    const char* message) {
+  if (p->diags == NULL) {
+    return;
+  }
+  MsDiagnostic diag = {MS_DIAG_ERROR, code, p->scan.file, line, col, len, message};
+  msDiagAdd(p->diags, &diag);
+}
+
+// 进 panic 的错误：屏蔽级联诊断直至 synchronize（T006 §2 错误恢复）
+static void errTok(Parser* p, const MsToken* tok, uint32_t code, const char* message) {
+  if (p->panic) {
+    return;
+  }
+  p->panic = true;
+  diagPos(p, tok->line, tok->col, tok->len, code, message);
+}
+
+static void errPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code,
+                   const char* message) {
+  if (p->panic) {
+    return;
+  }
+  p->panic = true;
+  diagPos(p, line, col, len, code, message);
+}
+
+// 丢弃至语句边界：; 消费后停，} 停留（属外层块），EOF 终止（T006 §2）
+static void synchronize(Parser* p) {
+  p->panic = false;
+  while (!check(p, TK_EOF)) {
+    if (p->cur.type == TK_SEMICOLON) {
+      advance(p);
+      return;
+    }
+    if (p->cur.type == TK_RBRACE) {
+      return;
+    }
+    advance(p);
+  }
+}
+
+// ---------------- 数值求值 ----------------
+
+// INT token 求值：剥下划线、按前缀进制累加（溢出已由 scanner 升 BIGINT，必不溢 i64）
+static ms_i64 intTokenValue(const MsToken* tok) {
+  int base = 10;
+  int32_t i = 0;
+  if (tok->len > 2 && tok->start[0] == '0') {
+    if (tok->start[1] == 'x' || tok->start[1] == 'X') {
+      base = 16;
+      i = 2;
+    } else if (tok->start[1] == 'o' || tok->start[1] == 'O') {
+      base = 8;
+      i = 2;
+    } else if (tok->start[1] == 'b') {
+      base = 2;
+      i = 2;
+    }
+  }
+  ms_u64 value = 0;
+  for (; i < tok->len; i++) {
+    char c = tok->start[i];
+    if (c == '_') {
+      continue;
+    }
+    int digit = (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : c - 'A' + 10;
+    value = value * (ms_u64)base + (ms_u64)digit;
+  }
+  return (ms_i64)value;
+}
+
+// FLOAT token 求值：剥下划线后 strtod（超长截断：病态长字面量不追求精确）
+static double floatTokenValue(const MsToken* tok) {
+  char buf[512];
+  int32_t n = 0;
+  for (int32_t i = 0; i < tok->len && n < 511; i++) {
+    if (tok->start[i] != '_') {
+      buf[n++] = tok->start[i];
+    }
+  }
+  buf[n] = '\0';
+  return strtod(buf, NULL);
+}
+
+// ---------------- 表达式（最小集，T006 §1） ----------------
+
+static AstNode* parseExpr(Parser* p);
+
+// 普通字符串段装配：STRING(开) (STR_PART | INTERP_BEGIN expr INTERP_END)* STRING(闭)
+static AstNode* parseStringLit(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // 开 STRING
+  AstStrSeg* tmp = NULL;
+  int32_t count = 0, cap = 0;
+  while (!check(p, TK_STRING) && !check(p, TK_EOF)) {
+    if (check(p, TK_STR_PART)) {
+      MS_ARRAY_PUSH(tmp, count, cap, ((AstStrSeg){NULL, p->cur.start, p->cur.len}));
+      advance(p);
+    } else if (match(p, TK_INTERP_BEGIN)) {
+      AstNode* expr = parseExpr(p);
+      if (expr == NULL) {
+        free(tmp);
+        return NULL;
+      }
+      if (!match(p, TK_INTERP_END)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}' to close interpolation");
+        free(tmp);
+        return NULL;
+      }
+      MS_ARRAY_PUSH(tmp, count, cap, ((AstStrSeg){expr, NULL, 0}));
+    } else {
+      errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "unexpected token in string literal");
+      free(tmp);
+      return NULL;
+    }
+  }
+  match(p, TK_STRING);  // 闭 STRING（scanner 已对未闭合串内部补闭引号）
+  AstNode* node = astNewNode(p->arena, AST_STRING, line, col);
+  node->as.strLit.raw = false;
+  node->as.strLit.count = count;
+  node->as.strLit.segs = astArenaAlloc(p->arena, sizeof(AstStrSeg) * (size_t)count);
+  memcpy(node->as.strLit.segs, tmp, sizeof(AstStrSeg) * (size_t)count);
+  free(tmp);
+  return node;
+}
+
+static AstNode* parsePrimary(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  switch (p->cur.type) {
+    case TK_ID: {
+      AstNode* node = astNewNode(p->arena, AST_IDENT, line, col);
+      node->as.ident.name = p->cur.start;
+      node->as.ident.nameLen = p->cur.len;
+      advance(p);
+      return node;
+    }
+    case TK_NIL: {
+      AstNode* node = astNewNode(p->arena, AST_NIL, line, col);
+      advance(p);
+      return node;
+    }
+    case TK_TRUE:
+    case TK_FALSE: {
+      AstNode* node = astNewNode(p->arena, AST_BOOL, line, col);
+      node->as.boolLit.b = p->cur.type == TK_TRUE;
+      advance(p);
+      return node;
+    }
+    case TK_INT: {
+      AstNode* node = astNewNode(p->arena, AST_INT, line, col);
+      node->as.intLit.v = intTokenValue(&p->cur);
+      advance(p);
+      return node;
+    }
+    case TK_FLOAT: {
+      AstNode* node = astNewNode(p->arena, AST_FLOAT, line, col);
+      node->as.floatLit.v = floatTokenValue(&p->cur);
+      advance(p);
+      return node;
+    }
+    case TK_BIGINT: {
+      AstNode* node = astNewNode(p->arena, AST_BIGINT, line, col);
+      const char* start = p->cur.start;
+      int32_t len = p->cur.len;
+      if (len > 0 && start[len - 1] == 'n') {  // 显式 n 后缀剥离
+        len--;
+      }
+      node->as.bigintLit.start = start;
+      node->as.bigintLit.len = len;
+      advance(p);
+      return node;
+    }
+    case TK_RUNE: {
+      AstNode* node = astNewNode(p->arena, AST_RUNE, line, col);
+      node->as.runeLit.cp = msRuneLiteralValue(&p->cur);
+      advance(p);
+      return node;
+    }
+    case TK_STRING:
+      return parseStringLit(p);
+    case TK_RAW_STR: {
+      AstNode* node = astNewNode(p->arena, AST_STRING, line, col);
+      node->as.strLit.raw = true;
+      node->as.strLit.count = 1;
+      node->as.strLit.segs = astArenaAlloc(p->arena, sizeof(AstStrSeg));
+      // 剥反引号；未闭合 raw（scanner 已报 MSE0xxx）时长度可能偏 1，容错保留
+      node->as.strLit.segs[0] = (AstStrSeg){NULL, p->cur.start + 1, p->cur.len - 2};
+      advance(p);
+      return node;
+    }
+    default:
+      errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "expected expression");
+      return NULL;
+  }
+}
+
+// 最小表达式：本任务仅 primary（后缀 Task 3、比较 Task 5、完整阶梯 T007）
+static AstNode* parseExpr(Parser* p) { return parsePrimary(p); }
+
+// ---------------- 语句 ----------------
+
+static AstNode* parseStatement(Parser* p);
+
+// 简单语句收尾：; / } / EOF 任一（ASI 产物与源码 ; 均静默接受，04 §10）
+static bool endSimpleStmt(Parser* p) {
+  if (match(p, TK_SEMICOLON)) {
+    return true;
+  }
+  if (check(p, TK_RBRACE) || check(p, TK_EOF)) {
+    return true;
+  }
+  errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected newline or ';' after statement");
+  return false;
+}
+
+// 语句序列（模块体/块体共用）：孤立 ; 静默跳过（04 §10）；错误语句同步后继续
+static AstNode** parseStmtList(Parser* p, int32_t* outCount, MsTokenType end) {
+  AstNode** tmp = NULL;
+  int32_t count = 0, cap = 0;
+  while (!check(p, end) && !check(p, TK_EOF)) {
+    if (match(p, TK_SEMICOLON)) {
+      continue;
+    }
+    AstNode* stmt = parseStatement(p);
+    if (stmt != NULL) {
+      MS_ARRAY_PUSH(tmp, count, cap, stmt);
+    } else {
+      synchronize(p);
+    }
+  }
+  AstNode** items = astNewNodeArray(p->arena, count);
+  memcpy(items, tmp, sizeof(AstNode*) * (size_t)count);
+  free(tmp);
+  *outCount = count;
+  return items;
+}
+
+// 块语句：{ 开新作用域（04 §10；作用域栈 Task 4 接入）
+static AstNode* parseBlock(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  if (!match(p, TK_LBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '{'");  // 块必须花括号（04 §3）
+    return NULL;
+  }
+  int32_t count = 0;
+  AstNode** items = parseStmtList(p, &count, TK_RBRACE);
+  if (!match(p, TK_RBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}'");  // EOF 截断
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_BLOCK, line, col);
+  node->as.list.items = items;
+  node->as.list.count = count;
+  return node;
+}
+
+// 表达式语句（04 §10）：任意表达式 + ASI 换行即语句
+static AstNode* parseSimpleStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  AstNode* expr = parseExpr(p);
+  if (expr == NULL) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_EXPR_STMT, line, col);
+  node->as.exprStmt.expr = expr;
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  return node;
+}
+
+static AstNode* parseStatement(Parser* p) {
+  if (check(p, TK_LBRACE)) {
+    return parseBlock(p);  // 块语句（自带边界，无需 ASI）
+  }
+  return parseSimpleStmt(p);
+}
+
+// ---------------- Parser API ----------------
 
 void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena,
                 MsDiagSink* diags) {
@@ -72,11 +365,15 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
   p->diags = diags;
   p->scope = NULL;
   p->panic = false;
-  p->cur = (MsToken){0};  // advance 到位前的零初始化（Task 2 覆盖）
+  advance(p);  // 拉取首 token
 }
 
 AstNode* parserParseModule(Parser* p) {
-  AstNode* node = astNewNode(p->arena, AST_MODULE, p->cur.line, p->cur.col);
-  node->as.list.count = 0;
+  int32_t line = p->cur.line, col = p->cur.col;
+  int32_t count = 0;
+  AstNode** items = parseStmtList(p, &count, TK_EOF);
+  AstNode* node = astNewNode(p->arena, AST_MODULE, line, col);
+  node->as.list.items = items;
+  node->as.list.count = count;
   return node;
 }
