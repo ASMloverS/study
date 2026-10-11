@@ -95,6 +95,16 @@ static void errTok(Parser* p, const MsToken* tok, uint32_t code, const char* mes
   diagPos(p, tok->line, tok->col, tok->len, code, message);
 }
 
+// 同 errTok，但以显式位置报错（token 已被消费的场景）
+static void errPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code,
+                   const char* message) {
+  if (p->panic) {
+    return;
+  }
+  p->panic = true;
+  diagPos(p, line, col, len, code, message);
+}
+
 // 丢弃至语句边界：; 消费后停，} 停留（属外层块），EOF 终止（T006 §2）
 static void synchronize(Parser* p) {
   p->panic = false;
@@ -313,16 +323,96 @@ static AstNode* parsePostfix(Parser* p) {
 // 最小表达式：primary + 后缀（比较 Task 5、完整阶梯 T007）
 static AstNode* parseExpr(Parser* p) { return parsePostfix(p); }
 
+// ---------------- 声明查重作用域 ----------------
+
+// 仅 parser 内查重（04 §1）：名称解析/遮蔽/upvalue 分类归 T009 Binder
+typedef struct ParserName {
+  const char* start;
+  int32_t len;
+} ParserName;
+
+struct ParserScope {
+  ParserName* names;
+  int32_t count, cap;
+  ParserScope* parent;
+};
+
+static void pushScope(Parser* p) {
+  ParserScope* scope = malloc(sizeof(ParserScope));
+  MS_ASSERT(scope != NULL);
+  scope->names = NULL;
+  scope->count = 0;
+  scope->cap = 0;
+  scope->parent = p->scope;
+  p->scope = scope;
+}
+
+static void popScope(Parser* p) {
+  ParserScope* scope = p->scope;
+  p->scope = scope->parent;
+  free(scope->names);
+  free(scope);
+}
+
+static bool inModuleScope(const Parser* p) { return p->scope != NULL && p->scope->parent == NULL; }
+
+// 登记声明；同作用域重名返回 true（调用方发 MSE_SYN_DUP_DECL）
+static bool scopeDeclare(Parser* p, const char* start, int32_t len) {
+  ParserScope* scope = p->scope;
+  for (int32_t i = 0; i < scope->count; i++) {
+    if (scope->names[i].len == len && memcmp(scope->names[i].start, start, (size_t)len) == 0) {
+      return true;
+    }
+  }
+  MS_ARRAY_PUSH(scope->names, scope->count, scope->cap, ((ParserName){start, len}));
+  return false;
+}
+
+// var/const 声明（04 §1）
+static AstNode* parseVarDecl(Parser* p, ms_u8 flags) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // var / const
+  if (!check(p, TK_ID)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected identifier");
+    return NULL;
+  }
+  const char* name = p->cur.start;
+  int32_t nameLen = p->cur.len;
+  int32_t nameLine = p->cur.line, nameCol = p->cur.col;
+  advance(p);
+  AstNode* init = NULL;
+  if (match(p, TK_EQ)) {
+    init = parseExpr(p);
+    if (init == NULL) {
+      return NULL;
+    }
+  }
+  if (scopeDeclare(p, name, nameLen)) {
+    errPos(p, nameLine, nameCol, nameLen, MSE_SYN_DUP_DECL, "duplicate declaration in the same scope");
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_VAR_DECL, line, col);
+  node->as.varDecl.name = name;
+  node->as.varDecl.nameLen = nameLen;
+  node->as.varDecl.flags = flags;
+  node->as.varDecl.init = init;
+  return node;
+}
+
 // ---------------- 语句 ----------------
 
 static AstNode* parseStatement(Parser* p);
 
-// 简单语句收尾：; / } / EOF 任一（ASI 产物与源码 ; 均静默接受，04 §10）
-static bool endSimpleStmt(Parser* p) {
+// 简单语句收尾：; / } / EOF / 后继行 token 任一（04 §10 换行即语句）
+// 块内换行不产 ; （01 §7 细则 1），故以 token 行号识别语句边界
+static bool endSimpleStmt(Parser* p, int32_t stmtLine) {
   if (match(p, TK_SEMICOLON)) {
     return true;
   }
   if (check(p, TK_RBRACE) || check(p, TK_EOF)) {
+    return true;
+  }
+  if (p->cur.line > stmtLine) {
     return true;
   }
   errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected newline or ';' after statement");
@@ -358,7 +448,7 @@ static AstNode** parseStmtList(Parser* p, int32_t* outCount, MsTokenType end) {
   return items;
 }
 
-// 块语句：{ 开新作用域（04 §10；作用域栈 Task 4 接入）
+// 块语句：{ 开新作用域（04 §10）
 static AstNode* parseBlock(Parser* p) {
   int32_t line = p->cur.line, col = p->cur.col;
   if (!match(p, TK_LBRACE)) {
@@ -366,7 +456,9 @@ static AstNode* parseBlock(Parser* p) {
     return NULL;
   }
   int32_t count = 0;
+  pushScope(p);
   AstNode** items = parseStmtList(p, &count, TK_RBRACE);
+  popScope(p);
   if (!match(p, TK_RBRACE)) {
     errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}'");  // EOF 截断
     return NULL;
@@ -384,9 +476,36 @@ static AstNode* parseSimpleStmt(Parser* p) {
   if (expr == NULL) {
     return NULL;
   }
+  // x := e 短声明：仅单 IDENT 目标；模块顶层非法（04 §1）
+  if (check(p, TK_COLON_EQ)) {
+    advance(p);
+    if (expr->kind != AST_IDENT) {
+      errPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "short declaration target must be an identifier");
+      return NULL;
+    }
+    AstNode* value = parseExpr(p);
+    if (value == NULL) {
+      return NULL;
+    }
+    if (inModuleScope(p)) {
+      errPos(p, line, col, 1, MSE_SYN_SHORT_TOPLEVEL, "':=' is not allowed at module top level");
+      return NULL;
+    }
+    if (scopeDeclare(p, expr->as.ident.name, expr->as.ident.nameLen)) {
+      errPos(p, line, col, expr->as.ident.nameLen, MSE_SYN_DUP_DECL,
+             "duplicate declaration in the same scope");
+      return NULL;
+    }
+    AstNode* node = astNewNode(p->arena, AST_VAR_DECL, line, col);
+    node->as.varDecl.name = expr->as.ident.name;
+    node->as.varDecl.nameLen = expr->as.ident.nameLen;
+    node->as.varDecl.flags = AST_VAR_SHORT;
+    node->as.varDecl.init = value;
+    return node;
+  }
   AstNode* node = astNewNode(p->arena, AST_EXPR_STMT, line, col);
   node->as.exprStmt.expr = expr;
-  if (!endSimpleStmt(p)) {
+  if (!endSimpleStmt(p, line)) {
     return NULL;
   }
   return node;
@@ -395,6 +514,14 @@ static AstNode* parseSimpleStmt(Parser* p) {
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
+  }
+  if (check(p, TK_VAR) || check(p, TK_CONST)) {
+    ms_u8 flags = check(p, TK_CONST) ? AST_VAR_CONST : 0;
+    AstNode* node = parseVarDecl(p, flags);
+    if (node != NULL && !endSimpleStmt(p, node->line)) {
+      return NULL;
+    }
+    return node;
   }
   return parseSimpleStmt(p);
 }
@@ -414,7 +541,9 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
 AstNode* parserParseModule(Parser* p) {
   int32_t line = p->cur.line, col = p->cur.col;
   int32_t count = 0;
+  pushScope(p);
   AstNode** items = parseStmtList(p, &count, TK_EOF);
+  popScope(p);
   AstNode* node = astNewNode(p->arena, AST_MODULE, line, col);
   node->as.list.items = items;
   node->as.list.count = count;

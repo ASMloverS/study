@@ -209,6 +209,89 @@ TEST(parseIndexMemberPostfix) {
   astArenaDestroy(&arena);
 }
 
+TEST(parseVarDeclForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var y\nvar x = 10\nconst MAX = 100", &arena, &diags);
+  EXPECT_EQ(ctx, 3, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* d0 = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_VAR_DECL, d0->kind);
+  EXPECT(ctx, d0->as.varDecl.init == NULL);  // 无初值默认 nil（04 §1）
+  EXPECT_EQ(ctx, 1, d0->as.varDecl.nameLen);
+  EXPECT_EQ(ctx, 'y', d0->as.varDecl.name[0]);
+  AstNode* d1 = mod->as.list.items[1];
+  EXPECT_EQ(ctx, 0, d1->as.varDecl.flags);
+  EXPECT_EQ(ctx, AST_INT, d1->as.varDecl.init->kind);
+  EXPECT_EQ(ctx, 10, (int)d1->as.varDecl.init->as.intLit.v);
+  AstNode* d2 = mod->as.list.items[2];
+  EXPECT_EQ(ctx, AST_VAR_CONST, d2->as.varDecl.flags);
+  EXPECT_EQ(ctx, 3, d2->as.varDecl.nameLen);  // MAX
+  astArenaDestroy(&arena);
+}
+
+TEST(parseShortDeclInBlock) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ x := 20 }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* block = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_BLOCK, block->kind);
+  AstNode* decl = block->as.list.items[0];
+  EXPECT_EQ(ctx, AST_VAR_DECL, decl->kind);
+  EXPECT_EQ(ctx, AST_VAR_SHORT, decl->as.varDecl.flags);
+  EXPECT_EQ(ctx, 20, (int)decl->as.varDecl.init->as.intLit.v);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseBlockScopingShadowOk) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ var x = 1 }\nvar x = 2", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);  // 不同作用域遮蔽合法（04 §1）
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errShortDeclAtModuleTop) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("x := 1", &arena, &diags);
+  EXPECT_EQ(ctx, 0, mod->as.list.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_SHORT_TOPLEVEL, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, 1, diags.items[0].line);
+  astArenaDestroy(&arena);
+}
+
+TEST(errDuplicateDeclSameScope) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ var x\nx := 1 }", &arena, &diags);  // 04 §1 示例
+  (void)mod;
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DUP_DECL, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errDuplicateVarVarSameScope) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var x = 1\nvar x = 2", &arena, &diags);
+  (void)mod;
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DUP_DECL, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, 2, diags.items[0].line);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   arenaAllocAndStats(&ctx);
@@ -224,6 +307,12 @@ int main(void) {
   parseUnterminatedInterp(&ctx);
   parseErrorThenRecover(&ctx);
   parseIndexMemberPostfix(&ctx);
+  parseVarDeclForms(&ctx);
+  parseShortDeclInBlock(&ctx);
+  parseBlockScopingShadowOk(&ctx);
+  errShortDeclAtModuleTop(&ctx);
+  errDuplicateDeclSameScope(&ctx);
+  errDuplicateVarVarSameScope(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
