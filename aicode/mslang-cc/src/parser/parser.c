@@ -95,15 +95,6 @@ static void errTok(Parser* p, const MsToken* tok, uint32_t code, const char* mes
   diagPos(p, tok->line, tok->col, tok->len, code, message);
 }
 
-static void errPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code,
-                   const char* message) {
-  if (p->panic) {
-    return;
-  }
-  p->panic = true;
-  diagPos(p, line, col, len, code, message);
-}
-
 // 丢弃至语句边界：; 消费后停，} 停留（属外层块），EOF 终止（T006 §2）
 static void synchronize(Parser* p) {
   p->panic = false;
@@ -199,7 +190,9 @@ static AstNode* parseStringLit(Parser* p) {
   node->as.strLit.raw = false;
   node->as.strLit.count = count;
   node->as.strLit.segs = astArenaAlloc(p->arena, sizeof(AstStrSeg) * (size_t)count);
-  memcpy(node->as.strLit.segs, tmp, sizeof(AstStrSeg) * (size_t)count);
+  if (count > 0) {
+    memcpy(node->as.strLit.segs, tmp, sizeof(AstStrSeg) * (size_t)count);
+  }
   free(tmp);
   return node;
 }
@@ -263,8 +256,10 @@ static AstNode* parsePrimary(Parser* p) {
       node->as.strLit.raw = true;
       node->as.strLit.count = 1;
       node->as.strLit.segs = astArenaAlloc(p->arena, sizeof(AstStrSeg));
-      // 剥反引号；未闭合 raw（scanner 已报 MSE0xxx）时长度可能偏 1，容错保留
-      node->as.strLit.segs[0] = (AstStrSeg){NULL, p->cur.start + 1, p->cur.len - 2};
+      // 剥反引号；未闭合 raw（scanner 已报 MSE0xxx）长度钳位非负
+      int32_t segLen = p->cur.len >= 2 ? p->cur.len - 2 : 0;
+      const char* segStart = p->cur.start + (p->cur.len >= 2 ? 1 : 0);
+      node->as.strLit.segs[0] = (AstStrSeg){NULL, segStart, segLen};
       advance(p);
       return node;
     }
@@ -301,6 +296,11 @@ static AstNode** parseStmtList(Parser* p, int32_t* outCount, MsTokenType end) {
     if (match(p, TK_SEMICOLON)) {
       continue;
     }
+    if (check(p, TK_RBRACE) && end != TK_RBRACE) {
+      errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "unmatched '}'");
+      advance(p);
+      continue;
+    }
     AstNode* stmt = parseStatement(p);
     if (stmt != NULL) {
       MS_ARRAY_PUSH(tmp, count, cap, stmt);
@@ -309,7 +309,9 @@ static AstNode** parseStmtList(Parser* p, int32_t* outCount, MsTokenType end) {
     }
   }
   AstNode** items = astNewNodeArray(p->arena, count);
-  memcpy(items, tmp, sizeof(AstNode*) * (size_t)count);
+  if (count > 0) {
+    memcpy(items, tmp, sizeof(AstNode*) * (size_t)count);
+  }
   free(tmp);
   *outCount = count;
   return items;

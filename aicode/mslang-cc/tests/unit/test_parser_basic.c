@@ -154,6 +154,39 @@ TEST(parseUnterminatedBlock) {
   astArenaDestroy(&arena);
 }
 
+TEST(parseStrayRbraceRecovers) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("x }\ny\n42", &arena, &diags);  // 模块层游离 }
+  EXPECT_EQ(ctx, 3, mod->as.list.count);  // x/y/42 均保留，} 不再挂死
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseUnterminatedInterp) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("\"a${x", &arena, &diags);  // scanner 自恢复闭串，parser 报 1001
+  EXPECT_EQ(ctx, 0, mod->as.list.count);
+  EXPECT_EQ(ctx, 3, diags.count);  // scanner 2 条（未闭合域）+ parser 1 条
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, (int)diags.items[2].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseErrorThenRecover) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("+\ny\n42", &arena, &diags);  // 首句错误，sync 吞至 ; （y 被吞），42 保留
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   arenaAllocAndStats(&ctx);
@@ -165,6 +198,9 @@ int main(void) {
   parseStringLiterals(&ctx);
   parseBareSemicolonsSilent(&ctx);
   parseUnterminatedBlock(&ctx);
+  parseStrayRbraceRecovers(&ctx);
+  parseUnterminatedInterp(&ctx);
+  parseErrorThenRecover(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
