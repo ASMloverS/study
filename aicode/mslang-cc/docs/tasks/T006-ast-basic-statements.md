@@ -3,7 +3,7 @@
 - 阶段: P2 语法（roadmap 期 2）
 - 依赖: T005
 - 规模: M
-- 状态: 未开始
+- 状态: 进行中
 - 设计文档: `docs/language/04-statements.md` §1-§3 §10、`03-expressions.md`（AST 节点预留）、`20-architecture.md` §1
 
 ## 1. 目标与范围
