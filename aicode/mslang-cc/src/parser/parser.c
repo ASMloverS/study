@@ -269,8 +269,49 @@ static AstNode* parsePrimary(Parser* p) {
   }
 }
 
-// 最小表达式：本任务仅 primary（后缀 Task 3、比较 Task 5、完整阶梯 T007）
-static AstNode* parseExpr(Parser* p) { return parsePrimary(p); }
+// 后缀链：[e] 索引 / .name 成员（调用/切片 T007）
+static AstNode* parsePostfix(Parser* p) {
+  AstNode* obj = parsePrimary(p);
+  if (obj == NULL) {
+    return NULL;
+  }
+  for (;;) {
+    if (check(p, TK_LBRACKET)) {
+      int32_t line = obj->line, col = obj->col;  // 构造起点取对象起点
+      advance(p);
+      AstNode* index = parseExpr(p);
+      if (index == NULL) {
+        return NULL;
+      }
+      if (!match(p, TK_RBRACKET)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ']'");
+        return NULL;
+      }
+      AstNode* node = astNewNode(p->arena, AST_INDEX, line, col);
+      node->as.indexExpr.obj = obj;
+      node->as.indexExpr.index = index;
+      obj = node;
+    } else if (check(p, TK_DOT)) {
+      int32_t line = obj->line, col = obj->col;
+      advance(p);
+      if (!check(p, TK_ID)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected member name after '.'");
+        return NULL;
+      }
+      AstNode* node = astNewNode(p->arena, AST_MEMBER, line, col);
+      node->as.memberExpr.obj = obj;
+      node->as.memberExpr.name = p->cur.start;
+      node->as.memberExpr.nameLen = p->cur.len;
+      advance(p);
+      obj = node;
+    } else {
+      return obj;
+    }
+  }
+}
+
+// 最小表达式：primary + 后缀（比较 Task 5、完整阶梯 T007）
+static AstNode* parseExpr(Parser* p) { return parsePostfix(p); }
 
 // ---------------- 语句 ----------------
 

@@ -187,6 +187,28 @@ TEST(parseErrorThenRecover) {
   astArenaDestroy(&arena);
 }
 
+TEST(parseIndexMemberPostfix) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("xs[0]\nobj.f\nm[0].f", &arena, &diags);
+  EXPECT_EQ(ctx, 3, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* idx = mod->as.list.items[0]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_INDEX, idx->kind);
+  EXPECT_EQ(ctx, AST_IDENT, idx->as.indexExpr.obj->kind);
+  EXPECT_EQ(ctx, AST_INT, idx->as.indexExpr.index->kind);
+  AstNode* mem = mod->as.list.items[1]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_MEMBER, mem->kind);
+  EXPECT_EQ(ctx, AST_IDENT, mem->as.memberExpr.obj->kind);
+  EXPECT_EQ(ctx, 1, mem->as.memberExpr.nameLen);  // f
+  EXPECT_EQ(ctx, 'f', mem->as.memberExpr.name[0]);
+  AstNode* mix = mod->as.list.items[2]->as.exprStmt.expr;  // 后缀链左结合
+  EXPECT_EQ(ctx, AST_MEMBER, mix->kind);
+  EXPECT_EQ(ctx, AST_INDEX, mix->as.memberExpr.obj->kind);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   arenaAllocAndStats(&ctx);
@@ -201,6 +223,7 @@ int main(void) {
   parseStrayRbraceRecovers(&ctx);
   parseUnterminatedInterp(&ctx);
   parseErrorThenRecover(&ctx);
+  parseIndexMemberPostfix(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
