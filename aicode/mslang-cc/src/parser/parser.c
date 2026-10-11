@@ -72,6 +72,7 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
   p->diags = diags;
   p->scope = NULL;
   p->panic = false;
+  p->cur = (MsToken){0};  // advance 到位前的零初始化（Task 2 覆盖）
 }
 
 AstNode* parserParseModule(Parser* p) {

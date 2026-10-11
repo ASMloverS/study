@@ -30,6 +30,11 @@ TEST(arenaAllocAndStats) {
   astArenaDestroy(&arena);
   EXPECT_EQ(ctx, 0, (int)astArenaBytesUsed(&arena));
   EXPECT_EQ(ctx, 0, arena.nodeCount);
+  MsDiagSink diags = {0};
+  AstNode* mod = parseSrc("", &arena, &diags);
+  EXPECT(ctx, mod != NULL && mod->kind == AST_MODULE);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
 }
 
 int main(void) {
