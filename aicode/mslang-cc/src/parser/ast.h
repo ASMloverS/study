@@ -24,7 +24,7 @@ typedef enum AstKind {
   AST_SWITCH_CASE,
   AST_BREAK,
   AST_CONTINUE,
-  AST_RETURN,
+  AST_RETURN,       // as.exprStmt 复用（value）
   AST_THROW,
   AST_DEFER,
   AST_SEND,
@@ -43,7 +43,7 @@ typedef enum AstKind {
   AST_STRING,  // as.strLit（普通串段列表 / 原始串单段）
   AST_RUNE,    // as.runeLit
   AST_TUPLE,   // 逗号列表（元组字面量/元组赋值目标）：as.tuple
-  AST_BINARY,  // as.binary（本任务仅比较级；完整优先级阶梯 T007）
+  AST_BINARY,  // as.binary（逻辑短路 AST_LOGIC 复用 binary 载荷）
   AST_INDEX,   // as.indexExpr（后缀 [e]，赋值目标用）
   AST_MEMBER,  // as.memberExpr（后缀 .name）
   // T007 表达式扩展位（本任务仅定义枚举位）
@@ -52,9 +52,9 @@ typedef enum AstKind {
   AST_TERNARY,
   AST_CALL,
   AST_SLICE,
-  AST_LIST,
+  AST_LIST,    // as.list 复用
   AST_MAP,
-  AST_SET,
+  AST_SET,     // as.list 复用
   AST_COMPREHENSION,
   AST_GEN_EXPR,
   AST_FUNC_EXPR,
@@ -83,6 +83,8 @@ typedef enum AstBinOp {
   AST_OP_LE,
   AST_OP_GT,
   AST_OP_GE,
+  AST_OP_IS,   // 同一性（03 §5，不可重载）
+  AST_OP_IN,   // 成员包含（03 §5，走 __contains__）
   AST_OP_AND,
   AST_OP_OR,  // 短路逻辑（T007 AST_LOGIC 载荷）
 } AstBinOp;
@@ -94,6 +96,34 @@ enum {
 };
 
 typedef struct AstNode AstNode;
+
+// 一元运算符（03 优先级级 12）
+typedef enum AstUnaryOp {
+  AST_UNOP_NEG = 1,  // -
+  AST_UNOP_NOT,      // ! / not
+  AST_UNOP_INV,      // ~
+} AstUnaryOp;
+
+// 推导式/生成器 for 子句：target 为 AST_IDENT 或 AST_TUPLE（多变量）
+typedef struct AstComprFor {
+  AstNode* target;
+  AstNode* iter;
+} AstComprFor;
+
+// 函数参数（T007 仅填 name；defaultExpr/rest 形态 T008 复用）
+typedef struct AstParam {
+  const char* name;
+  int32_t nameLen;
+  AstNode* defaultExpr;
+  bool rest;
+} AstParam;
+
+// 推导式子类型（as.compr.compKind）
+enum {
+  AST_COMP_LIST = 1,
+  AST_COMP_MAP = 2,
+  AST_COMP_SET = 3,
+};
 
 // 字符串段：expr != NULL 为插值段，否则为字面段（借用源文本，转义原文保留）
 typedef struct AstStrSeg {
@@ -178,6 +208,46 @@ struct AstNode {
       const char* name;
       int32_t nameLen;
     } memberExpr;
+    struct {
+      AstNode* operand;
+      AstUnaryOp op;
+    } unary;
+    struct {
+      AstNode* cond;
+      AstNode* thenExpr;
+      AstNode* elseExpr;
+    } ternary;  // AST_TERNARY（右结合，03 §7）
+    struct {
+      AstNode* callee;
+      AstNode** args;
+      bool* spread;  // 与 args 平行：位置 i 为 * 展开实参
+      int32_t count;
+    } call;
+    struct {
+      AstNode* obj;
+      AstNode* start;  // 三者均可 NULL（端点/步进省略）
+      AstNode* end;
+      AstNode* step;
+    } slice;
+    struct {
+      AstNode** keys;
+      AstNode** values;
+      int32_t count;
+    } mapLit;  // AST_MAP
+    struct {
+      ms_u8 compKind;  // AST_COMP_*；AST_GEN_EXPR 恒 0
+      AstNode* key;    // map 推导式键；其余 NULL
+      AstNode* value;  // list/set 元素或 map 值
+      AstComprFor* fors;
+      int32_t forCount;
+      AstNode** conds;
+      int32_t condCount;
+    } compr;  // AST_COMPREHENSION / AST_GEN_EXPR 共用
+    struct {
+      AstParam* params;
+      int32_t paramCount;
+      AstNode* body;  // AST_BLOCK
+    } funcExpr;
   } as;
 };
 

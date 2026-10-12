@@ -20,6 +20,8 @@ typedef enum MseSyntaxCode {
   MSE_SYN_BAD_TARGET = 1006,      // 非法赋值目标 / 短声明目标
   MSE_SYN_CHAINED_CMP = 1007,     // 比较运算符不可链式（03 优先级表）
   MSE_SYN_STAR_NO_ASSIGN = 1008,  // * 目标只能出现在解构赋值
+  MSE_SYN_GENEXPR_POS = 1009,     // 生成器表达式仅可作调用唯一实参或赋值右值（03 §1）
+  MSE_SYN_SPREAD_NOT_LAST = 1010, // * 展开实参必须是最后一个实参（03 §4）
 } MseSyntaxCode;
 
 typedef struct ParserScope ParserScope;

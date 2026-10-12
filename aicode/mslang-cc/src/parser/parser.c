@@ -211,14 +211,19 @@ static AstBinOp comparisonOpOf(MsTokenType type) {
       return AST_OP_GT;
     case TK_GT_EQ:
       return AST_OP_GE;
+    case TK_IS:
+      return AST_OP_IS;
+    case TK_IN:
+      return AST_OP_IN;
     default:
       return AST_OP_NONE;
   }
 }
 
-// ---------------- 表达式（最小集，T006 §1） ----------------
+// ---------------- 表达式（完整优先级阶梯，T007 §4.1） ----------------
 
 static AstNode* parseExpr(Parser* p);
+static AstNode* parseUnary(Parser* p);  // 与 parsePow 互递归（** 右结合吸收一元）
 
 // 普通字符串段装配：STRING(开) (STR_PART | INTERP_BEGIN expr INTERP_END)* STRING(闭)
 static AstNode* parseStringLit(Parser* p) {
@@ -373,23 +378,19 @@ static AstNode* parsePostfix(Parser* p) {
   }
 }
 
-// 最小表达式：primary + 后缀 + 单级比较（04 §3 条件用；完整阶梯 T007）
-static AstNode* parseExpr(Parser* p) {
-  AstNode* lhs = parsePostfix(p);
-  if (lhs == NULL) {
-    return NULL;
+// GEN_EXPR 位置限制（03 §1）：仅调用唯一实参或赋值右值（带括号），其余直接操作数位置拒绝
+static bool rejectGenExpr(Parser* p, const AstNode* n) {
+  if (n == NULL || n->kind != AST_GEN_EXPR) {
+    return false;
   }
-  AstBinOp op = comparisonOpOf(p->cur.type);
-  if (op == AST_OP_NONE) {
-    return lhs;
-  }
-  advance(p);
-  AstNode* rhs = parsePostfix(p);
-  if (rhs == NULL) {
-    return NULL;
-  }
-  if (comparisonOpOf(p->cur.type) != AST_OP_NONE) {
-    errTok(p, &p->cur, MSE_SYN_CHAINED_CMP, "comparison operators cannot be chained");
+  errPos(p, n->line, n->col, 1, MSE_SYN_GENEXPR_POS,
+         "generator expression is only allowed as the sole call argument or an assignment right-hand side");
+  return true;
+}
+
+// 二元构造（各级共用）：操作数不得为 GEN_EXPR
+static AstNode* mkBinary(Parser* p, AstNode* lhs, AstBinOp op, AstNode* rhs) {
+  if (rejectGenExpr(p, lhs) || rejectGenExpr(p, rhs)) {
     return NULL;
   }
   AstNode* node = astNewNode(p->arena, AST_BINARY, lhs->line, lhs->col);
@@ -398,6 +399,174 @@ static AstNode* parseExpr(Parser* p) {
   node->as.binary.op = op;
   return node;
 }
+
+// 逻辑短路构造（AST_LOGIC 复用 binary 载荷，op 取 AND/OR）
+static AstNode* mkLogic(Parser* p, AstNode* lhs, AstBinOp op, AstNode* rhs) {
+  if (rejectGenExpr(p, lhs) || rejectGenExpr(p, rhs)) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_LOGIC, lhs->line, lhs->col);
+  node->as.binary.lhs = lhs;
+  node->as.binary.rhs = rhs;
+  node->as.binary.op = op;
+  return node;
+}
+
+static AstNode* mkUnary(Parser* p, AstUnaryOp op, AstNode* operand, int32_t line, int32_t col) {
+  if (rejectGenExpr(p, operand)) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_UNARY, line, col);  // 取运算符位置
+  node->as.unary.op = op;
+  node->as.unary.operand = operand;
+  return node;
+}
+
+static AstNode* parsePow(Parser* p) {
+  AstNode* base = parsePostfix(p);
+  if (base == NULL) {
+    return NULL;
+  }
+  if (!match(p, TK_STAR_STAR)) {
+    return base;
+  }
+  AstNode* rhs = parseUnary(p);  // 右结合；rhs 吸收一元（2 ** -3 合法）
+  if (rhs == NULL) {
+    return NULL;
+  }
+  return mkBinary(p, base, AST_OP_POW, rhs);
+}
+
+static AstNode* parseUnary(Parser* p) {
+  AstUnaryOp op;
+  switch (p->cur.type) {
+    case TK_MINUS:
+      op = AST_UNOP_NEG;
+      break;
+    case TK_BANG:
+    case TK_NOT:
+      op = AST_UNOP_NOT;
+      break;
+    case TK_TILDE:
+      op = AST_UNOP_INV;
+      break;
+    default:
+      return parsePow(p);
+  }
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);
+  AstNode* operand = parseUnary(p);  // 一元在 ** 之下：-2 ** 2 → -(2 ** 2)
+  if (operand == NULL) {
+    return NULL;
+  }
+  return mkUnary(p, op, operand, line, col);
+}
+
+// 左结合二元层通用循环：next 为更高层，fromTok 无操作时返回 AST_OP_NONE
+static AstNode* parseBinaryLevel(Parser* p, AstNode* (*next)(Parser*), AstBinOp (*fromTok)(MsTokenType)) {
+  AstNode* lhs = next(p);
+  if (lhs == NULL) {
+    return NULL;
+  }
+  for (;;) {
+    AstBinOp op = fromTok(p->cur.type);
+    if (op == AST_OP_NONE) {
+      return lhs;
+    }
+    advance(p);
+    AstNode* rhs = next(p);
+    if (rhs == NULL) {
+      return NULL;
+    }
+    lhs = mkBinary(p, lhs, op, rhs);
+    if (lhs == NULL) {
+      return NULL;
+    }
+  }
+}
+
+static AstBinOp mulOpOf(MsTokenType type) {
+  switch (type) {
+    case TK_STAR:
+      return AST_OP_MUL;
+    case TK_SLASH:
+      return AST_OP_DIV;
+    case TK_PERCENT:
+      return AST_OP_MOD;
+    default:
+      return AST_OP_NONE;
+  }
+}
+
+static AstBinOp addOpOf(MsTokenType type) {
+  switch (type) {
+    case TK_PLUS:
+      return AST_OP_ADD;
+    case TK_MINUS:
+      return AST_OP_SUB;
+    default:
+      return AST_OP_NONE;
+  }
+}
+
+static AstBinOp shiftOpOf(MsTokenType type) {
+  switch (type) {
+    case TK_LT_LT:
+      return AST_OP_SHL;
+    case TK_GT_GT:
+      return AST_OP_SHR;
+    default:
+      return AST_OP_NONE;
+  }
+}
+
+static AstBinOp bitAndOpOf(MsTokenType type) {
+  return type == TK_AMP ? AST_OP_BIT_AND : AST_OP_NONE;
+}
+
+static AstBinOp bitXorOpOf(MsTokenType type) {
+  return type == TK_CARET ? AST_OP_BIT_XOR : AST_OP_NONE;
+}
+
+static AstBinOp bitOrOpOf(MsTokenType type) {
+  return type == TK_PIPE ? AST_OP_BIT_OR : AST_OP_NONE;
+}
+
+static AstNode* parseMul(Parser* p) { return parseBinaryLevel(p, parseUnary, mulOpOf); }
+
+static AstNode* parseAdd(Parser* p) { return parseBinaryLevel(p, parseMul, addOpOf); }
+
+static AstNode* parseShift(Parser* p) { return parseBinaryLevel(p, parseAdd, shiftOpOf); }
+
+static AstNode* parseBitAnd(Parser* p) { return parseBinaryLevel(p, parseShift, bitAndOpOf); }
+
+static AstNode* parseBitXor(Parser* p) { return parseBinaryLevel(p, parseBitAnd, bitXorOpOf); }
+
+static AstNode* parseBitOr(Parser* p) { return parseBinaryLevel(p, parseBitXor, bitOrOpOf); }
+
+// 比较（03 优先级级 4）：单次、不可链式
+static AstNode* parseCompare(Parser* p) {
+  AstNode* lhs = parseBitOr(p);
+  if (lhs == NULL) {
+    return NULL;
+  }
+  AstBinOp op = comparisonOpOf(p->cur.type);
+  if (op == AST_OP_NONE) {
+    return lhs;
+  }
+  advance(p);
+  AstNode* rhs = parseBitOr(p);
+  if (rhs == NULL) {
+    return NULL;
+  }
+  if (comparisonOpOf(p->cur.type) != AST_OP_NONE) {
+    errTok(p, &p->cur, MSE_SYN_CHAINED_CMP, "comparison operators cannot be chained");
+    return NULL;
+  }
+  return mkBinary(p, lhs, op, rhs);
+}
+
+static AstNode* parseExpr(Parser* p) { return parseCompare(p); }
 
 // 逗号表达式列表 → 单个或 AST_TUPLE（赋值右值 / 元组表达式）
 static AstNode* parseExprList(Parser* p) {
