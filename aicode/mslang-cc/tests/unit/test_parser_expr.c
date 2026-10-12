@@ -83,6 +83,7 @@ TEST(unaryBelowPow) {
   EXPECT_EQ(ctx, AST_OP_POW, pow->as.binary.op);
   EXPECT_EQ(ctx, 2, (int)pow->as.binary.lhs->as.intLit.v);
   EXPECT_EQ(ctx, 2, (int)pow->as.binary.rhs->as.intLit.v);
+  EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
   diags = (MsDiagSink){0};
   astArenaInit(&arena);
@@ -143,6 +144,109 @@ TEST(compareOpsIncludingIsIn) {
   astArenaDestroy(&arena);
 }
 
+TEST(logicSpellings) {
+  // a and b or not c → OR(AND(a,b), NOT(c))
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a and b or not c", &arena, &diags);
+  AstNode* or = expr0(mod);
+  EXPECT_EQ(ctx, AST_LOGIC, or->kind);
+  EXPECT_EQ(ctx, AST_OP_OR, or->as.binary.op);
+  AstNode* and = or->as.binary.lhs;
+  EXPECT_EQ(ctx, AST_LOGIC, and->kind);
+  EXPECT_EQ(ctx, AST_OP_AND, and->as.binary.op);
+  AstNode* not = or->as.binary.rhs;
+  EXPECT_EQ(ctx, AST_UNARY, not->kind);
+  EXPECT_EQ(ctx, AST_UNOP_NOT, not->as.unary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(logicSymbolForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a && b || c && d", &arena, &diags);
+  AstNode* or = expr0(mod);
+  EXPECT_EQ(ctx, AST_OP_OR, or->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_AND, or->as.binary.lhs->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_AND, or->as.binary.rhs->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(logicBindsLooserThanCompare) {
+  // x == 1 && y < 2 → AND(EQ(x,1), LT(y,2))
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("x == 1 && y < 2", &arena, &diags);
+  AstNode* and = expr0(mod);
+  EXPECT_EQ(ctx, AST_LOGIC, and->kind);
+  EXPECT_EQ(ctx, AST_OP_EQ, and->as.binary.lhs->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_LT, and->as.binary.rhs->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(ternaryRightAssociative) {
+  // a ? b : c ? d : e → TERNARY(a, b, TERNARY(c, d, e))
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a ? b : c ? d : e", &arena, &diags);
+  AstNode* outer = expr0(mod);
+  EXPECT_EQ(ctx, AST_TERNARY, outer->kind);
+  EXPECT_EQ(ctx, AST_IDENT, outer->as.ternary.cond->kind);
+  EXPECT_EQ(ctx, AST_IDENT, outer->as.ternary.thenExpr->kind);
+  AstNode* inner = outer->as.ternary.elseExpr;
+  EXPECT_EQ(ctx, AST_TERNARY, inner->kind);
+  EXPECT_EQ(ctx, AST_IDENT, inner->as.ternary.cond->kind);
+  EXPECT_EQ(ctx, 9, inner->as.ternary.cond->col);  // 'c' 位于 1-based 列 9
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(ternaryMissingColon) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a ? b c", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errChainedCompareWithIsIn) {
+  // a == b is c → 1007（is/in 加入比较集后的链式拦截）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a == b is c", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1007, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(unmappedBinaryBranches) {
+  // /、%、>> 分支正例：8 / 4 % 3 → MOD(DIV(8,4),3)；a >> 1 → SHR(a,1)
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("8 / 4 % 3\na >> 1", &arena, &diags);
+  AstNode* modexpr = expr0(mod);
+  EXPECT_EQ(ctx, AST_OP_MOD, modexpr->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_DIV, modexpr->as.binary.lhs->as.binary.op);
+  AstNode* shr = mod->as.list.items[1]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_OP_SHR, shr->as.binary.op);
+  EXPECT_EQ(ctx, 1, (int)shr->as.binary.rhs->as.intLit.v);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   precedenceMulOverAdd(&ctx);
@@ -152,6 +256,13 @@ int main(void) {
   unaryForms(&ctx);
   bitLevels(&ctx);
   compareOpsIncludingIsIn(&ctx);
+  logicSpellings(&ctx);
+  logicSymbolForms(&ctx);
+  logicBindsLooserThanCompare(&ctx);
+  ternaryRightAssociative(&ctx);
+  ternaryMissingColon(&ctx);
+  errChainedCompareWithIsIn(&ctx);
+  unmappedBinaryBranches(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

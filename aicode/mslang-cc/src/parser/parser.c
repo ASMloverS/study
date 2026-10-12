@@ -566,7 +566,78 @@ static AstNode* parseCompare(Parser* p) {
   return mkBinary(p, lhs, op, rhs);
 }
 
-static AstNode* parseExpr(Parser* p) { return parseCompare(p); }
+// 逻辑与（03 优先级级 3）：&& / and
+static AstNode* parseAnd(Parser* p) {
+  AstNode* lhs = parseCompare(p);
+  if (lhs == NULL) {
+    return NULL;
+  }
+  while (check(p, TK_AMP_AMP) || check(p, TK_AND)) {
+    advance(p);
+    AstNode* rhs = parseCompare(p);
+    if (rhs == NULL) {
+      return NULL;
+    }
+    lhs = mkLogic(p, lhs, AST_OP_AND, rhs);
+    if (lhs == NULL) {
+      return NULL;
+    }
+  }
+  return lhs;
+}
+
+// 逻辑或（03 优先级级 2）：|| / or
+static AstNode* parseOr(Parser* p) {
+  AstNode* lhs = parseAnd(p);
+  if (lhs == NULL) {
+    return NULL;
+  }
+  while (check(p, TK_PIPE_PIPE) || check(p, TK_OR)) {
+    advance(p);
+    AstNode* rhs = parseAnd(p);
+    if (rhs == NULL) {
+      return NULL;
+    }
+    lhs = mkLogic(p, lhs, AST_OP_OR, rhs);
+    if (lhs == NULL) {
+      return NULL;
+    }
+  }
+  return lhs;
+}
+
+// 三元（03 §7）：右结合（分支递归本层），分支惰性求值由编译期保证
+static AstNode* parseTernary(Parser* p) {
+  AstNode* cond = parseOr(p);
+  if (cond == NULL) {
+    return NULL;
+  }
+  if (!match(p, TK_QUESTION)) {
+    return cond;
+  }
+  AstNode* thenExpr = parseTernary(p);
+  if (thenExpr == NULL) {
+    return NULL;
+  }
+  if (!match(p, TK_COLON)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ':' in conditional expression");
+    return NULL;
+  }
+  AstNode* elseExpr = parseTernary(p);
+  if (elseExpr == NULL) {
+    return NULL;
+  }
+  if (rejectGenExpr(p, cond) || rejectGenExpr(p, thenExpr) || rejectGenExpr(p, elseExpr)) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_TERNARY, cond->line, cond->col);
+  node->as.ternary.cond = cond;
+  node->as.ternary.thenExpr = thenExpr;
+  node->as.ternary.elseExpr = elseExpr;
+  return node;
+}
+
+static AstNode* parseExpr(Parser* p) { return parseTernary(p); }
 
 // 逗号表达式列表 → 单个或 AST_TUPLE（赋值右值 / 元组表达式）
 static AstNode* parseExprList(Parser* p) {
