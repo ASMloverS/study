@@ -561,16 +561,20 @@ static AstNode* parseBlock(Parser* p) {
 static AstNode* parseIfStmt(Parser* p) {
   int32_t line = p->cur.line, col = p->cur.col;
   advance(p);  // if
+  bool hadParen = false;
   if (check(p, TK_LPAREN)) {
     diagPos(p, p->cur.line, p->cur.col, 1, MSE_SYN_IF_PAREN,
             "if condition must not be parenthesized");
+    hadParen = true;
     advance(p);  // 就地恢复：按无括号继续
   }
   AstNode* cond = parseExpr(p);
   if (cond == NULL) {
     return NULL;
   }
-  match(p, TK_RPAREN);  // 括号错误路径的配对消费（正常路径遇不到）
+  if (hadParen) {
+    match(p, TK_RPAREN);  // 括号错误路径的配对消费（正常路径遇不到）
+  }
   AstNode* thenBlock = parseBlock(p);
   if (thenBlock == NULL) {
     return NULL;

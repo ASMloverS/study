@@ -522,6 +522,18 @@ TEST(arenaStatsAfterParse) {
   astArenaDestroy(&arena);
 }
 
+TEST(errStrayRparenAfterCond) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("if x) {}", &arena, &diags);  // 游离 ) 不再静默吞掉
+  (void)mod;
+  EXPECT_EQ(ctx, 2, diags.count);  // parseBlock 报缺 {；同步后残留 } 由模块层上游离括号
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[1].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   arenaAllocAndStats(&ctx);
@@ -560,6 +572,7 @@ int main(void) {
   errChainedComparison(&ctx);
   parseBlockErrorRecoversByLine(&ctx);
   arenaStatsAfterParse(&ctx);
+  errStrayRparenAfterCond(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
