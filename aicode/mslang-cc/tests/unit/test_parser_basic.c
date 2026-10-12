@@ -180,8 +180,8 @@ TEST(parseErrorThenRecover) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("+\ny\n42", &arena, &diags);  // 首句错误，sync 吞至 ; （y 被吞），42 保留
-  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  AstNode* mod = parseSrc("+\ny\n42", &arena, &diags);  // 首句错误；sync 以换行为界，y/42 均恢复（04 §10）
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
   EXPECT_EQ(ctx, 1, diags.count);
   EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[0].code);
   astArenaDestroy(&arena);
@@ -424,6 +424,104 @@ TEST(errSameLineStmtsInsideBlock) {
   astArenaDestroy(&arena);
 }
 
+TEST(parseIfElseChain) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("if a { var x = 1 } else if b { var y = 2 } else { var z = 3 }",
+                          &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* ifa = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_IF, ifa->kind);
+  EXPECT_EQ(ctx, AST_IDENT, ifa->as.ifStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_BLOCK, ifa->as.ifStmt.thenBlock->kind);
+  EXPECT_EQ(ctx, 1, ifa->as.ifStmt.thenBlock->as.list.count);
+  AstNode* ifb = ifa->as.ifStmt.elseNode;
+  EXPECT_EQ(ctx, AST_IF, ifb->kind);  // else if → 嵌套 IF（04 §3）
+  EXPECT_EQ(ctx, AST_BLOCK, ifb->as.ifStmt.thenBlock->kind);
+  EXPECT_EQ(ctx, AST_BLOCK, ifb->as.ifStmt.elseNode->kind);
+  EXPECT_EQ(ctx, 1, ifb->as.ifStmt.elseNode->as.list.count);
+  EXPECT(ctx, ifb->as.ifStmt.elseNode->as.list.items[0]->as.varDecl.name[0] == 'z');
+  astArenaDestroy(&arena);
+}
+
+TEST(errIfConditionParenthesized) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("if (x) {}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_IF_PAREN, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);  // 就地恢复：if 仍完整产出
+  EXPECT_EQ(ctx, AST_IF, mod->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, AST_IDENT, mod->as.list.items[0]->as.ifStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_BLOCK, mod->as.list.items[0]->as.ifStmt.thenBlock->kind);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseMultiErrorRecovery) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("x := 1\nif (y) {}\n1 = 2", &arena, &diags);
+  EXPECT_EQ(ctx, 3, diags.count);  // 一次编译收集多条（DoD §3）
+  EXPECT_EQ(ctx, MSE_SYN_SHORT_TOPLEVEL, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, MSE_SYN_IF_PAREN, (int)diags.items[1].code);
+  EXPECT_EQ(ctx, MSE_SYN_BAD_TARGET, (int)diags.items[2].code);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);  // 中间 if 恢复成功
+  EXPECT_EQ(ctx, AST_IF, mod->as.list.items[0]->kind);
+  astArenaDestroy(&arena);
+}
+
+TEST(errElseOnNewLine) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("if a {\n}\nelse {}", &arena, &diags);  // Go 风格：else 须同行
+  EXPECT_EQ(ctx, 2, diags.count);  // else 无表达式起点 + 其 } 成游离括号（sync 停留，模块层上报）
+  EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[1].code);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);  // 第一条 if（无 else）保留
+  astArenaDestroy(&arena);
+}
+
+TEST(errChainedComparison) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("if x < y < z {}", &arena, &diags);  // 03 优先级表：不可链式
+  (void)mod;
+  EXPECT_EQ(ctx, 2, diags.count);  // 链式比较为主错；失败 if 的孤儿 } 由模块层上游离括号
+  EXPECT_EQ(ctx, MSE_SYN_CHAINED_CMP, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[1].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseBlockErrorRecoversByLine) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ 1 2\nvar y = 3 }", &arena, &diags);  // 块内错误按行恢复
+  AstNode* block = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_BLOCK, block->kind);
+  EXPECT_EQ(ctx, 1, block->as.list.count);  // var y = 3 保留
+  EXPECT_EQ(ctx, 1, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(arenaStatsAfterParse) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var x = 1\nif a { var y }", &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, 7, arena.nodeCount);  // module+var+int+if+ident+block+var（DoD §4）
+  EXPECT(ctx, astArenaBytesUsed(&arena) >= sizeof(AstNode) * 7);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   arenaAllocAndStats(&ctx);
@@ -455,6 +553,13 @@ int main(void) {
   errShortDeclBadTarget(&ctx);
   parseMultilineDeclTerminator(&ctx);
   errSameLineStmtsInsideBlock(&ctx);
+  parseIfElseChain(&ctx);
+  errIfConditionParenthesized(&ctx);
+  parseMultiErrorRecovery(&ctx);
+  errElseOnNewLine(&ctx);
+  errChainedComparison(&ctx);
+  parseBlockErrorRecoversByLine(&ctx);
+  arenaStatsAfterParse(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

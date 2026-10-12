@@ -108,9 +108,10 @@ static void errPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t c
   diagPos(p, line, col, len, code, message);
 }
 
-// 丢弃至语句边界：; 消费后停，} 停留（属外层块），EOF 终止（T006 §2）
+// 丢弃至语句边界：; 消费后停，} 停留（属外层块），EOF 终止；块内无 ; 时以换行为界（04 §10）
 static void synchronize(Parser* p) {
   p->panic = false;
+  int32_t startLine = p->cur.line;
   while (!check(p, TK_EOF)) {
     if (p->cur.type == TK_SEMICOLON) {
       advance(p);
@@ -118,6 +119,9 @@ static void synchronize(Parser* p) {
     }
     if (p->cur.type == TK_RBRACE) {
       return;
+    }
+    if (p->cur.line > startLine) {
+      return;  // 错误行之后的换行即新语句边界
     }
     advance(p);
   }
@@ -553,6 +557,38 @@ static AstNode* parseBlock(Parser* p) {
   return node;
 }
 
+// if / else if / else（04 §3）：条件不加括号（写括号 MSE1003）、块必须花括号
+static AstNode* parseIfStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // if
+  if (check(p, TK_LPAREN)) {
+    diagPos(p, p->cur.line, p->cur.col, 1, MSE_SYN_IF_PAREN,
+            "if condition must not be parenthesized");
+    advance(p);  // 就地恢复：按无括号继续
+  }
+  AstNode* cond = parseExpr(p);
+  if (cond == NULL) {
+    return NULL;
+  }
+  match(p, TK_RPAREN);  // 括号错误路径的配对消费（正常路径遇不到）
+  AstNode* thenBlock = parseBlock(p);
+  if (thenBlock == NULL) {
+    return NULL;
+  }
+  AstNode* elseNode = NULL;
+  if (match(p, TK_ELSE)) {  // 须与 } 同行：换行已被 ASI 断开
+    elseNode = check(p, TK_IF) ? parseIfStmt(p) : parseBlock(p);
+    if (elseNode == NULL) {
+      return NULL;
+    }
+  }
+  AstNode* node = astNewNode(p->arena, AST_IF, line, col);
+  node->as.ifStmt.cond = cond;
+  node->as.ifStmt.thenBlock = thenBlock;
+  node->as.ifStmt.elseNode = elseNode;
+  return node;
+}
+
 // 赋值目标合法性：标识符/索引/成员（04 §2）
 static bool isAssignTarget(const AstNode* node) {
   return node->kind == AST_IDENT || node->kind == AST_INDEX || node->kind == AST_MEMBER;
@@ -774,6 +810,9 @@ static AstNode* parseStatement(Parser* p) {
     }
     return node;
   }
+  if (check(p, TK_IF)) {
+    return parseIfStmt(p);
+  }
   return parseSimpleStmt(p);
 }
 
@@ -782,12 +821,12 @@ static AstNode* parseStatement(Parser* p) {
 void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena,
                 MsDiagSink* diags) {
   scannerInit(&p->scan, src, len, file, diags);
-  p->prevLine = 1;
   p->arena = arena;
   p->diags = diags;
   p->scope = NULL;
   p->panic = false;
-  advance(p);  // 拉取首 token
+  scannerNext(&p->scan, &p->cur);  // 首 token 直接拉取（不经 advance：避免读未初始化 prevLine）
+  p->prevLine = 1;
 }
 
 AstNode* parserParseModule(Parser* p) {
