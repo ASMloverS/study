@@ -224,6 +224,14 @@ static AstBinOp comparisonOpOf(MsTokenType type) {
 
 static AstNode* parseExpr(Parser* p);
 static AstNode* parseUnary(Parser* p);  // 与 parsePow 互递归（** 右结合吸收一元）
+static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t compKind, MsTokenType closer,
+                               int32_t line, int32_t col);  // 定义于 parseSliceRest 后（依赖 rejectGenExpr）
+
+// map 字面量键值对（parsePrimary 花括号分支暂存；定义须先于 parsePrimary）
+typedef struct MapPair {
+  AstNode* key;
+  AstNode* value;
+} MapPair;
 
 // 普通字符串段装配：STRING(开) (STR_PART | INTERP_BEGIN expr INTERP_END)* STRING(闭)
 static AstNode* parseStringLit(Parser* p) {
@@ -377,6 +385,139 @@ static AstNode* parsePrimary(Parser* p) {
       free(tmp);
       return node;
     }
+    case TK_LBRACKET: {  // list 字面量 / list 推导式（03 §2）
+      advance(p);
+      if (match(p, TK_RBRACKET)) {
+        AstNode* node = astNewNode(p->arena, AST_LIST, line, col);
+        node->as.list.count = 0;
+        return node;
+      }
+      AstNode* first = parseExpr(p);
+      if (first == NULL) {
+        return NULL;
+      }
+      if (check(p, TK_FOR)) {
+        return parseComprTail(p, NULL, first, AST_COMP_LIST, TK_RBRACKET, line, col);
+      }
+      AstNode** tmp = NULL;
+      int32_t count = 0, cap = 0;
+      MS_ARRAY_PUSH(tmp, count, cap, first);
+      while (match(p, TK_COMMA)) {
+        if (check(p, TK_RBRACKET)) {
+          break;  // 尾逗号
+        }
+        AstNode* e = parseExpr(p);
+        if (e == NULL) {
+          free(tmp);
+          return NULL;
+        }
+        MS_ARRAY_PUSH(tmp, count, cap, e);
+      }
+      if (!match(p, TK_RBRACKET)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ']'");
+        free(tmp);
+        return NULL;
+      }
+      AstNode* node = astNewNode(p->arena, AST_LIST, line, col);
+      node->as.list.count = count;
+      node->as.list.items = astNewNodeArray(p->arena, count);
+      if (count > 0) {
+        memcpy(node->as.list.items, tmp, sizeof(AstNode*) * (size_t)count);
+      }
+      free(tmp);
+      return node;
+    }
+    case TK_LBRACE: {  // map/set 字面量与推导式（03 §2；歧义按首个子表达式后 token 定形）
+      advance(p);
+      if (match(p, TK_RBRACE)) {  // {} 空 map（02 §5）
+        AstNode* node = astNewNode(p->arena, AST_MAP, line, col);
+        node->as.mapLit.count = 0;
+        return node;
+      }
+      AstNode* key = parseExpr(p);
+      if (key == NULL) {
+        return NULL;
+      }
+      if (check(p, TK_COLON)) {  // map 族
+        advance(p);
+        AstNode* value = parseExpr(p);
+        if (value == NULL) {
+          return NULL;
+        }
+        if (check(p, TK_FOR)) {
+          return parseComprTail(p, key, value, AST_COMP_MAP, TK_RBRACE, line, col);
+        }
+        MapPair* tmp = NULL;
+        int32_t count = 0, cap = 0;
+        MS_ARRAY_PUSH(tmp, count, cap, ((MapPair){key, value}));
+        while (match(p, TK_COMMA)) {
+          if (check(p, TK_RBRACE)) {
+            break;  // 尾逗号
+          }
+          AstNode* k = parseExpr(p);
+          if (k == NULL) {
+            free(tmp);
+            return NULL;
+          }
+          if (!match(p, TK_COLON)) {
+            errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ':' in map literal");
+            free(tmp);
+            return NULL;
+          }
+          AstNode* v = parseExpr(p);
+          if (v == NULL) {
+            free(tmp);
+            return NULL;
+          }
+          MS_ARRAY_PUSH(tmp, count, cap, ((MapPair){k, v}));
+        }
+        if (!match(p, TK_RBRACE)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}'");
+          free(tmp);
+          return NULL;
+        }
+        AstNode* node = astNewNode(p->arena, AST_MAP, line, col);
+        node->as.mapLit.count = count;
+        node->as.mapLit.keys = astNewNodeArray(p->arena, count);
+        node->as.mapLit.values = astNewNodeArray(p->arena, count);
+        for (int32_t i = 0; i < count; i++) {
+          node->as.mapLit.keys[i] = tmp[i].key;
+          node->as.mapLit.values[i] = tmp[i].value;
+        }
+        free(tmp);
+        return node;
+      }
+      if (check(p, TK_FOR)) {  // set 推导式
+        return parseComprTail(p, NULL, key, AST_COMP_SET, TK_RBRACE, line, col);
+      }
+      AstNode** tmp = NULL;  // set 字面量（{x} 单元素亦然）
+      int32_t count = 0, cap = 0;
+      MS_ARRAY_PUSH(tmp, count, cap, key);
+      while (match(p, TK_COMMA)) {
+        if (check(p, TK_RBRACE)) {
+          break;
+        }
+        AstNode* e = parseExpr(p);
+        if (e == NULL) {
+          free(tmp);
+          return NULL;
+        }
+        MS_ARRAY_PUSH(tmp, count, cap, e);
+      }
+      if (!match(p, TK_RBRACE)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}'");
+        free(tmp);
+        return NULL;
+      }
+      AstNode* node = astNewNode(p->arena, AST_SET, line, col);
+      node->as.list.count = count;
+      node->as.list.items = astNewNodeArray(p->arena, count);
+      if (count > 0) {
+        memcpy(node->as.list.items, tmp, sizeof(AstNode*) * (size_t)count);
+      }
+      free(tmp);
+      return node;
+    }
     default:
       errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "expected expression");
       return NULL;
@@ -469,6 +610,102 @@ static AstNode* parseSliceRest(Parser* p, AstNode* obj, AstNode* start, int32_t 
   node->as.slice.start = start;
   node->as.slice.end = end;
   node->as.slice.step = step;
+  return node;
+}
+
+// 推导式/生成器公共尾部（03 §2）：(for 目标 in 迭代对象 | if 条件)*，末尾闭括号 closer
+// compKind 取 AST_COMP_LIST/MAP/SET；0 为生成器表达式（AST_GEN_EXPR）
+static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t compKind, MsTokenType closer,
+                               int32_t line, int32_t col) {
+  AstComprFor* fors = NULL;
+  int32_t forCount = 0, forCap = 0;
+  AstNode** conds = NULL;
+  int32_t condCount = 0, condCap = 0;
+  bool bad = false;
+  while (!bad) {
+    if (match(p, TK_FOR)) {
+      AstNode** names = NULL;
+      int32_t nameCount = 0, nameCap = 0;
+      while (!bad) {
+        if (!check(p, TK_ID)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected identifier in 'for' target");
+          bad = true;
+          break;
+        }
+        AstNode* id = astNewNode(p->arena, AST_IDENT, p->cur.line, p->cur.col);
+        id->as.ident.name = p->cur.start;
+        id->as.ident.nameLen = p->cur.len;
+        advance(p);
+        MS_ARRAY_PUSH(names, nameCount, nameCap, id);
+        if (!match(p, TK_COMMA)) {
+          break;
+        }
+      }
+      if (bad) {
+        free(names);
+        break;
+      }
+      if (!match(p, TK_IN)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'in' after 'for' target");
+        free(names);
+        bad = true;
+        break;
+      }
+      AstNode* iter = parseExpr(p);
+      if (iter == NULL || rejectGenExpr(p, iter)) {
+        free(names);
+        bad = true;
+        break;
+      }
+      AstNode* target;
+      if (nameCount == 1) {
+        target = names[0];
+      } else {  // for k, v in … → 元组目标
+        target = astNewNode(p->arena, AST_TUPLE, names[0]->line, names[0]->col);
+        target->as.tuple.count = nameCount;
+        target->as.tuple.items = astNewNodeArray(p->arena, nameCount);
+        for (int32_t i = 0; i < nameCount; i++) {
+          target->as.tuple.items[i] = names[i];
+        }
+      }
+      free(names);
+      MS_ARRAY_PUSH(fors, forCount, forCap, ((AstComprFor){target, iter}));
+    } else if (match(p, TK_IF)) {
+      AstNode* cond = parseExpr(p);
+      if (cond == NULL) {
+        bad = true;
+        break;
+      }
+      MS_ARRAY_PUSH(conds, condCount, condCap, cond);
+    } else {
+      break;
+    }
+  }
+  if (!bad && !match(p, closer)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected closing bracket of comprehension");
+    bad = true;
+  }
+  if (bad) {
+    free(fors);
+    free(conds);
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, compKind == 0 ? AST_GEN_EXPR : AST_COMPREHENSION, line, col);
+  node->as.compr.compKind = (ms_u8)compKind;
+  node->as.compr.key = key;
+  node->as.compr.value = value;
+  node->as.compr.forCount = forCount;
+  node->as.compr.fors = astArenaAlloc(p->arena, sizeof(AstComprFor) * (size_t)forCount);
+  if (forCount > 0) {
+    memcpy(node->as.compr.fors, fors, sizeof(AstComprFor) * (size_t)forCount);
+  }
+  node->as.compr.condCount = condCount;
+  node->as.compr.conds = astNewNodeArray(p->arena, condCount);
+  if (condCount > 0) {
+    memcpy(node->as.compr.conds, conds, sizeof(AstNode*) * (size_t)condCount);
+  }
+  free(fors);
+  free(conds);
   return node;
 }
 

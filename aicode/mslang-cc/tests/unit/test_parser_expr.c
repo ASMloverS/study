@@ -413,6 +413,7 @@ TEST(tupleParenForms) {
   AstNode* single = mod->as.list.items[1]->as.exprStmt.expr;
   EXPECT_EQ(ctx, AST_TUPLE, single->kind);
   EXPECT_EQ(ctx, 1, single->as.tuple.count);
+  EXPECT_EQ(ctx, 1, (int)single->as.tuple.items[0]->as.intLit.v);
   AstNode* pair = mod->as.list.items[2]->as.exprStmt.expr;
   EXPECT_EQ(ctx, AST_TUPLE, pair->kind);
   EXPECT_EQ(ctx, 2, pair->as.tuple.count);
@@ -426,6 +427,141 @@ TEST(parenDoubleGroup) {
   AstNode* mod = parseSrc("((1))", &arena, &diags);
   EXPECT_EQ(ctx, AST_INT, expr0(mod)->kind);  // 双层分组还原为表达式本身
   EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(listLiterals) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("[]\n[1]\n[1, 2, 3,]", &arena, &diags);
+  EXPECT_EQ(ctx, 3, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* empty = expr0(mod);
+  EXPECT_EQ(ctx, AST_LIST, empty->kind);
+  EXPECT_EQ(ctx, 0, empty->as.list.count);
+  EXPECT_EQ(ctx, 1, mod->as.list.items[1]->as.exprStmt.expr->as.list.count);
+  AstNode* many = mod->as.list.items[2]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, 3, many->as.list.count);  // 尾逗号 tolerated
+  EXPECT_EQ(ctx, 2, (int)many->as.list.items[1]->as.intLit.v);
+  astArenaDestroy(&arena);
+}
+
+TEST(listComprehension) {
+  // [x*x for x in xs if x % 2 == 0] → COMP(LIST, value=MUL, forCount=1, condCount=1)
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("[x*x for x in xs if x % 2 == 0]", &arena, &diags);
+  AstNode* comp = expr0(mod);
+  EXPECT_EQ(ctx, AST_COMPREHENSION, comp->kind);
+  EXPECT_EQ(ctx, AST_COMP_LIST, (int)comp->as.compr.compKind);
+  EXPECT_EQ(ctx, AST_OP_MUL, comp->as.compr.value->as.binary.op);
+  EXPECT(ctx, comp->as.compr.key == NULL);
+  EXPECT_EQ(ctx, 1, comp->as.compr.forCount);
+  EXPECT_EQ(ctx, AST_IDENT, comp->as.compr.fors[0].target->kind);
+  EXPECT_EQ(ctx, AST_IDENT, comp->as.compr.fors[0].iter->kind);
+  EXPECT_EQ(ctx, 1, comp->as.compr.condCount);
+  EXPECT_EQ(ctx, AST_OP_EQ, comp->as.compr.conds[0]->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(comprehensionTwoFors) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("[x+y for x in a for y in b]", &arena, &diags);
+  AstNode* comp = expr0(mod);
+  EXPECT_EQ(ctx, AST_COMPREHENSION, comp->kind);
+  EXPECT_EQ(ctx, 2, comp->as.compr.forCount);
+  EXPECT_EQ(ctx, AST_IDENT, comp->as.compr.fors[0].target->kind);
+  EXPECT_EQ(ctx, AST_IDENT, comp->as.compr.fors[1].target->kind);
+  EXPECT_EQ(ctx, 0, comp->as.compr.condCount);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(mapSetFiveForms) {
+  // {} → 空 map；{1:2} → map；{1,2} → set；{k:v for…} → map 推导；{x for…} → set 推导
+  // （语句位 { 为块语句（04 §10），字面量以 var 右值上下文验证）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var a = {}\nvar b = {1: 2}\nvar c = {1, 2}\nvar d = {k: v for k, v in m}\nvar e = {x % 3 for x in xs}", &arena, &diags);
+  EXPECT_EQ(ctx, 5, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* emptyMap = mod->as.list.items[0]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_MAP, emptyMap->kind);
+  EXPECT_EQ(ctx, 0, emptyMap->as.mapLit.count);
+  AstNode* mapLit = mod->as.list.items[1]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_MAP, mapLit->kind);
+  EXPECT_EQ(ctx, 1, mapLit->as.mapLit.count);
+  EXPECT_EQ(ctx, 1, (int)mapLit->as.mapLit.keys[0]->as.intLit.v);
+  EXPECT_EQ(ctx, 2, (int)mapLit->as.mapLit.values[0]->as.intLit.v);
+  AstNode* setLit = mod->as.list.items[2]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_SET, setLit->kind);
+  EXPECT_EQ(ctx, 2, setLit->as.list.count);
+  AstNode* mapComp = mod->as.list.items[3]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_COMPREHENSION, mapComp->kind);
+  EXPECT_EQ(ctx, AST_COMP_MAP, (int)mapComp->as.compr.compKind);
+  EXPECT_EQ(ctx, AST_IDENT, mapComp->as.compr.key->kind);
+  EXPECT_EQ(ctx, AST_IDENT, mapComp->as.compr.value->kind);
+  EXPECT_EQ(ctx, 1, mapComp->as.compr.forCount);
+  EXPECT_EQ(ctx, AST_TUPLE, mapComp->as.compr.fors[0].target->kind);  // for k, v 多变量目标
+  EXPECT_EQ(ctx, 2, mapComp->as.compr.fors[0].target->as.tuple.count);
+  AstNode* setComp = mod->as.list.items[4]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_COMPREHENSION, setComp->kind);
+  EXPECT_EQ(ctx, AST_COMP_SET, (int)setComp->as.compr.compKind);
+  EXPECT(ctx, setComp->as.compr.key == NULL);
+  EXPECT_EQ(ctx, AST_OP_MOD, setComp->as.compr.value->as.binary.op);
+  astArenaDestroy(&arena);
+}
+
+TEST(singleElemSetLiteral) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var s = {x}", &arena, &diags);
+  AstNode* set = mod->as.list.items[0]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_SET, set->kind);
+  EXPECT_EQ(ctx, 1, set->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(stmtBraceIsBlockNotMap) {
+  // 语句位 { 仍为块语句（04 §10）；空块语句合法且非 map
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, AST_BLOCK, mod->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, 0, mod->as.list.items[0]->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errTupleMissingRparen) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("(1, 2", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errComprBadTarget) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("[x for 1 in xs]", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
   astArenaDestroy(&arena);
 }
 
@@ -456,6 +592,14 @@ int main(void) {
   groupingParens(&ctx);
   tupleParenForms(&ctx);
   parenDoubleGroup(&ctx);
+  listLiterals(&ctx);
+  listComprehension(&ctx);
+  comprehensionTwoFors(&ctx);
+  mapSetFiveForms(&ctx);
+  singleElemSetLiteral(&ctx);
+  stmtBraceIsBlockNotMap(&ctx);
+  errTupleMissingRparen(&ctx);
+  errComprBadTarget(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
