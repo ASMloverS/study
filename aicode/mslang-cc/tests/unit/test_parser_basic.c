@@ -292,6 +292,138 @@ TEST(errDuplicateVarVarSameScope) {
   astArenaDestroy(&arena);
 }
 
+TEST(parseCompoundAssign) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("x += 1", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* a = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_ASSIGN, a->kind);  // 复合形态保留，编译期展开（T006 §2）
+  EXPECT_EQ(ctx, AST_OP_ADD, a->as.assign.op);
+  EXPECT_EQ(ctx, AST_IDENT, a->as.assign.target->kind);
+  EXPECT_EQ(ctx, 1, (int)a->as.assign.value->as.intLit.v);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseIndexMemberAssign) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("xs[0] = v\nobj.f = v", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, AST_INDEX, mod->as.list.items[0]->as.assign.target->kind);
+  EXPECT_EQ(ctx, AST_MEMBER, mod->as.list.items[1]->as.assign.target->kind);
+  EXPECT_EQ(ctx, AST_OP_NONE, mod->as.list.items[0]->as.assign.op);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseTupleSwapAssign) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a, b = b, a", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* a = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_ASSIGN, a->kind);
+  EXPECT_EQ(ctx, AST_TUPLE, a->as.assign.target->kind);  // 目标元组
+  EXPECT_EQ(ctx, 2, a->as.assign.target->as.tuple.count);
+  EXPECT_EQ(ctx, AST_TUPLE, a->as.assign.value->kind);  // 右值元组
+  EXPECT_EQ(ctx, 2, a->as.assign.value->as.tuple.count);
+  EXPECT_EQ(ctx, 'a', a->as.assign.target->as.tuple.items[0]->as.ident.name[0]);
+  EXPECT_EQ(ctx, 'b', a->as.assign.target->as.tuple.items[1]->as.ident.name[0]);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseStarDestructure) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a, *mid, z = xs", &arena, &diags);  // 04 §2
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* d = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_DESTRUCTURE, d->kind);
+  EXPECT_EQ(ctx, 3, d->as.destructure.count);
+  EXPECT_EQ(ctx, 1, d->as.destructure.restIndex);  // * 可在任意位置（04 §2）
+  EXPECT_EQ(ctx, 'm', d->as.destructure.targets[1]->as.ident.name[0]);
+  EXPECT_EQ(ctx, AST_IDENT, d->as.destructure.value->kind);
+  astArenaDestroy(&arena);
+}
+
+TEST(errDestructureTwoStars) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a, *b, *c = xs", &arena, &diags);
+  (void)mod;
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DESTRUCT_STARS, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errBadAssignTarget) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("1 = 2", &arena, &diags);
+  (void)mod;
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_BAD_TARGET, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseComparisonExpr) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var r = x == y", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* init = mod->as.list.items[0]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_BINARY, init->kind);
+  EXPECT_EQ(ctx, AST_OP_EQ, init->as.binary.op);
+  EXPECT_EQ(ctx, AST_IDENT, init->as.binary.lhs->kind);
+  EXPECT_EQ(ctx, AST_IDENT, init->as.binary.rhs->kind);
+  astArenaDestroy(&arena);
+}
+
+TEST(errShortDeclBadTarget) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ xs[0] := 1 }", &arena, &diags);
+  (void)mod;
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_BAD_TARGET, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(parseMultilineDeclTerminator) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var x =\n5\nvar y = 6", &arena, &diags);  // 跨行初值后正确断句
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, 5, (int)mod->as.list.items[0]->as.varDecl.init->as.intLit.v);
+  astArenaDestroy(&arena);
+}
+
+TEST(errSameLineStmtsInsideBlock) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ x := 1 y := 2 }", &arena, &diags);  // 同行无分隔 → 报错
+  (void)mod;
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   arenaAllocAndStats(&ctx);
@@ -313,6 +445,16 @@ int main(void) {
   errShortDeclAtModuleTop(&ctx);
   errDuplicateDeclSameScope(&ctx);
   errDuplicateVarVarSameScope(&ctx);
+  parseCompoundAssign(&ctx);
+  parseIndexMemberAssign(&ctx);
+  parseTupleSwapAssign(&ctx);
+  parseStarDestructure(&ctx);
+  errDestructureTwoStars(&ctx);
+  errBadAssignTarget(&ctx);
+  parseComparisonExpr(&ctx);
+  errShortDeclBadTarget(&ctx);
+  parseMultilineDeclTerminator(&ctx);
+  errSameLineStmtsInsideBlock(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

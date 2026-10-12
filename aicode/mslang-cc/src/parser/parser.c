@@ -67,7 +67,10 @@ size_t astArenaBytesUsed(const AstArena* arena) { return arena->bytesUsed; }
 
 static bool check(const Parser* p, MsTokenType type) { return p->cur.type == type; }
 
-static void advance(Parser* p) { scannerNext(&p->scan, &p->cur); }  // EOF 幂等
+static void advance(Parser* p) {
+  p->prevLine = p->cur.line;
+  scannerNext(&p->scan, &p->cur);  // EOF 幂等
+}
 
 static bool match(Parser* p, MsTokenType type) {
   if (check(p, type)) {
@@ -161,6 +164,35 @@ static double floatTokenValue(const MsToken* tok) {
   }
   buf[n] = '\0';
   return strtod(buf, NULL);
+}
+
+static AstBinOp compoundOpOf(MsTokenType type) {
+  switch (type) {
+    case TK_PLUS_EQ: return AST_OP_ADD;
+    case TK_MINUS_EQ: return AST_OP_SUB;
+    case TK_STAR_EQ: return AST_OP_MUL;
+    case TK_SLASH_EQ: return AST_OP_DIV;
+    case TK_PERCENT_EQ: return AST_OP_MOD;
+    case TK_STAR_STAR_EQ: return AST_OP_POW;
+    case TK_AMP_EQ: return AST_OP_BIT_AND;
+    case TK_PIPE_EQ: return AST_OP_BIT_OR;
+    case TK_CARET_EQ: return AST_OP_BIT_XOR;
+    case TK_LT_LT_EQ: return AST_OP_SHL;
+    case TK_GT_GT_EQ: return AST_OP_SHR;
+    default: return AST_OP_NONE;
+  }
+}
+
+static AstBinOp comparisonOpOf(MsTokenType type) {
+  switch (type) {
+    case TK_EQ_EQ: return AST_OP_EQ;
+    case TK_BANG_EQ: return AST_OP_NE;
+    case TK_LT: return AST_OP_LT;
+    case TK_LT_EQ: return AST_OP_LE;
+    case TK_GT: return AST_OP_GT;
+    case TK_GT_EQ: return AST_OP_GE;
+    default: return AST_OP_NONE;
+  }
 }
 
 // ---------------- 表达式（最小集，T006 §1） ----------------
@@ -320,8 +352,61 @@ static AstNode* parsePostfix(Parser* p) {
   }
 }
 
-// 最小表达式：primary + 后缀（比较 Task 5、完整阶梯 T007）
-static AstNode* parseExpr(Parser* p) { return parsePostfix(p); }
+// 最小表达式：primary + 后缀 + 单级比较（04 §3 条件用；完整阶梯 T007）
+static AstNode* parseExpr(Parser* p) {
+  AstNode* lhs = parsePostfix(p);
+  if (lhs == NULL) {
+    return NULL;
+  }
+  AstBinOp op = comparisonOpOf(p->cur.type);
+  if (op == AST_OP_NONE) {
+    return lhs;
+  }
+  advance(p);
+  AstNode* rhs = parsePostfix(p);
+  if (rhs == NULL) {
+    return NULL;
+  }
+  if (comparisonOpOf(p->cur.type) != AST_OP_NONE) {
+    errTok(p, &p->cur, MSE_SYN_CHAINED_CMP, "comparison operators cannot be chained");
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_BINARY, lhs->line, lhs->col);
+  node->as.binary.lhs = lhs;
+  node->as.binary.rhs = rhs;
+  node->as.binary.op = op;
+  return node;
+}
+
+// 逗号表达式列表 → 单个或 AST_TUPLE（赋值右值 / 元组表达式）
+static AstNode* parseExprList(Parser* p) {
+  AstNode* first = parseExpr(p);
+  if (first == NULL) {
+    return NULL;
+  }
+  if (!check(p, TK_COMMA)) {
+    return first;
+  }
+  AstNode** tmp = NULL;
+  int32_t count = 0, cap = 0;
+  MS_ARRAY_PUSH(tmp, count, cap, first);
+  while (match(p, TK_COMMA)) {
+    AstNode* expr = parseExpr(p);
+    if (expr == NULL) {
+      free(tmp);
+      return NULL;
+    }
+    MS_ARRAY_PUSH(tmp, count, cap, expr);
+  }
+  AstNode* node = astNewNode(p->arena, AST_TUPLE, first->line, first->col);
+  node->as.tuple.count = count;
+  node->as.tuple.items = astNewNodeArray(p->arena, count);
+  if (count > 0) {
+    memcpy(node->as.tuple.items, tmp, sizeof(AstNode*) * (size_t)count);
+  }
+  free(tmp);
+  return node;
+}
 
 // ---------------- 声明查重作用域 ----------------
 
@@ -382,7 +467,7 @@ static AstNode* parseVarDecl(Parser* p, ms_u8 flags) {
   advance(p);
   AstNode* init = NULL;
   if (match(p, TK_EQ)) {
-    init = parseExpr(p);
+    init = parseExprList(p);
     if (init == NULL) {
       return NULL;
     }
@@ -403,16 +488,15 @@ static AstNode* parseVarDecl(Parser* p, ms_u8 flags) {
 
 static AstNode* parseStatement(Parser* p);
 
-// 简单语句收尾：; / } / EOF / 后继行 token 任一（04 §10 换行即语句）
-// 块内换行不产 ; （01 §7 细则 1），故以 token 行号识别语句边界
-static bool endSimpleStmt(Parser* p, int32_t stmtLine) {
+// 简单语句收尾：; / } / EOF / 换行任一（块内无 ASI 分号，换行按 04 §10 即语句边界）
+static bool endSimpleStmt(Parser* p) {
   if (match(p, TK_SEMICOLON)) {
     return true;
   }
   if (check(p, TK_RBRACE) || check(p, TK_EOF)) {
     return true;
   }
-  if (p->cur.line > stmtLine) {
+  if (p->cur.line > p->prevLine) {
     return true;
   }
   errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected newline or ';' after statement");
@@ -469,21 +553,94 @@ static AstNode* parseBlock(Parser* p) {
   return node;
 }
 
-// 表达式语句（04 §10）：任意表达式 + ASI 换行即语句
-static AstNode* parseSimpleStmt(Parser* p) {
-  int32_t line = p->cur.line, col = p->cur.col;
-  AstNode* expr = parseExpr(p);
-  if (expr == NULL) {
+// 赋值目标合法性：标识符/索引/成员（04 §2）
+static bool isAssignTarget(const AstNode* node) {
+  return node->kind == AST_IDENT || node->kind == AST_INDEX || node->kind == AST_MEMBER;
+}
+
+static AstNode* newExprStmt(Parser* p, AstNode* expr, int32_t line, int32_t col) {
+  AstNode* node = astNewNode(p->arena, AST_EXPR_STMT, line, col);
+  node->as.exprStmt.expr = expr;
+  return node;
+}
+
+typedef struct TargetElem {
+  AstNode* expr;
+  bool starred;
+} TargetElem;
+
+// = 后定形：目标合法性 + star 计数 → ASSIGN(元组目标) 或 DESTRUCTURE
+static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, int32_t line,
+                                    int32_t col) {
+  AstNode* value = parseExprList(p);
+  if (value == NULL) {
     return NULL;
   }
-  // x := e 短声明：仅单 IDENT 目标；模块顶层非法（04 §1）
-  if (check(p, TK_COLON_EQ)) {
+  int32_t restIndex = -1;
+  int32_t starCount = 0;
+  for (int32_t i = 0; i < count; i++) {
+    if (tmp[i].starred) {
+      starCount++;
+      restIndex = i;
+    }
+  }
+  if (starCount > 1) {
+    errTok(p, &p->cur, MSE_SYN_DESTRUCT_STARS, "at most one starred target allowed");
+    return NULL;
+  }
+  for (int32_t i = 0; i < count; i++) {
+    if (!isAssignTarget(tmp[i].expr)) {
+      errPos(p, tmp[i].expr->line, tmp[i].expr->col, 1, MSE_SYN_BAD_TARGET,
+             "invalid assignment target");
+      return NULL;
+    }
+  }
+  if (starCount == 0) {
+    AstNode* target = astNewNode(p->arena, AST_TUPLE, line, col);
+    target->as.tuple.count = count;
+    target->as.tuple.items = astNewNodeArray(p->arena, count);
+    for (int32_t i = 0; i < count; i++) {
+      target->as.tuple.items[i] = tmp[i].expr;
+    }
+    AstNode* node = astNewNode(p->arena, AST_ASSIGN, line, col);
+    node->as.assign.target = target;
+    node->as.assign.value = value;
+    node->as.assign.op = AST_OP_NONE;
+    if (!endSimpleStmt(p)) {
+      return NULL;
+    }
+    return node;
+  }
+  AstNode* node = astNewNode(p->arena, AST_DESTRUCTURE, line, col);
+  node->as.destructure.count = count;
+  node->as.destructure.restIndex = restIndex;
+  node->as.destructure.value = value;
+  node->as.destructure.targets = astNewNodeArray(p->arena, count);
+  for (int32_t i = 0; i < count; i++) {
+    node->as.destructure.targets[i] = tmp[i].expr;
+  }
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  return node;
+}
+
+// 表达式/赋值/短声明语句（04 §1 §2 §10）：先解析逗号列表，按后续 token 定形
+static AstNode* parseSimpleStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  bool firstStar = match(p, TK_STAR);  // 语句起始 * 仅解构目标合法
+  AstNode* first = parseExpr(p);
+  if (first == NULL) {
+    return NULL;
+  }
+  // x := e 短声明（单 IDENT 目标）
+  if (!firstStar && check(p, TK_COLON_EQ)) {
     advance(p);
-    if (expr->kind != AST_IDENT) {
+    if (first->kind != AST_IDENT) {
       errPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "short declaration target must be an identifier");
       return NULL;
     }
-    AstNode* value = parseExpr(p);
+    AstNode* value = parseExprList(p);
     if (value == NULL) {
       return NULL;
     }
@@ -491,24 +648,118 @@ static AstNode* parseSimpleStmt(Parser* p) {
       errPos(p, line, col, 1, MSE_SYN_SHORT_TOPLEVEL, "':=' is not allowed at module top level");
       return NULL;
     }
-    if (scopeDeclare(p, expr->as.ident.name, expr->as.ident.nameLen)) {
-      errPos(p, line, col, expr->as.ident.nameLen, MSE_SYN_DUP_DECL,
+    if (scopeDeclare(p, first->as.ident.name, first->as.ident.nameLen)) {
+      errPos(p, line, col, first->as.ident.nameLen, MSE_SYN_DUP_DECL,
              "duplicate declaration in the same scope");
       return NULL;
     }
     AstNode* node = astNewNode(p->arena, AST_VAR_DECL, line, col);
-    node->as.varDecl.name = expr->as.ident.name;
-    node->as.varDecl.nameLen = expr->as.ident.nameLen;
+    node->as.varDecl.name = first->as.ident.name;
+    node->as.varDecl.nameLen = first->as.ident.nameLen;
     node->as.varDecl.flags = AST_VAR_SHORT;
     node->as.varDecl.init = value;
+    if (!endSimpleStmt(p)) {
+      return NULL;
+    }
     return node;
   }
-  AstNode* node = astNewNode(p->arena, AST_EXPR_STMT, line, col);
-  node->as.exprStmt.expr = expr;
-  if (!endSimpleStmt(p, line)) {
+  // 逗号列表：元组赋值 / 解构目标候选
+  if (firstStar || check(p, TK_COMMA)) {
+    TargetElem* tmp = NULL;
+    int32_t count = 0, cap = 0;
+    MS_ARRAY_PUSH(tmp, count, cap, ((TargetElem){first, firstStar}));
+    while (match(p, TK_COMMA)) {
+      bool starred = match(p, TK_STAR);
+      AstNode* expr = parseExpr(p);
+      if (expr == NULL) {
+        free(tmp);
+        return NULL;
+      }
+      MS_ARRAY_PUSH(tmp, count, cap, ((TargetElem){expr, starred}));
+    }
+    if (match(p, TK_EQ)) {
+      AstNode* node = finishAssignTargets(p, tmp, count, line, col);
+      free(tmp);
+      if (node == NULL) {
+        return NULL;
+      }
+      return node;
+    }
+    if (check(p, TK_COLON_EQ)) {
+      errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "short declaration supports a single target");
+      free(tmp);
+      return NULL;
+    }
+    // 无赋值：元组表达式语句；* 只属于解构目标
+    for (int32_t i = 0; i < count; i++) {
+      if (tmp[i].starred) {
+        errPos(p, tmp[i].expr->line, tmp[i].expr->col, 1, MSE_SYN_STAR_NO_ASSIGN,
+               "starred target requires an assignment");
+        free(tmp);
+        return NULL;
+      }
+    }
+    AstNode* tupleNode = astNewNode(p->arena, AST_TUPLE, line, col);
+    tupleNode->as.tuple.count = count;
+    tupleNode->as.tuple.items = astNewNodeArray(p->arena, count);
+    for (int32_t i = 0; i < count; i++) {
+      tupleNode->as.tuple.items[i] = tmp[i].expr;
+    }
+    free(tmp);
+    if (!endSimpleStmt(p)) {
+      return NULL;
+    }
+    return newExprStmt(p, tupleNode, line, col);
+  }
+  // 复合赋值：x += e（AST 保留复合形态，编译期展开读-算-写）
+  AstBinOp op = compoundOpOf(p->cur.type);
+  if (op != AST_OP_NONE) {
+    advance(p);
+    if (!isAssignTarget(first)) {
+      errPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "invalid assignment target");
+      return NULL;
+    }
+    AstNode* value = parseExpr(p);
+    if (value == NULL) {
+      return NULL;
+    }
+    AstNode* node = astNewNode(p->arena, AST_ASSIGN, line, col);
+    node->as.assign.target = first;
+    node->as.assign.value = value;
+    node->as.assign.op = op;
+    if (!endSimpleStmt(p)) {
+      return NULL;
+    }
+    return node;
+  }
+  // 普通赋值：target = value
+  if (match(p, TK_EQ)) {
+    if (!isAssignTarget(first)) {
+      errPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "invalid assignment target");
+      return NULL;
+    }
+    AstNode* value = parseExprList(p);
+    if (value == NULL) {
+      return NULL;
+    }
+    AstNode* node = astNewNode(p->arena, AST_ASSIGN, line, col);
+    node->as.assign.target = first;
+    node->as.assign.value = value;
+    node->as.assign.op = AST_OP_NONE;
+    if (!endSimpleStmt(p)) {
+      return NULL;
+    }
+    return node;
+  }
+  // 表达式语句
+  if (firstStar) {
+    errPos(p, line, col, 1, MSE_SYN_STAR_NO_ASSIGN, "starred target requires an assignment");
     return NULL;
   }
-  return node;
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  return newExprStmt(p, first, line, col);
 }
 
 static AstNode* parseStatement(Parser* p) {
@@ -518,7 +769,7 @@ static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_VAR) || check(p, TK_CONST)) {
     ms_u8 flags = check(p, TK_CONST) ? AST_VAR_CONST : 0;
     AstNode* node = parseVarDecl(p, flags);
-    if (node != NULL && !endSimpleStmt(p, node->line)) {
+    if (node != NULL && !endSimpleStmt(p)) {
       return NULL;
     }
     return node;
@@ -531,6 +782,7 @@ static AstNode* parseStatement(Parser* p) {
 void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena,
                 MsDiagSink* diags) {
   scannerInit(&p->scan, src, len, file, diags);
+  p->prevLine = 1;
   p->arena = arena;
   p->diags = diags;
   p->scope = NULL;

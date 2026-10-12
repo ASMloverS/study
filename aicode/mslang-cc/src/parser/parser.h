@@ -27,6 +27,7 @@ typedef struct ParserScope ParserScope;
 typedef struct Parser {
   Scanner scan;         // 内嵌：逐 token 拉取（20-architecture §1）
   MsToken cur;          // 当前 lookahead（单 token，不可回退）
+  int32_t prevLine;     // cur 前一 token 的行号（块内无 ASI 分号时的换行终止判定）
   AstArena* arena;
   MsDiagSink* diags;    // 可为 NULL（免诊断场景）
   ParserScope* scope;   // 声明查重作用域链（完整解析在 T009 Binder）
