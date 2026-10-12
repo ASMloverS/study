@@ -331,6 +331,52 @@ static AstNode* parsePrimary(Parser* p) {
       advance(p);
       return node;
     }
+    case TK_LPAREN: {
+      advance(p);  // (
+      if (match(p, TK_RPAREN)) {  // () 空 tuple（02 §5.3）
+        AstNode* node = astNewNode(p->arena, AST_TUPLE, line, col);
+        node->as.tuple.count = 0;
+        return node;
+      }
+      AstNode* first = parseExpr(p);
+      if (first == NULL) {
+        return NULL;
+      }
+      if (!check(p, TK_COMMA)) {
+        if (!match(p, TK_RPAREN)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')'");
+          return NULL;
+        }
+        return first;  // (expr) 分组（03 §10）
+      }
+      AstNode** tmp = NULL;
+      int32_t count = 0, cap = 0;
+      MS_ARRAY_PUSH(tmp, count, cap, first);
+      while (match(p, TK_COMMA)) {
+        if (check(p, TK_RPAREN)) {
+          break;  // 尾逗号 (1,)
+        }
+        AstNode* e = parseExpr(p);
+        if (e == NULL) {
+          free(tmp);
+          return NULL;
+        }
+        MS_ARRAY_PUSH(tmp, count, cap, e);
+      }
+      if (!match(p, TK_RPAREN)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')'");
+        free(tmp);
+        return NULL;
+      }
+      AstNode* node = astNewNode(p->arena, AST_TUPLE, line, col);
+      node->as.tuple.count = count;
+      node->as.tuple.items = astNewNodeArray(p->arena, count);
+      if (count > 0) {
+        memcpy(node->as.tuple.items, tmp, sizeof(AstNode*) * (size_t)count);
+      }
+      free(tmp);
+      return node;
+    }
     default:
       errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "expected expression");
       return NULL;

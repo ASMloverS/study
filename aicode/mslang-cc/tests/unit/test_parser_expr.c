@@ -296,6 +296,7 @@ TEST(callSpreadArg) {
   EXPECT(ctx, !call->as.call.spread[0]);
   EXPECT(ctx, call->as.call.spread[1]);
   EXPECT_EQ(ctx, AST_IDENT, call->as.call.args[1]->kind);
+  EXPECT_EQ(ctx, 1, (int)call->as.call.args[0]->as.intLit.v);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
@@ -315,12 +316,15 @@ TEST(sliceForms) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("xs[a:b:c]\nxs[a:]\nxs[:b]\nxs[::c]\nxs[a:b]\nxs[::]", &arena, &diags);
-  EXPECT_EQ(ctx, 6, mod->as.list.count);
+  AstNode* mod = parseSrc("xs[a:b:c]\nxs[a:]\nxs[:b]\nxs[::c]\nxs[a:b]\nxs[::]\nxs[:]", &arena, &diags);
+  EXPECT_EQ(ctx, 7, mod->as.list.count);
   EXPECT_EQ(ctx, 0, diags.count);
   AstNode* s0 = expr0(mod);
   EXPECT_EQ(ctx, AST_SLICE, s0->kind);
   EXPECT(ctx, s0->as.slice.start != NULL && s0->as.slice.end != NULL && s0->as.slice.step != NULL);
+  EXPECT(ctx, s0->as.slice.start->as.ident.nameLen == 1 && s0->as.slice.start->as.ident.name[0] == 'a');
+  EXPECT(ctx, s0->as.slice.end->as.ident.nameLen == 1 && s0->as.slice.end->as.ident.name[0] == 'b');
+  EXPECT(ctx, s0->as.slice.step->as.ident.nameLen == 1 && s0->as.slice.step->as.ident.name[0] == 'c');
   AstNode* s1 = mod->as.list.items[1]->as.exprStmt.expr;
   EXPECT(ctx, s1->as.slice.start != NULL && s1->as.slice.end == NULL && s1->as.slice.step == NULL);
   AstNode* s2 = mod->as.list.items[2]->as.exprStmt.expr;
@@ -331,6 +335,8 @@ TEST(sliceForms) {
   EXPECT(ctx, s4->as.slice.start != NULL && s4->as.slice.end != NULL && s4->as.slice.step == NULL);
   AstNode* s5 = mod->as.list.items[5]->as.exprStmt.expr;
   EXPECT(ctx, s5->as.slice.start == NULL && s5->as.slice.end == NULL && s5->as.slice.step == NULL);
+  AstNode* s6 = mod->as.list.items[6]->as.exprStmt.expr;
+  EXPECT(ctx, s6->as.slice.start == NULL && s6->as.slice.end == NULL && s6->as.slice.step == NULL);
   astArenaDestroy(&arena);
 }
 
@@ -379,6 +385,50 @@ TEST(commaLooserThanTernary) {
   astArenaDestroy(&arena);
 }
 
+TEST(groupingParens) {
+  // (1 + 2) * 3 → MUL(ADD(1,2), 3)
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("(1 + 2) * 3", &arena, &diags);
+  AstNode* mul = expr0(mod);
+  EXPECT_EQ(ctx, AST_OP_MUL, mul->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_ADD, mul->as.binary.lhs->as.binary.op);
+  EXPECT_EQ(ctx, 3, (int)mul->as.binary.rhs->as.intLit.v);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(tupleParenForms) {
+  // () 空 tuple；(1,) 单元素尾逗号；(1, 2) 元组（02 §5.3）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("()\n(1,)\n(1, 2)", &arena, &diags);
+  EXPECT_EQ(ctx, 3, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* empty = expr0(mod);
+  EXPECT_EQ(ctx, AST_TUPLE, empty->kind);
+  EXPECT_EQ(ctx, 0, empty->as.tuple.count);
+  AstNode* single = mod->as.list.items[1]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_TUPLE, single->kind);
+  EXPECT_EQ(ctx, 1, single->as.tuple.count);
+  AstNode* pair = mod->as.list.items[2]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_TUPLE, pair->kind);
+  EXPECT_EQ(ctx, 2, pair->as.tuple.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(parenDoubleGroup) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("((1))", &arena, &diags);
+  EXPECT_EQ(ctx, AST_INT, expr0(mod)->kind);  // 双层分组还原为表达式本身
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   precedenceMulOverAdd(&ctx);
@@ -403,6 +453,9 @@ int main(void) {
   errCallMissingRparen(&ctx);
   ternaryThenNested(&ctx);
   commaLooserThanTernary(&ctx);
+  groupingParens(&ctx);
+  tupleParenForms(&ctx);
+  parenDoubleGroup(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
