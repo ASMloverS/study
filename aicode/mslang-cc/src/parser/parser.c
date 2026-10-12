@@ -337,28 +337,139 @@ static AstNode* parsePrimary(Parser* p) {
   }
 }
 
-// 后缀链：[e] 索引 / .name 成员（调用/切片 T007）
+// GEN_EXPR 位置限制（03 §1）：仅调用唯一实参或赋值右值（带括号），其余直接操作数位置拒绝
+static bool rejectGenExpr(Parser* p, const AstNode* n) {
+  if (n == NULL || n->kind != AST_GEN_EXPR) {
+    return false;
+  }
+  errPos(p, n->line, n->col, 1, MSE_SYN_GENEXPR_POS,
+         "generator expression is only allowed as the sole call argument or an assignment right-hand side");
+  return true;
+}
+
+typedef struct CallArg {
+  AstNode* expr;
+  bool spread;
+} CallArg;
+
+// 调用实参表（03 §4）：位置实参 + 至多一个尾随 * 展开；实参求值顺序=存放顺序
+static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t col) {
+  advance(p);  // (
+  CallArg* tmp = NULL;
+  int32_t count = 0, cap = 0;
+  while (!check(p, TK_RPAREN) && !check(p, TK_EOF)) {
+    bool star = match(p, TK_STAR);
+    AstNode* arg = parseExpr(p);
+    if (arg == NULL) {
+      free(tmp);
+      return NULL;
+    }
+    MS_ARRAY_PUSH(tmp, count, cap, ((CallArg){arg, star}));
+    if (star && !check(p, TK_RPAREN)) {
+      errTok(p, &p->cur, MSE_SYN_SPREAD_NOT_LAST, "'*' spread argument must be the last argument");
+      free(tmp);
+      return NULL;
+    }
+    if (arg->kind == AST_GEN_EXPR && !check(p, TK_RPAREN)) {
+      errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression must be the sole argument");
+      free(tmp);
+      return NULL;
+    }
+    if (!match(p, TK_COMMA)) {
+      break;
+    }
+  }
+  if (!match(p, TK_RPAREN)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')'");
+    free(tmp);
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_CALL, line, col);
+  node->as.call.callee = callee;
+  node->as.call.count = count;
+  node->as.call.args = astNewNodeArray(p->arena, count);
+  node->as.call.spread = astArenaAlloc(p->arena, sizeof(bool) * (size_t)count);
+  for (int32_t i = 0; i < count; i++) {
+    node->as.call.args[i] = tmp[i].expr;
+    node->as.call.spread[i] = tmp[i].spread;
+  }
+  free(tmp);
+  return node;
+}
+
+// 切片尾部：已消费 '[' 与可选 start，当前 token 为 ':'（03 §3 端点/步进均可省略）
+static AstNode* parseSliceRest(Parser* p, AstNode* obj, AstNode* start, int32_t line, int32_t col) {
+  advance(p);  // :
+  AstNode* end = NULL;
+  if (!check(p, TK_COLON) && !check(p, TK_RBRACKET)) {
+    end = parseExpr(p);
+    if (end == NULL) {
+      return NULL;
+    }
+  }
+  AstNode* step = NULL;
+  if (match(p, TK_COLON) && !check(p, TK_RBRACKET)) {
+    step = parseExpr(p);
+    if (step == NULL) {
+      return NULL;
+    }
+  }
+  if (!match(p, TK_RBRACKET)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ']'");
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_SLICE, line, col);
+  node->as.slice.obj = obj;
+  node->as.slice.start = start;
+  node->as.slice.end = end;
+  node->as.slice.step = step;
+  return node;
+}
+
+// 后缀链（左结合，03 优先级级 14）：调用/索引/切片/成员
 static AstNode* parsePostfix(Parser* p) {
   AstNode* obj = parsePrimary(p);
   if (obj == NULL) {
     return NULL;
   }
   for (;;) {
-    if (check(p, TK_LBRACKET)) {
+    if (rejectGenExpr(p, obj)) {  // GEN_EXPR 不可再套后缀
+      return NULL;
+    }
+    if (check(p, TK_LPAREN)) {
+      obj = parseCallArgs(p, obj, obj->line, obj->col);
+      if (obj == NULL) {
+        return NULL;
+      }
+    } else if (check(p, TK_LBRACKET)) {
       int32_t line = obj->line, col = obj->col;  // 构造起点取对象起点
       advance(p);
-      AstNode* index = parseExpr(p);
-      if (index == NULL) {
+      if (check(p, TK_COLON)) {  // [:…] start 省略
+        obj = parseSliceRest(p, obj, NULL, line, col);
+        if (obj == NULL) {
+          return NULL;
+        }
+        continue;
+      }
+      AstNode* first = parseExpr(p);
+      if (first == NULL) {
         return NULL;
       }
-      if (!match(p, TK_RBRACKET)) {
-        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ']'");
-        return NULL;
+      if (check(p, TK_COLON)) {
+        obj = parseSliceRest(p, obj, first, line, col);
+        if (obj == NULL) {
+          return NULL;
+        }
+      } else {
+        if (!match(p, TK_RBRACKET)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ']'");
+          return NULL;
+        }
+        AstNode* node = astNewNode(p->arena, AST_INDEX, line, col);
+        node->as.indexExpr.obj = obj;
+        node->as.indexExpr.index = first;
+        obj = node;
       }
-      AstNode* node = astNewNode(p->arena, AST_INDEX, line, col);
-      node->as.indexExpr.obj = obj;
-      node->as.indexExpr.index = index;
-      obj = node;
     } else if (check(p, TK_DOT)) {
       int32_t line = obj->line, col = obj->col;
       advance(p);
@@ -376,16 +487,6 @@ static AstNode* parsePostfix(Parser* p) {
       return obj;
     }
   }
-}
-
-// GEN_EXPR 位置限制（03 §1）：仅调用唯一实参或赋值右值（带括号），其余直接操作数位置拒绝
-static bool rejectGenExpr(Parser* p, const AstNode* n) {
-  if (n == NULL || n->kind != AST_GEN_EXPR) {
-    return false;
-  }
-  errPos(p, n->line, n->col, 1, MSE_SYN_GENEXPR_POS,
-         "generator expression is only allowed as the sole call argument or an assignment right-hand side");
-  return true;
 }
 
 // 二元构造（各级共用）：操作数不得为 GEN_EXPR

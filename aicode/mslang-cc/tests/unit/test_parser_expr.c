@@ -247,6 +247,138 @@ TEST(unmappedBinaryBranches) {
   astArenaDestroy(&arena);
 }
 
+TEST(postfixCallIndexChain) {
+  // obj.m(x)[i] → INDEX(CALL(MEMBER(obj,m),[x]), i)
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("obj.m(x)[i]", &arena, &diags);
+  AstNode* index = expr0(mod);
+  EXPECT_EQ(ctx, AST_INDEX, index->kind);
+  AstNode* call = index->as.indexExpr.obj;
+  EXPECT_EQ(ctx, AST_CALL, call->kind);
+  AstNode* member = call->as.call.callee;
+  EXPECT_EQ(ctx, AST_MEMBER, member->kind);
+  EXPECT_EQ(ctx, 1, call->as.call.count);
+  EXPECT_EQ(ctx, AST_IDENT, call->as.call.args[0]->kind);
+  EXPECT_EQ(ctx, AST_IDENT, index->as.indexExpr.index->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(callEmptyAndArgs) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f()\ng(1, a)", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  AstNode* empty = expr0(mod);
+  EXPECT_EQ(ctx, AST_CALL, empty->kind);
+  EXPECT_EQ(ctx, 0, empty->as.call.count);
+  AstNode* two = mod->as.list.items[1]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, 2, two->as.call.count);
+  EXPECT_EQ(ctx, 1, (int)two->as.call.args[0]->as.intLit.v);
+  EXPECT(ctx, !two->as.call.spread[0]);
+  EXPECT(ctx, !two->as.call.spread[1]);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(callSpreadArg) {
+  // f(1, *xs) → CALL args=[1, xs]，spread=[false, true]
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(1, *xs)", &arena, &diags);
+  AstNode* call = expr0(mod);
+  EXPECT_EQ(ctx, AST_CALL, call->kind);
+  EXPECT_EQ(ctx, 2, call->as.call.count);
+  EXPECT(ctx, !call->as.call.spread[0]);
+  EXPECT(ctx, call->as.call.spread[1]);
+  EXPECT_EQ(ctx, AST_IDENT, call->as.call.args[1]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errSpreadNotLast) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(1, *xs, 2)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1010, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(sliceForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("xs[a:b:c]\nxs[a:]\nxs[:b]\nxs[::c]\nxs[a:b]\nxs[::]", &arena, &diags);
+  EXPECT_EQ(ctx, 6, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* s0 = expr0(mod);
+  EXPECT_EQ(ctx, AST_SLICE, s0->kind);
+  EXPECT(ctx, s0->as.slice.start != NULL && s0->as.slice.end != NULL && s0->as.slice.step != NULL);
+  AstNode* s1 = mod->as.list.items[1]->as.exprStmt.expr;
+  EXPECT(ctx, s1->as.slice.start != NULL && s1->as.slice.end == NULL && s1->as.slice.step == NULL);
+  AstNode* s2 = mod->as.list.items[2]->as.exprStmt.expr;
+  EXPECT(ctx, s2->as.slice.start == NULL && s2->as.slice.end != NULL && s2->as.slice.step == NULL);
+  AstNode* s3 = mod->as.list.items[3]->as.exprStmt.expr;
+  EXPECT(ctx, s3->as.slice.start == NULL && s3->as.slice.end == NULL && s3->as.slice.step != NULL);
+  AstNode* s4 = mod->as.list.items[4]->as.exprStmt.expr;
+  EXPECT(ctx, s4->as.slice.start != NULL && s4->as.slice.end != NULL && s4->as.slice.step == NULL);
+  AstNode* s5 = mod->as.list.items[5]->as.exprStmt.expr;
+  EXPECT(ctx, s5->as.slice.start == NULL && s5->as.slice.end == NULL && s5->as.slice.step == NULL);
+  astArenaDestroy(&arena);
+}
+
+TEST(errCallMissingRparen) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(1", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(ternaryThenNested) {
+  // a ? b ? c : d : e → then 分支亦按完整三元解析（右结合家族）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a ? b ? c : d : e", &arena, &diags);
+  AstNode* outer = expr0(mod);
+  EXPECT_EQ(ctx, AST_TERNARY, outer->kind);
+  EXPECT_EQ(ctx, AST_IDENT, outer->as.ternary.cond->kind);
+  AstNode* inner = outer->as.ternary.thenExpr;
+  EXPECT_EQ(ctx, AST_TERNARY, inner->kind);
+  EXPECT_EQ(ctx, AST_IDENT, inner->as.ternary.cond->kind);
+  EXPECT_EQ(ctx, AST_IDENT, inner->as.ternary.thenExpr->kind);
+  EXPECT_EQ(ctx, AST_IDENT, inner->as.ternary.elseExpr->kind);
+  EXPECT_EQ(ctx, AST_IDENT, outer->as.ternary.elseExpr->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(commaLooserThanTernary) {
+  // a, b ? c : d → 元组第二元素为三元（逗号松于三元）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a, b ? c : d", &arena, &diags);
+  AstNode* tuple = expr0(mod);
+  EXPECT_EQ(ctx, AST_TUPLE, tuple->kind);
+  EXPECT_EQ(ctx, 2, tuple->as.tuple.count);
+  EXPECT_EQ(ctx, AST_IDENT, tuple->as.tuple.items[0]->kind);
+  EXPECT_EQ(ctx, AST_TERNARY, tuple->as.tuple.items[1]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   precedenceMulOverAdd(&ctx);
@@ -263,6 +395,14 @@ int main(void) {
   ternaryMissingColon(&ctx);
   errChainedCompareWithIsIn(&ctx);
   unmappedBinaryBranches(&ctx);
+  postfixCallIndexChain(&ctx);
+  callEmptyAndArgs(&ctx);
+  callSpreadArg(&ctx);
+  errSpreadNotLast(&ctx);
+  sliceForms(&ctx);
+  errCallMissingRparen(&ctx);
+  ternaryThenNested(&ctx);
+  commaLooserThanTernary(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
