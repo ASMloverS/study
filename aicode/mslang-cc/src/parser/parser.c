@@ -80,8 +80,7 @@ static bool match(Parser* p, MsTokenType type) {
   return false;
 }
 
-static void diagPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code,
-                    const char* message) {
+static void diagPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code, const char* message) {
   if (p->diags == NULL) {
     return;
   }
@@ -99,8 +98,7 @@ static void errTok(Parser* p, const MsToken* tok, uint32_t code, const char* mes
 }
 
 // 同 errTok，但以显式位置报错（token 已被消费的场景）
-static void errPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code,
-                   const char* message) {
+static void errPos(Parser* p, int32_t line, int32_t col, int32_t len, uint32_t code, const char* message) {
   if (p->panic) {
     return;
   }
@@ -172,30 +170,49 @@ static double floatTokenValue(const MsToken* tok) {
 
 static AstBinOp compoundOpOf(MsTokenType type) {
   switch (type) {
-    case TK_PLUS_EQ: return AST_OP_ADD;
-    case TK_MINUS_EQ: return AST_OP_SUB;
-    case TK_STAR_EQ: return AST_OP_MUL;
-    case TK_SLASH_EQ: return AST_OP_DIV;
-    case TK_PERCENT_EQ: return AST_OP_MOD;
-    case TK_STAR_STAR_EQ: return AST_OP_POW;
-    case TK_AMP_EQ: return AST_OP_BIT_AND;
-    case TK_PIPE_EQ: return AST_OP_BIT_OR;
-    case TK_CARET_EQ: return AST_OP_BIT_XOR;
-    case TK_LT_LT_EQ: return AST_OP_SHL;
-    case TK_GT_GT_EQ: return AST_OP_SHR;
-    default: return AST_OP_NONE;
+    case TK_PLUS_EQ:
+      return AST_OP_ADD;
+    case TK_MINUS_EQ:
+      return AST_OP_SUB;
+    case TK_STAR_EQ:
+      return AST_OP_MUL;
+    case TK_SLASH_EQ:
+      return AST_OP_DIV;
+    case TK_PERCENT_EQ:
+      return AST_OP_MOD;
+    case TK_STAR_STAR_EQ:
+      return AST_OP_POW;
+    case TK_AMP_EQ:
+      return AST_OP_BIT_AND;
+    case TK_PIPE_EQ:
+      return AST_OP_BIT_OR;
+    case TK_CARET_EQ:
+      return AST_OP_BIT_XOR;
+    case TK_LT_LT_EQ:
+      return AST_OP_SHL;
+    case TK_GT_GT_EQ:
+      return AST_OP_SHR;
+    default:
+      return AST_OP_NONE;
   }
 }
 
 static AstBinOp comparisonOpOf(MsTokenType type) {
   switch (type) {
-    case TK_EQ_EQ: return AST_OP_EQ;
-    case TK_BANG_EQ: return AST_OP_NE;
-    case TK_LT: return AST_OP_LT;
-    case TK_LT_EQ: return AST_OP_LE;
-    case TK_GT: return AST_OP_GT;
-    case TK_GT_EQ: return AST_OP_GE;
-    default: return AST_OP_NONE;
+    case TK_EQ_EQ:
+      return AST_OP_EQ;
+    case TK_BANG_EQ:
+      return AST_OP_NE;
+    case TK_LT:
+      return AST_OP_LT;
+    case TK_LT_EQ:
+      return AST_OP_LE;
+    case TK_GT:
+      return AST_OP_GT;
+    case TK_GT_EQ:
+      return AST_OP_GE;
+    default:
+      return AST_OP_NONE;
   }
 }
 
@@ -563,8 +580,7 @@ static AstNode* parseIfStmt(Parser* p) {
   advance(p);  // if
   bool hadParen = false;
   if (check(p, TK_LPAREN)) {
-    diagPos(p, p->cur.line, p->cur.col, 1, MSE_SYN_IF_PAREN,
-            "if condition must not be parenthesized");
+    diagPos(p, p->cur.line, p->cur.col, 1, MSE_SYN_IF_PAREN, "if condition must not be parenthesized");
     hadParen = true;
     advance(p);  // 就地恢复：按无括号继续
   }
@@ -610,8 +626,7 @@ typedef struct TargetElem {
 } TargetElem;
 
 // = 后定形：目标合法性 + star 计数 → ASSIGN(元组目标) 或 DESTRUCTURE
-static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, int32_t line,
-                                    int32_t col) {
+static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, int32_t line, int32_t col) {
   AstNode* value = parseExprList(p);
   if (value == NULL) {
     return NULL;
@@ -630,8 +645,7 @@ static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, i
   }
   for (int32_t i = 0; i < count; i++) {
     if (!isAssignTarget(tmp[i].expr)) {
-      errPos(p, tmp[i].expr->line, tmp[i].expr->col, 1, MSE_SYN_BAD_TARGET,
-             "invalid assignment target");
+      errPos(p, tmp[i].expr->line, tmp[i].expr->col, 1, MSE_SYN_BAD_TARGET, "invalid assignment target");
       return NULL;
     }
   }
@@ -689,8 +703,7 @@ static AstNode* parseSimpleStmt(Parser* p) {
       return NULL;
     }
     if (scopeDeclare(p, first->as.ident.name, first->as.ident.nameLen)) {
-      errPos(p, line, col, first->as.ident.nameLen, MSE_SYN_DUP_DECL,
-             "duplicate declaration in the same scope");
+      errPos(p, line, col, first->as.ident.nameLen, MSE_SYN_DUP_DECL, "duplicate declaration in the same scope");
       return NULL;
     }
     AstNode* node = astNewNode(p->arena, AST_VAR_DECL, line, col);
@@ -822,8 +835,7 @@ static AstNode* parseStatement(Parser* p) {
 
 // ---------------- Parser API ----------------
 
-void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena,
-                MsDiagSink* diags) {
+void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena, MsDiagSink* diags) {
   scannerInit(&p->scan, src, len, file, diags);
   p->arena = arena;
   p->diags = diags;

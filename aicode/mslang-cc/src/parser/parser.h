@@ -25,17 +25,16 @@ typedef enum MseSyntaxCode {
 typedef struct ParserScope ParserScope;
 
 typedef struct Parser {
-  Scanner scan;         // 内嵌：逐 token 拉取（20-architecture §1）
-  MsToken cur;          // 当前 lookahead（单 token，不可回退）
-  int32_t prevLine;     // cur 前一 token 的行号（块内无 ASI 分号时的换行终止判定）
+  Scanner scan;      // 内嵌：逐 token 拉取（20-architecture §1）
+  MsToken cur;       // 当前 lookahead（单 token，不可回退）
+  int32_t prevLine;  // cur 前一 token 的行号（块内无 ASI 分号时的换行终止判定）
   AstArena* arena;
-  MsDiagSink* diags;    // 可为 NULL（免诊断场景）
-  ParserScope* scope;   // 声明查重作用域链（完整解析在 T009 Binder）
-  bool panic;           // 恢复中：屏蔽级联诊断直至同步点
+  MsDiagSink* diags;   // 可为 NULL（免诊断场景）
+  ParserScope* scope;  // 声明查重作用域链（完整解析在 T009 Binder）
+  bool panic;          // 恢复中：屏蔽级联诊断直至同步点
 } Parser;
 
-void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena,
-                MsDiagSink* diags);
+void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena, MsDiagSink* diags);
 AstNode* parserParseModule(Parser* p);  // 失败也返回部分树（诊断在 sink）
 
 #endif  // INCLUDE_MS_PARSER_PARSER_H_

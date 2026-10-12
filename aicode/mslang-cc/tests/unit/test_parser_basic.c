@@ -120,7 +120,7 @@ TEST(parseStringLiterals) {
   EXPECT_EQ(ctx, 1, s->as.strLit.segs[0].len);
   EXPECT_EQ(ctx, 'a', s->as.strLit.segs[0].start[0]);
   EXPECT_EQ(ctx, AST_IDENT, s->as.strLit.segs[1].expr->kind);  // 插值段
-  EXPECT(ctx, s->as.strLit.segs[2].expr == NULL);  // 字面段 "b"
+  EXPECT(ctx, s->as.strLit.segs[2].expr == NULL);              // 字面段 "b"
   EXPECT_EQ(ctx, 'b', s->as.strLit.segs[2].start[0]);
   AstNode* empty = mod->as.list.items[1]->as.exprStmt.expr;
   EXPECT_EQ(ctx, AST_STRING, empty->kind);
@@ -159,7 +159,7 @@ TEST(parseStrayRbraceRecovers) {
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("x }\ny\n42", &arena, &diags);  // 模块层游离 }
-  EXPECT_EQ(ctx, 3, mod->as.list.count);  // x/y/42 均保留，} 不再挂死
+  EXPECT_EQ(ctx, 3, mod->as.list.count);                  // x/y/42 均保留，} 不再挂死
   EXPECT_EQ(ctx, 1, diags.count);
   EXPECT_EQ(ctx, MSE_SYN_UNEXPECTED, (int)diags.items[0].code);
   astArenaDestroy(&arena);
@@ -428,8 +428,7 @@ TEST(parseIfElseChain) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("if a { var x = 1 } else if b { var y = 2 } else { var z = 3 }",
-                          &arena, &diags);
+  AstNode* mod = parseSrc("if a { var x = 1 } else if b { var y = 2 } else { var z = 3 }", &arena, &diags);
   EXPECT_EQ(ctx, 1, mod->as.list.count);
   EXPECT_EQ(ctx, 0, diags.count);
   AstNode* ifa = mod->as.list.items[0];
