@@ -226,6 +226,7 @@ static AstNode* parseExpr(Parser* p);
 static AstNode* parseUnary(Parser* p);  // 与 parsePow 互递归（** 右结合吸收一元）
 static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t compKind, MsTokenType closer,
                                int32_t line, int32_t col);  // 定义于 parseSliceRest 后（依赖 rejectGenExpr）
+static bool rejectGenExpr(Parser* p, const AstNode* n);  // 定义在 parseCallArgs 前（parseStringLit 前置可见）
 
 // map 字面量键值对（parsePrimary 花括号分支暂存；定义须先于 parsePrimary）
 typedef struct MapPair {
@@ -246,6 +247,15 @@ static AstNode* parseStringLit(Parser* p) {
     } else if (match(p, TK_INTERP_BEGIN)) {
       AstNode* expr = parseExpr(p);
       if (expr == NULL) {
+        free(tmp);
+        return NULL;
+      }
+      if (rejectGenExpr(p, expr)) {  // 插值段为直接操作数位置，GEN_EXPR 非法（03 §1）
+        free(tmp);
+        return NULL;
+      }
+      if (check(p, TK_FOR)) {  // 裸生成器形态在插值段同样非法（03 §1 位置限制）
+        errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression is not allowed in interpolation");
         free(tmp);
         return NULL;
       }
@@ -349,6 +359,9 @@ static AstNode* parsePrimary(Parser* p) {
       AstNode* first = parseExpr(p);
       if (first == NULL) {
         return NULL;
+      }
+      if (check(p, TK_FOR)) {  // 生成器表达式（03 §1：惰性，位置限制见 rejectGenExpr）
+        return parseComprTail(p, NULL, first, 0, TK_RPAREN, line, col);
       }
       if (!check(p, TK_COMMA)) {
         if (!match(p, TK_RPAREN)) {
@@ -544,6 +557,7 @@ static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t 
   advance(p);  // (
   CallArg* tmp = NULL;
   int32_t count = 0, cap = 0;
+  bool closedByGenexpr = false;  // 裸生成器形态的尾随闭括号由 parseComprTail 消费
   while (!check(p, TK_RPAREN) && !check(p, TK_EOF)) {
     bool star = match(p, TK_STAR);
     AstNode* arg = parseExpr(p);
@@ -551,13 +565,29 @@ static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t 
       free(tmp);
       return NULL;
     }
+    if (check(p, TK_FOR)) {  // 裸单实参生成器（03 §1）：唯一实参、不可展开
+      if (star) {
+        errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression cannot be spread");
+        free(tmp);
+        return NULL;
+      }
+      arg = parseComprTail(p, NULL, arg, 0, TK_RPAREN, arg->line, arg->col);
+      if (arg == NULL) {
+        free(tmp);
+        return NULL;
+      }
+      MS_ARRAY_PUSH(tmp, count, cap, ((CallArg){arg, false}));
+      closedByGenexpr = true;
+      break;  // 闭括号已随推导式消费，实参表结束
+    }
     MS_ARRAY_PUSH(tmp, count, cap, ((CallArg){arg, star}));
     if (star && !check(p, TK_RPAREN)) {
       errTok(p, &p->cur, MSE_SYN_SPREAD_NOT_LAST, "'*' spread argument must be the last argument");
       free(tmp);
       return NULL;
     }
-    if (arg->kind == AST_GEN_EXPR && !check(p, TK_RPAREN)) {
+    if (arg->kind == AST_GEN_EXPR && (star || !check(p, TK_RPAREN))) {
+      // GEN_EXPR 仅可作唯一实参且不得被 * 展开（括号形态后跟逗号亦在此拦截）
       errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression must be the sole argument");
       free(tmp);
       return NULL;
@@ -566,7 +596,7 @@ static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t 
       break;
     }
   }
-  if (!match(p, TK_RPAREN)) {
+  if (!closedByGenexpr && !match(p, TK_RPAREN)) {
     errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')'");
     free(tmp);
     return NULL;
@@ -716,7 +746,10 @@ static AstNode* parsePostfix(Parser* p) {
     return NULL;
   }
   for (;;) {
-    if (rejectGenExpr(p, obj)) {  // GEN_EXPR 不可再套后缀
+    if (!check(p, TK_LPAREN) && !check(p, TK_LBRACKET) && !check(p, TK_DOT)) {
+      return obj;  // 无后缀 token：结束（裸 GEN_EXPR 由此合法离开）
+    }
+    if (rejectGenExpr(p, obj)) {  // GEN_EXPR 后跟调用/索引/成员 → 位置非法
       return NULL;
     }
     if (check(p, TK_LPAREN)) {
@@ -753,7 +786,7 @@ static AstNode* parsePostfix(Parser* p) {
         node->as.indexExpr.index = first;
         obj = node;
       }
-    } else if (check(p, TK_DOT)) {
+    } else {
       int32_t line = obj->line, col = obj->col;
       advance(p);
       if (!check(p, TK_ID)) {
@@ -766,8 +799,6 @@ static AstNode* parsePostfix(Parser* p) {
       node->as.memberExpr.nameLen = p->cur.len;
       advance(p);
       obj = node;
-    } else {
-      return obj;
     }
   }
 }

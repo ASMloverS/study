@@ -565,6 +565,194 @@ TEST(errComprBadTarget) {
   astArenaDestroy(&arena);
 }
 
+TEST(genexprSoleCallArg) {
+  // sum(x*x for x in xs) → CALL 单实参 GEN_EXPR（裸形态，无需再括号）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("sum(x*x for x in xs)", &arena, &diags);
+  AstNode* call = expr0(mod);
+  EXPECT_EQ(ctx, AST_CALL, call->kind);
+  EXPECT_EQ(ctx, 1, call->as.call.count);
+  AstNode* gen = call->as.call.args[0];
+  EXPECT_EQ(ctx, AST_GEN_EXPR, gen->kind);
+  EXPECT_EQ(ctx, 1, gen->as.compr.forCount);
+  EXPECT_EQ(ctx, 0, gen->as.compr.condCount);
+  EXPECT(ctx, gen->as.compr.key == NULL);
+  EXPECT_EQ(ctx, AST_OP_MUL, gen->as.compr.value->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(genexprAssignRhs) {
+  // var g = (x for x in xs if x > 0) → 赋值右值（带括号）+ if 条件
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var g = (x for x in xs if x > 0)", &arena, &diags);
+  AstNode* decl = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_VAR_DECL, decl->kind);
+  EXPECT_EQ(ctx, AST_GEN_EXPR, decl->as.varDecl.init->kind);
+  EXPECT_EQ(ctx, 1, decl->as.varDecl.init->as.compr.condCount);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprAsBinaryOperand) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("1 + (x for x in xs)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprAsLogicOperand) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a && (x for x in xs)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprAsTernaryCond) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("(x for x in xs) ? a : b", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprAsUnaryOperand) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("-(x for x in xs)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprWithPostfix) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("(x for x in xs)[0]", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprNonSoleArg) {
+  // 括号形态后跟逗号 → 1009
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f((x for x in xs), 1)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errBareGenexprTrailingArg) {
+  // 裸形态后跟更多实参 → 1001（闭括号在推导式尾部缺失）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(x for x in xs, 1)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprSpreadArg) {
+  // f(*(g for g in xs))：* 展开后的 GEN_EXPR 亦非法
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(*(g for g in xs))", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errBareGenexprSpread) {
+  // f(*g for g in xs)：裸形态不得被 * 展开
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(*g for g in xs)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprInInterp) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("\"a${x for x in xs}\"", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(mapCompTernaryValue) {
+  // {k: a ? b : c for k in m} → map 推导 value 为三元（三元冒号与 map 冒号不冲突）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var d = {k: a ? b : c for k in m}", &arena, &diags);
+  AstNode* comp = mod->as.list.items[0]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_COMPREHENSION, comp->kind);
+  EXPECT_EQ(ctx, AST_COMP_MAP, (int)comp->as.compr.compKind);
+  EXPECT_EQ(ctx, AST_TERNARY, comp->as.compr.value->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(mapSetTrailingComma) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var a = {1: 2,}\nvar b = {1, 2,}", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* m = mod->as.list.items[0]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_MAP, m->kind);
+  EXPECT_EQ(ctx, 1, m->as.mapLit.count);
+  AstNode* s = mod->as.list.items[1]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_SET, s->kind);
+  EXPECT_EQ(ctx, 2, s->as.list.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errStmtBraceMapForm) {
+  // 语句位非空花括号走块语句：{ 1: 2 } 报错（块内 : 意外）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("{ 1: 2 }", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   precedenceMulOverAdd(&ctx);
@@ -600,6 +788,21 @@ int main(void) {
   stmtBraceIsBlockNotMap(&ctx);
   errTupleMissingRparen(&ctx);
   errComprBadTarget(&ctx);
+  genexprSoleCallArg(&ctx);
+  genexprAssignRhs(&ctx);
+  errGenexprAsBinaryOperand(&ctx);
+  errGenexprAsLogicOperand(&ctx);
+  errGenexprAsTernaryCond(&ctx);
+  errGenexprAsUnaryOperand(&ctx);
+  errGenexprWithPostfix(&ctx);
+  errGenexprNonSoleArg(&ctx);
+  errBareGenexprTrailingArg(&ctx);
+  errGenexprSpreadArg(&ctx);
+  errBareGenexprSpread(&ctx);
+  errGenexprInInterp(&ctx);
+  mapCompTernaryValue(&ctx);
+  mapSetTrailingComma(&ctx);
+  errStmtBraceMapForm(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
