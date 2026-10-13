@@ -482,6 +482,22 @@ TEST(comprehensionTwoFors) {
   astArenaDestroy(&arena);
 }
 
+TEST(comprehensionTwoIfs) {
+  // [x for x in xs if a if b] → 多 if 合取（03 §2）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("[x for x in xs if a if b]", &arena, &diags);
+  AstNode* comp = expr0(mod);
+  EXPECT_EQ(ctx, AST_COMPREHENSION, comp->kind);
+  EXPECT_EQ(ctx, 1, comp->as.compr.forCount);
+  EXPECT_EQ(ctx, 2, comp->as.compr.condCount);
+  EXPECT_EQ(ctx, AST_IDENT, comp->as.compr.conds[0]->kind);
+  EXPECT_EQ(ctx, AST_IDENT, comp->as.compr.conds[1]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 TEST(mapSetFiveForms) {
   // {} → 空 map；{1:2} → map；{1,2} → set；{k:v for…} → map 推导；{x for…} → set 推导
   // （语句位 { 为块语句（04 §10），字面量以 var 右值上下文验证）
@@ -1055,6 +1071,7 @@ int main(void) {
   listLiterals(&ctx);
   listComprehension(&ctx);
   comprehensionTwoFors(&ctx);
+  comprehensionTwoIfs(&ctx);
   mapSetFiveForms(&ctx);
   singleElemSetLiteral(&ctx);
   stmtBraceIsBlockNotMap(&ctx);
