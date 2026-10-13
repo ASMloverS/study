@@ -118,13 +118,13 @@ TEST(bitLevels) {
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("a | b ^ c & d << 2", &arena, &diags);
-  AstNode* or = expr0(mod);
-  EXPECT_EQ(ctx, AST_OP_BIT_OR, or->as.binary.op);
-  AstNode* xor = or->as.binary.rhs;
-  EXPECT_EQ(ctx, AST_OP_BIT_XOR, xor->as.binary.op);
-  AstNode* and = xor->as.binary.rhs;
-  EXPECT_EQ(ctx, AST_OP_BIT_AND, and->as.binary.op);
-  AstNode* shl = and->as.binary.rhs;
+  AstNode* orNode = expr0(mod);
+  EXPECT_EQ(ctx, AST_OP_BIT_OR, orNode->as.binary.op);
+  AstNode* xorNode = orNode->as.binary.rhs;
+  EXPECT_EQ(ctx, AST_OP_BIT_XOR, xorNode->as.binary.op);
+  AstNode* andNode = xorNode->as.binary.rhs;
+  EXPECT_EQ(ctx, AST_OP_BIT_AND, andNode->as.binary.op);
+  AstNode* shl = andNode->as.binary.rhs;
   EXPECT_EQ(ctx, AST_OP_SHL, shl->as.binary.op);
   EXPECT_EQ(ctx, 2, (int)shl->as.binary.rhs->as.intLit.v);
   EXPECT_EQ(ctx, 0, diags.count);
@@ -150,15 +150,15 @@ TEST(logicSpellings) {
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("a and b or not c", &arena, &diags);
-  AstNode* or = expr0(mod);
-  EXPECT_EQ(ctx, AST_LOGIC, or->kind);
-  EXPECT_EQ(ctx, AST_OP_OR, or->as.binary.op);
-  AstNode* and = or->as.binary.lhs;
-  EXPECT_EQ(ctx, AST_LOGIC, and->kind);
-  EXPECT_EQ(ctx, AST_OP_AND, and->as.binary.op);
-  AstNode* not = or->as.binary.rhs;
-  EXPECT_EQ(ctx, AST_UNARY, not->kind);
-  EXPECT_EQ(ctx, AST_UNOP_NOT, not->as.unary.op);
+  AstNode* orNode = expr0(mod);
+  EXPECT_EQ(ctx, AST_LOGIC, orNode->kind);
+  EXPECT_EQ(ctx, AST_OP_OR, orNode->as.binary.op);
+  AstNode* andNode = orNode->as.binary.lhs;
+  EXPECT_EQ(ctx, AST_LOGIC, andNode->kind);
+  EXPECT_EQ(ctx, AST_OP_AND, andNode->as.binary.op);
+  AstNode* notNode = orNode->as.binary.rhs;
+  EXPECT_EQ(ctx, AST_UNARY, notNode->kind);
+  EXPECT_EQ(ctx, AST_UNOP_NOT, notNode->as.unary.op);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
@@ -168,10 +168,10 @@ TEST(logicSymbolForms) {
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("a && b || c && d", &arena, &diags);
-  AstNode* or = expr0(mod);
-  EXPECT_EQ(ctx, AST_OP_OR, or->as.binary.op);
-  EXPECT_EQ(ctx, AST_OP_AND, or->as.binary.lhs->as.binary.op);
-  EXPECT_EQ(ctx, AST_OP_AND, or->as.binary.rhs->as.binary.op);
+  AstNode* orNode = expr0(mod);
+  EXPECT_EQ(ctx, AST_OP_OR, orNode->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_AND, orNode->as.binary.lhs->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_AND, orNode->as.binary.rhs->as.binary.op);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
@@ -182,10 +182,10 @@ TEST(logicBindsLooserThanCompare) {
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("x == 1 && y < 2", &arena, &diags);
-  AstNode* and = expr0(mod);
-  EXPECT_EQ(ctx, AST_LOGIC, and->kind);
-  EXPECT_EQ(ctx, AST_OP_EQ, and->as.binary.lhs->as.binary.op);
-  EXPECT_EQ(ctx, AST_OP_LT, and->as.binary.rhs->as.binary.op);
+  AstNode* andNode = expr0(mod);
+  EXPECT_EQ(ctx, AST_LOGIC, andNode->kind);
+  EXPECT_EQ(ctx, AST_OP_EQ, andNode->as.binary.lhs->as.binary.op);
+  EXPECT_EQ(ctx, AST_OP_LT, andNode->as.binary.rhs->as.binary.op);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
@@ -488,7 +488,9 @@ TEST(mapSetFiveForms) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("var a = {}\nvar b = {1: 2}\nvar c = {1, 2}\nvar d = {k: v for k, v in m}\nvar e = {x % 3 for x in xs}", &arena, &diags);
+  AstNode* mod =
+      parseSrc("var a = {}\nvar b = {1: 2}\nvar c = {1, 2}\nvar d = {k: v for k, v in m}\nvar e = {x % 3 for x in xs}",
+               &arena, &diags);
   EXPECT_EQ(ctx, 5, mod->as.list.count);
   EXPECT_EQ(ctx, 0, diags.count);
   AstNode* emptyMap = mod->as.list.items[0]->as.varDecl.init;

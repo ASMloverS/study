@@ -227,7 +227,7 @@ static AstNode* parseUnary(Parser* p);  // 与 parsePow 互递归（** 右结合
 static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t compKind, MsTokenType closer,
                                int32_t line, int32_t col);  // 定义于 parseSliceRest 后（依赖 rejectGenExpr）
 static bool rejectGenExpr(Parser* p, const AstNode* n);  // 定义在 parseCallArgs 前（parseStringLit 前置可见）
-static AstNode* parseBlock(Parser* p);  // 函数表达式体需要前置可见（定义在语句区）
+static AstNode* parseBlock(Parser* p);                   // 函数表达式体需要前置可见（定义在语句区）
 
 // map 字面量键值对（parsePrimary 花括号分支暂存；定义须先于 parsePrimary）
 typedef struct MapPair {
@@ -351,7 +351,7 @@ static AstNode* parsePrimary(Parser* p) {
       return node;
     }
     case TK_LPAREN: {
-      advance(p);  // (
+      advance(p);                 // (
       if (match(p, TK_RPAREN)) {  // () 空 tuple（02 §5.3）
         AstNode* node = astNewNode(p->arena, AST_TUPLE, line, col);
         node->as.tuple.count = 0;
@@ -608,7 +608,7 @@ static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t 
       return NULL;
     }
     if (check(p, TK_FOR)) {  // 裸单实参生成器（03 §1）：唯一实参、不可展开
-      if (count != 0) {  // 前面已有实参 → 非唯一实参（03 §1）
+      if (count != 0) {      // 前面已有实参 → 非唯一实参（03 §1）
         errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression must be the sole argument");
         free(tmp);
         return NULL;
@@ -786,7 +786,7 @@ static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t 
   return node;
 }
 
-// 后缀链（左结合，03 优先级级 14）：调用/索引/切片/成员
+// 后缀链（左结合，03 优先级 14）：调用/索引/切片/成员
 static AstNode* parsePostfix(Parser* p) {
   AstNode* obj = parsePrimary(p);
   if (obj == NULL) {
@@ -986,17 +986,11 @@ static AstBinOp shiftOpOf(MsTokenType type) {
   }
 }
 
-static AstBinOp bitAndOpOf(MsTokenType type) {
-  return type == TK_AMP ? AST_OP_BIT_AND : AST_OP_NONE;
-}
+static AstBinOp bitAndOpOf(MsTokenType type) { return type == TK_AMP ? AST_OP_BIT_AND : AST_OP_NONE; }
 
-static AstBinOp bitXorOpOf(MsTokenType type) {
-  return type == TK_CARET ? AST_OP_BIT_XOR : AST_OP_NONE;
-}
+static AstBinOp bitXorOpOf(MsTokenType type) { return type == TK_CARET ? AST_OP_BIT_XOR : AST_OP_NONE; }
 
-static AstBinOp bitOrOpOf(MsTokenType type) {
-  return type == TK_PIPE ? AST_OP_BIT_OR : AST_OP_NONE;
-}
+static AstBinOp bitOrOpOf(MsTokenType type) { return type == TK_PIPE ? AST_OP_BIT_OR : AST_OP_NONE; }
 
 static AstNode* parseMul(Parser* p) { return parseBinaryLevel(p, parseUnary, mulOpOf); }
 
@@ -1010,7 +1004,7 @@ static AstNode* parseBitXor(Parser* p) { return parseBinaryLevel(p, parseBitAnd,
 
 static AstNode* parseBitOr(Parser* p) { return parseBinaryLevel(p, parseBitXor, bitOrOpOf); }
 
-// 比较（03 优先级级 4）：单次、不可链式
+// 比较（03 优先级 4）：单次、不可链式
 static AstNode* parseCompare(Parser* p) {
   AstNode* lhs = parseBitOr(p);
   if (lhs == NULL) {
@@ -1032,7 +1026,7 @@ static AstNode* parseCompare(Parser* p) {
   return mkBinary(p, lhs, op, rhs);
 }
 
-// 逻辑与（03 优先级级 3）：&& / and
+// 逻辑与（03 优先级 3）：&& / and
 static AstNode* parseAnd(Parser* p) {
   AstNode* lhs = parseCompare(p);
   if (lhs == NULL) {
@@ -1052,7 +1046,7 @@ static AstNode* parseAnd(Parser* p) {
   return lhs;
 }
 
-// 逻辑或（03 优先级级 2）：|| / or
+// 逻辑或（03 优先级 2）：|| / or
 static AstNode* parseOr(Parser* p) {
   AstNode* lhs = parseAnd(p);
   if (lhs == NULL) {

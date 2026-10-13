@@ -11,17 +11,17 @@
 
 // 语法错误码（MSE1xxx 段，03/04 文档；诊断 code 字段取枚举值）
 typedef enum MseSyntaxCode {
-  MSE_SYN_UNEXPECTED = 1000,      // 意外 token（含缺表达式）
-  MSE_SYN_EXPECTED = 1001,        // 缺少期望的语法成分（消息指明）
-  MSE_SYN_SHORT_TOPLEVEL = 1002,  // := 出现在模块顶层（04 §1）
-  MSE_SYN_IF_PAREN = 1003,        // if 条件加了括号（04 §3，Go 风格强制）
-  MSE_SYN_DUP_DECL = 1004,        // 同作用域重复声明（04 §1）
-  MSE_SYN_DESTRUCT_STARS = 1005,  // 解构目标 * 多于一个（04 §2）
-  MSE_SYN_BAD_TARGET = 1006,      // 非法赋值目标 / 短声明目标
-  MSE_SYN_CHAINED_CMP = 1007,     // 比较运算符不可链式（03 优先级表）
-  MSE_SYN_STAR_NO_ASSIGN = 1008,  // * 目标只能出现在解构赋值
-  MSE_SYN_GENEXPR_POS = 1009,     // 生成器表达式仅可作调用唯一实参或赋值右值（03 §1）
-  MSE_SYN_SPREAD_NOT_LAST = 1010, // * 展开实参必须是最后一个实参（03 §4）
+  MSE_SYN_UNEXPECTED = 1000,       // 意外 token（含缺表达式）
+  MSE_SYN_EXPECTED = 1001,         // 缺少期望的语法成分（消息指明）
+  MSE_SYN_SHORT_TOPLEVEL = 1002,   // := 出现在模块顶层（04 §1）
+  MSE_SYN_IF_PAREN = 1003,         // if 条件加了括号（04 §3，Go 风格强制）
+  MSE_SYN_DUP_DECL = 1004,         // 同作用域重复声明（04 §1）
+  MSE_SYN_DESTRUCT_STARS = 1005,   // 解构目标 * 多于一个（04 §2）
+  MSE_SYN_BAD_TARGET = 1006,       // 非法赋值目标 / 短声明目标
+  MSE_SYN_CHAINED_CMP = 1007,      // 比较运算符不可链式（03 优先级表）
+  MSE_SYN_STAR_NO_ASSIGN = 1008,   // * 目标只能出现在解构赋值
+  MSE_SYN_GENEXPR_POS = 1009,      // 生成器表达式仅可作调用唯一实参或赋值右值（03 §1）
+  MSE_SYN_SPREAD_NOT_LAST = 1010,  // * 展开实参必须是最后一个实参（03 §4）
 } MseSyntaxCode;
 
 typedef struct ParserScope ParserScope;

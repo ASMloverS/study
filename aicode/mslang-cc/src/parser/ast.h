@@ -24,7 +24,7 @@ typedef enum AstKind {
   AST_SWITCH_CASE,
   AST_BREAK,
   AST_CONTINUE,
-  AST_RETURN,       // as.exprStmt 复用（value）
+  AST_RETURN,  // as.exprStmt 复用（value）
   AST_THROW,
   AST_DEFER,
   AST_SEND,
@@ -46,15 +46,15 @@ typedef enum AstKind {
   AST_BINARY,  // as.binary（逻辑短路 AST_LOGIC 复用 binary 载荷）
   AST_INDEX,   // as.indexExpr（后缀 [e]，赋值目标用）
   AST_MEMBER,  // as.memberExpr（后缀 .name）
-  // T007 表达式扩展位（本任务仅定义枚举位）
+  // 表达式扩展：T007 已实现（AST_RECV/AST_AWAIT/AST_GO 为 T008+ 预留）
   AST_UNARY,
   AST_LOGIC,
   AST_TERNARY,
   AST_CALL,
   AST_SLICE,
-  AST_LIST,    // as.list 复用
+  AST_LIST,  // as.list 复用
   AST_MAP,
-  AST_SET,     // as.list 复用
+  AST_SET,  // as.list 复用
   AST_COMPREHENSION,
   AST_GEN_EXPR,
   AST_FUNC_EXPR,
@@ -83,8 +83,8 @@ typedef enum AstBinOp {
   AST_OP_LE,
   AST_OP_GT,
   AST_OP_GE,
-  AST_OP_IS,   // 同一性（03 §5，不可重载）
-  AST_OP_IN,   // 成员包含（03 §5，走 __contains__）
+  AST_OP_IS,  // 同一性（03 §5，不可重载）
+  AST_OP_IN,  // 成员包含（03 §5，走 __contains__）
   AST_OP_AND,
   AST_OP_OR,  // 短路逻辑（T007 AST_LOGIC 载荷）
 } AstBinOp;
@@ -97,7 +97,7 @@ enum {
 
 typedef struct AstNode AstNode;
 
-// 一元运算符（03 优先级级 12）
+// 一元运算符（03 优先级 12）
 typedef enum AstUnaryOp {
   AST_UNOP_NEG = 1,  // -
   AST_UNOP_NOT,      // ! / not
