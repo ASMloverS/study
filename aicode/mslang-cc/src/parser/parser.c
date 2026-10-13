@@ -1320,7 +1320,7 @@ static AstNode* parseReturnStmt(Parser* p) {
   int32_t line = p->cur.line, col = p->cur.col;
   advance(p);  // return
   AstNode* value = NULL;
-  if (!check(p, TK_RBRACE) && !check(p, TK_EOF) && p->cur.line == p->prevLine) {
+  if (!check(p, TK_RBRACE) && !check(p, TK_SEMICOLON) && !check(p, TK_EOF) && p->cur.line == p->prevLine) {
     value = parseExprList(p);
     if (value == NULL) {
       return NULL;

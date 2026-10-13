@@ -963,6 +963,63 @@ TEST(errMemberBraceCall) {
   AstNode* mod = parseSrc("obj.m(x)[i].f { }", &arena, &diags);
   (void)mod;
   EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(returnSemicolonBare) {
+  // return; → 裸 return + 显式分号（与 endSimpleStmt 的 ; 消费一致）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func() { return; n += 1 }", &arena, &diags);
+  AstNode* fn = expr0(mod);
+  AstNode* first = fn->as.funcExpr.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, first->kind);
+  EXPECT(ctx, first->as.exprStmt.expr == NULL);
+  EXPECT_EQ(ctx, 2, fn->as.funcExpr.body->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(returnBareAtModuleLevel) {
+  // 模块级裸 return：ASI 合成分号不进入值表达式（守卫含 SEMICOLON）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("return\nx", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, AST_RETURN, mod->as.list.items[0]->kind);
+  EXPECT(ctx, mod->as.list.items[0]->as.exprStmt.expr == NULL);
+  EXPECT_EQ(ctx, AST_IDENT, mod->as.list.items[1]->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(returnBareEolInBlock) {
+  // 块内换行裸 return（prevLine 守卫主场景，回归锁定）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func() {\n  return\n}", &arena, &diags);
+  AstNode* fn = expr0(mod);
+  AstNode* ret = fn->as.funcExpr.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, ret->kind);
+  EXPECT(ctx, ret->as.exprStmt.expr == NULL);
+  EXPECT_EQ(ctx, 1, fn->as.funcExpr.body->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcExprStmtFollowedByNewline) {
+  // 表达式语句形态的函数表达式 + 后续语句（probe F 回归）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func() { }\nx", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, mod->as.list.items[0]->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
 
@@ -1031,6 +1088,10 @@ int main(void) {
   returnMultiValue(&ctx);
   interpSegmentOrder(&ctx);
   errMemberBraceCall(&ctx);
+  returnSemicolonBare(&ctx);
+  returnBareAtModuleLevel(&ctx);
+  returnBareEolInBlock(&ctx);
+  funcExprStmtFollowedByNewline(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
