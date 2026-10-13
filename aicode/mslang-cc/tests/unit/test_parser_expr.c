@@ -841,6 +841,131 @@ TEST(errBareGenexprInIndex) {
   astArenaDestroy(&arena);
 }
 
+TEST(funcExpression) {
+  // var f = func(x) { return x * 2 } → FUNC_EXPR(param x, body=BLOCK[RETURN])
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var f = func(x) { return x * 2 }", &arena, &diags);
+  AstNode* decl = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_VAR_DECL, decl->kind);
+  AstNode* fn = decl->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  EXPECT_EQ(ctx, 1, fn->as.funcExpr.paramCount);
+  EXPECT(ctx, fn->as.funcExpr.params[0].nameLen == 1 && fn->as.funcExpr.params[0].name[0] == 'x');
+  EXPECT(ctx, fn->as.funcExpr.params[0].defaultExpr == NULL);  // T008 才有默认参数
+  EXPECT(ctx, !fn->as.funcExpr.params[0].rest);
+  EXPECT_EQ(ctx, AST_BLOCK, fn->as.funcExpr.body->kind);
+  EXPECT_EQ(ctx, 1, fn->as.funcExpr.body->as.list.count);
+  AstNode* ret = fn->as.funcExpr.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, ret->kind);
+  EXPECT_EQ(ctx, AST_OP_MUL, ret->as.exprStmt.expr->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcExprMultiParamsAndBareReturn) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func(a, b) { return }", &arena, &diags);
+  AstNode* fn = expr0(mod);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  EXPECT_EQ(ctx, 2, fn->as.funcExpr.paramCount);
+  EXPECT(ctx, fn->as.funcExpr.params[1].nameLen == 1 && fn->as.funcExpr.params[1].name[0] == 'b');
+  AstNode* ret = fn->as.funcExpr.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, ret->kind);
+  EXPECT(ctx, ret->as.exprStmt.expr == NULL);  // 裸 return
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcExprNoParams) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func() { }", &arena, &diags);
+  AstNode* fn = expr0(mod);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  EXPECT_EQ(ctx, 0, fn->as.funcExpr.paramCount);
+  EXPECT_EQ(ctx, AST_BLOCK, fn->as.funcExpr.body->kind);
+  EXPECT_EQ(ctx, 0, fn->as.funcExpr.body->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcExprCallAndPostfix) {
+  // list.map(xs, func(x) { return x + 1 }) → 调用第二实参为 FUNC_EXPR
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("list.map(xs, func(x) { return x + 1 })", &arena, &diags);
+  AstNode* call = expr0(mod);
+  EXPECT_EQ(ctx, AST_CALL, call->kind);
+  EXPECT_EQ(ctx, 2, call->as.call.count);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, call->as.call.args[1]->kind);
+  EXPECT_EQ(ctx, AST_RETURN, call->as.call.args[1]->as.funcExpr.body->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcExprBadParam) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func(1) { }", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1001, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(returnMultiValue) {
+  // return a, b → 多值返回即 tuple（05 §5）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func() { return a, b }", &arena, &diags);
+  AstNode* fn = expr0(mod);
+  AstNode* ret = fn->as.funcExpr.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, ret->kind);
+  EXPECT_EQ(ctx, AST_TUPLE, ret->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, 2, ret->as.exprStmt.expr->as.tuple.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(interpSegmentOrder) {
+  // "a${b}c${d(e)}" → 段序 [str, ident, str, call]
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("\"a${b}c${d(e)}\"", &arena, &diags);
+  AstNode* s = expr0(mod);
+  EXPECT_EQ(ctx, AST_STRING, s->kind);
+  EXPECT_EQ(ctx, 4, s->as.strLit.count);
+  EXPECT(ctx, s->as.strLit.segs[0].expr == NULL);
+  EXPECT_EQ(ctx, 1, s->as.strLit.segs[0].len);
+  EXPECT_EQ(ctx, AST_IDENT, s->as.strLit.segs[1].expr->kind);
+  EXPECT(ctx, s->as.strLit.segs[2].expr == NULL);
+  EXPECT_EQ(ctx, 1, s->as.strLit.segs[2].len);
+  EXPECT_EQ(ctx, AST_CALL, s->as.strLit.segs[3].expr->kind);
+  EXPECT_EQ(ctx, 1, s->as.strLit.segs[3].expr->as.call.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errMemberBraceCall) {
+  // obj.m(x)[i].f{…} 不合法：后缀链无 { 形态（T007 §5.1 后缀链行）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("obj.m(x)[i].f { }", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   precedenceMulOverAdd(&ctx);
@@ -898,6 +1023,14 @@ int main(void) {
   errParenGenexprInInterp(&ctx);
   errGenexprAsTernaryThen(&ctx);
   errBareGenexprInIndex(&ctx);
+  funcExpression(&ctx);
+  funcExprMultiParamsAndBareReturn(&ctx);
+  funcExprNoParams(&ctx);
+  funcExprCallAndPostfix(&ctx);
+  funcExprBadParam(&ctx);
+  returnMultiValue(&ctx);
+  interpSegmentOrder(&ctx);
+  errMemberBraceCall(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
