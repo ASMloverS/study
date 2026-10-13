@@ -19,6 +19,9 @@
 |------|--------------|----------|------|
 | A | `{` 歧义处实现 parser 保存/回溯点（受限回溯） | 不实现回溯：`(`/`[`/`{` 先完整解析第一个子表达式，再看下一 token（`for`/`:`/`,`/闭括号）定形 | `for`、`:` 均终止表达式，回溯无必要；行为不变 |
 | B | 函数表达式 `func(a, b) { … }` | 仅普通参数；默认参数、`*rest`、`->` 表达式体归 T008；补最小 `return` 语句解析（测试用例 `func(x) { return x*2 }` 需要） | 参数结构体设计为 T008 可复用 |
+| C | 调用展开 spread 位图（ms_u32） | 与 args 平行的 `bool*` 数组 | 无 32 实参上限，语义等同 |
+| D | （实现中发现）map/set 字面量测试语境 | 语句位 `{` 维持块语句（04 §10，T006 已锁定）；map/set/推导式字面量以表达式上下文（var 右值）验证 | 无回溯且与既有块语义兼容 |
+| E | （实现中发现）裸单实参生成器 `f(g for g in xs)` | parseCallArgs 内 FOR 分支处理：wrap 已解析实参 + `closedByGenexpr` 标志跳过闭括号复检 | parseExpr 停在 `for`，primary 无法覆盖该形态 |
 
 ## 4. 详细设计
 
@@ -41,7 +44,7 @@ parseExpr → parseTernary → parseOr → parseAnd → parseCompare → parseBi
 - `unary`: `{ AstNode* operand; AstUnaryOp op; }`（NEG/NOT/INV）
 - `logic`: `{ AstNode* lhs, * rhs; AstBinOp op; }`（AND/OR）
 - `ternary`: `{ cond, thenExpr, elseExpr }`
-- `call`: `{ AstNode* callee; AstNode** args; int32_t count; ms_u32 spread; }`（spread 为位图，位 i 表示 args[i] 为 `*` 展开）
+- `call`: `{ AstNode* callee; AstNode** args; bool* spread; int32_t count; }`（spread 为与 args 平行的 bool 数组，位 i 表示 args[i] 为 `*` 展开；无 32 实参位图上限）
 - `slice`: `{ obj, start, end, step }`（端点可 NIL；独立 AST_SLICE，非索引特例）
 - `list`/`set`: `{ items, count }`；`map`: `{ keys, values, count }`
 - `compr`: LIST/MAP/SET 推导式与 GEN_EXPR 共用：`{ ms_u8 kind; AstNode* key; AstNode* value; ComprFor* fors; int32_t forCount; AstNode** conds; int32_t condCount; }`，其中 `ComprFor { AstNode* target; AstNode* iter; }`（target 为 IDENT 或 AST_TUPLE）；list/set 用 value，map 用 key:value
@@ -73,7 +76,7 @@ parseExpr → parseTernary → parseOr → parseAnd → parseCompare → parseBi
 
 ## 5. 已知不设检查的边角
 
-- 元组右值内嵌带括号 genexpr（`x = (g for g in xs), 1`）：解析通过，T009 binder 收紧。无测试要求。
+带括号 GEN_EXPR 在"直接操作数/唯一实参/赋值右值"三类合法位置之外的**汇聚点**（非直接操作数：容器字面量元素、推导式 value/key/if 条件、索引实参 `a[(g for …)]`、切片端点、return 值、元组右值成员等）解析通过、零诊断——与元组右值同族，统一归 T009 Binder 收紧（语义层必须拒绝惰性迭代器落位于此，届时一并补 MSE1xxx/类型错误）。
 
 ## 6. 测试计划
 
