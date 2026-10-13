@@ -566,6 +566,11 @@ static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t 
       return NULL;
     }
     if (check(p, TK_FOR)) {  // 裸单实参生成器（03 §1）：唯一实参、不可展开
+      if (count != 0) {  // 前面已有实参 → 非唯一实参（03 §1）
+        errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression must be the sole argument");
+        free(tmp);
+        return NULL;
+      }
       if (star) {
         errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression cannot be spread");
         free(tmp);
@@ -586,7 +591,7 @@ static AstNode* parseCallArgs(Parser* p, AstNode* callee, int32_t line, int32_t 
       free(tmp);
       return NULL;
     }
-    if (arg->kind == AST_GEN_EXPR && (star || !check(p, TK_RPAREN))) {
+    if (arg->kind == AST_GEN_EXPR && (star || count > 1 || !check(p, TK_RPAREN))) {
       // GEN_EXPR 仅可作唯一实参且不得被 * 展开（括号形态后跟逗号亦在此拦截）
       errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression must be the sole argument");
       free(tmp);
@@ -769,6 +774,10 @@ static AstNode* parsePostfix(Parser* p) {
       }
       AstNode* first = parseExpr(p);
       if (first == NULL) {
+        return NULL;
+      }
+      if (check(p, TK_FOR)) {  // 索引位裸生成器（03 §1：非调用实参/赋值右值）
+        errTok(p, &p->cur, MSE_SYN_GENEXPR_POS, "generator expression is not allowed in index");
         return NULL;
       }
       if (check(p, TK_COLON)) {

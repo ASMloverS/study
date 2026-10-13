@@ -753,6 +753,94 @@ TEST(errStmtBraceMapForm) {
   astArenaDestroy(&arena);
 }
 
+TEST(errBareGenexprAfterArg) {
+  // f(a, x for x in xs) → 前向非唯一实参（镜像盲区，I-1）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(a, x for x in xs)", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errParenGenexprNonSoleLast) {
+  // f(a, (x for x in xs)) → 括号形态末实参亦非唯一（I-1）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(a, (x for x in xs))", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(bareGenexprWithCond) {
+  // f(x for x in xs if x > 0) → 裸形态 + if 条件合法
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("f(x for x in xs if x > 0)", &arena, &diags);
+  AstNode* call = expr0(mod);
+  EXPECT_EQ(ctx, AST_CALL, call->kind);
+  EXPECT_EQ(ctx, 1, call->as.call.count);
+  EXPECT_EQ(ctx, AST_GEN_EXPR, call->as.call.args[0]->kind);
+  EXPECT_EQ(ctx, 1, call->as.call.args[0]->as.compr.condCount);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(parenGenexprDoubleParen) {
+  // ((x for x in xs)) → 双层括号还原为 GEN_EXPR
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var g = ((x for x in xs))", &arena, &diags);
+  AstNode* decl = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_VAR_DECL, decl->kind);
+  EXPECT_EQ(ctx, AST_GEN_EXPR, decl->as.varDecl.init->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errParenGenexprInInterp) {
+  // "${(x for x in xs)}" → 插值段括号形态亦拒（3c 主路径）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("\"${(x for x in xs)}\"", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errGenexprAsTernaryThen) {
+  // a ? (x for x in xs) : b → then 操作数亦拒（三元三操作数同拒）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a ? (x for x in xs) : b", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errBareGenexprInIndex) {
+  // a[x for x in xs] → 索引位裸生成器 1009（M-2）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("a[x for x in xs]", &arena, &diags);
+  (void)mod;
+  EXPECT(ctx, diags.count >= 1);
+  EXPECT_EQ(ctx, 1009, (int)diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   precedenceMulOverAdd(&ctx);
@@ -803,6 +891,13 @@ int main(void) {
   mapCompTernaryValue(&ctx);
   mapSetTrailingComma(&ctx);
   errStmtBraceMapForm(&ctx);
+  errBareGenexprAfterArg(&ctx);
+  errParenGenexprNonSoleLast(&ctx);
+  bareGenexprWithCond(&ctx);
+  parenGenexprDoubleParen(&ctx);
+  errParenGenexprInInterp(&ctx);
+  errGenexprAsTernaryThen(&ctx);
+  errBareGenexprInIndex(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
