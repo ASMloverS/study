@@ -166,6 +166,10 @@ struct AstNode {
       AstNode* elseNode;
     } ifStmt;
     struct {
+      AstNode* chan;
+      AstNode* value;
+    } sendStmt;  // AST_SEND：ch <- v
+    struct {
       const char* name;
       int32_t nameLen;
     } ident;

@@ -903,6 +903,34 @@ static AstNode* parsePow(Parser* p) {
   return mkBinary(p, base, AST_OP_POW, rhs);
 }
 
+// 优先级 13 前缀（03 §8）：<-
+// 接收 / await / go（复用 unary 载荷，op 恒 0）
+static AstNode* parsePrefix13(Parser* p) {
+  AstKind kind;
+  switch (p->cur.type) {
+    case TK_LARROW:
+      kind = AST_RECV;
+      break;
+    case TK_AWAIT:
+      kind = AST_AWAIT;
+      break;
+    case TK_GO:
+      kind = AST_GO;
+      break;
+    default:
+      return parsePow(p);
+  }
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);
+  AstNode* operand = parsePrefix13(p);
+  if (operand == NULL || rejectGenExpr(p, operand)) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, kind, line, col);
+  node->as.unary.operand = operand;
+  return node;
+}
+
 static AstNode* parseUnary(Parser* p) {
   AstUnaryOp op;
   switch (p->cur.type) {
@@ -917,7 +945,7 @@ static AstNode* parseUnary(Parser* p) {
       op = AST_UNOP_INV;
       break;
     default:
-      return parsePow(p);
+      return parsePrefix13(p);
   }
   int32_t line = p->cur.line, col = p->cur.col;
   advance(p);
@@ -1398,14 +1426,10 @@ static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, i
   return node;
 }
 
-// 表达式/赋值/短声明语句（04 §1 §2 §10）：先解析逗号列表，按后续 token 定形
-static AstNode* parseSimpleStmt(Parser* p) {
-  int32_t line = p->cur.line, col = p->cur.col;
-  bool firstStar = match(p, TK_STAR);  // 语句起始 * 仅解构目标合法
-  AstNode* first = parseExpr(p);
-  if (first == NULL) {
-    return NULL;
-  }
+// 首表达式后定形：短声明 / send / 元组目标 / 复合赋值 / 普通赋值 / 表达式语句
+// terminate=false 供 for 头部首段使用：不消费结尾 ;/换行（04 §4 判别需要，后续任务）
+static AstNode* finishSimpleStmt(Parser* p, AstNode* first, bool firstStar, int32_t line, int32_t col,
+                                 bool terminate) {
   // x := e 短声明（单 IDENT 目标）
   if (!firstStar && check(p, TK_COLON_EQ)) {
     advance(p);
@@ -1430,7 +1454,26 @@ static AstNode* parseSimpleStmt(Parser* p) {
     node->as.varDecl.nameLen = first->as.ident.nameLen;
     node->as.varDecl.flags = AST_VAR_SHORT;
     node->as.varDecl.init = value;
-    if (!endSimpleStmt(p)) {
+    if (terminate && !endSimpleStmt(p)) {
+      return NULL;
+    }
+    return node;
+  }
+  // channel 发送语句：ch <- v（04 §8）
+  if (!firstStar && check(p, TK_LARROW)) {
+    if (!isAssignTarget(first)) {
+      errPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "invalid send target");
+      return NULL;
+    }
+    advance(p);
+    AstNode* value = parseExpr(p);
+    if (value == NULL) {
+      return NULL;
+    }
+    AstNode* node = astNewNode(p->arena, AST_SEND, line, col);
+    node->as.sendStmt.chan = first;
+    node->as.sendStmt.value = value;
+    if (terminate && !endSimpleStmt(p)) {
       return NULL;
     }
     return node;
@@ -1478,7 +1521,7 @@ static AstNode* parseSimpleStmt(Parser* p) {
       tupleNode->as.tuple.items[i] = tmp[i].expr;
     }
     free(tmp);
-    if (!endSimpleStmt(p)) {
+    if (terminate && !endSimpleStmt(p)) {
       return NULL;
     }
     return newExprStmt(p, tupleNode, line, col);
@@ -1499,7 +1542,7 @@ static AstNode* parseSimpleStmt(Parser* p) {
     node->as.assign.target = first;
     node->as.assign.value = value;
     node->as.assign.op = op;
-    if (!endSimpleStmt(p)) {
+    if (terminate && !endSimpleStmt(p)) {
       return NULL;
     }
     return node;
@@ -1518,7 +1561,7 @@ static AstNode* parseSimpleStmt(Parser* p) {
     node->as.assign.target = first;
     node->as.assign.value = value;
     node->as.assign.op = AST_OP_NONE;
-    if (!endSimpleStmt(p)) {
+    if (terminate && !endSimpleStmt(p)) {
       return NULL;
     }
     return node;
@@ -1528,10 +1571,21 @@ static AstNode* parseSimpleStmt(Parser* p) {
     errPos(p, line, col, 1, MSE_SYN_STAR_NO_ASSIGN, "starred target requires an assignment");
     return NULL;
   }
-  if (!endSimpleStmt(p)) {
+  if (terminate && !endSimpleStmt(p)) {
     return NULL;
   }
   return newExprStmt(p, first, line, col);
+}
+
+// 表达式/赋值/短声明语句（04 §1 §2 §10）：先解析逗号列表，按后续 token 定形
+static AstNode* parseSimpleStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  bool firstStar = match(p, TK_STAR);  // 语句起始 * 仅解构目标合法
+  AstNode* first = parseExpr(p);
+  if (first == NULL) {
+    return NULL;
+  }
+  return finishSimpleStmt(p, first, firstStar, line, col, true);
 }
 
 static AstNode* parseStatement(Parser* p) {
