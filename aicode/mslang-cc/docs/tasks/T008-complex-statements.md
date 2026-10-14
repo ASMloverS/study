@@ -3,7 +3,7 @@
 - 阶段: P2 语法（roadmap 期 2）
 - 依赖: T007
 - 规模: L
-- 状态: 未开始
+- 状态: 🚧（分支 feat/t008-complex-statements）
 - 设计文档: `docs/language/04-statements.md` §4-§9 §10、`05-functions.md` §1 §8、`06-classes.md` §1 §2 §4
 
 ## 1. 目标与范围
