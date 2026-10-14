@@ -1373,7 +1373,8 @@ typedef struct TargetElem {
 } TargetElem;
 
 // = 后定形：目标合法性 + star 计数 → ASSIGN(元组目标) 或 DESTRUCTURE
-static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, int32_t line, int32_t col) {
+static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, int32_t line, int32_t col,
+                                    bool terminate) {
   AstNode* value = parseExprList(p);
   if (value == NULL) {
     return NULL;
@@ -1407,7 +1408,7 @@ static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, i
     node->as.assign.target = target;
     node->as.assign.value = value;
     node->as.assign.op = AST_OP_NONE;
-    if (!endSimpleStmt(p)) {
+    if (terminate && !endSimpleStmt(p)) {
       return NULL;
     }
     return node;
@@ -1420,7 +1421,7 @@ static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, i
   for (int32_t i = 0; i < count; i++) {
     node->as.destructure.targets[i] = tmp[i].expr;
   }
-  if (!endSimpleStmt(p)) {
+  if (terminate && !endSimpleStmt(p)) {
     return NULL;
   }
   return node;
@@ -1493,7 +1494,7 @@ static AstNode* finishSimpleStmt(Parser* p, AstNode* first, bool firstStar, int3
       MS_ARRAY_PUSH(tmp, count, cap, ((TargetElem){expr, starred}));
     }
     if (match(p, TK_EQ)) {
-      AstNode* node = finishAssignTargets(p, tmp, count, line, col);
+      AstNode* node = finishAssignTargets(p, tmp, count, line, col, terminate);
       free(tmp);
       if (node == NULL) {
         return NULL;
