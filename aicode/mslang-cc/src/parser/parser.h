@@ -22,6 +22,7 @@ typedef enum MseSyntaxCode {
   MSE_SYN_STAR_NO_ASSIGN = 1008,   // * 目标只能出现在解构赋值
   MSE_SYN_GENEXPR_POS = 1009,      // 生成器表达式仅可作调用唯一实参或赋值右值（03 §1）
   MSE_SYN_SPREAD_NOT_LAST = 1010,  // * 展开实参必须是最后一个实参（03 §4）
+  MSE_SYN_PARAM_ORDER = 1012,     // 参数序：普通 → 默认 → 至多一个 *rest（05 §1）
 } MseSyntaxCode;
 
 typedef struct ParserScope ParserScope;
@@ -34,6 +35,7 @@ typedef struct Parser {
   MsDiagSink* diags;   // 可为 NULL（免诊断场景）
   ParserScope* scope;  // 声明查重作用域链（完整解析在 T009 Binder）
   bool panic;          // 恢复中：屏蔽级联诊断直至同步点
+  int32_t funcDepth;   // 函数体嵌套深度（defer 合法性，04 §7）
 } Parser;
 
 void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena, MsDiagSink* diags);

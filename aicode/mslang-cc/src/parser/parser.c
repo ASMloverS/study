@@ -228,6 +228,9 @@ static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t 
                                int32_t line, int32_t col);  // 定义于 parseSliceRest 后（依赖 rejectGenExpr）
 static bool rejectGenExpr(Parser* p, const AstNode* n);  // 定义在 parseCallArgs 前（parseStringLit 前置可见）
 static AstNode* parseBlock(Parser* p);                   // 函数表达式体需要前置可见（定义在语句区）
+static bool parseParamList(Parser* p, AstParam** outParams, int32_t* outCount);  // 声明/表达式共用（语句区）
+static bool parseFuncBody(Parser* p, AstNode** outBody, AstNode** outExprBody);  // 同上
+static AstNode* parseFuncDeclStmt(Parser* p, ms_u8 flags, int32_t line, int32_t col);  // 同上
 
 // map 字面量键值对（parsePrimary 花括号分支暂存；定义须先于 parsePrimary）
 typedef struct MapPair {
@@ -532,44 +535,32 @@ static AstNode* parsePrimary(Parser* p) {
       free(tmp);
       return node;
     }
-    case TK_FUNC: {  // 函数表达式（05 §2，一等值；默认参数/rest/表达式体 T008）
-      advance(p);
-      if (!match(p, TK_LPAREN)) {
-        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '(' after 'func'");
-        return NULL;
+    case TK_FUNC: {  // 函数表达式（05 §2）：与声明共用参数/体解析
+      advance(p);  // line/col 取 parsePrimary 顶部（同一 func token）
+      ms_u8 flags = 0;
+      if (match(p, TK_STAR)) {
+        flags |= AST_FUNC_GENERATOR;
       }
       AstParam* params = NULL;
-      int32_t paramCount = 0, cap = 0;
-      while (!check(p, TK_RPAREN) && !check(p, TK_EOF)) {
-        if (!check(p, TK_ID)) {
-          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected parameter name");
-          free(params);
-          return NULL;
-        }
-        AstParam param = {p->cur.start, p->cur.len, NULL, false};
-        advance(p);
-        MS_ARRAY_PUSH(params, paramCount, cap, param);
-        if (!match(p, TK_COMMA)) {
-          break;
-        }
-      }
-      if (!match(p, TK_RPAREN)) {
-        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')'");
-        free(params);
+      int32_t paramCount = 0;
+      if (!parseParamList(p, &params, &paramCount)) {
         return NULL;
       }
-      AstNode* body = parseBlock(p);
-      if (body == NULL) {
+      AstNode* body = NULL;
+      AstNode* exprBody = NULL;
+      if (!parseFuncBody(p, &body, &exprBody)) {
         free(params);
         return NULL;
       }
       AstNode* node = astNewNode(p->arena, AST_FUNC_EXPR, line, col);
+      node->as.funcExpr.flags = flags;
       node->as.funcExpr.paramCount = paramCount;
       node->as.funcExpr.params = astArenaAlloc(p->arena, sizeof(AstParam) * (size_t)paramCount);
       if (paramCount > 0) {
         memcpy(node->as.funcExpr.params, params, sizeof(AstParam) * (size_t)paramCount);
       }
       node->as.funcExpr.body = body;
+      node->as.funcExpr.exprBody = exprBody;
       free(params);
       return node;
     }
@@ -1356,6 +1347,179 @@ static AstNode* parseReturnStmt(Parser* p) {
   return node;
 }
 
+// throw / yield（04 §6、05 §4）：值可省（裸 throw 为重抛，07 §3）
+static AstNode* parseValueJumpStmt(Parser* p, AstKind kind) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);
+  AstNode* value = NULL;
+  if (!check(p, TK_RBRACE) && !check(p, TK_SEMICOLON) && !check(p, TK_EOF) && p->cur.line == p->prevLine) {
+    value = parseExprList(p);
+    if (value == NULL) {
+      return NULL;
+    }
+  }
+  AstNode* node = astNewNode(p->arena, kind, line, col);
+  node->as.exprStmt.expr = value;
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  return node;
+}
+
+// 参数表（05 §1）：普通 → 默认 → 至多一个 *rest
+// 违序 MSE1012 就地诊断不中断（MSE1003 先例：泛 synchronize 会误吞函数体 } 报 unmatched）
+static bool parseParamList(Parser* p, AstParam** outParams, int32_t* outCount) {
+  if (!match(p, TK_LPAREN)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '(' after function name");
+    return false;
+  }
+  AstParam* params = NULL;
+  int32_t count = 0, cap = 0;
+  bool seenDefault = false;
+  bool seenRest = false;
+  while (!check(p, TK_RPAREN) && !check(p, TK_EOF)) {
+    bool rest = match(p, TK_STAR);
+    if (!check(p, TK_ID)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected parameter name");
+      goto fail;
+    }
+    AstParam param = {p->cur.start, p->cur.len, NULL, rest};
+    advance(p);
+    if (match(p, TK_EQ)) {
+      param.defaultExpr = parseExpr(p);
+      if (param.defaultExpr == NULL) {
+        goto fail;
+      }
+      if (rest) {
+        diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
+                "rest parameter cannot have a default");
+      } else {
+        seenDefault = true;
+      }
+    }
+    if (rest) {
+      if (seenRest) {
+        diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
+                "at most one rest parameter allowed");
+      }
+      seenRest = true;
+    } else if (seenRest) {
+      diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
+              "no parameter allowed after rest parameter");
+    } else if (seenDefault && param.defaultExpr == NULL) {
+      diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
+              "parameter without default follows default parameter");
+    }
+    MS_ARRAY_PUSH(params, count, cap, param);
+    if (!match(p, TK_COMMA)) {
+      break;
+    }
+  }
+  if (!match(p, TK_RPAREN)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')'");
+    goto fail;
+  }
+  *outParams = params;
+  *outCount = count;
+  return true;
+fail:
+  free(params);
+  return false;
+}
+
+// 函数体（05 §1）：{ } 块或 -> 表达式；新作用域 + funcDepth（defer 合法性，04 §7）
+static bool parseFuncBody(Parser* p, AstNode** outBody, AstNode** outExprBody) {
+  pushScope(p);
+  p->funcDepth++;
+  bool ok;
+  if (match(p, TK_ARROW)) {
+    *outBody = NULL;
+    *outExprBody = parseExpr(p);
+    ok = *outExprBody != NULL;
+  } else {
+    *outExprBody = NULL;
+    *outBody = parseBlock(p);
+    ok = *outBody != NULL;
+  }
+  p->funcDepth--;
+  popScope(p);
+  return ok;
+}
+
+// 语句位函数表达式（05 §2）：func[*](params) 体 → 表达式语句（T007 probe F 回归）
+static AstNode* parseFuncExprStmt(Parser* p, ms_u8 flags, int32_t line, int32_t col) {
+  AstParam* params = NULL;
+  int32_t paramCount = 0;
+  if (!parseParamList(p, &params, &paramCount)) {
+    return NULL;
+  }
+  AstNode* body = NULL;
+  AstNode* exprBody = NULL;
+  if (!parseFuncBody(p, &body, &exprBody)) {
+    free(params);
+    return NULL;
+  }
+  AstNode* fn = astNewNode(p->arena, AST_FUNC_EXPR, line, col);
+  fn->as.funcExpr.flags = flags;
+  fn->as.funcExpr.paramCount = paramCount;
+  fn->as.funcExpr.params = astArenaAlloc(p->arena, sizeof(AstParam) * (size_t)paramCount);
+  if (paramCount > 0) {
+    memcpy(fn->as.funcExpr.params, params, sizeof(AstParam) * (size_t)paramCount);
+  }
+  fn->as.funcExpr.body = body;
+  fn->as.funcExpr.exprBody = exprBody;
+  free(params);
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_EXPR_STMT, line, col);
+  node->as.exprStmt.expr = fn;
+  return node;
+}
+
+// 函数声明（05 §1 §8）：[async] func[*] name(params) { } / -> expr
+// func 后无 name 而直接 ( → 语句位函数表达式（05 §2，名称可省）
+static AstNode* parseFuncDeclStmt(Parser* p, ms_u8 flags, int32_t line, int32_t col) {
+  advance(p);  // func
+  if (match(p, TK_STAR)) {
+    flags |= AST_FUNC_GENERATOR;
+  }
+  if (!check(p, TK_ID)) {
+    if (check(p, TK_LPAREN)) {
+      return parseFuncExprStmt(p, flags, line, col);
+    }
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected function name");
+    return NULL;
+  }
+  const char* name = p->cur.start;
+  int32_t nameLen = p->cur.len;
+  advance(p);
+  AstParam* params = NULL;
+  int32_t paramCount = 0;
+  if (!parseParamList(p, &params, &paramCount)) {
+    return NULL;
+  }
+  AstNode* body = NULL;
+  AstNode* exprBody = NULL;
+  if (!parseFuncBody(p, &body, &exprBody)) {
+    free(params);
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_FUNC_DECL, line, col);
+  node->as.funcDecl.name = name;
+  node->as.funcDecl.nameLen = nameLen;
+  node->as.funcDecl.flags = flags;
+  node->as.funcDecl.paramCount = paramCount;
+  node->as.funcDecl.params = astArenaAlloc(p->arena, sizeof(AstParam) * (size_t)paramCount);
+  if (paramCount > 0) {
+    memcpy(node->as.funcDecl.params, params, sizeof(AstParam) * (size_t)paramCount);
+  }
+  node->as.funcDecl.body = body;
+  node->as.funcDecl.exprBody = exprBody;
+  free(params);
+  return node;
+}
+
 // 赋值目标合法性：标识符/索引/成员（04 §2）
 static bool isAssignTarget(const AstNode* node) {
   return node->kind == AST_IDENT || node->kind == AST_INDEX || node->kind == AST_MEMBER;
@@ -1607,6 +1771,24 @@ static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_RETURN)) {
     return parseReturnStmt(p);
   }
+  if (check(p, TK_THROW)) {
+    return parseValueJumpStmt(p, AST_THROW);
+  }
+  if (check(p, TK_YIELD)) {
+    return parseValueJumpStmt(p, AST_YIELD);
+  }
+  if (check(p, TK_FUNC)) {
+    return parseFuncDeclStmt(p, 0, p->cur.line, p->cur.col);
+  }
+  if (check(p, TK_ASYNC)) {
+    int32_t line = p->cur.line, col = p->cur.col;
+    advance(p);
+    if (!check(p, TK_FUNC)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'func' after 'async'");
+      return NULL;
+    }
+    return parseFuncDeclStmt(p, AST_FUNC_ASYNC, line, col);
+  }
   return parseSimpleStmt(p);
 }
 
@@ -1618,6 +1800,7 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
   p->diags = diags;
   p->scope = NULL;
   p->panic = false;
+  p->funcDepth = 0;
   scannerNext(&p->scan, &p->cur);  // 首 token 直接拉取（不经 advance：避免读未初始化 prevLine）
   p->prevLine = 1;
 }

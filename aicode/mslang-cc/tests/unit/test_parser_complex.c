@@ -85,6 +85,101 @@ TEST(unaryBindsLooserThanRecv) {
   astArenaDestroy(&arena);
 }
 
+// 首语句为函数声明时的快捷取用
+static AstNode* func0(AstNode* mod) { return mod->as.list.items[0]; }
+
+TEST(funcDeclFullForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f(a, b = 1, *r) -> a + b", &arena, &diags);
+  AstNode* f = func0(mod);
+  EXPECT_EQ(ctx, AST_FUNC_DECL, f->kind);
+  EXPECT_EQ(ctx, 0, f->as.funcDecl.flags);
+  EXPECT_EQ(ctx, 3, f->as.funcDecl.paramCount);
+  EXPECT_EQ(ctx, false, f->as.funcDecl.params[0].rest);
+  EXPECT_EQ(ctx, AST_INT, f->as.funcDecl.params[1].defaultExpr->kind);
+  EXPECT_EQ(ctx, 1, (int)f->as.funcDecl.params[1].defaultExpr->as.intLit.v);
+  EXPECT_EQ(ctx, true, f->as.funcDecl.params[2].rest);
+  EXPECT_EQ(ctx, NULL, f->as.funcDecl.params[0].defaultExpr);
+  EXPECT_EQ(ctx, NULL, f->as.funcDecl.body);
+  EXPECT_EQ(ctx, AST_BINARY, f->as.funcDecl.exprBody->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcDeclGeneratorAndAsync) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func* g() { yield 1 }\nasync func h(u) { return await u() }", &arena, &diags);
+  AstNode* g = func0(mod);
+  EXPECT_EQ(ctx, AST_FUNC_DECL, g->kind);
+  EXPECT_EQ(ctx, AST_FUNC_GENERATOR, g->as.funcDecl.flags);
+  AstNode* y = g->as.funcDecl.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_YIELD, y->kind);
+  EXPECT_EQ(ctx, AST_INT, y->as.exprStmt.expr->kind);
+  AstNode* h = mod->as.list.items[1];
+  EXPECT_EQ(ctx, AST_FUNC_ASYNC, h->as.funcDecl.flags);
+  AstNode* r = h->as.funcDecl.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, r->kind);
+  EXPECT_EQ(ctx, AST_AWAIT, r->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcDeclDefaultString) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func greet(name, prefix = \"Mr.\") { return name }", &arena, &diags);
+  AstNode* g = func0(mod);
+  EXPECT_EQ(ctx, AST_STRING, g->as.funcDecl.params[1].defaultExpr->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errParamOrder) {
+  const char* srcs[] = {"func f(a = 1, b) {}", "func f(*r, a) {}", "func f(*a, *b) {}"};
+  for (int i = 0; i < 3; i++) {
+    MsDiagSink diags = {0};
+    AstArena arena;
+    astArenaInit(&arena);
+    parseSrc(srcs[i], &arena, &diags);
+    EXPECT_EQ(ctx, 1, diags.count);
+    EXPECT_EQ(ctx, MSE_SYN_PARAM_ORDER, diags.items[0].code);
+    astArenaDestroy(&arena);
+  }
+}
+
+TEST(funcRedefinitionAllowed) {
+  // 05 §1：无重载，后定义覆盖先定义
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() {}\nfunc f() { }", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(funcExprDefaultsRestExprBody) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var f = func(a, b = 2, *r) -> a + b\nvar g = func*(x) { yield x }", &arena, &diags);
+  AstNode* f = mod->as.list.items[0]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, f->kind);
+  EXPECT_EQ(ctx, 3, f->as.funcExpr.paramCount);
+  EXPECT_EQ(ctx, AST_INT, f->as.funcExpr.params[1].defaultExpr->kind);
+  EXPECT_EQ(ctx, true, f->as.funcExpr.params[2].rest);
+  EXPECT_EQ(ctx, AST_BINARY, f->as.funcExpr.exprBody->kind);
+  AstNode* g = mod->as.list.items[1]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_FUNC_GENERATOR, g->as.funcExpr.flags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -92,6 +187,12 @@ int main(void) {
   awaitAndGoExprs(&ctx);
   sendStmt(&ctx);
   unaryBindsLooserThanRecv(&ctx);
+  funcDeclFullForms(&ctx);
+  funcDeclGeneratorAndAsync(&ctx);
+  funcDeclDefaultString(&ctx);
+  errParamOrder(&ctx);
+  funcRedefinitionAllowed(&ctx);
+  funcExprDefaultsRestExprBody(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

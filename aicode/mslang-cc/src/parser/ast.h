@@ -26,6 +26,7 @@ typedef enum AstKind {
   AST_CONTINUE,
   AST_RETURN,  // as.exprStmt 复用（value）
   AST_THROW,
+  AST_YIELD,  // as.exprStmt 复用（value，05 §4 生成器）
   AST_DEFER,
   AST_SEND,
   AST_SELECT,
@@ -93,6 +94,13 @@ typedef enum AstBinOp {
 enum {
   AST_VAR_SHORT = 1,  // x := e
   AST_VAR_CONST = 2,  // const x = e
+};
+
+// 函数声明/表达式形态标志（funcDecl/funcExpr.flags 位域）
+enum {
+  AST_FUNC_GENERATOR = 1,  // func*（05 §4）
+  AST_FUNC_ASYNC = 2,      // async func（05 §8）
+  AST_FUNC_STATIC = 4,     // 类体 static func（06 §4，Task 10 用）
 };
 
 typedef struct AstNode AstNode;
@@ -248,10 +256,21 @@ struct AstNode {
       int32_t condCount;
     } compr;  // AST_COMPREHENSION / AST_GEN_EXPR 共用
     struct {
+      ms_u8 flags;  // AST_FUNC_*
       AstParam* params;
       int32_t paramCount;
-      AstNode* body;  // AST_BLOCK
+      AstNode* body;      // AST_BLOCK；表达式体 NULL
+      AstNode* exprBody;  // -> expr（05 §1）
     } funcExpr;
+    struct {
+      const char* name;
+      int32_t nameLen;
+      ms_u8 flags;  // AST_FUNC_*
+      AstParam* params;
+      int32_t paramCount;
+      AstNode* body;      // AST_BLOCK；表达式体 NULL
+      AstNode* exprBody;  // -> expr
+    } funcDecl;  // AST_FUNC_DECL
   } as;
 };
 
