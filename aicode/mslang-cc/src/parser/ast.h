@@ -142,6 +142,13 @@ enum {
   AST_FOR_INF = 4,   // for {}
 };
 
+// select 分支形态（selectCase.form，04 §8）
+enum {
+  AST_SEL_RECV = 1,     // case v = <-ch: / case <-ch:
+  AST_SEL_SEND = 2,     // case ch <- v:
+  AST_SEL_DEFAULT = 3,  // default:
+};
+
 // 字符串段：expr != NULL 为插值段，否则为字面段（借用源文本，转义原文保留）
 typedef struct AstStrSeg {
   AstNode* expr;
@@ -228,6 +235,17 @@ struct AstNode {
       int32_t catchCount;
       AstNode* finallyBlock;  // 可 NULL
     } tryStmt;
+    struct {
+      AstNode** cases;  // AST_SELECT_CASE 列表
+      int32_t count;
+    } selectStmt;
+    struct {
+      ms_u8 form;       // AST_SEL_*
+      AstNode* target;  // RECV：赋值目标（NULL = 丢弃接收）
+      AstNode* chan;    // RECV：AST_RECV 源；SEND：目标 channel
+      AstNode* value;   // SEND：发送值
+      AstNode* body;    // 块或单语句（08 §3）
+    } selectCase;
     struct {
       const char* name;
       int32_t nameLen;

@@ -2183,6 +2183,115 @@ static AstNode* parseDeferStmt(Parser* p) {
   return node;
 }
 
+// select（04 §8、08 §3）：接收赋值 / 丢弃接收 / 发送 / default，case 体为块或单语句
+// select 非保留字（01 §2 共 37 关键字）：语句位 ID "select" 后随 { 才特判（type 先例，任务 §6）
+// 块内结构性错误复用 skipSwitchClose（花括号配平跳过，T006 §2 先例）
+static AstNode* parseSelectStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // select
+  if (!match(p, TK_LBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '{' after 'select'");
+    return NULL;
+  }
+  AstNode** cases = NULL;
+  int32_t count = 0, cap = 0;
+  while (check(p, TK_CASE) || check(p, TK_DEFAULT)) {
+    int32_t caseLine = p->cur.line, caseCol = p->cur.col;
+    bool isDefault = check(p, TK_DEFAULT);
+    advance(p);
+    ms_u8 form = AST_SEL_DEFAULT;
+    AstNode* target = NULL;
+    AstNode* chan = NULL;
+    AstNode* value = NULL;
+    if (!isDefault) {
+      AstNode* first = parseExpr(p);
+      if (first == NULL) {
+        free(cases);
+        skipSwitchClose(p);
+        p->panic = false;  // 已消费至配对 }：免 synchronize 吞同行后续语句
+        return NULL;
+      }
+      if (first->kind == AST_RECV) {  // case <-ch:（parsePrefix13 于 <- 直接成 RECV）
+        form = AST_SEL_RECV;
+        chan = first;
+      } else if (check(p, TK_LARROW)) {  // case ch <- v:
+        form = AST_SEL_SEND;
+        chan = first;
+        advance(p);
+        value = parseExpr(p);
+        if (value == NULL) {
+          free(cases);
+          skipSwitchClose(p);
+          p->panic = false;
+          return NULL;
+        }
+      } else if (match(p, TK_EQ)) {  // case v = <-ch:
+        form = AST_SEL_RECV;
+        if (!isAssignTarget(first)) {
+          // 就地恢复：仅报此一条，target 留空、子句照常完成（不 panic、不级联）
+          diagPos(p, first->line, first->col, 1, MSE_SYN_BAD_TARGET, "invalid receive target");
+        } else {
+          target = first;
+        }
+        if (!check(p, TK_LARROW)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '<-' in select receive case");
+          free(cases);
+          skipSwitchClose(p);
+          p->panic = false;
+          return NULL;
+        }
+        chan = parseExpr(p);  // 以 <- 起始 → AST_RECV
+        if (chan == NULL) {
+          free(cases);
+          skipSwitchClose(p);
+          p->panic = false;
+          return NULL;
+        }
+      } else {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '=' or '<-' in select case");
+        free(cases);
+        skipSwitchClose(p);
+        p->panic = false;
+        return NULL;
+      }
+    }
+    if (!match(p, TK_COLON)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ':' after select case");
+      free(cases);
+      skipSwitchClose(p);
+      p->panic = false;
+      return NULL;
+    }
+    AstNode* body = parseStatement(p);  // case 体为块或单语句（08 §3）
+    if (body == NULL) {
+      free(cases);
+      skipSwitchClose(p);
+      p->panic = false;
+      return NULL;
+    }
+    AstNode* caseNode = astNewNode(p->arena, AST_SELECT_CASE, caseLine, caseCol);
+    caseNode->as.selectCase.form = form;
+    caseNode->as.selectCase.target = target;
+    caseNode->as.selectCase.chan = chan;
+    caseNode->as.selectCase.value = value;
+    caseNode->as.selectCase.body = body;
+    MS_ARRAY_PUSH(cases, count, cap, caseNode);
+  }
+  if (!match(p, TK_RBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'case' or '}' in select body");
+    free(cases);
+    return NULL;  // 此处 cur 非 }：panic 路径交由 synchronize
+  }
+  AstNode* node = astNewNode(p->arena, AST_SELECT, line, col);
+  node->as.selectStmt.count = count;
+  node->as.selectStmt.cases = astNewNodeArray(p->arena, count);
+  if (count > 0) {
+    memcpy(node->as.selectStmt.cases, cases, sizeof(AstNode*) * (size_t)count);
+  }
+  free(cases);
+  return node;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -2215,6 +2324,10 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_DEFER)) {
     return parseDeferStmt(p);
+  }
+  if (check(p, TK_ID) && p->cur.len == 6 && memcmp(p->cur.start, "select", 6) == 0 && peekType(p) == TK_LBRACE) {
+    // select 非保留字（01 §2）：仅语句位 "select {" 特判，其余位置仍是普通标识符
+    return parseSelectStmt(p);
   }
   if (check(p, TK_BREAK) || check(p, TK_CONTINUE)) {  // 合法性检查归 T009（04 §6）
     AstKind kind = check(p, TK_BREAK) ? AST_BREAK : AST_CONTINUE;

@@ -710,6 +710,112 @@ TEST(deferNestedFuncAndExprBody) {
   astArenaDestroy(&arena);
 }
 
+TEST(selectThreeBranchForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("select {\ncase v = <-ch1: print(v)\ncase ch2 <- x: send()\ncase <-tick: tock()\ndefault: none()\n}",
+                          &arena, &diags);
+  AstNode* sel = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_SELECT, sel->kind);
+  EXPECT_EQ(ctx, 4, sel->as.selectStmt.count);
+  AstNode* c0 = sel->as.selectStmt.cases[0];
+  EXPECT_EQ(ctx, AST_SELECT_CASE, c0->kind);
+  EXPECT_EQ(ctx, AST_SEL_RECV, c0->as.selectCase.form);
+  EXPECT_EQ(ctx, AST_IDENT, c0->as.selectCase.target->kind);
+  EXPECT_EQ(ctx, AST_RECV, c0->as.selectCase.chan->kind);
+  AstNode* c1 = sel->as.selectStmt.cases[1];
+  EXPECT_EQ(ctx, AST_SEL_SEND, c1->as.selectCase.form);
+  EXPECT_EQ(ctx, AST_IDENT, c1->as.selectCase.chan->kind);
+  EXPECT_EQ(ctx, AST_IDENT, c1->as.selectCase.value->kind);
+  EXPECT_EQ(ctx, NULL, c1->as.selectCase.target);
+  AstNode* c2 = sel->as.selectStmt.cases[2];
+  EXPECT_EQ(ctx, AST_SEL_RECV, c2->as.selectCase.form);
+  EXPECT_EQ(ctx, NULL, c2->as.selectCase.target);
+  EXPECT_EQ(ctx, AST_RECV, c2->as.selectCase.chan->kind);
+  AstNode* c3 = sel->as.selectStmt.cases[3];
+  EXPECT_EQ(ctx, AST_SEL_DEFAULT, c3->as.selectCase.form);
+  EXPECT_EQ(ctx, AST_EXPR_STMT, c3->as.selectCase.body->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(selectCaseBodyBlockAndErrors) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("select {\ncase <-ch: {\nf()\ng()\n}\n}", &arena, &diags);
+  AstNode* sel = mod->as.list.items[0];
+  AstNode* c0 = sel->as.selectStmt.cases[0];
+  EXPECT_EQ(ctx, AST_BLOCK, c0->as.selectCase.body->kind);
+  EXPECT_EQ(ctx, 2, c0->as.selectCase.body->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+  // 非法 case 形态（无 = / <-）：恰 1 条诊断
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("select {\ncase f(): g()\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  astArenaDestroy(&arena);
+  // 接收赋值目标非法
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("select {\ncase 1 = <-ch: g()\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_BAD_TARGET, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(selectRecoveryKeepsFollowingStmt) {
+  // 坏 select 就地恢复：后续 x = <-ch 存活、函数 } 不被窃取、恰 1 条诊断（T006 §2 先例）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() {\nselect { case f(): g() }\nx = <-ch\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
+  EXPECT_EQ(ctx, 1, body->as.list.count);
+  EXPECT_EQ(ctx, AST_ASSIGN, body->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, AST_RECV, body->as.list.items[0]->as.assign.value->kind);
+  astArenaDestroy(&arena);
+  // 正常 select 后续语句无扰动（恢复边界外的正常路径）
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  AstNode* mod2 = parseSrc("func g() {\nselect { case v = <-ch1: f() }\nvar t = 2\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* body2 = mod2->as.list.items[0]->as.funcDecl.body;
+  EXPECT_EQ(ctx, 2, body2->as.list.count);
+  EXPECT_EQ(ctx, AST_SELECT, body2->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, AST_VAR_DECL, body2->as.list.items[1]->kind);
+  astArenaDestroy(&arena);
+}
+
+TEST(selectSendMemberChanAndIdentUse) {
+  // send 分支目标可为成员/索引（parseExpr 兜底，无赋值目标检查）；default 可独占
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("select {\ncase q.a <- 1: f()\ncase xs[0] <- 5: g()\ndefault: h()\n}", &arena, &diags);
+  AstNode* sel = mod->as.list.items[0];
+  EXPECT_EQ(ctx, 3, sel->as.selectStmt.count);
+  EXPECT_EQ(ctx, AST_MEMBER, sel->as.selectStmt.cases[0]->as.selectCase.chan->kind);
+  EXPECT_EQ(ctx, AST_INDEX, sel->as.selectStmt.cases[1]->as.selectCase.chan->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+  // select 非 { 前置时仍是普通标识符（01 §2 非保留字）
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  AstNode* mod2 = parseSrc("var select = 1\nselect = 2", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod2->as.list.count);
+  EXPECT_EQ(ctx, AST_VAR_DECL, mod2->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, AST_ASSIGN, mod2->as.list.items[1]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -755,6 +861,10 @@ int main(void) {
   errDeferAtModuleLevel(&ctx);
   errDeferNotCall(&ctx);
   deferNestedFuncAndExprBody(&ctx);
+  selectThreeBranchForms(&ctx);
+  selectCaseBodyBlockAndErrors(&ctx);
+  selectRecoveryKeepsFollowingStmt(&ctx);
+  selectSendMemberChanAndIdentUse(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
