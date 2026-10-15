@@ -2159,6 +2159,30 @@ static AstNode* parseTryStmt(Parser* p) {
   return node;
 }
 
+// defer（04 §7）：仅函数体内、操作数为调用（funcDepth 由 parseFuncBody 维护）
+static AstNode* parseDeferStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // defer
+  if (p->funcDepth == 0) {
+    errTok(p, &p->cur, MSE_SYN_DEFER_TOPLEVEL, "'defer' is only allowed inside a function");
+    return NULL;
+  }
+  AstNode* call = parseExpr(p);
+  if (call == NULL) {
+    return NULL;
+  }
+  if (call->kind != AST_CALL) {
+    errPos(p, line, col, 5, MSE_SYN_DEFER_CALL, "'defer' requires a call expression");
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_DEFER, line, col);
+  node->as.exprStmt.expr = call;
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  return node;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -2188,6 +2212,9 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_TRY)) {
     return parseTryStmt(p);
+  }
+  if (check(p, TK_DEFER)) {
+    return parseDeferStmt(p);
   }
   if (check(p, TK_BREAK) || check(p, TK_CONTINUE)) {  // 合法性检查归 T009（04 §6）
     AstKind kind = check(p, TK_BREAK) ? AST_BREAK : AST_CONTINUE;

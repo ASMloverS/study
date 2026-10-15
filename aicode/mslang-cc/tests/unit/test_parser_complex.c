@@ -655,6 +655,61 @@ TEST(catchRecoveryEdges) {
   astArenaDestroy(&arena);
 }
 
+TEST(deferRegistersCall) {
+  // defer 注册调用（04 §7）：载荷复用 exprStmt.expr，callee 为成员访问
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod =
+      parseSrc("func copyFile(src, dst) {\nvar f = open(src)\ndefer f.close()\nreturn open(dst)\n}", &arena, &diags);
+  AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
+  EXPECT_EQ(ctx, 3, body->as.list.count);
+  AstNode* d = body->as.list.items[1];
+  EXPECT_EQ(ctx, AST_DEFER, d->kind);
+  EXPECT_EQ(ctx, AST_CALL, d->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, AST_MEMBER, d->as.exprStmt.expr->as.call.callee->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errDeferAtModuleLevel) {
+  // defer 仅函数体内合法（04 §7）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("defer f.close()", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DEFER_TOPLEVEL, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errDeferNotCall) {
+  // defer 操作数必须是调用表达式（04 §7）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("func f() {\ndefer x\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DEFER_CALL, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(deferNestedFuncAndExprBody) {
+  // funcDepth 只在函数体内 >0：嵌套函数内 defer 合法；表达式体不可能出现 defer（语法排除）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("var g = func() -> f()", &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, mod->as.list.items[0]->as.varDecl.init->kind);
+  astArenaDestroy(&arena);
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("func outer() {\nvar inner = func() {\ndefer cleanup()\n}\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -696,6 +751,10 @@ int main(void) {
   errTryWithoutCatchFinally(&ctx);
   bareThrowRethrowInCatch(&ctx);
   catchRecoveryEdges(&ctx);
+  deferRegistersCall(&ctx);
+  errDeferAtModuleLevel(&ctx);
+  errDeferNotCall(&ctx);
+  deferNestedFuncAndExprBody(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
