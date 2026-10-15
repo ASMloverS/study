@@ -311,6 +311,11 @@ static AstNode* parsePrimary(Parser* p) {
       advance(p);
       return node;
     }
+    case TK_THIS: {  // this（06 §3；类体字段初始化合法性见 exprHasThis）
+      AstNode* node = astNewNode(p->arena, AST_THIS, line, col);
+      advance(p);
+      return node;
+    }
     case TK_NIL: {
       AstNode* node = astNewNode(p->arena, AST_NIL, line, col);
       advance(p);
@@ -2394,6 +2399,243 @@ static AstNode* parseImportStmt(Parser* p) {
   return node;
 }
 
+// 类体字段初始化 this 检查（06 §3）：表达式树递归（函数字面体属自身作用域，不检查）
+static bool exprHasThis(const AstNode* n) {
+  if (n == NULL) {
+    return false;
+  }
+  switch (n->kind) {
+    case AST_THIS:
+      return true;
+    case AST_UNARY:
+    case AST_RECV:
+    case AST_AWAIT:
+    case AST_GO:
+      return exprHasThis(n->as.unary.operand);
+    case AST_BINARY:
+    case AST_LOGIC:
+      return exprHasThis(n->as.binary.lhs) || exprHasThis(n->as.binary.rhs);
+    case AST_TERNARY:
+      return exprHasThis(n->as.ternary.cond) || exprHasThis(n->as.ternary.thenExpr) ||
+             exprHasThis(n->as.ternary.elseExpr);
+    case AST_CALL:
+      if (exprHasThis(n->as.call.callee)) {
+        return true;
+      }
+      for (int32_t i = 0; i < n->as.call.count; i++) {
+        if (exprHasThis(n->as.call.args[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_INDEX:
+      return exprHasThis(n->as.indexExpr.obj) || exprHasThis(n->as.indexExpr.index);
+    case AST_MEMBER:
+      return exprHasThis(n->as.memberExpr.obj);
+    case AST_SLICE:
+      return exprHasThis(n->as.slice.obj) || exprHasThis(n->as.slice.start) || exprHasThis(n->as.slice.end) ||
+             exprHasThis(n->as.slice.step);
+    case AST_LIST:
+    case AST_TUPLE:
+    case AST_SET:
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        if (exprHasThis(n->as.list.items[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_MAP:
+      for (int32_t i = 0; i < n->as.mapLit.count; i++) {
+        if (exprHasThis(n->as.mapLit.keys[i]) || exprHasThis(n->as.mapLit.values[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_COMPREHENSION:
+    case AST_GEN_EXPR:
+      if (exprHasThis(n->as.compr.key) || exprHasThis(n->as.compr.value)) {
+        return true;
+      }
+      for (int32_t i = 0; i < n->as.compr.forCount; i++) {
+        if (exprHasThis(n->as.compr.fors[i].iter)) {
+          return true;
+        }
+      }
+      for (int32_t i = 0; i < n->as.compr.condCount; i++) {
+        if (exprHasThis(n->as.compr.conds[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_STRING:
+      for (int32_t i = 0; i < n->as.strLit.count; i++) {
+        if (exprHasThis(n->as.strLit.segs[i].expr)) {
+          return true;
+        }
+      }
+      return false;
+    default:  // 字面量/IDENT/FUNC_EXPR 等叶子或独立作用域子树
+      return false;
+  }
+}
+
+// 类体 static 前缀（06 §4）：static 非保留字，后随 func/var 方可识别
+static bool isStaticPrefix(Parser* p) {
+  return check(p, TK_ID) && p->cur.len == 6 && memcmp(p->cur.start, "static", 6) == 0 &&
+         (peekType(p) == TK_FUNC || peekType(p) == TK_VAR);
+}
+
+// class/trait 声明（06 §1 §2 §4）：继承清单 + 类体成员
+// 类体内结构性错误：跳至配对 } 一并消费（synchronize 会停在本体 } 误报 unmatched，switch 先例）
+static AstNode* parseClassDecl(Parser* p, bool isTrait) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // class / trait
+  if (!check(p, TK_ID)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected class name");
+    return NULL;
+  }
+  const char* name = p->cur.start;
+  int32_t nameLen = p->cur.len;
+  int32_t nameLine = p->cur.line, nameCol = p->cur.col;
+  advance(p);
+  if (scopeDeclare(p, name, nameLen)) {  // 类名登记；方法名不查重（05 §1 覆盖规则）
+    errPos(p, nameLine, nameCol, nameLen, MSE_SYN_DUP_DECL, "duplicate declaration in the same scope");
+    return NULL;
+  }
+  // fail 标签读到的变量一律先声明清零（goto 不可跨过未初始化声明）
+  AstNode** bases = NULL;
+  int32_t baseCount = 0, baseCap = 0;
+  AstNode** members = NULL;
+  int32_t memberCount = 0, memberCap = 0;
+  bool inBody = false;
+  if (match(p, TK_COLON)) {  // 继承清单：首基类，余 mixin（06 §2）
+    do {
+      if (!check(p, TK_ID)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected base class name");
+        goto fail;
+      }
+      AstNode* base = astNewNode(p->arena, AST_IDENT, p->cur.line, p->cur.col);
+      base->as.ident.name = p->cur.start;
+      base->as.ident.nameLen = p->cur.len;
+      advance(p);
+      MS_ARRAY_PUSH(bases, baseCount, baseCap, base);
+    } while (match(p, TK_COMMA));
+  }
+  if (!match(p, TK_LBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '{' in class body");
+    goto fail;
+  }
+  inBody = true;  // 类体 { 已消费：fail 路径需配平跳过
+  while (!check(p, TK_RBRACE) && !check(p, TK_EOF)) {
+    if (match(p, TK_SEMICOLON)) {
+      continue;
+    }
+    ms_u8 staticFlag = 0;
+    if (isStaticPrefix(p)) {
+      staticFlag = AST_VAR_STATIC;
+      advance(p);
+    }
+    if (check(p, TK_VAR)) {  // 字段声明：var a, b = 1（每名一节点，06 §1）
+      advance(p);
+      for (;;) {
+        if (!check(p, TK_ID)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected field name");
+          goto fail;
+        }
+        int32_t fieldLine = p->cur.line, fieldCol = p->cur.col;
+        const char* fieldName = p->cur.start;
+        int32_t fieldLen = p->cur.len;
+        advance(p);
+        AstNode* field = astNewNode(p->arena, AST_VAR_DECL, fieldLine, fieldCol);
+        field->as.varDecl.name = fieldName;
+        field->as.varDecl.nameLen = fieldLen;
+        field->as.varDecl.flags = staticFlag;
+        if (match(p, TK_EQ)) {
+          field->as.varDecl.init = parseExprList(p);
+          if (field->as.varDecl.init == NULL) {
+            goto fail;
+          }
+          if (exprHasThis(field->as.varDecl.init)) {  // 06 §3
+            errPos(p, fieldLine, fieldCol, fieldLen, MSE_SYN_CLASS_THIS, "'this' is not allowed in field initializer");
+            goto fail;
+          }
+        }
+        MS_ARRAY_PUSH(members, memberCount, memberCap, field);
+        if (!match(p, TK_COMMA)) {
+          break;
+        }
+      }
+    } else if (check(p, TK_CONST)) {  // 类常量（06 §4）
+      advance(p);
+      if (!check(p, TK_ID)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected constant name");
+        goto fail;
+      }
+      int32_t fieldLine = p->cur.line, fieldCol = p->cur.col;
+      const char* fieldName = p->cur.start;
+      int32_t fieldLen = p->cur.len;
+      advance(p);
+      AstNode* field = astNewNode(p->arena, AST_VAR_DECL, fieldLine, fieldCol);
+      field->as.varDecl.name = fieldName;
+      field->as.varDecl.nameLen = fieldLen;
+      field->as.varDecl.flags = AST_VAR_CONST | staticFlag;
+      if (match(p, TK_EQ)) {
+        field->as.varDecl.init = parseExprList(p);
+        if (field->as.varDecl.init == NULL) {
+          goto fail;
+        }
+        if (exprHasThis(field->as.varDecl.init)) {  // 06 §3
+          errPos(p, fieldLine, fieldCol, fieldLen, MSE_SYN_CLASS_THIS, "'this' is not allowed in field initializer");
+          goto fail;
+        }
+      }
+      MS_ARRAY_PUSH(members, memberCount, memberCap, field);
+    } else if (check(p, TK_FUNC)) {  // 方法（含 dunder，06 §5）
+      ms_u8 flags = staticFlag != 0 ? AST_FUNC_STATIC : 0;
+      AstNode* method = parseFuncDeclStmt(p, flags, p->cur.line, p->cur.col);
+      if (method == NULL) {
+        goto fail;
+      }
+      MS_ARRAY_PUSH(members, memberCount, memberCap, method);
+    } else {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'var', 'const' or 'func' in class body");
+      goto fail;
+    }
+  }
+  if (!match(p, TK_RBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}' in class body");
+    goto fail;
+  }
+  AstNode* node = astNewNode(p->arena, AST_CLASS_DECL, line, col);
+  node->as.classDecl.name = name;
+  node->as.classDecl.nameLen = nameLen;
+  node->as.classDecl.isTrait = isTrait;
+  node->as.classDecl.baseCount = baseCount;
+  node->as.classDecl.bases = astNewNodeArray(p->arena, baseCount);
+  if (baseCount > 0) {
+    memcpy(node->as.classDecl.bases, bases, sizeof(AstNode*) * (size_t)baseCount);
+  }
+  node->as.classDecl.memberCount = memberCount;
+  node->as.classDecl.members = astNewNodeArray(p->arena, memberCount);
+  if (memberCount > 0) {
+    memcpy(node->as.classDecl.members, members, sizeof(AstNode*) * (size_t)memberCount);
+  }
+  free(bases);
+  free(members);
+  return node;
+fail:
+  free(bases);
+  free(members);
+  if (inBody) {
+    skipSwitchClose(p);
+    p->panic = false;  // 已消费至配对 }：免 synchronize 吞本体 } 误报 unmatched
+  } else if (match(p, TK_LBRACE)) {  // 基类清单错误后紧随的类体 {：同样配平消费
+    skipSwitchClose(p);
+    p->panic = false;
+  }
+  return NULL;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -2429,6 +2671,12 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_IMPORT) || check(p, TK_FROM)) {
     return parseImportStmt(p);
+  }
+  if (check(p, TK_CLASS)) {
+    return parseClassDecl(p, false);
+  }
+  if (check(p, TK_TRAIT)) {
+    return parseClassDecl(p, true);
   }
   if (check(p, TK_ID) && p->cur.len == 6 && memcmp(p->cur.start, "select", 6) == 0 && peekType(p) == TK_LBRACE) {
     // select 非保留字（01 §2）：仅语句位 "select {" 特判，其余位置仍是普通标识符

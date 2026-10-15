@@ -883,6 +883,116 @@ TEST(importRawStringPathAndInFunc) {
   astArenaDestroy(&arena);
 }
 
+TEST(classDeclFull) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("class Impl : Base, Mix {\nvar x, y = 2\nfunc m(a) { return a }\nstatic var t = 0\nstatic func s() -> 1\nconst VERSION = \"1.0\"\n}",
+                          &arena, &diags);
+  AstNode* c = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_CLASS_DECL, c->kind);
+  EXPECT_EQ(ctx, false, c->as.classDecl.isTrait);
+  EXPECT_STREQ(ctx, "Impl", strOf(c->as.classDecl.name, c->as.classDecl.nameLen));
+  EXPECT_EQ(ctx, 2, c->as.classDecl.baseCount);
+  EXPECT_STREQ(ctx, "Base", strOf(c->as.classDecl.bases[0]->as.ident.name, c->as.classDecl.bases[0]->as.ident.nameLen));
+  EXPECT_STREQ(ctx, "Mix", strOf(c->as.classDecl.bases[1]->as.ident.name, c->as.classDecl.bases[1]->as.ident.nameLen));
+  EXPECT_EQ(ctx, 6, c->as.classDecl.memberCount);  // var x + var y + func m + static var t + static func s + const VERSION
+  AstNode* m0 = c->as.classDecl.members[0];
+  EXPECT_EQ(ctx, AST_VAR_DECL, m0->kind);
+  EXPECT_EQ(ctx, NULL, m0->as.varDecl.init);
+  AstNode* m1 = c->as.classDecl.members[1];
+  EXPECT_EQ(ctx, AST_VAR_DECL, m1->kind);
+  EXPECT_EQ(ctx, 2, (int)m1->as.varDecl.init->as.intLit.v);
+  AstNode* m2 = c->as.classDecl.members[2];
+  EXPECT_EQ(ctx, AST_FUNC_DECL, m2->kind);
+  EXPECT_EQ(ctx, 0, m2->as.funcDecl.flags);
+  AstNode* m3 = c->as.classDecl.members[3];
+  EXPECT_EQ(ctx, AST_VAR_STATIC, m3->as.varDecl.flags);
+  AstNode* m4 = c->as.classDecl.members[4];
+  EXPECT_EQ(ctx, AST_FUNC_DECL, m4->kind);
+  EXPECT_EQ(ctx, AST_FUNC_STATIC, m4->as.funcDecl.flags);
+  EXPECT_EQ(ctx, AST_INT, m4->as.funcDecl.exprBody->kind);
+  AstNode* m5 = c->as.classDecl.members[5];
+  EXPECT_EQ(ctx, AST_VAR_CONST, m5->as.varDecl.flags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(classDunderInitAndThis) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("class A {\nfunc __init__(n) {\nthis.x = n\n}\n}", &arena, &diags);
+  AstNode* c = mod->as.list.items[0];
+  AstNode* init = c->as.classDecl.members[0];
+  EXPECT_STREQ(ctx, "__init__", strOf(init->as.funcDecl.name, init->as.funcDecl.nameLen));
+  AstNode* assign = init->as.funcDecl.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_ASSIGN, assign->kind);
+  EXPECT_EQ(ctx, AST_THIS, assign->as.assign.target->as.memberExpr.obj->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(traitDecl) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("trait Logger {\nfunc log(msg) { print(msg) }\n}", &arena, &diags);
+  AstNode* t = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_CLASS_DECL, t->kind);
+  EXPECT_EQ(ctx, true, t->as.classDecl.isTrait);
+  EXPECT_EQ(ctx, 0, t->as.classDecl.baseCount);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errClassThisInFieldInit) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("class A {\nvar t = this.x\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_CLASS_THIS, diags.items[0].code);
+  astArenaDestroy(&arena);
+  // 深层 this（调用实参内）同样拒绝
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("class B {\nvar u = f(this)\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_CLASS_THIS, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errClassBadMemberAndDupClass) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("class A {\nx = 1\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  astArenaDestroy(&arena);
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("class A {}\nvar A = 1", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DUP_DECL, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(staticIdentNotConfused) {
+  // static 非保留字：字段名/方法名可为 static（仅 static+peek(func/var) 才是修饰符）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("class C {\nvar static = 1\nfunc static() { }\n}", &arena, &diags);
+  AstNode* c = mod->as.list.items[0];
+  EXPECT_EQ(ctx, 2, c->as.classDecl.memberCount);
+  EXPECT_EQ(ctx, 0, c->as.classDecl.members[0]->as.varDecl.flags);
+  EXPECT_EQ(ctx, 0, c->as.classDecl.members[1]->as.funcDecl.flags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -935,6 +1045,12 @@ int main(void) {
   importForms(&ctx);
   errImportPathNotLiteral(&ctx);
   importRawStringPathAndInFunc(&ctx);
+  classDeclFull(&ctx);
+  classDunderInitAndThis(&ctx);
+  traitDecl(&ctx);
+  errClassThisInFieldInit(&ctx);
+  errClassBadMemberAndDupClass(&ctx);
+  staticIdentNotConfused(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

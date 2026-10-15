@@ -37,6 +37,7 @@ typedef enum AstKind {
   AST_TRY,  // try/catch/finally：as.tryStmt
   // 表达式
   AST_IDENT,   // as.ident
+  AST_THIS,    // this 表达式（06 §3）：无载荷
   AST_NIL,     // 无载荷
   AST_BOOL,    // as.boolLit
   AST_INT,     // as.intLit
@@ -93,8 +94,9 @@ typedef enum AstBinOp {
 
 // var 声明形态标志（as.varDecl.flags 位域）
 enum {
-  AST_VAR_SHORT = 1,  // x := e
-  AST_VAR_CONST = 2,  // const x = e
+  AST_VAR_SHORT = 1,   // x := e
+  AST_VAR_CONST = 2,   // const x = e
+  AST_VAR_STATIC = 4,  // 类体 static var/const（06 §4）
 };
 
 // 函数声明/表达式形态标志（funcDecl/funcExpr.flags 位域）
@@ -263,6 +265,15 @@ struct AstNode {
       int32_t nameCount;
       bool star;             // from "m" import *
     } importStmt;
+    struct {
+      const char* name;
+      int32_t nameLen;
+      bool isTrait;        // trait 声明（06 §2）
+      AstNode** bases;     // AST_IDENT 清单（首基类，余 mixin）
+      int32_t baseCount;
+      AstNode** members;   // AST_VAR_DECL / AST_FUNC_DECL
+      int32_t memberCount;
+    } classDecl;
     struct {
       const char* name;
       int32_t nameLen;
