@@ -199,6 +199,20 @@ struct AstNode {
       AstNode* body;
     } whileStmt;
     struct {
+      bool isType;       // 值式 false / 类型式 true（04 §5）
+      AstNode* subject;  // 值式：判别表达式；类型式：type(v) 的 v
+      AstNode** cases;   // AST_SWITCH_CASE 列表
+      int32_t count;
+    } switchStmt;
+    struct {
+      bool isDefault;
+      AstNode** values;  // 值式：判别值；类型式：类型名 AST_IDENT（04 §5.2）
+      int32_t valueCount;
+      const char* bindName;  // 类型式 as 绑定；NULL 无
+      int32_t bindLen;
+      AstNode* body;  // 块或单语句（08 §3 同则）
+    } switchCase;
+    struct {
       const char* name;
       int32_t nameLen;
     } ident;

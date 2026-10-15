@@ -1922,6 +1922,146 @@ static AstNode* parseWhileStmt(Parser* p) {
   return node;
 }
 
+// switch 值式/类型式（04 §5）：type 为普通标识符，switch 后 ID "type"+peek( 特判（任务 §6）
+// switch 块内结构性错误：跳至配对 } 一并消费（泛 synchronize 会停在本块 } 误报 unmatched，T006 §2 先例）
+static void skipSwitchClose(Parser* p) {
+  int32_t depth = 1;  // switch 本体 { 已消费
+  while (!check(p, TK_EOF)) {
+    if (check(p, TK_LBRACE)) {
+      depth++;
+    } else if (check(p, TK_RBRACE)) {
+      depth--;
+      if (depth == 0) {
+        advance(p);
+        return;
+      }
+    }
+    advance(p);
+  }
+}
+
+static AstNode* parseSwitchStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // switch
+  bool isType = check(p, TK_ID) && p->cur.len == 4 && memcmp(p->cur.start, "type", 4) == 0 &&
+                peekType(p) == TK_LPAREN;
+  AstNode* subject;
+  if (isType) {
+    advance(p);  // type
+    advance(p);  // (
+    subject = parseExpr(p);
+    if (subject == NULL) {
+      return NULL;
+    }
+    if (!match(p, TK_RPAREN)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ')' after 'type('");
+      return NULL;
+    }
+  } else {
+    subject = parseExpr(p);
+    if (subject == NULL) {
+      return NULL;
+    }
+  }
+  if (!match(p, TK_LBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '{' after switch subject");
+    return NULL;
+  }
+  AstNode** cases = NULL;
+  int32_t count = 0, cap = 0;
+  while (check(p, TK_CASE) || check(p, TK_DEFAULT)) {
+    int32_t caseLine = p->cur.line, caseCol = p->cur.col;
+    bool isDefault = check(p, TK_DEFAULT);
+    advance(p);
+    AstNode** values = NULL;
+    int32_t valueCount = 0, valueCap = 0;
+    const char* bindName = NULL;
+    int32_t bindLen = 0;
+    bool ok = true;
+    if (!isDefault) {
+      for (;;) {
+        AstNode* value;
+        if (isType) {
+          if (!check(p, TK_ID)) {
+            errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected type name");
+            ok = false;
+            break;
+          }
+          value = astNewNode(p->arena, AST_IDENT, p->cur.line, p->cur.col);
+          value->as.ident.name = p->cur.start;
+          value->as.ident.nameLen = p->cur.len;
+          advance(p);
+        } else {
+          value = parseExpr(p);
+          if (value == NULL) {
+            ok = false;
+            break;
+          }
+        }
+        MS_ARRAY_PUSH(values, valueCount, valueCap, value);
+        if (!match(p, TK_COMMA)) {
+          break;
+        }
+      }
+      if (ok && isType && match(p, TK_AS)) {  // case X as p：绑定进块作用域（04 §5.2）
+        if (!check(p, TK_ID)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected identifier after 'as'");
+          ok = false;
+        } else {
+          bindName = p->cur.start;
+          bindLen = p->cur.len;
+          advance(p);
+        }
+      }
+    }
+    if (ok && !match(p, TK_COLON)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ':' after case");
+      ok = false;
+    }
+    AstNode* body = NULL;
+    if (ok) {
+      body = parseStatement(p);  // case 体为块或单语句
+      if (body == NULL) {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      free(values);
+      free(cases);
+      skipSwitchClose(p);
+      return NULL;
+    }
+    AstNode* caseNode = astNewNode(p->arena, AST_SWITCH_CASE, caseLine, caseCol);
+    caseNode->as.switchCase.isDefault = isDefault;
+    caseNode->as.switchCase.valueCount = valueCount;
+    caseNode->as.switchCase.values = astNewNodeArray(p->arena, valueCount);
+    if (valueCount > 0) {
+      memcpy(caseNode->as.switchCase.values, values, sizeof(AstNode*) * (size_t)valueCount);
+    }
+    caseNode->as.switchCase.bindName = bindName;
+    caseNode->as.switchCase.bindLen = bindLen;
+    caseNode->as.switchCase.body = body;
+    free(values);
+    MS_ARRAY_PUSH(cases, count, cap, caseNode);
+  }
+  if (!match(p, TK_RBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'case' or '}' in switch body");
+    free(cases);
+    skipSwitchClose(p);
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_SWITCH, line, col);
+  node->as.switchStmt.isType = isType;
+  node->as.switchStmt.subject = subject;
+  node->as.switchStmt.count = count;
+  node->as.switchStmt.cases = astNewNodeArray(p->arena, count);
+  if (count > 0) {
+    memcpy(node->as.switchStmt.cases, cases, sizeof(AstNode*) * (size_t)count);
+  }
+  free(cases);
+  return node;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -1945,6 +2085,9 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_WHILE)) {
     return parseWhileStmt(p);
+  }
+  if (check(p, TK_SWITCH)) {
+    return parseSwitchStmt(p);
   }
   if (check(p, TK_BREAK) || check(p, TK_CONTINUE)) {  // 合法性检查归 T009（04 §6）
     AstKind kind = check(p, TK_BREAK) ? AST_BREAK : AST_CONTINUE;

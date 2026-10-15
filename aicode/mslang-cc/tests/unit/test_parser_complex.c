@@ -16,6 +16,14 @@ static AstNode* parseSrc(const char* src, AstArena* arena, MsDiagSink* diags) {
 // 首语句载荷（表达式语句）
 static AstNode* expr0(AstNode* mod) { return mod->as.list.items[0]->as.exprStmt.expr; }
 
+// 借用源文本的非 NUL 结尾名 → 静态缓冲（单断言内使用，勿跨用例持有）
+static const char* strOf(const char* start, int32_t len) {
+  static char buf[64];
+  memcpy(buf, start, (size_t)(len < 63 ? len : 63));
+  buf[len < 63 ? len : 63] = '\0';
+  return buf;
+}
+
 TEST(recvExprOnAssignRhs) {
   MsDiagSink diags = {0};
   AstArena arena;
@@ -424,6 +432,85 @@ TEST(forHeaderNoInNotLeakingIntoFuncBody) {
   astArenaDestroy(&arena);
 }
 
+TEST(switchValueForm) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("switch x {\ncase 1, 2: f()\ncase 3: g()\ndefault: h()\n}", &arena, &diags);
+  AstNode* sw = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_SWITCH, sw->kind);
+  EXPECT_EQ(ctx, false, sw->as.switchStmt.isType);
+  EXPECT_EQ(ctx, AST_IDENT, sw->as.switchStmt.subject->kind);
+  EXPECT_EQ(ctx, 3, sw->as.switchStmt.count);
+  AstNode* c0 = sw->as.switchStmt.cases[0];
+  EXPECT_EQ(ctx, AST_SWITCH_CASE, c0->kind);
+  EXPECT_EQ(ctx, false, c0->as.switchCase.isDefault);
+  EXPECT_EQ(ctx, 2, c0->as.switchCase.valueCount);
+  EXPECT_EQ(ctx, AST_INT, c0->as.switchCase.values[1]->kind);
+  EXPECT_EQ(ctx, AST_EXPR_STMT, c0->as.switchCase.body->kind);
+  AstNode* c2 = sw->as.switchStmt.cases[2];
+  EXPECT_EQ(ctx, true, c2->as.switchCase.isDefault);
+  EXPECT_EQ(ctx, 0, c2->as.switchCase.valueCount);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(switchTypeFormWithAs) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("switch type(v) {\ncase string as s: print(len(s))\ncase int, bigint: f()\ndefault: g()\n}",
+                          &arena, &diags);
+  AstNode* sw = mod->as.list.items[0];
+  EXPECT_EQ(ctx, true, sw->as.switchStmt.isType);
+  EXPECT_EQ(ctx, AST_IDENT, sw->as.switchStmt.subject->kind);
+  AstNode* c0 = sw->as.switchStmt.cases[0];
+  EXPECT_EQ(ctx, 1, c0->as.switchCase.valueCount);
+  EXPECT_EQ(ctx, AST_IDENT, c0->as.switchCase.values[0]->kind);
+  EXPECT_STREQ(ctx, "s", strOf(c0->as.switchCase.bindName, c0->as.switchCase.bindLen));
+  AstNode* c1 = sw->as.switchStmt.cases[1];
+  EXPECT_EQ(ctx, 2, c1->as.switchCase.valueCount);
+  EXPECT_EQ(ctx, NULL, c1->as.switchCase.bindName);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(switchSubjectNamedTypeStaysValue) {
+  // type 是普通标识符：switch type { … } 为值式（任务 §6）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("switch type {\ncase 1: f()\n}", &arena, &diags);
+  AstNode* sw = mod->as.list.items[0];
+  EXPECT_EQ(ctx, false, sw->as.switchStmt.isType);
+  EXPECT_EQ(ctx, AST_IDENT, sw->as.switchStmt.subject->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(switchCaseBodyCanBeBlock) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("switch x {\ncase 1: {\nf()\ng()\n}\n}", &arena, &diags);
+  AstNode* sw = mod->as.list.items[0];
+  AstNode* c0 = sw->as.switchStmt.cases[0];
+  EXPECT_EQ(ctx, AST_BLOCK, c0->as.switchCase.body->kind);
+  EXPECT_EQ(ctx, 2, c0->as.switchCase.body->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errSwitchMissingColon) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("switch x {\ncase 1 f()\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -453,6 +540,11 @@ int main(void) {
   forTriSecondSemicolonLenient(&ctx);
   forHeaderNoInBodyRestoredIn(&ctx);
   forHeaderNoInNotLeakingIntoFuncBody(&ctx);
+  switchValueForm(&ctx);
+  switchTypeFormWithAs(&ctx);
+  switchSubjectNamedTypeStaysValue(&ctx);
+  switchCaseBodyCanBeBlock(&ctx);
+  errSwitchMissingColon(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
