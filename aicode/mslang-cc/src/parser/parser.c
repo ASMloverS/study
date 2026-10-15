@@ -777,12 +777,9 @@ static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t 
   return node;
 }
 
-// 后缀链（左结合，03 优先级 14）：调用/索引/切片/成员
-static AstNode* parsePostfix(Parser* p) {
-  AstNode* obj = parsePrimary(p);
-  if (obj == NULL) {
-    return NULL;
-  }
+// 后缀链循环（左结合，03 优先级 14）：调用/索引/切片/成员
+// 独立成函数供语句位函数表达式续接（裸 IIFE：func(…) { … }(…)）
+static AstNode* parsePostfixFrom(Parser* p, AstNode* obj) {
   for (;;) {
     if (!check(p, TK_LPAREN) && !check(p, TK_LBRACKET) && !check(p, TK_DOT)) {
       return obj;  // 无后缀 token：结束（裸 GEN_EXPR 由此合法离开）
@@ -843,6 +840,15 @@ static AstNode* parsePostfix(Parser* p) {
       obj = node;
     }
   }
+}
+
+// 后缀链（左结合，03 优先级 14）：主表达式 + 调用/索引/切片/成员
+static AstNode* parsePostfix(Parser* p) {
+  AstNode* obj = parsePrimary(p);
+  if (obj == NULL) {
+    return NULL;
+  }
+  return parsePostfixFrom(p, obj);
 }
 
 // 二元构造（各级共用）：操作数不得为 GEN_EXPR
@@ -1328,26 +1334,7 @@ static AstNode* parseIfStmt(Parser* p) {
   return node;
 }
 
-// return 语句（05 §5）：裸 return 返回 nil；多值 return a, b 即 tuple（完整函数族 T008）
-static AstNode* parseReturnStmt(Parser* p) {
-  int32_t line = p->cur.line, col = p->cur.col;
-  advance(p);  // return
-  AstNode* value = NULL;
-  if (!check(p, TK_RBRACE) && !check(p, TK_SEMICOLON) && !check(p, TK_EOF) && p->cur.line == p->prevLine) {
-    value = parseExprList(p);
-    if (value == NULL) {
-      return NULL;
-    }
-  }
-  AstNode* node = astNewNode(p->arena, AST_RETURN, line, col);
-  node->as.exprStmt.expr = value;  // 载荷复用 exprStmt
-  if (!endSimpleStmt(p)) {
-    return NULL;
-  }
-  return node;
-}
-
-// throw / yield（04 §6、05 §4）：值可省（裸 throw 为重抛，07 §3）
+// 值可省跳转语句（04 §6、05 §4 §5）：return/throw/yield（裸 return 返回 nil，裸 throw 为重抛，07 §3）
 static AstNode* parseValueJumpStmt(Parser* p, AstKind kind) {
   int32_t line = p->cur.line, col = p->cur.col;
   advance(p);
@@ -1359,12 +1346,15 @@ static AstNode* parseValueJumpStmt(Parser* p, AstKind kind) {
     }
   }
   AstNode* node = astNewNode(p->arena, kind, line, col);
-  node->as.exprStmt.expr = value;
+  node->as.exprStmt.expr = value;  // 载荷复用 exprStmt
   if (!endSimpleStmt(p)) {
     return NULL;
   }
   return node;
 }
+
+// return 语句（05 §5）：裸 return 返回 nil；多值 return a, b 即 tuple（完整函数族 T008）
+static AstNode* parseReturnStmt(Parser* p) { return parseValueJumpStmt(p, AST_RETURN); }
 
 // 参数表（05 §1）：普通 → 默认 → 至多一个 *rest
 // 违序 MSE1012 就地诊断不中断（MSE1003 先例：泛 synchronize 会误吞函数体 } 报 unmatched）
@@ -1384,6 +1374,8 @@ static bool parseParamList(Parser* p, AstParam** outParams, int32_t* outCount) {
       goto fail;
     }
     AstParam param = {p->cur.start, p->cur.len, NULL, rest};
+    int32_t nameLine = p->cur.line, nameCol = p->cur.col;  // 违序诊断定位在参数名 token
+    int32_t nameLen = p->cur.len;
     advance(p);
     if (match(p, TK_EQ)) {
       param.defaultExpr = parseExpr(p);
@@ -1391,23 +1383,20 @@ static bool parseParamList(Parser* p, AstParam** outParams, int32_t* outCount) {
         goto fail;
       }
       if (rest) {
-        diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
-                "rest parameter cannot have a default");
+        diagPos(p, nameLine, nameCol, nameLen, MSE_SYN_PARAM_ORDER, "rest parameter cannot have a default");
       } else {
         seenDefault = true;
       }
     }
     if (rest) {
       if (seenRest) {
-        diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
-                "at most one rest parameter allowed");
+        diagPos(p, nameLine, nameCol, nameLen, MSE_SYN_PARAM_ORDER, "at most one rest parameter allowed");
       }
       seenRest = true;
     } else if (seenRest) {
-      diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
-              "no parameter allowed after rest parameter");
+      diagPos(p, nameLine, nameCol, nameLen, MSE_SYN_PARAM_ORDER, "no parameter allowed after rest parameter");
     } else if (seenDefault && param.defaultExpr == NULL) {
-      diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_PARAM_ORDER,
+      diagPos(p, nameLine, nameCol, nameLen, MSE_SYN_PARAM_ORDER,
               "parameter without default follows default parameter");
     }
     MS_ARRAY_PUSH(params, count, cap, param);
@@ -1469,6 +1458,10 @@ static AstNode* parseFuncExprStmt(Parser* p, ms_u8 flags, int32_t line, int32_t 
   fn->as.funcExpr.body = body;
   fn->as.funcExpr.exprBody = exprBody;
   free(params);
+  fn = parsePostfixFrom(p, fn);  // 续接后缀链：裸 IIFE func(…) { … }(…)（T007 能力保持）
+  if (fn == NULL) {
+    return NULL;
+  }
   if (!endSimpleStmt(p)) {
     return NULL;
   }
@@ -1502,6 +1495,10 @@ static AstNode* parseFuncDeclStmt(Parser* p, ms_u8 flags, int32_t line, int32_t 
   AstNode* body = NULL;
   AstNode* exprBody = NULL;
   if (!parseFuncBody(p, &body, &exprBody)) {
+    free(params);
+    return NULL;
+  }
+  if (exprBody != NULL && !endSimpleStmt(p)) {  // 表达式体需语句终点（块体以 } 收尾，无需）
     free(params);
     return NULL;
   }

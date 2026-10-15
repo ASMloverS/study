@@ -180,6 +180,27 @@ TEST(funcExprDefaultsRestExprBody) {
   astArenaDestroy(&arena);
 }
 
+TEST(stmtFuncExprFormsAndIife) {
+  // 语句位函数表达式三形态 + 裸 IIFE 走后缀调用（T007 能力保持）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func(x) -> x\nfunc*(y) { yield y }\nfunc() { }()", &arena, &diags);
+  EXPECT_EQ(ctx, 3, mod->as.list.count);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, mod->as.list.items[0]->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, AST_FUNC_GENERATOR, mod->as.list.items[1]->as.exprStmt.expr->as.funcExpr.flags);
+  AstNode* call = mod->as.list.items[2]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_CALL, call->kind);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, call->as.call.callee->kind);
+  // rest 参数带默认值 → 参数序错误
+  diags = (MsDiagSink){0};
+  parseSrc("func f(*r = 1) { }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_PARAM_ORDER, diags.items[0].code);
+  EXPECT_EQ(ctx, 9, diags.items[0].col);  // 诊断定位在参数名 r（col 9）而非其后的 =
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -193,6 +214,7 @@ int main(void) {
   errParamOrder(&ctx);
   funcRedefinitionAllowed(&ctx);
   funcExprDefaultsRestExprBody(&ctx);
+  stmtFuncExprFormsAndIife(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
