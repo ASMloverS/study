@@ -2292,6 +2292,108 @@ static AstNode* parseSelectStmt(Parser* p) {
   return node;
 }
 
+// import 路径：普通/原始字符串字面量；插值与多段拒绝（09 §2 动态加载走 importlib）
+static bool parseImportPath(Parser* p, const char** outStart, int32_t* outLen) {
+  if (check(p, TK_RAW_STR)) {
+    *outStart = p->cur.start + (p->cur.len >= 2 ? 1 : 0);
+    *outLen = p->cur.len >= 2 ? p->cur.len - 2 : 0;
+    advance(p);
+    return true;
+  }
+  if (!check(p, TK_STRING)) {
+    errTok(p, &p->cur, MSE_SYN_IMPORT_PATH, "import path must be a string literal");
+    return false;
+  }
+  AstNode* lit = parseStringLit(p);
+  if (lit == NULL) {
+    return false;
+  }
+  if (lit->as.strLit.count != 1 || lit->as.strLit.segs[0].expr != NULL) {
+    errPos(p, lit->line, lit->col, 1, MSE_SYN_IMPORT_PATH, "import path must be a plain string literal");
+    return false;
+  }
+  *outStart = lit->as.strLit.segs[0].start;
+  *outLen = lit->as.strLit.segs[0].len;
+  return true;
+}
+
+// import 三式（04 §9、09 §2）：import "m" [as x] / from "m" import {…|*}
+static AstNode* parseImportStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  bool from = check(p, TK_FROM);
+  advance(p);  // import / from
+  const char* path = NULL;
+  int32_t pathLen = 0;
+  if (!parseImportPath(p, &path, &pathLen)) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_IMPORT, line, col);
+  node->as.importStmt.path = path;
+  node->as.importStmt.pathLen = pathLen;
+  if (from) {
+    if (!match(p, TK_IMPORT)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'import' after module path");
+      return NULL;
+    }
+    if (match(p, TK_STAR)) {
+      node->as.importStmt.star = true;
+    } else {
+      if (!match(p, TK_LBRACE)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '{' or '*' in from-import");
+        return NULL;
+      }
+      AstImportName* names = NULL;
+      int32_t nameCount = 0, nameCap = 0;
+      while (!check(p, TK_RBRACE) && !check(p, TK_EOF)) {
+        if (!check(p, TK_ID)) {
+          errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected imported name");
+          free(names);
+          return NULL;
+        }
+        AstImportName name = {p->cur.start, p->cur.len, NULL, 0};
+        advance(p);
+        if (match(p, TK_AS)) {
+          if (!check(p, TK_ID)) {
+            errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected alias after 'as'");
+            free(names);
+            return NULL;
+          }
+          name.asName = p->cur.start;
+          name.asLen = p->cur.len;
+          advance(p);
+        }
+        MS_ARRAY_PUSH(names, nameCount, nameCap, name);
+        if (!match(p, TK_COMMA)) {
+          break;
+        }
+      }
+      if (!match(p, TK_RBRACE)) {
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected '}' in from-import");
+        free(names);
+        return NULL;
+      }
+      node->as.importStmt.nameCount = nameCount;
+      node->as.importStmt.names = astArenaAlloc(p->arena, sizeof(AstImportName) * (size_t)nameCount);
+      if (nameCount > 0) {
+        memcpy(node->as.importStmt.names, names, sizeof(AstImportName) * (size_t)nameCount);
+      }
+      free(names);
+    }
+  } else if (match(p, TK_AS)) {
+    if (!check(p, TK_ID)) {
+      errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected alias after 'as'");
+      return NULL;
+    }
+    node->as.importStmt.alias = p->cur.start;
+    node->as.importStmt.aliasLen = p->cur.len;
+    advance(p);
+  }
+  if (!endSimpleStmt(p)) {
+    return NULL;
+  }
+  return node;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -2324,6 +2426,9 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_DEFER)) {
     return parseDeferStmt(p);
+  }
+  if (check(p, TK_IMPORT) || check(p, TK_FROM)) {
+    return parseImportStmt(p);
   }
   if (check(p, TK_ID) && p->cur.len == 6 && memcmp(p->cur.start, "select", 6) == 0 && peekType(p) == TK_LBRACE) {
     // select 非保留字（01 §2）：仅语句位 "select {" 特判，其余位置仍是普通标识符

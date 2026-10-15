@@ -165,6 +165,14 @@ typedef struct AstCatchClause {
   AstNode* block;  // AST_BLOCK
 } AstCatchClause;
 
+// from-import 具名项（importStmt.names 元素，09 §2）
+typedef struct AstImportName {
+  const char* name;
+  int32_t nameLen;
+  const char* asName;  // b as c 本地名；NULL = name
+  int32_t asLen;
+} AstImportName;
+
 struct AstNode {
   AstKind kind;
   int32_t line, col;  // 构造起始 token 位置（1-based，col 按 rune 计）
@@ -246,6 +254,15 @@ struct AstNode {
       AstNode* value;   // SEND：发送值
       AstNode* body;    // 块或单语句（08 §3）
     } selectCase;
+    struct {
+      const char* path;      // 模块路径（字面量原文，引号/反引号已剥离）
+      int32_t pathLen;
+      const char* alias;     // import "m" as x；无别名 NULL
+      int32_t aliasLen;
+      AstImportName* names;  // from-import 具名清单；非 from 形式 NULL
+      int32_t nameCount;
+      bool star;             // from "m" import *
+    } importStmt;
     struct {
       const char* name;
       int32_t nameLen;

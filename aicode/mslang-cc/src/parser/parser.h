@@ -26,6 +26,7 @@ typedef enum MseSyntaxCode {
   MSE_SYN_PARAM_ORDER = 1012,     // 参数序：普通 → 默认 → 至多一个 *rest（05 §1）
   MSE_SYN_DEFER_TOPLEVEL = 1013,  // defer 仅函数体内合法（04 §7）
   MSE_SYN_DEFER_CALL = 1014,      // defer 操作数必须是调用表达式（04 §7）
+  MSE_SYN_IMPORT_PATH = 1015,     // import 路径必须是字符串字面量（09 §2）
 } MseSyntaxCode;
 
 typedef struct ParserScope ParserScope;

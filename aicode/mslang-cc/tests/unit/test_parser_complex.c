@@ -816,6 +816,73 @@ TEST(selectSendMemberChanAndIdentUse) {
   astArenaDestroy(&arena);
 }
 
+TEST(importForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("import \"strutil\"\nimport \"net/addr\" as netaddr\nfrom \"strutil\" import { join, split as sp, pad }\nfrom \"strutil\" import *",
+                          &arena, &diags);
+  EXPECT_EQ(ctx, 4, mod->as.list.count);
+  AstNode* a = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_IMPORT, a->kind);
+  EXPECT_STREQ(ctx, "strutil", strOf(a->as.importStmt.path, a->as.importStmt.pathLen));
+  EXPECT_EQ(ctx, NULL, a->as.importStmt.alias);
+  AstNode* b = mod->as.list.items[1];
+  EXPECT_STREQ(ctx, "net/addr", strOf(b->as.importStmt.path, b->as.importStmt.pathLen));
+  EXPECT_STREQ(ctx, "netaddr", strOf(b->as.importStmt.alias, b->as.importStmt.aliasLen));
+  AstNode* c = mod->as.list.items[2];
+  EXPECT_EQ(ctx, 3, c->as.importStmt.nameCount);
+  EXPECT_EQ(ctx, false, c->as.importStmt.star);
+  EXPECT_STREQ(ctx, "join", strOf(c->as.importStmt.names[0].name, c->as.importStmt.names[0].nameLen));
+  EXPECT_EQ(ctx, NULL, c->as.importStmt.names[0].asName);
+  EXPECT_STREQ(ctx, "sp", strOf(c->as.importStmt.names[1].asName, c->as.importStmt.names[1].asLen));
+  AstNode* d = mod->as.list.items[3];
+  EXPECT_EQ(ctx, true, d->as.importStmt.star);
+  EXPECT_EQ(ctx, 0, d->as.importStmt.nameCount);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+  // 空具名清单 from "m" import { }：允许，nameCount 0（无害）
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  AstNode* e = parseSrc("from \"m\" import { }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, e->as.list.count);
+  EXPECT_EQ(ctx, AST_IMPORT, e->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, 0, e->as.list.items[0]->as.importStmt.nameCount);
+  EXPECT_EQ(ctx, false, e->as.list.items[0]->as.importStmt.star);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errImportPathNotLiteral) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("import os", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_IMPORT_PATH, diags.items[0].code);
+  astArenaDestroy(&arena);
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("import \"a${b}c\"", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_IMPORT_PATH, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(importRawStringPathAndInFunc) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("import `raw/mod`\nfunc f() {\nfrom \"m\" import { a }\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 2, mod->as.list.count);
+  EXPECT_STREQ(ctx, "raw/mod", strOf(mod->as.list.items[0]->as.importStmt.path,
+                                     mod->as.list.items[0]->as.importStmt.pathLen));
+  AstNode* body = mod->as.list.items[1]->as.funcDecl.body;
+  EXPECT_EQ(ctx, AST_IMPORT, body->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -865,6 +932,9 @@ int main(void) {
   selectCaseBodyBlockAndErrors(&ctx);
   selectRecoveryKeepsFollowingStmt(&ctx);
   selectSendMemberChanAndIdentUse(&ctx);
+  importForms(&ctx);
+  errImportPathNotLiteral(&ctx);
+  importRawStringPathAndInFunc(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
