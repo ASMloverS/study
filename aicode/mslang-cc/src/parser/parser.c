@@ -2079,7 +2079,7 @@ static AstNode* parseTryStmt(Parser* p) {
   while (check(p, TK_CATCH)) {
     int32_t catchLine = p->cur.line, catchCol = p->cur.col, catchLen = p->cur.len;
     advance(p);
-    if (seenBare) {  // 裸绑定必须兜底最后：就地报错并照常解析该子句（恰 1 条诊断）
+    if (seenBare && !orderError) {  // 裸绑定必须兜底最后：仅首条违序报错，后续子句静默并入
       diagPos(p, catchLine, catchCol, catchLen, MSE_SYN_CATCH_ORDER, "catch-all clause must be the last catch");
       orderError = true;
     }
@@ -2098,10 +2098,9 @@ static AstNode* parseTryStmt(Parser* p) {
         MS_ARRAY_PUSH(types, typeCount, typeCap, firstType);
         while (match(p, TK_COMMA)) {
           if (!check(p, TK_ID)) {
-            errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected exception type name");
-            free(types);
-            free(catches);
-            return NULL;
+            // 就地恢复：缺类型名仅报此一条，已收集类型照常提交（不 panic、不级联）
+            diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_EXPECTED, "expected exception type name");
+            break;
           }
           AstNode* t = astNewNode(p->arena, AST_IDENT, p->cur.line, p->cur.col);
           t->as.ident.name = p->cur.start;
@@ -2128,9 +2127,6 @@ static AstNode* parseTryStmt(Parser* p) {
       return NULL;
     }
     MS_ARRAY_PUSH(catches, catchCount, catchCap, clause);
-    if (orderError) {
-      break;  // 违序子句已并入，停止继续收集
-    }
   }
   AstNode* finallyBlock = NULL;
   if (match(p, TK_FINALLY)) {

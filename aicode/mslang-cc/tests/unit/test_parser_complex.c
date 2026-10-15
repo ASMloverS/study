@@ -618,6 +618,32 @@ TEST(bareThrowRethrowInCatch) {
   astArenaDestroy(&arena);
 }
 
+TEST(catchRecoveryEdges) {
+  // 类型清单尾逗号缺类型名：就地恢复恰 1 条诊断
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("try{}catch A, { }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  AstNode* t = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_TRY, t->kind);
+  EXPECT_EQ(ctx, 1, t->as.tryStmt.catchCount);
+  EXPECT_EQ(ctx, 1, t->as.tryStmt.catches[0].typeCount);  // 已收集的 A 照常提交
+  astArenaDestroy(&arena);
+  // 裸绑定后多条子句：仅首条违序报错，子句照常并入
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  mod = parseSrc("try{}catch e{}catch V{}catch W{}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_CATCH_ORDER, diags.items[0].code);
+  t = mod->as.list.items[0];
+  EXPECT_EQ(ctx, 3, t->as.tryStmt.catchCount);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -658,6 +684,7 @@ int main(void) {
   errCatchOrder(&ctx);
   errTryWithoutCatchFinally(&ctx);
   bareThrowRethrowInCatch(&ctx);
+  catchRecoveryEdges(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
