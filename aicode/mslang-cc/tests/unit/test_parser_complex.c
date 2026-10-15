@@ -311,6 +311,18 @@ TEST(breakContinueForms) {
   astArenaDestroy(&arena);
 }
 
+TEST(throwForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("throw ValueError(\"bad input: ${x}\")", &arena, &diags);
+  AstNode* t = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_THROW, t->kind);
+  EXPECT_EQ(ctx, AST_CALL, t->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 TEST(errForBadTarget) {
   MsDiagSink diags = {0};
   AstArena arena;
@@ -394,6 +406,24 @@ TEST(forHeaderNoInBodyRestoredIn) {
   astArenaDestroy(&arena);
 }
 
+TEST(forHeaderNoInNotLeakingIntoFuncBody) {
+  // for 首段内嵌函数字面量体内 in 恢复为运算符（noIn 仅作用于首段自身）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func t() { for g = func() { return a in b }; c ; p { } }", &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* fo = mod->as.list.items[0]->as.funcDecl.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_FOR_TRI, fo->as.forStmt.form);
+  AstNode* fn = fo->as.forStmt.init->as.assign.value;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  AstNode* ret = fn->as.funcExpr.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_RETURN, ret->kind);
+  EXPECT_EQ(ctx, AST_BINARY, ret->as.exprStmt.expr->kind);
+  EXPECT_EQ(ctx, AST_OP_IN, ret->as.exprStmt.expr->as.binary.op);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -415,12 +445,14 @@ int main(void) {
   forCondAndInfinite(&ctx);
   whileForm(&ctx);
   breakContinueForms(&ctx);
+  throwForms(&ctx);
   errForBadTarget(&ctx);
   forInBadTargetRecoversInPlace(&ctx);
   forPostDecSugarAndPlainForms(&ctx);
   forCondSegmentInIsOperator(&ctx);
   forTriSecondSemicolonLenient(&ctx);
   forHeaderNoInBodyRestoredIn(&ctx);
+  forHeaderNoInNotLeakingIntoFuncBody(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
