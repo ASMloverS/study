@@ -2100,6 +2100,12 @@ static AstNode* parseTryStmt(Parser* p) {
           if (!check(p, TK_ID)) {
             // 就地恢复：缺类型名仅报此一条，已收集类型照常提交（不 panic、不级联）
             diagPos(p, p->cur.line, p->cur.col, p->cur.len, MSE_SYN_EXPECTED, "expected exception type name");
+            // 残留分隔/名称就位恢复：跳至子句块边界（连续逗号等病态形态）
+            while (match(p, TK_COMMA)) {
+              if (match(p, TK_ID)) {
+                // 丢弃该残段类型名（诊断已发）
+              }
+            }
             break;
           }
           AstNode* t = astNewNode(p->arena, AST_IDENT, p->cur.line, p->cur.col);

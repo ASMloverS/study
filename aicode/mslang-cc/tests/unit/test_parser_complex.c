@@ -590,6 +590,7 @@ TEST(errCatchOrder) {
   diags = (MsDiagSink){0};
   astArenaInit(&arena);
   parseSrc("try{}catch e{}catch A, B{}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
   EXPECT_EQ(ctx, MSE_SYN_CATCH_ORDER, diags.items[0].code);
   astArenaDestroy(&arena);
 }
@@ -641,6 +642,16 @@ TEST(catchRecoveryEdges) {
   EXPECT_EQ(ctx, MSE_SYN_CATCH_ORDER, diags.items[0].code);
   t = mod->as.list.items[0];
   EXPECT_EQ(ctx, 3, t->as.tryStmt.catchCount);
+  astArenaDestroy(&arena);
+  // 连续逗号：就地恢复后子句块照常完成，恰 1 条诊断
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  mod = parseSrc("try{}catch A,,B{ }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  t = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_TRY, t->kind);
+  EXPECT_EQ(ctx, 1, t->as.tryStmt.catchCount);
   astArenaDestroy(&arena);
 }
 
