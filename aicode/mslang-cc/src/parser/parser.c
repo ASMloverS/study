@@ -2063,6 +2063,100 @@ static AstNode* parseSwitchStmt(Parser* p) {
   return node;
 }
 
+// try/catch/finally（07 §1）：类型子句在前、裸绑定兜底最后
+// 单 ID 子句一律按裸绑定解析（任务 §5.1 排序用例；绑定名恰为类名的复核归 T023 binder）
+static AstNode* parseTryStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // try
+  AstNode* tryBlock = parseBlock(p);
+  if (tryBlock == NULL) {
+    return NULL;
+  }
+  AstCatchClause* catches = NULL;
+  int32_t catchCount = 0, catchCap = 0;
+  bool seenBare = false;
+  bool orderError = false;
+  while (check(p, TK_CATCH)) {
+    int32_t catchLine = p->cur.line, catchCol = p->cur.col, catchLen = p->cur.len;
+    advance(p);
+    if (seenBare) {  // 裸绑定必须兜底最后：就地报错并照常解析该子句（恰 1 条诊断）
+      diagPos(p, catchLine, catchCol, catchLen, MSE_SYN_CATCH_ORDER, "catch-all clause must be the last catch");
+      orderError = true;
+    }
+    AstCatchClause clause = {0};
+    if (check(p, TK_ID)) {
+      const char* firstName = p->cur.start;
+      int32_t firstLen = p->cur.len;
+      int32_t nameLine = p->cur.line, nameCol = p->cur.col;
+      advance(p);
+      if (check(p, TK_COMMA)) {  // 类型子句：catch A, B, …
+        AstNode** types = NULL;
+        int32_t typeCount = 0, typeCap = 0;
+        AstNode* firstType = astNewNode(p->arena, AST_IDENT, nameLine, nameCol);
+        firstType->as.ident.name = firstName;
+        firstType->as.ident.nameLen = firstLen;
+        MS_ARRAY_PUSH(types, typeCount, typeCap, firstType);
+        while (match(p, TK_COMMA)) {
+          if (!check(p, TK_ID)) {
+            errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected exception type name");
+            free(types);
+            free(catches);
+            return NULL;
+          }
+          AstNode* t = astNewNode(p->arena, AST_IDENT, p->cur.line, p->cur.col);
+          t->as.ident.name = p->cur.start;
+          t->as.ident.nameLen = p->cur.len;
+          advance(p);
+          MS_ARRAY_PUSH(types, typeCount, typeCap, t);
+        }
+        clause.typeCount = typeCount;
+        clause.types = astNewNodeArray(p->arena, typeCount);
+        if (typeCount > 0) {
+          memcpy(clause.types, types, sizeof(AstNode*) * (size_t)typeCount);
+        }
+        free(types);
+      } else {  // 裸绑定兜底：catch e
+        clause.bindName = firstName;
+        clause.bindLen = firstLen;
+        seenBare = true;
+      }
+    }
+    clause.block = parseBlock(p);
+    if (clause.block == NULL) {
+      // clause.types 已归 arena 所有（astNewNodeArray），不可 free；仅释放临时数组
+      free(catches);
+      return NULL;
+    }
+    MS_ARRAY_PUSH(catches, catchCount, catchCap, clause);
+    if (orderError) {
+      break;  // 违序子句已并入，停止继续收集
+    }
+  }
+  AstNode* finallyBlock = NULL;
+  if (match(p, TK_FINALLY)) {
+    finallyBlock = parseBlock(p);
+    if (finallyBlock == NULL) {
+      free(catches);
+      return NULL;
+    }
+  }
+  if (catchCount == 0 && finallyBlock == NULL) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'catch' or 'finally' after try block");
+    free(catches);
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_TRY, line, col);
+  node->as.tryStmt.tryBlock = tryBlock;
+  node->as.tryStmt.catchCount = catchCount;
+  node->as.tryStmt.catches = astArenaAlloc(p->arena, sizeof(AstCatchClause) * (size_t)catchCount);
+  if (catchCount > 0) {
+    memcpy(node->as.tryStmt.catches, catches, sizeof(AstCatchClause) * (size_t)catchCount);
+  }
+  free(catches);
+  node->as.tryStmt.finallyBlock = finallyBlock;
+  return node;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -2089,6 +2183,9 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_SWITCH)) {
     return parseSwitchStmt(p);
+  }
+  if (check(p, TK_TRY)) {
+    return parseTryStmt(p);
   }
   if (check(p, TK_BREAK) || check(p, TK_CONTINUE)) {  // 合法性检查归 T009（04 §6）
     AstKind kind = check(p, TK_BREAK) ? AST_BREAK : AST_CONTINUE;

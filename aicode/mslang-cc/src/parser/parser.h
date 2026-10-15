@@ -22,6 +22,7 @@ typedef enum MseSyntaxCode {
   MSE_SYN_STAR_NO_ASSIGN = 1008,   // * 目标只能出现在解构赋值
   MSE_SYN_GENEXPR_POS = 1009,      // 生成器表达式仅可作调用唯一实参或赋值右值（03 §1）
   MSE_SYN_SPREAD_NOT_LAST = 1010,  // * 展开实参必须是最后一个实参（03 §4）
+  MSE_SYN_CATCH_ORDER = 1011,      // catch 裸绑定子句必须最后（07 §1）
   MSE_SYN_PARAM_ORDER = 1012,     // 参数序：普通 → 默认 → 至多一个 *rest（05 §1）
 } MseSyntaxCode;
 

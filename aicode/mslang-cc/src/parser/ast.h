@@ -34,6 +34,7 @@ typedef enum AstKind {
   AST_IMPORT,
   AST_FUNC_DECL,
   AST_CLASS_DECL,
+  AST_TRY,  // try/catch/finally：as.tryStmt
   // 表达式
   AST_IDENT,   // as.ident
   AST_NIL,     // 无载荷
@@ -148,6 +149,15 @@ typedef struct AstStrSeg {
   int32_t len;
 } AstStrSeg;
 
+// catch 子句（tryStmt.catches 元素，07 §1）：types 空 = 裸绑定兜底
+typedef struct AstCatchClause {
+  AstNode** types;  // AST_IDENT 类型清单
+  int32_t typeCount;
+  const char* bindName;  // 可选绑定名
+  int32_t bindLen;
+  AstNode* block;  // AST_BLOCK
+} AstCatchClause;
+
 struct AstNode {
   AstKind kind;
   int32_t line, col;  // 构造起始 token 位置（1-based，col 按 rune 计）
@@ -212,6 +222,12 @@ struct AstNode {
       int32_t bindLen;
       AstNode* body;  // 块或单语句（08 §3 同则）
     } switchCase;
+    struct {
+      AstNode* tryBlock;
+      AstCatchClause* catches;
+      int32_t catchCount;
+      AstNode* finallyBlock;  // 可 NULL
+    } tryStmt;
     struct {
       const char* name;
       int32_t nameLen;

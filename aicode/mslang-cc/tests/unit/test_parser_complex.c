@@ -558,6 +558,66 @@ TEST(switchErrorPaths) {
   }
 }
 
+TEST(tryCatchFinallyForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("try {\nrisky(x)\n} catch A, B {\ng()\n} catch e {\nprint(e)\n} finally {\nh()\n}", &arena, &diags);
+  AstNode* t = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_TRY, t->kind);
+  EXPECT_EQ(ctx, 1, t->as.tryStmt.tryBlock->as.list.count);
+  EXPECT_EQ(ctx, 2, t->as.tryStmt.catchCount);
+  EXPECT_EQ(ctx, 2, t->as.tryStmt.catches[0].typeCount);
+  EXPECT_EQ(ctx, NULL, t->as.tryStmt.catches[0].bindName);
+  EXPECT_STREQ(ctx, "e", strOf(t->as.tryStmt.catches[1].bindName, t->as.tryStmt.catches[1].bindLen));
+  EXPECT_EQ(ctx, 0, t->as.tryStmt.catches[1].typeCount);
+  EXPECT_EQ(ctx, AST_BLOCK, t->as.tryStmt.finallyBlock->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errCatchOrder) {
+  // 裸绑定兜底最后（07 §1）：裸子句之后再出现任何 catch 均报错
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("try{}catch e{}catch V{}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_CATCH_ORDER, diags.items[0].code);
+  EXPECT_EQ(ctx, 1, diags.items[0].line);
+  EXPECT_EQ(ctx, AST_TRY, mod->as.list.items[0]->kind);
+  astArenaDestroy(&arena);
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("try{}catch e{}catch A, B{}", &arena, &diags);
+  EXPECT_EQ(ctx, MSE_SYN_CATCH_ORDER, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(errTryWithoutCatchFinally) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("try {\nf()\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(bareThrowRethrowInCatch) {
+  // 裸 throw 在 catch 块内为重抛（07 §3）：value 为 NULL
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() { try { g() } catch e { throw } }", &arena, &diags);
+  AstNode* tryStmt = mod->as.list.items[0]->as.funcDecl.body->as.list.items[0];
+  AstNode* bare = tryStmt->as.tryStmt.catches[0].block->as.list.items[0];
+  EXPECT_EQ(ctx, AST_THROW, bare->kind);
+  EXPECT_EQ(ctx, NULL, bare->as.exprStmt.expr);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -594,6 +654,10 @@ int main(void) {
   errSwitchMissingColon(&ctx);
   switchRecoveryKeepsFollowingStmt(&ctx);
   switchErrorPaths(&ctx);
+  tryCatchFinallyForms(&ctx);
+  errCatchOrder(&ctx);
+  errTryWithoutCatchFinally(&ctx);
+  bareThrowRethrowInCatch(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
