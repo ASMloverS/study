@@ -511,6 +511,53 @@ TEST(errSwitchMissingColon) {
   astArenaDestroy(&arena);
 }
 
+TEST(switchRecoveryKeepsFollowingStmt) {
+  // 块内坏 switch 就地恢复：后续语句存活、函数 } 不被窃取、恰 1 条诊断
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() {\nswitch x { case 1 f() }\nvar g = 2\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
+  EXPECT_EQ(ctx, 1, body->as.list.count);
+  EXPECT_EQ(ctx, AST_VAR_DECL, body->as.list.items[0]->kind);
+  EXPECT_STREQ(ctx, "g", strOf(body->as.list.items[0]->as.varDecl.name, body->as.list.items[0]->as.varDecl.nameLen));
+  astArenaDestroy(&arena);
+  // 模块级同构探针：恢复后 var 声明存活、恰 1 条诊断
+  MsDiagSink modDiags = {0};
+  AstArena modArena;
+  astArenaInit(&modArena);
+  AstNode* mod2 = parseSrc("switch x { case 1 f() }\nvar g = 2", &modArena, &modDiags);
+  EXPECT_EQ(ctx, 1, mod2->as.list.count);
+  EXPECT_EQ(ctx, 1, modDiags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, modDiags.items[0].code);
+  EXPECT_EQ(ctx, AST_VAR_DECL, mod2->as.list.items[0]->kind);
+  astArenaDestroy(&modArena);
+}
+
+TEST(switchErrorPaths) {
+  // 四类结构性错误：首条诊断均为 MSE_SYN_EXPECTED
+  const char* srcs[] = {
+      "switch type(v { case 1: f() }",           // type( 缺 )
+      "switch x case 1: f()",                    // 缺 {（单行：换行版经 ASI 级联次级诊断）
+      "switch type(v) { case 1: f() }",          // 类型式 case 值非类型名
+      "switch type(v) { case string as : f() }"  // as 后缺 ident
+  };
+  for (int32_t i = 0; i < 4; i++) {
+    MsDiagSink diags = {0};
+    AstArena arena;
+    astArenaInit(&arena);
+    parseSrc(srcs[i], &arena, &diags);
+    EXPECT_EQ(ctx, true, diags.count >= 1);
+    if (diags.count >= 1) {
+      EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+    }
+    astArenaDestroy(&arena);
+  }
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -545,6 +592,8 @@ int main(void) {
   switchSubjectNamedTypeStaysValue(&ctx);
   switchCaseBodyCanBeBlock(&ctx);
   errSwitchMissingColon(&ctx);
+  switchRecoveryKeepsFollowingStmt(&ctx);
+  switchErrorPaths(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

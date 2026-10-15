@@ -1263,7 +1263,7 @@ static bool endSimpleStmt(Parser* p) {
   return false;
 }
 
-// 语句序列（模块体/块体共用）：孤立 ; 静默跳过（04 §10）；错误语句同步后继续
+// 语句序列（模块体/块体共用）：孤立 ; 静默跳过（04 §10）；panic 语句同步后继续，无 panic 的 NULL 已就地恢复至语句边界
 static AstNode** parseStmtList(Parser* p, int32_t* outCount, MsTokenType end) {
   AstNode** tmp = NULL;
   int32_t count = 0, cap = 0;
@@ -1279,7 +1279,7 @@ static AstNode** parseStmtList(Parser* p, int32_t* outCount, MsTokenType end) {
     AstNode* stmt = parseStatement(p);
     if (stmt != NULL) {
       MS_ARRAY_PUSH(tmp, count, cap, stmt);
-    } else {
+    } else if (p->panic) {
       synchronize(p);
     }
   }
@@ -1943,8 +1943,7 @@ static void skipSwitchClose(Parser* p) {
 static AstNode* parseSwitchStmt(Parser* p) {
   int32_t line = p->cur.line, col = p->cur.col;
   advance(p);  // switch
-  bool isType = check(p, TK_ID) && p->cur.len == 4 && memcmp(p->cur.start, "type", 4) == 0 &&
-                peekType(p) == TK_LPAREN;
+  bool isType = check(p, TK_ID) && p->cur.len == 4 && memcmp(p->cur.start, "type", 4) == 0 && peekType(p) == TK_LPAREN;
   AstNode* subject;
   if (isType) {
     advance(p);  // type
@@ -2029,6 +2028,7 @@ static AstNode* parseSwitchStmt(Parser* p) {
       free(values);
       free(cases);
       skipSwitchClose(p);
+      p->panic = false;  // 已恢复至语句边界（诊断已出）：免 synchronize 吞同行后续语句
       return NULL;
     }
     AstNode* caseNode = astNewNode(p->arena, AST_SWITCH_CASE, caseLine, caseCol);
@@ -2048,6 +2048,7 @@ static AstNode* parseSwitchStmt(Parser* p) {
     errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected 'case' or '}' in switch body");
     free(cases);
     skipSwitchClose(p);
+    p->panic = false;  // 同上：已消费至配对 }，边界干净
     return NULL;
   }
   AstNode* node = astNewNode(p->arena, AST_SWITCH, line, col);
