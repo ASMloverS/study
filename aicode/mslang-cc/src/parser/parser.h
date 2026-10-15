@@ -35,6 +35,7 @@ typedef struct Parser {
   MsDiagSink* diags;   // 可为 NULL（免诊断场景）
   ParserScope* scope;  // 声明查重作用域链（完整解析在 T009 Binder）
   bool panic;          // 恢复中：屏蔽级联诊断直至同步点
+  bool noIn;           // for 头部解析中：in 不作二元运算符（for-in 判别，04 §4）
   int32_t funcDepth;   // 函数体嵌套深度（defer 合法性，04 §7）
 } Parser;
 

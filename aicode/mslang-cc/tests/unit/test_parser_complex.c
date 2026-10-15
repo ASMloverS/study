@@ -201,6 +201,140 @@ TEST(stmtFuncExprFormsAndIife) {
   astArenaDestroy(&arena);
 }
 
+// 函数体内首语句（for 头 := 需函数作用域）
+static AstNode* funcBody0(AstNode* mod) { return mod->as.list.items[0]->as.funcDecl.body->as.list.items[0]; }
+
+TEST(forTriWithSugarPost) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() { for i := 0; i < 10; i++ { s() } }", &arena, &diags);
+  AstNode* f = funcBody0(mod);
+  EXPECT_EQ(ctx, AST_FOR, f->kind);
+  EXPECT_EQ(ctx, AST_FOR_TRI, f->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_VAR_DECL, f->as.forStmt.init->kind);
+  EXPECT_EQ(ctx, AST_VAR_SHORT, f->as.forStmt.init->as.varDecl.flags);
+  EXPECT_EQ(ctx, AST_BINARY, f->as.forStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_OP_LT, f->as.forStmt.cond->as.binary.op);
+  EXPECT_EQ(ctx, AST_ASSIGN, f->as.forStmt.post->kind);
+  EXPECT_EQ(ctx, AST_OP_ADD, f->as.forStmt.post->as.assign.op);
+  EXPECT_EQ(ctx, 1, (int)f->as.forStmt.post->as.assign.value->as.intLit.v);
+  EXPECT_EQ(ctx, AST_BLOCK, f->as.forStmt.body->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(forTriEmptySegments) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("for ; ; { f() }", &arena, &diags);
+  AstNode* f = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_FOR_TRI, f->as.forStmt.form);
+  EXPECT_EQ(ctx, NULL, f->as.forStmt.init);
+  EXPECT_EQ(ctx, NULL, f->as.forStmt.cond);
+  EXPECT_EQ(ctx, NULL, f->as.forStmt.post);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(forTriPartialSegments) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() { for i := 0; ; { f() } }\nfor ; flag; { g() }", &arena, &diags);
+  AstNode* a = funcBody0(mod);
+  EXPECT_EQ(ctx, AST_FOR_TRI, a->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_VAR_DECL, a->as.forStmt.init->kind);
+  EXPECT_EQ(ctx, NULL, a->as.forStmt.cond);
+  EXPECT_EQ(ctx, NULL, a->as.forStmt.post);
+  AstNode* b = mod->as.list.items[1];
+  EXPECT_EQ(ctx, AST_FOR_TRI, b->as.forStmt.form);
+  EXPECT_EQ(ctx, NULL, b->as.forStmt.init);
+  EXPECT_EQ(ctx, AST_IDENT, b->as.forStmt.cond->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(forInForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("for x in xs { f(x) }\nfor k, v in m.items() { }", &arena, &diags);
+  AstNode* a = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_FOR_IN, a->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_IDENT, a->as.forStmt.target->kind);
+  EXPECT_EQ(ctx, AST_IDENT, a->as.forStmt.iter->kind);
+  AstNode* b = mod->as.list.items[1];
+  EXPECT_EQ(ctx, AST_FOR_IN, b->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_TUPLE, b->as.forStmt.target->kind);
+  EXPECT_EQ(ctx, 2, b->as.forStmt.target->as.tuple.count);
+  EXPECT_EQ(ctx, AST_CALL, b->as.forStmt.iter->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(forCondAndInfinite) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("for flag { }\nfor { }", &arena, &diags);
+  EXPECT_EQ(ctx, AST_FOR_COND, mod->as.list.items[0]->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_IDENT, mod->as.list.items[0]->as.forStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_FOR_INF, mod->as.list.items[1]->as.forStmt.form);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(whileForm) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("while x < 3 { break }", &arena, &diags);
+  AstNode* w = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_WHILE, w->kind);
+  EXPECT_EQ(ctx, AST_BINARY, w->as.whileStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_BREAK, w->as.whileStmt.body->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(breakContinueForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f(xs) {\nfor x in xs {\ncontinue\n}\n}", &arena, &diags);
+  AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
+  AstNode* f = body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_CONTINUE, f->as.forStmt.body->as.list.items[0]->kind);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(errForBadTarget) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  parseSrc("for 1 in xs { }", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_BAD_TARGET, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(forHeaderNoInBodyRestoredIn) {
+  // 头部 in 留给迭代判别；体内 in 仍是运算符
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("for x in xs { if y in ys { } }", &arena, &diags);
+  AstNode* f = mod->as.list.items[0];
+  AstNode* ifStmt = f->as.forStmt.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_BINARY, ifStmt->as.ifStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_OP_IN, ifStmt->as.ifStmt.cond->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -215,6 +349,15 @@ int main(void) {
   funcRedefinitionAllowed(&ctx);
   funcExprDefaultsRestExprBody(&ctx);
   stmtFuncExprFormsAndIife(&ctx);
+  forTriWithSugarPost(&ctx);
+  forTriEmptySegments(&ctx);
+  forTriPartialSegments(&ctx);
+  forInForms(&ctx);
+  forCondAndInfinite(&ctx);
+  whileForm(&ctx);
+  breakContinueForms(&ctx);
+  errForBadTarget(&ctx);
+  forHeaderNoInBodyRestoredIn(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;

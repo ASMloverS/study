@@ -125,6 +125,20 @@ static void synchronize(Parser* p) {
   }
 }
 
+// 单 token 前瞻：快照推进再回滚（词法诊断屏蔽，由真实推进报告；仅用于判别，不产生副作用）
+static MsTokenType peekType(Parser* p) {
+  Scanner savedScan = p->scan;
+  MsToken savedCur = p->cur;
+  int32_t savedPrevLine = p->prevLine;
+  p->scan.diags = NULL;
+  MsToken next;
+  scannerNext(&p->scan, &next);
+  p->scan = savedScan;
+  p->cur = savedCur;
+  p->prevLine = savedPrevLine;
+  return next.type;
+}
+
 // ---------------- 数值求值 ----------------
 
 // INT token 求值：剥下划线、按前缀进制累加（溢出已由 scanner 升 BIGINT，必不溢 i64）
@@ -1036,8 +1050,8 @@ static AstNode* parseCompare(Parser* p) {
     return NULL;
   }
   AstBinOp op = comparisonOpOf(p->cur.type);
-  if (op == AST_OP_NONE) {
-    return lhs;
+  if (op == AST_OP_NONE || (op == AST_OP_IN && p->noIn)) {
+    return lhs;  // noIn：for 头部顶层 in 留给迭代形态判别（04 §4）
   }
   advance(p);
   AstNode* rhs = parseBitOr(p);
@@ -1750,6 +1764,161 @@ static AstNode* parseSimpleStmt(Parser* p) {
   return finishSimpleStmt(p, first, firstStar, line, col, true);
 }
 
+// for 第三段（04 §4）：i++ / i-- 语法糖（语言无通用自增运算符，仅此处）→ 复合赋值
+// 目标取后缀表达式而非完整阶梯：加法层会把 i++ 的首个 + 当二元运算符（rhs 遇第二个 + 必报错）
+static AstNode* parseForPost(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  AstNode* first = parsePostfix(p);
+  if (first == NULL) {
+    return NULL;
+  }
+  bool inc = check(p, TK_PLUS) && peekType(p) == TK_PLUS;
+  bool dec = check(p, TK_MINUS) && peekType(p) == TK_MINUS;
+  if (inc || dec) {
+    advance(p);
+    advance(p);
+    if (!isAssignTarget(first)) {
+      errPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "invalid 'for' post target");
+      return NULL;
+    }
+    AstNode* one = astNewNode(p->arena, AST_INT, line, col);
+    one->as.intLit.v = 1;
+    AstNode* node = astNewNode(p->arena, AST_ASSIGN, line, col);
+    node->as.assign.target = first;
+    node->as.assign.value = one;
+    node->as.assign.op = inc ? AST_OP_ADD : AST_OP_SUB;
+    return node;
+  }
+  // 非糖：其余简单语句形态（赋值/复合赋值/send）；后随体块 '{'，不作语句终止判定
+  return finishSimpleStmt(p, first, false, line, col, false);
+}
+
+// for 首段（04 §4）：不消费段尾 ';'，交由形态判别（';' 三段式 / in 迭代 / '{' 条件式）
+static AstNode* parseForInit(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  bool firstStar = match(p, TK_STAR);
+  AstNode* first = parseExpr(p);
+  if (first == NULL) {
+    return NULL;
+  }
+  return finishSimpleStmt(p, first, firstStar, line, col, false);
+}
+
+// 三段式后两段（04 §4）：init 可 NULL；cond/post 省略时第二 ';' 随 '{' 可省
+static AstNode* parseForTriRest(Parser* p, AstNode* node, AstNode* init) {
+  advance(p);  // 首段后的 ';'
+  node->as.forStmt.init = init;
+  if (!check(p, TK_SEMICOLON) && !check(p, TK_LBRACE)) {
+    node->as.forStmt.cond = parseExpr(p);
+    if (node->as.forStmt.cond == NULL) {
+      return NULL;
+    }
+  }
+  if (!match(p, TK_SEMICOLON) && !check(p, TK_LBRACE)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ';' in 'for' header");
+    return NULL;
+  }
+  if (!check(p, TK_LBRACE)) {
+    node->as.forStmt.post = parseForPost(p);
+    if (node->as.forStmt.post == NULL) {
+      return NULL;
+    }
+  }
+  node->as.forStmt.body = parseBlock(p);
+  if (node->as.forStmt.body == NULL) {
+    return NULL;
+  }
+  return node;
+}
+
+// for-in 目标：IDENT 或全 IDENT 的 TUPLE（04 §4）
+static bool isIdentListTarget(const AstNode* n) {
+  if (n->kind == AST_IDENT) {
+    return true;
+  }
+  if (n->kind != AST_TUPLE) {
+    return false;
+  }
+  for (int32_t i = 0; i < n->as.tuple.count; i++) {
+    if (n->as.tuple.items[i]->kind != AST_IDENT) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// for 五形态（04 §4）：判别依据任务 §2（';' 三段式 / in 迭代 / '{' 无限或条件式）
+static AstNode* parseForStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);  // for
+  AstNode* node = astNewNode(p->arena, AST_FOR, line, col);
+  node->as.forStmt.form = AST_FOR_TRI;
+  if (check(p, TK_LBRACE)) {
+    node->as.forStmt.form = AST_FOR_INF;
+    node->as.forStmt.body = parseBlock(p);
+    return node->as.forStmt.body != NULL ? node : NULL;
+  }
+  AstNode* init = NULL;
+  if (!check(p, TK_SEMICOLON)) {  // 首段省略则直接三段式
+    bool savedNoIn = p->noIn;
+    p->noIn = true;
+    init = parseForInit(p);  // 不消费段尾 ';'（判别依赖）
+    p->noIn = savedNoIn;
+    if (init == NULL) {
+      return NULL;
+    }
+  }
+  if (check(p, TK_IN)) {  // 迭代形态：目标取自首段表达式
+    advance(p);
+    AstNode* target = init->kind == AST_EXPR_STMT ? init->as.exprStmt.expr : NULL;
+    node->as.forStmt.form = AST_FOR_IN;
+    if (target == NULL || !isIdentListTarget(target)) {
+      // 就地诊断不中断（parseParamList 先例）：errPos+NULL 会经 synchronize 吞块 } 误报 unmatched
+      diagPos(p, line, col, 1, MSE_SYN_BAD_TARGET, "'for' target must be an identifier list");
+    }
+    node->as.forStmt.target = target;
+    node->as.forStmt.iter = parseExpr(p);
+    if (node->as.forStmt.iter == NULL) {
+      return NULL;
+    }
+    node->as.forStmt.body = parseBlock(p);
+    return node->as.forStmt.body != NULL ? node : NULL;
+  }
+  if (init != NULL && check(p, TK_LBRACE)) {  // 条件形态：首段即条件
+    if (init->kind != AST_EXPR_STMT) {
+      errTok(p, &p->cur, MSE_SYN_UNEXPECTED, "expected expression as 'for' condition");
+      return NULL;
+    }
+    node->as.forStmt.form = AST_FOR_COND;
+    node->as.forStmt.cond = init->as.exprStmt.expr;
+    node->as.forStmt.body = parseBlock(p);
+    return node->as.forStmt.body != NULL ? node : NULL;
+  }
+  if (!check(p, TK_SEMICOLON)) {
+    errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected ';', 'in' or '{' in 'for' header");
+    return NULL;
+  }
+  return parseForTriRest(p, node, init);
+}
+
+// while（04 §4）
+static AstNode* parseWhileStmt(Parser* p) {
+  int32_t line = p->cur.line, col = p->cur.col;
+  advance(p);
+  AstNode* cond = parseExpr(p);
+  if (cond == NULL) {
+    return NULL;
+  }
+  AstNode* body = parseBlock(p);
+  if (body == NULL) {
+    return NULL;
+  }
+  AstNode* node = astNewNode(p->arena, AST_WHILE, line, col);
+  node->as.whileStmt.cond = cond;
+  node->as.whileStmt.body = body;
+  return node;
+}
+
 static AstNode* parseStatement(Parser* p) {
   if (check(p, TK_LBRACE)) {
     return parseBlock(p);  // 块语句（自带边界，无需 ASI）
@@ -1767,6 +1936,21 @@ static AstNode* parseStatement(Parser* p) {
   }
   if (check(p, TK_RETURN)) {
     return parseReturnStmt(p);
+  }
+  if (check(p, TK_FOR)) {
+    return parseForStmt(p);
+  }
+  if (check(p, TK_WHILE)) {
+    return parseWhileStmt(p);
+  }
+  if (check(p, TK_BREAK) || check(p, TK_CONTINUE)) {  // 合法性检查归 T009（04 §6）
+    AstKind kind = check(p, TK_BREAK) ? AST_BREAK : AST_CONTINUE;
+    int32_t line = p->cur.line, col = p->cur.col;
+    advance(p);
+    if (!endSimpleStmt(p)) {
+      return NULL;
+    }
+    return astNewNode(p->arena, kind, line, col);
   }
   if (check(p, TK_THROW)) {
     return parseValueJumpStmt(p, AST_THROW);
@@ -1797,6 +1981,7 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
   p->diags = diags;
   p->scope = NULL;
   p->panic = false;
+  p->noIn = false;
   p->funcDepth = 0;
   scannerNext(&p->scan, &p->cur);  // 首 token 直接拉取（不经 advance：避免读未初始化 prevLine）
   p->prevLine = 1;

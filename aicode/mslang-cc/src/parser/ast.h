@@ -133,6 +133,14 @@ enum {
   AST_COMP_SET = 3,
 };
 
+// for 形态（forStmt.form，04 §4）
+enum {
+  AST_FOR_TRI = 1,   // for init; cond; post（段均可省略）
+  AST_FOR_IN = 2,    // for x in xs / for k, v in xs
+  AST_FOR_COND = 3,  // for cond
+  AST_FOR_INF = 4,   // for {}
+};
+
 // 字符串段：expr != NULL 为插值段，否则为字面段（借用源文本，转义原文保留）
 typedef struct AstStrSeg {
   AstNode* expr;
@@ -177,6 +185,19 @@ struct AstNode {
       AstNode* chan;
       AstNode* value;
     } sendStmt;  // AST_SEND：ch <- v
+    struct {
+      ms_u8 form;       // AST_FOR_*
+      AstNode* init;    // TRI：简单语句（可 NULL）
+      AstNode* cond;    // TRI/COND
+      AstNode* post;    // TRI（i++/i-- 糖已展开为复合赋值）
+      AstNode* target;  // IN：IDENT 或 TUPLE(IDENT)
+      AstNode* iter;    // IN
+      AstNode* body;    // AST_BLOCK
+    } forStmt;
+    struct {
+      AstNode* cond;
+      AstNode* body;
+    } whileStmt;
     struct {
       const char* name;
       int32_t nameLen;
