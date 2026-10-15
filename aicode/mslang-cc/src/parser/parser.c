@@ -1434,6 +1434,8 @@ fail:
 static bool parseFuncBody(Parser* p, AstNode** outBody, AstNode** outExprBody) {
   pushScope(p);
   p->funcDepth++;
+  bool savedNoIn = p->noIn;
+  p->noIn = false;  // 函数体回到正常表达式语境（for 头 noIn 不穿透，JS 同则）
   bool ok;
   if (match(p, TK_ARROW)) {
     *outBody = NULL;
@@ -1444,6 +1446,7 @@ static bool parseFuncBody(Parser* p, AstNode** outBody, AstNode** outExprBody) {
     *outBody = parseBlock(p);
     ok = *outBody != NULL;
   }
+  p->noIn = savedNoIn;
   p->funcDepth--;
   popScope(p);
   return ok;

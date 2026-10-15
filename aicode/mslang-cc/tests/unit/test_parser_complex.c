@@ -321,6 +321,65 @@ TEST(errForBadTarget) {
   astArenaDestroy(&arena);
 }
 
+TEST(forInBadTargetRecoversInPlace) {
+  // 就地恢复：init 非 EXPR_STMT 时 target 为 NULL，仅 1 条诊断（不级联 unmatched '}'）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() { for i := 0 in xs { } }", &arena, &diags);
+  AstNode* fo = mod->as.list.items[0]->as.funcDecl.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_FOR, fo->kind);
+  EXPECT_EQ(ctx, AST_FOR_IN, fo->as.forStmt.form);
+  EXPECT_EQ(ctx, NULL, fo->as.forStmt.target);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_BAD_TARGET, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
+TEST(forPostDecSugarAndPlainForms) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() {\nfor i := 9; i > 0; i-- { s() }\nfor j := 0; j < 2; j += 2 { s() }\n}",
+                          &arena, &diags);
+  AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
+  AstNode* a = body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_OP_SUB, a->as.forStmt.post->as.assign.op);
+  EXPECT_EQ(ctx, 1, (int)a->as.forStmt.post->as.assign.value->as.intLit.v);
+  AstNode* b = body->as.list.items[1];
+  EXPECT_EQ(ctx, AST_ASSIGN, b->as.forStmt.post->kind);
+  EXPECT_EQ(ctx, AST_OP_ADD, b->as.forStmt.post->as.assign.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(forCondSegmentInIsOperator) {
+  // 三段式 cond 段内 in 仍是运算符（noIn 仅作用于首段）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("for ; a in b; { }", &arena, &diags);
+  AstNode* f = mod->as.list.items[0];
+  EXPECT_EQ(ctx, AST_FOR_TRI, f->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_OP_IN, f->as.forStmt.cond->as.binary.op);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(forTriSecondSemicolonLenient) {
+  // cond 后第二 ';' 可随 '{' 省略（init-only 循环）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func f() { for i := 0; i < 3 { s() } }", &arena, &diags);
+  AstNode* fo = mod->as.list.items[0]->as.funcDecl.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_FOR_TRI, fo->as.forStmt.form);
+  EXPECT_EQ(ctx, AST_BINARY, fo->as.forStmt.cond->kind);
+  EXPECT_EQ(ctx, NULL, fo->as.forStmt.post);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 TEST(forHeaderNoInBodyRestoredIn) {
   // 头部 in 留给迭代判别；体内 in 仍是运算符
   MsDiagSink diags = {0};
@@ -357,6 +416,10 @@ int main(void) {
   whileForm(&ctx);
   breakContinueForms(&ctx);
   errForBadTarget(&ctx);
+  forInBadTargetRecoversInPlace(&ctx);
+  forPostDecSugarAndPlainForms(&ctx);
+  forCondSegmentInIsOperator(&ctx);
+  forTriSecondSemicolonLenient(&ctx);
   forHeaderNoInBodyRestoredIn(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");

@@ -190,7 +190,7 @@ struct AstNode {
       AstNode* init;    // TRI：简单语句（可 NULL）
       AstNode* cond;    // TRI/COND
       AstNode* post;    // TRI（i++/i-- 糖已展开为复合赋值）
-      AstNode* target;  // IN：IDENT 或 TUPLE(IDENT)
+      AstNode* target;  // IN：IDENT 或 TUPLE(IDENT)；可 NULL（BAD_TARGET 已诊断，T009 需容忍）
       AstNode* iter;    // IN
       AstNode* body;    // AST_BLOCK
     } forStmt;
