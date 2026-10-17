@@ -251,10 +251,10 @@ struct AstNode {
     } selectStmt;
     struct {
       ms_u8 form;       // AST_SEL_*
-      AstNode* target;  // RECV：赋值目标（NULL = 丢弃接收）
+      AstNode* target;  // RECV：赋值目标（NULL = 丢弃接收；BAD_TARGET 已诊断时亦 NULL，T009 需容忍）
       AstNode* chan;    // RECV：AST_RECV 源；SEND：目标 channel
-      AstNode* value;   // SEND：发送值
-      AstNode* body;    // 块或单语句（08 §3）
+      AstNode* value;  // SEND：发送值
+      AstNode* body;   // 块或单语句（08 §3）
     } selectCase;
     struct {
       const char* path;  // 模块路径（字面量原文，引号/反引号已剥离）

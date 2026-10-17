@@ -1628,7 +1628,7 @@ static AstNode* finishSimpleStmt(Parser* p, AstNode* first, bool firstStar, int3
       errPos(p, line, col, 1, MSE_SYN_SHORT_TOPLEVEL, "':=' is not allowed at module top level");
       return NULL;
     }
-    if (scopeDeclare(p, first->as.ident.name, first->as.ident.nameLen)) {
+    if (!p->loopHeader && scopeDeclare(p, first->as.ident.name, first->as.ident.nameLen)) {
       errPos(p, line, col, first->as.ident.nameLen, MSE_SYN_DUP_DECL, "duplicate declaration in the same scope");
       return NULL;
     }
@@ -1869,7 +1869,10 @@ static AstNode* parseForStmt(Parser* p) {
   if (!check(p, TK_SEMICOLON)) {  // 首段省略则直接三段式
     bool savedNoIn = p->noIn;
     p->noIn = true;
+    bool savedLoopHeader = p->loopHeader;
+    p->loopHeader = true;
     init = parseForInit(p);  // 不消费段尾 ';'（判别依赖）
+    p->loopHeader = savedLoopHeader;
     p->noIn = savedNoIn;
     if (init == NULL) {
       return NULL;
@@ -2529,9 +2532,9 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
     if (match(p, TK_SEMICOLON)) {
       continue;
     }
-    ms_u8 staticFlag = 0;
+    bool hasStatic = false;
     if (isStaticPrefix(p)) {
-      staticFlag = AST_VAR_STATIC;
+      hasStatic = true;
       advance(p);
     }
     if (check(p, TK_VAR)) {  // 字段声明：var a, b = 1（每名一节点，06 §1）
@@ -2548,7 +2551,7 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
         AstNode* field = astNewNode(p->arena, AST_VAR_DECL, fieldLine, fieldCol);
         field->as.varDecl.name = fieldName;
         field->as.varDecl.nameLen = fieldLen;
-        field->as.varDecl.flags = staticFlag;
+        field->as.varDecl.flags = hasStatic ? AST_VAR_STATIC : 0;
         if (match(p, TK_EQ)) {
           field->as.varDecl.init = parseExpr(p);  // 单表达式：逗号分隔字段而非元组元素（06 §1）
           if (field->as.varDecl.init == NULL) {
@@ -2577,7 +2580,7 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
       AstNode* field = astNewNode(p->arena, AST_VAR_DECL, fieldLine, fieldCol);
       field->as.varDecl.name = fieldName;
       field->as.varDecl.nameLen = fieldLen;
-      field->as.varDecl.flags = AST_VAR_CONST | staticFlag;
+      field->as.varDecl.flags = AST_VAR_CONST | (hasStatic ? AST_VAR_STATIC : 0);
       if (match(p, TK_EQ)) {
         field->as.varDecl.init = parseExpr(p);  // 同上：const 初始化亦为单表达式
         if (field->as.varDecl.init == NULL) {
@@ -2590,7 +2593,7 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
       }
       MS_ARRAY_PUSH(members, memberCount, memberCap, field);
     } else if (check(p, TK_FUNC)) {  // 方法（含 dunder，06 §5）
-      ms_u8 flags = staticFlag != 0 ? AST_FUNC_STATIC : 0;
+      ms_u8 flags = hasStatic ? AST_FUNC_STATIC : 0;
       AstNode* method = parseFuncDeclStmt(p, flags, p->cur.line, p->cur.col);
       if (method == NULL) {
         goto fail;
@@ -2724,6 +2727,7 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
   p->scope = NULL;
   p->panic = false;
   p->noIn = false;
+  p->loopHeader = false;
   p->funcDepth = 0;
   scannerNext(&p->scan, &p->cur);  // 首 token 直接拉取（不经 advance：避免读未初始化 prevLine）
   p->prevLine = 1;

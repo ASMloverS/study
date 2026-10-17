@@ -41,7 +41,8 @@ typedef struct Parser {
   ParserScope* scope;  // 声明查重作用域链（完整解析在 T009 Binder）
   bool panic;          // 恢复中：屏蔽级联诊断直至同步点
   bool noIn;           // for 头部解析中：in 不作二元运算符（for-in 判别，04 §4）
-  int32_t funcDepth;   // 函数体嵌套深度（defer 合法性，04 §7）
+  bool loopHeader;  // for 头部解析中：:= 不在封闭作用域查重（循环变量每轮新鲜绑定，04 §4；作用域归 T009）
+  int32_t funcDepth;  // 函数体嵌套深度（defer 合法性，04 §7）
 } Parser;
 
 void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena, MsDiagSink* diags);

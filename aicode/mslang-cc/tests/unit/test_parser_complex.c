@@ -1079,6 +1079,36 @@ TEST(docExample04ForAndSwitch) {
   astArenaDestroy(&arena);
 }
 
+TEST(forHeaderDeclNoEnclosingDup) {
+  // 兄弟循环同名头变量 + var 遮蔽：均合法（每轮新鲜绑定 04 §4，作用域归 T009）
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc(
+      "func f() {\nfor i := 0; i < 3; i++ { a() }\nfor i := 0; i < 3; i++ { b() }\nvar i = 0\nfor i := 5; i < 9; i++ { "
+      "c() }\n}",
+      &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
+  EXPECT_EQ(ctx, 4, body->as.list.count);
+  astArenaDestroy(&arena);
+  // 模块层 for 头 := 仍报 1002（04 §1）；首条即 SHORT_TOPLEVEL。
+  // 注：单行三段头失败后 synchronize 止于 ';'，残余 i++/{ 触发既有 2 条 1000 级联（修复前即如此，恢复策略另行处理）
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("for i := 0; i < 3; i++ { }", &arena, &diags);
+  EXPECT_EQ(ctx, true, diags.count >= 1);
+  EXPECT_EQ(ctx, MSE_SYN_SHORT_TOPLEVEL, diags.items[0].code);
+  astArenaDestroy(&arena);
+  // 块内普通 := 查重仍然生效（非 for 头路径不回归）
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("func g() {\nx := 1\nx := 2\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_DUP_DECL, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -1140,6 +1170,7 @@ int main(void) {
   classFieldInitCommaAndStaticConst(&ctx);
   docExamples0506(&ctx);
   docExample04ForAndSwitch(&ctx);
+  forHeaderDeclNoEnclosingDup(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
