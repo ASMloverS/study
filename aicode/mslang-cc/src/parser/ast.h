@@ -257,21 +257,21 @@ struct AstNode {
       AstNode* body;    // 块或单语句（08 §3）
     } selectCase;
     struct {
-      const char* path;      // 模块路径（字面量原文，引号/反引号已剥离）
+      const char* path;  // 模块路径（字面量原文，引号/反引号已剥离）
       int32_t pathLen;
-      const char* alias;     // import "m" as x；无别名 NULL
+      const char* alias;  // import "m" as x；无别名 NULL
       int32_t aliasLen;
       AstImportName* names;  // from-import 具名清单；非 from 形式 NULL
       int32_t nameCount;
-      bool star;             // from "m" import *
+      bool star;  // from "m" import *
     } importStmt;
     struct {
       const char* name;
       int32_t nameLen;
-      bool isTrait;        // trait 声明（06 §2）
-      AstNode** bases;     // AST_IDENT 清单（首基类，余 mixin）
+      bool isTrait;     // trait 声明（06 §2）
+      AstNode** bases;  // AST_IDENT 清单（首基类，余 mixin）
       int32_t baseCount;
-      AstNode** members;   // AST_VAR_DECL / AST_FUNC_DECL
+      AstNode** members;  // AST_VAR_DECL / AST_FUNC_DECL
       int32_t memberCount;
     } classDecl;
     struct {
@@ -367,7 +367,7 @@ struct AstNode {
       int32_t paramCount;
       AstNode* body;      // AST_BLOCK；表达式体 NULL
       AstNode* exprBody;  // -> expr
-    } funcDecl;  // AST_FUNC_DECL
+    } funcDecl;           // AST_FUNC_DECL
   } as;
 };
 

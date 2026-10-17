@@ -243,7 +243,7 @@ static AstNode* parseComprTail(Parser* p, AstNode* key, AstNode* value, int32_t 
 static bool rejectGenExpr(Parser* p, const AstNode* n);  // 定义在 parseCallArgs 前（parseStringLit 前置可见）
 static AstNode* parseBlock(Parser* p);                   // 函数表达式体需要前置可见（定义在语句区）
 static bool parseParamList(Parser* p, AstParam** outParams, int32_t* outCount);  // 声明/表达式共用（语句区）
-static bool parseFuncBody(Parser* p, AstNode** outBody, AstNode** outExprBody);  // 同上
+static bool parseFuncBody(Parser* p, AstNode** outBody, AstNode** outExprBody);        // 同上
 static AstNode* parseFuncDeclStmt(Parser* p, ms_u8 flags, int32_t line, int32_t col);  // 同上
 
 // map 字面量键值对（parsePrimary 花括号分支暂存；定义须先于 parsePrimary）
@@ -555,7 +555,7 @@ static AstNode* parsePrimary(Parser* p) {
       return node;
     }
     case TK_FUNC: {  // 函数表达式（05 §2）：与声明共用参数/体解析
-      advance(p);  // line/col 取 parsePrimary 顶部（同一 func token）
+      advance(p);    // line/col 取 parsePrimary 顶部（同一 func token）
       ms_u8 flags = 0;
       if (match(p, TK_STAR)) {
         flags |= AST_FUNC_GENERATOR;
@@ -1612,8 +1612,7 @@ static AstNode* finishAssignTargets(Parser* p, TargetElem* tmp, int32_t count, i
 
 // 首表达式后定形：短声明 / send / 元组目标 / 复合赋值 / 普通赋值 / 表达式语句
 // terminate=false 供 for 头部首段使用：不消费结尾 ;/换行（04 §4 判别需要，后续任务）
-static AstNode* finishSimpleStmt(Parser* p, AstNode* first, bool firstStar, int32_t line, int32_t col,
-                                 bool terminate) {
+static AstNode* finishSimpleStmt(Parser* p, AstNode* first, bool firstStar, int32_t line, int32_t col, bool terminate) {
   // x := e 短声明（单 IDENT 目标）
   if (!firstStar && check(p, TK_COLON_EQ)) {
     advance(p);
@@ -2632,7 +2631,7 @@ fail:
   free(members);
   if (inBody) {
     skipSwitchClose(p);
-    p->panic = false;  // 已消费至配对 }：免 synchronize 吞本体 } 误报 unmatched
+    p->panic = false;                // 已消费至配对 }：免 synchronize 吞本体 } 误报 unmatched
   } else if (match(p, TK_LBRACE)) {  // 基类清单错误后紧随的类体 {：同样配平消费
     skipSwitchClose(p);
     p->panic = false;

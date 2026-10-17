@@ -23,11 +23,11 @@ typedef enum MseSyntaxCode {
   MSE_SYN_GENEXPR_POS = 1009,      // 生成器表达式仅可作调用唯一实参或赋值右值（03 §1）
   MSE_SYN_SPREAD_NOT_LAST = 1010,  // * 展开实参必须是最后一个实参（03 §4）
   MSE_SYN_CATCH_ORDER = 1011,      // catch 裸绑定子句必须最后（07 §1）
-  MSE_SYN_PARAM_ORDER = 1012,     // 参数序：普通 → 默认 → 至多一个 *rest（05 §1）
-  MSE_SYN_DEFER_TOPLEVEL = 1013,  // defer 仅函数体内合法（04 §7）
-  MSE_SYN_DEFER_CALL = 1014,      // defer 操作数必须是调用表达式（04 §7）
-  MSE_SYN_IMPORT_PATH = 1015,     // import 路径必须是字符串字面量（09 §2）
-  MSE_SYN_CLASS_THIS = 1016,      // 类体内非方法位置 this 非法（06 §3）
+  MSE_SYN_PARAM_ORDER = 1012,      // 参数序：普通 → 默认 → 至多一个 *rest（05 §1）
+  MSE_SYN_DEFER_TOPLEVEL = 1013,   // defer 仅函数体内合法（04 §7）
+  MSE_SYN_DEFER_CALL = 1014,       // defer 操作数必须是调用表达式（04 §7）
+  MSE_SYN_IMPORT_PATH = 1015,      // import 路径必须是字符串字面量（09 §2）
+  MSE_SYN_CLASS_THIS = 1016,       // 类体内非方法位置 this 非法（06 §3）
 } MseSyntaxCode;
 
 typedef struct ParserScope ParserScope;

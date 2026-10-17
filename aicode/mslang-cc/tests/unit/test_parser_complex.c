@@ -360,8 +360,8 @@ TEST(forPostDecSugarAndPlainForms) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("func f() {\nfor i := 9; i > 0; i-- { s() }\nfor j := 0; j < 2; j += 2 { s() }\n}",
-                          &arena, &diags);
+  AstNode* mod =
+      parseSrc("func f() {\nfor i := 9; i > 0; i-- { s() }\nfor j := 0; j < 2; j += 2 { s() }\n}", &arena, &diags);
   AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
   AstNode* a = body->as.list.items[0];
   EXPECT_EQ(ctx, AST_OP_SUB, a->as.forStmt.post->as.assign.op);
@@ -562,7 +562,8 @@ TEST(tryCatchFinallyForms) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("try {\nrisky(x)\n} catch A, B {\ng()\n} catch e {\nprint(e)\n} finally {\nh()\n}", &arena, &diags);
+  AstNode* mod =
+      parseSrc("try {\nrisky(x)\n} catch A, B {\ng()\n} catch e {\nprint(e)\n} finally {\nh()\n}", &arena, &diags);
   AstNode* t = mod->as.list.items[0];
   EXPECT_EQ(ctx, AST_TRY, t->kind);
   EXPECT_EQ(ctx, 1, t->as.tryStmt.tryBlock->as.list.count);
@@ -714,8 +715,9 @@ TEST(selectThreeBranchForms) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("select {\ncase v = <-ch1: print(v)\ncase ch2 <- x: send()\ncase <-tick: tock()\ndefault: none()\n}",
-                          &arena, &diags);
+  AstNode* mod =
+      parseSrc("select {\ncase v = <-ch1: print(v)\ncase ch2 <- x: send()\ncase <-tick: tock()\ndefault: none()\n}",
+               &arena, &diags);
   AstNode* sel = mod->as.list.items[0];
   EXPECT_EQ(ctx, AST_SELECT, sel->kind);
   EXPECT_EQ(ctx, 4, sel->as.selectStmt.count);
@@ -820,8 +822,10 @@ TEST(importForms) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("import \"strutil\"\nimport \"net/addr\" as netaddr\nfrom \"strutil\" import { join, split as sp, pad }\nfrom \"strutil\" import *",
-                          &arena, &diags);
+  AstNode* mod = parseSrc(
+      "import \"strutil\"\nimport \"net/addr\" as netaddr\nfrom \"strutil\" import { join, split as sp, pad }\nfrom "
+      "\"strutil\" import *",
+      &arena, &diags);
   EXPECT_EQ(ctx, 4, mod->as.list.count);
   AstNode* a = mod->as.list.items[0];
   EXPECT_EQ(ctx, AST_IMPORT, a->kind);
@@ -875,8 +879,8 @@ TEST(importRawStringPathAndInFunc) {
   astArenaInit(&arena);
   AstNode* mod = parseSrc("import `raw/mod`\nfunc f() {\nfrom \"m\" import { a }\n}", &arena, &diags);
   EXPECT_EQ(ctx, 2, mod->as.list.count);
-  EXPECT_STREQ(ctx, "raw/mod", strOf(mod->as.list.items[0]->as.importStmt.path,
-                                     mod->as.list.items[0]->as.importStmt.pathLen));
+  EXPECT_STREQ(ctx, "raw/mod",
+               strOf(mod->as.list.items[0]->as.importStmt.path, mod->as.list.items[0]->as.importStmt.pathLen));
   AstNode* body = mod->as.list.items[1]->as.funcDecl.body;
   EXPECT_EQ(ctx, AST_IMPORT, body->as.list.items[0]->kind);
   EXPECT_EQ(ctx, 0, diags.count);
@@ -887,8 +891,10 @@ TEST(classDeclFull) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("class Impl : Base, Mix {\nvar x, y = 2\nfunc m(a) { return a }\nstatic var t = 0\nstatic func s() -> 1\nconst VERSION = \"1.0\"\n}",
-                          &arena, &diags);
+  AstNode* mod = parseSrc(
+      "class Impl : Base, Mix {\nvar x, y = 2\nfunc m(a) { return a }\nstatic var t = 0\nstatic func s() -> 1\nconst "
+      "VERSION = \"1.0\"\n}",
+      &arena, &diags);
   AstNode* c = mod->as.list.items[0];
   EXPECT_EQ(ctx, AST_CLASS_DECL, c->kind);
   EXPECT_EQ(ctx, false, c->as.classDecl.isTrait);
@@ -896,7 +902,8 @@ TEST(classDeclFull) {
   EXPECT_EQ(ctx, 2, c->as.classDecl.baseCount);
   EXPECT_STREQ(ctx, "Base", strOf(c->as.classDecl.bases[0]->as.ident.name, c->as.classDecl.bases[0]->as.ident.nameLen));
   EXPECT_STREQ(ctx, "Mix", strOf(c->as.classDecl.bases[1]->as.ident.name, c->as.classDecl.bases[1]->as.ident.nameLen));
-  EXPECT_EQ(ctx, 6, c->as.classDecl.memberCount);  // var x + var y + func m + static var t + static func s + const VERSION
+  EXPECT_EQ(ctx, 6,
+            c->as.classDecl.memberCount);  // var x + var y + func m + static var t + static func s + const VERSION
   AstNode* m0 = c->as.classDecl.members[0];
   EXPECT_EQ(ctx, AST_VAR_DECL, m0->kind);
   EXPECT_EQ(ctx, NULL, m0->as.varDecl.init);
@@ -1034,15 +1041,17 @@ TEST(docExamples0506) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("func add(a, b) { return a + b }\nfunc double(x) -> x * 2\n"
-                          "func greet(name, prefix = \"Mr.\") { return name }\nfunc varargs(fmt, *args) { return fmt }",
-                          &arena, &diags);
+  AstNode* mod = parseSrc(
+      "func add(a, b) { return a + b }\nfunc double(x) -> x * 2\n"
+      "func greet(name, prefix = \"Mr.\") { return name }\nfunc varargs(fmt, *args) { return fmt }",
+      &arena, &diags);
   EXPECT_EQ(ctx, 4, mod->as.list.count);
   EXPECT_EQ(ctx, 0, diags.count);
   diags = (MsDiagSink){0};
-  mod = parseSrc("class Animal {\nvar name, age\nfunc __init__(name, age = 1) {\nthis.name = name\nthis.age = age\n}\n"
-                 "func speak() -> \"...\"\nfunc describe() -> \"x\"\n}\nvar a = Animal(\"Cat\", 3)\nprint(a.describe())",
-                  &arena, &diags);
+  mod = parseSrc(
+      "class Animal {\nvar name, age\nfunc __init__(name, age = 1) {\nthis.name = name\nthis.age = age\n}\n"
+      "func speak() -> \"...\"\nfunc describe() -> \"x\"\n}\nvar a = Animal(\"Cat\", 3)\nprint(a.describe())",
+      &arena, &diags);
   EXPECT_EQ(ctx, 3, mod->as.list.count);
   EXPECT_EQ(ctx, 0, diags.count);
   diags = (MsDiagSink){0};
@@ -1055,11 +1064,14 @@ TEST(docExample04ForAndSwitch) {
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
-  AstNode* mod = parseSrc("func demo(xs, m, x, v) {\nfor i := 0; i < 10; i++ { f(i) }\nfor x2 in xs { f(x2) }\n"
-                          "for k, v2 in m.items() { f(k) }\nfor x2 in range(10) { f(x2) }\nfor x > 0 { f(x) }\nfor { f(1) }\nwhile x < 3 { f(x) }\n"
-                          "switch x {\ncase 1, 2: f(x)\ncase 3: f(x)\ndefault: f(x)\n}\n"
-                          "switch type(v) {\ncase int, bigint: f(v)\ncase string as s: f(len(s))\ncase Point as p: p.move(1, 1)\ndefault: f(v)\n}\n}",
-                          &arena, &diags);
+  AstNode* mod = parseSrc(
+      "func demo(xs, m, x, v) {\nfor i := 0; i < 10; i++ { f(i) }\nfor x2 in xs { f(x2) }\n"
+      "for k, v2 in m.items() { f(k) }\nfor x2 in range(10) { f(x2) }\nfor x > 0 { f(x) }\nfor { f(1) }\nwhile x < 3 { "
+      "f(x) }\n"
+      "switch x {\ncase 1, 2: f(x)\ncase 3: f(x)\ndefault: f(x)\n}\n"
+      "switch type(v) {\ncase int, bigint: f(v)\ncase string as s: f(len(s))\ncase Point as p: p.move(1, 1)\ndefault: "
+      "f(v)\n}\n}",
+      &arena, &diags);
   EXPECT_EQ(ctx, 1, mod->as.list.count);
   // 6 for（三段/迭代/解构/range/条件/无限）+ 1 while + 2 switch = 9 条语句
   EXPECT_EQ(ctx, 9, mod->as.list.items[0]->as.funcDecl.body->as.list.count);
