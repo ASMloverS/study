@@ -3,7 +3,7 @@
 - 阶段: P2 语法（roadmap 期 2）
 - 依赖: T007
 - 规模: L
-- 状态: 🚧（分支 feat/t008-complex-statements）
+- 状态: ✅
 - 设计文档: `docs/language/04-statements.md` §4-§9 §10、`05-functions.md` §1 §8、`06-classes.md` §1 §2 §4
 
 ## 1. 目标与范围
@@ -31,12 +31,12 @@
 
 ## 4. 验收标准（DoD）
 
-- [ ] 04/05/06 全部文档示例解析通过
-- [ ] 五种 for 形态 + while 判别无歧义
-- [ ] select/case 语法（recv 绑定/send/default）AST 正确
-- [ ] catch 子句排序约束（类型在前裸绑定最后）报错正确
-- [ ] `func*`/`async`/表达式体/默认参/rest 全排列用例通过
-- [ ] class 继承清单与类体成员（static/var/const/func）解析正确
+- [x] 04/05/06 全部文档示例解析通过
+- [x] 五种 for 形态 + while 判别无歧义
+- [x] select/case 语法（recv 绑定/send/default）AST 正确
+- [x] catch 子句排序约束（类型在前裸绑定最后）报错正确
+- [x] `func*`/`async`/表达式体/默认参/rest 全排列用例通过
+- [x] class 继承清单与类体成员（static/var/const/func）解析正确
 
 ## 5. 测试计划
 
@@ -68,3 +68,11 @@
 - `for` 判别需小心 `for x in xs` 中 `in` 是关键字而非标识符；`for` 后跟 `{` 时为无限循环，与块语句区分。
 - `switch type(v)` 中 `type` 是普通标识符（01 §2），解析器特判 `switch` 后首个 token 为 ID `type` 且随之为 `(`。
 - `ch <- v` 语句与 `<-ch` 表达式的边界：赋值右值/表达式位置走 T007 前缀接收，语句位置首个 token 为 ID 且次 token `<-` 时按 send 语句解析。
+
+## 7. 交付备注（feat/t008-complex-statements）
+
+- catch 子句单 ID 一律按裸绑定解析（`catch ValueError {}` 的类型复核归 T023 binder）；多 ID（`catch A, B`）为类型子句；裸绑定之后出现任何 catch 报 MSE1011。
+- `i++` / `i--` 仅为 for 第三段语法糖（04 §4 示例），语言无通用自增运算符；糖展开为复合赋值 AST_ASSIGN。
+- `select` 与 `static` 均非保留字（01 §2 共 37 关键字）：`select` 按 ID "select"+peek `{` 上下文识别；类体 `static` 按 ID "static"+peek func/var/const 识别；`switch type(v)` 按 ID "type"+peek `(` 识别为类型式。
+- 新增错误码：MSE1011 catch 排序、MSE1012 参数序、MSE1013/1014 defer、MSE1015 import 路径、MSE1016 类体 this。
+- 载荷复用：THROW/DEFER/YIELD 复用 exprStmt；RECV/AWAIT/GO 复用 unary（op=0）；类体 var/const 成员复用 AST_VAR_DECL（flags 含 STATIC）。
