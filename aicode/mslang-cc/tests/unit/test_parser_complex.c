@@ -1029,6 +1029,44 @@ TEST(classFieldInitCommaAndStaticConst) {
   astArenaDestroy(&arena);
 }
 
+TEST(docExamples0506) {
+  // 05 §1 四种声明 + 06 §1 Animal + 06 §2 Impl 示例解析零诊断
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func add(a, b) { return a + b }\nfunc double(x) -> x * 2\n"
+                          "func greet(name, prefix = \"Mr.\") { return name }\nfunc varargs(fmt, *args) { return fmt }",
+                          &arena, &diags);
+  EXPECT_EQ(ctx, 4, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  diags = (MsDiagSink){0};
+  mod = parseSrc("class Animal {\nvar name, age\nfunc __init__(name, age = 1) {\nthis.name = name\nthis.age = age\n}\n"
+                 "func speak() -> \"...\"\nfunc describe() -> \"x\"\n}\nvar a = Animal(\"Cat\", 3)\nprint(a.describe())",
+                  &arena, &diags);
+  EXPECT_EQ(ctx, 3, mod->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  diags = (MsDiagSink){0};
+  mod = parseSrc("class Impl : Base, Logger {\nfunc who() -> \"impl\"\nfunc call() -> \"c\"\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
+TEST(docExample04ForAndSwitch) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = parseSrc("func demo(xs, m, x, v) {\nfor i := 0; i < 10; i++ { f(i) }\nfor x2 in xs { f(x2) }\n"
+                          "for k, v2 in m.items() { f(k) }\nfor x2 in range(10) { f(x2) }\nfor x > 0 { f(x) }\nfor { f(1) }\nwhile x < 3 { f(x) }\n"
+                          "switch x {\ncase 1, 2: f(x)\ncase 3: f(x)\ndefault: f(x)\n}\n"
+                          "switch type(v) {\ncase int, bigint: f(v)\ncase string as s: f(len(s))\ncase Point as p: p.move(1, 1)\ndefault: f(v)\n}\n}",
+                          &arena, &diags);
+  EXPECT_EQ(ctx, 1, mod->as.list.count);
+  // 6 for（三段/迭代/解构/range/条件/无限）+ 1 while + 2 switch = 9 条语句
+  EXPECT_EQ(ctx, 9, mod->as.list.items[0]->as.funcDecl.body->as.list.count);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -1088,6 +1126,8 @@ int main(void) {
   errClassBadMemberAndDupClass(&ctx);
   staticIdentNotConfused(&ctx);
   classFieldInitCommaAndStaticConst(&ctx);
+  docExamples0506(&ctx);
+  docExample04ForAndSwitch(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
