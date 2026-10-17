@@ -2479,10 +2479,10 @@ static bool exprHasThis(const AstNode* n) {
   }
 }
 
-// 类体 static 前缀（06 §4）：static 非保留字，后随 func/var 方可识别
+// 类体 static 前缀（06 §4）：static 非保留字，后随 func/var/const 方可识别
 static bool isStaticPrefix(Parser* p) {
   return check(p, TK_ID) && p->cur.len == 6 && memcmp(p->cur.start, "static", 6) == 0 &&
-         (peekType(p) == TK_FUNC || peekType(p) == TK_VAR);
+         (peekType(p) == TK_FUNC || peekType(p) == TK_VAR || peekType(p) == TK_CONST);
 }
 
 // class/trait 声明（06 §1 §2 §4）：继承清单 + 类体成员
@@ -2551,7 +2551,7 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
         field->as.varDecl.nameLen = fieldLen;
         field->as.varDecl.flags = staticFlag;
         if (match(p, TK_EQ)) {
-          field->as.varDecl.init = parseExprList(p);
+          field->as.varDecl.init = parseExpr(p);  // 单表达式：逗号分隔字段而非元组元素（06 §1）
           if (field->as.varDecl.init == NULL) {
             goto fail;
           }
@@ -2580,7 +2580,7 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
       field->as.varDecl.nameLen = fieldLen;
       field->as.varDecl.flags = AST_VAR_CONST | staticFlag;
       if (match(p, TK_EQ)) {
-        field->as.varDecl.init = parseExprList(p);
+        field->as.varDecl.init = parseExpr(p);  // 同上：const 初始化亦为单表达式
         if (field->as.varDecl.init == NULL) {
           goto fail;
         }
@@ -2595,6 +2595,10 @@ static AstNode* parseClassDecl(Parser* p, bool isTrait) {
       AstNode* method = parseFuncDeclStmt(p, flags, p->cur.line, p->cur.col);
       if (method == NULL) {
         goto fail;
+      }
+      if (method->kind != AST_FUNC_DECL) {  // 无名 func 表达式混入类体：成员契约仅 VAR_DECL/FUNC_DECL
+        errTok(p, &p->cur, MSE_SYN_EXPECTED, "expected method name in class body");
+        goto fail;  // inBody：skipSwitchClose 配平消费 + panic=false，免 synchronize 误报
       }
       MS_ARRAY_PUSH(members, memberCount, memberCap, method);
     } else {

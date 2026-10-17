@@ -993,6 +993,42 @@ TEST(staticIdentNotConfused) {
   astArenaDestroy(&arena);
 }
 
+TEST(classFieldInitCommaAndStaticConst) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  // 逗号分隔字段：初始化不吸收逗号
+  AstNode* mod = parseSrc("class A {\nvar a = 1, b\n}", &arena, &diags);
+  AstNode* c = mod->as.list.items[0];
+  EXPECT_EQ(ctx, 2, c->as.classDecl.memberCount);
+  EXPECT_EQ(ctx, 1, (int)c->as.classDecl.members[0]->as.varDecl.init->as.intLit.v);
+  EXPECT_EQ(ctx, NULL, c->as.classDecl.members[1]->as.varDecl.init);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+  // 第二字段 this 初始化 → 1016 定位于该字段
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("class B {\nvar a = 1, b = this.a\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_CLASS_THIS, diags.items[0].code);
+  astArenaDestroy(&arena);
+  // static const 组合标志
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  mod = parseSrc("class C {\nstatic const V = \"1\"\n}", &arena, &diags);
+  AstNode* m = mod->as.list.items[0]->as.classDecl.members[0];
+  EXPECT_EQ(ctx, AST_VAR_CONST | AST_VAR_STATIC, m->as.varDecl.flags);
+  EXPECT_EQ(ctx, 0, diags.count);
+  astArenaDestroy(&arena);
+  // 类体无名 func 表达式 → 恰 1 条诊断
+  diags = (MsDiagSink){0};
+  astArenaInit(&arena);
+  parseSrc("class D {\nfunc (x) { }\n}", &arena, &diags);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, MSE_SYN_EXPECTED, diags.items[0].code);
+  astArenaDestroy(&arena);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   recvExprOnAssignRhs(&ctx);
@@ -1051,6 +1087,7 @@ int main(void) {
   errClassThisInFieldInit(&ctx);
   errClassBadMemberAndDupClass(&ctx);
   staticIdentNotConfused(&ctx);
+  classFieldInitCommaAndStaticConst(&ctx);
   if (ctx.failures == 0) {
     printf("all tests passed\n");
     return 0;
