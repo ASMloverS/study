@@ -5,47 +5,195 @@
 
 // 名字与布局均按 MsOpcode 枚举序一一对应；新增指令须同步三处
 const char* const msOpNames[OP__COUNT] = {
-    "NOP",         "EXTENDED_ARG",     "POP",         "DUP",           "DUP2",
-    "ROT",         "SWAP",             "LOAD_NIL",    "LOAD_TRUE",     "LOAD_FALSE",
-    "LOAD_CONST",  "LOAD_LOCAL",       "STORE_LOCAL", "LOAD_GLOBAL",   "STORE_GLOBAL",
-    "DEF_GLOBAL",  "LOAD_UPVAL",       "STORE_UPVAL", "LOAD_GLOBAL_IC", "BINARY_ADD",
-    "BINARY_SUB",  "BINARY_MUL",       "BINARY_DIV",  "BINARY_MOD",    "BINARY_POW",
-    "BINARY_AND",  "BINARY_OR",        "BINARY_XOR",  "BINARY_SHL",    "BINARY_SHR",
-    "UNARY_NEG",   "UNARY_NOT",        "UNARY_INVERT", "COMPARE_EQ",   "COMPARE_NE",
-    "COMPARE_LT",  "COMPARE_LE",       "COMPARE_GT",  "COMPARE_GE",    "IS",
-    "IN",          "GET_INDEX",        "SET_INDEX",   "BUILD_SLICE",   "MAKE_FUNCTION",
-    "CLOSURE",     "CALL",             "CALL_METHOD", "RETURN",        "NEW_CLASS",
-    "DEFINE_METHOD", "INHERIT_INIT",   "GET_ATTR",    "SET_ATTR",      "JMP",
-    "JMP_IF_FALSE", "JMP_IF_TRUE",     "JMP_IF_FALSE_OR_POP", "JMP_IF_TRUE_OR_POP", "POP_JUMP_IF_NIL",
-    "SWITCH_TABLE", "TYPE_SWITCH_TABLE", "CHECK_TYPE", "GET_ITER",     "FOR_ITER",
-    "YIELD",       "RESUME",           "PUSH_TRY",    "POP_TRY",       "THROW",
-    "MATCH_CATCH", "PUSH_DEFER",       "RUN_DEFERS",  "RERAISE",       "MAKE_CHAN",
-    "SEND",        "RECV",             "CLOSE_CHAN",  "SELECT_SETUP",  "SELECT_ARM",
-    "SELECT_GO",   "SELECT_COMMIT",    "SPAWN",       "AWAIT",         "BUILD_LIST",
-    "BUILD_MAP",   "BUILD_TUPLE",      "BUILD_SET",   "UNPACK_SEQ",    "UNPACK_STAR",
-    "FORMAT_STRING", "CHECK_SAFEPOINT", "ASSERT",
+    "NOP",
+    "EXTENDED_ARG",
+    "POP",
+    "DUP",
+    "DUP2",
+    "ROT",
+    "SWAP",
+    "LOAD_NIL",
+    "LOAD_TRUE",
+    "LOAD_FALSE",
+    "LOAD_CONST",
+    "LOAD_LOCAL",
+    "STORE_LOCAL",
+    "LOAD_GLOBAL",
+    "STORE_GLOBAL",
+    "DEF_GLOBAL",
+    "LOAD_UPVAL",
+    "STORE_UPVAL",
+    "LOAD_GLOBAL_IC",
+    "BINARY_ADD",
+    "BINARY_SUB",
+    "BINARY_MUL",
+    "BINARY_DIV",
+    "BINARY_MOD",
+    "BINARY_POW",
+    "BINARY_AND",
+    "BINARY_OR",
+    "BINARY_XOR",
+    "BINARY_SHL",
+    "BINARY_SHR",
+    "UNARY_NEG",
+    "UNARY_NOT",
+    "UNARY_INVERT",
+    "COMPARE_EQ",
+    "COMPARE_NE",
+    "COMPARE_LT",
+    "COMPARE_LE",
+    "COMPARE_GT",
+    "COMPARE_GE",
+    "IS",
+    "IN",
+    "GET_INDEX",
+    "SET_INDEX",
+    "BUILD_SLICE",
+    "MAKE_FUNCTION",
+    "CLOSURE",
+    "CALL",
+    "CALL_METHOD",
+    "RETURN",
+    "NEW_CLASS",
+    "DEFINE_METHOD",
+    "INHERIT_INIT",
+    "GET_ATTR",
+    "SET_ATTR",
+    "JMP",
+    "JMP_IF_FALSE",
+    "JMP_IF_TRUE",
+    "JMP_IF_FALSE_OR_POP",
+    "JMP_IF_TRUE_OR_POP",
+    "POP_JUMP_IF_NIL",
+    "SWITCH_TABLE",
+    "TYPE_SWITCH_TABLE",
+    "CHECK_TYPE",
+    "GET_ITER",
+    "FOR_ITER",
+    "YIELD",
+    "RESUME",
+    "PUSH_TRY",
+    "POP_TRY",
+    "THROW",
+    "MATCH_CATCH",
+    "PUSH_DEFER",
+    "RUN_DEFERS",
+    "RERAISE",
+    "MAKE_CHAN",
+    "SEND",
+    "RECV",
+    "CLOSE_CHAN",
+    "SELECT_SETUP",
+    "SELECT_ARM",
+    "SELECT_GO",
+    "SELECT_COMMIT",
+    "SPAWN",
+    "AWAIT",
+    "BUILD_LIST",
+    "BUILD_MAP",
+    "BUILD_TUPLE",
+    "BUILD_SET",
+    "UNPACK_SEQ",
+    "UNPACK_STAR",
+    "FORMAT_STRING",
+    "CHECK_SAFEPOINT",
+    "ASSERT",
 };
 
 const MsOpndLayout msOpLayouts[OP__COUNT] = {
-    OPL_NONE,     OPL_U8,          OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_NONE,     OPL_NONE,        OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_CONST,    OPL_U8,          OPL_U8,       OPL_CONST,         OPL_CONST,
-    OPL_CONST,    OPL_U8,          OPL_U8,       OPL_CONST_U8,      OPL_NONE,
-    OPL_NONE,     OPL_NONE,        OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_NONE,     OPL_NONE,        OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_NONE,     OPL_NONE,        OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_NONE,     OPL_NONE,        OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_NONE,     OPL_NONE,        OPL_NONE,     OPL_U8,            OPL_CONST_U8,
-    OPL_CONST,    OPL_U8,          OPL_CONST_U8_U8, OPL_NONE,      OPL_CONST_CONST,
-    OPL_CONST_U8, OPL_NONE,        OPL_CONST_U8, OPL_CONST,        OPL_JUMP,
-    OPL_JUMP,     OPL_JUMP,        OPL_JUMP,     OPL_JUMP,          OPL_JUMP,
-    OPL_JUMP,     OPL_SPECIAL,     OPL_SPECIAL,  OPL_CONST,         OPL_NONE,
-    OPL_JUMP,     OPL_NONE,        OPL_NONE,     OPL_JUMP_JUMP,     OPL_NONE,
-    OPL_NONE,     OPL_CONST,       OPL_CONST,    OPL_U8,            OPL_NONE,
-    OPL_U8,       OPL_NONE,        OPL_NONE,     OPL_NONE,          OPL_U8,
-    OPL_U8,       OPL_SPECIAL,     OPL_NONE,     OPL_NONE,          OPL_NONE,
-    OPL_U8,       OPL_U8,          OPL_U8,       OPL_U8,            OPL_U8,
-    OPL_U8,       OPL_CONST,       OPL_NONE,     OPL_SPECIAL,
+    OPL_NONE,            // NOP
+    OPL_U8,              // EXTENDED_ARG
+    OPL_NONE,            // POP
+    OPL_NONE,            // DUP
+    OPL_NONE,            // DUP2
+    OPL_NONE,            // ROT
+    OPL_NONE,            // SWAP
+    OPL_NONE,            // LOAD_NIL
+    OPL_NONE,            // LOAD_TRUE
+    OPL_NONE,            // LOAD_FALSE
+    OPL_CONST,           // LOAD_CONST
+    OPL_U8,              // LOAD_LOCAL
+    OPL_U8,              // STORE_LOCAL
+    OPL_CONST,           // LOAD_GLOBAL
+    OPL_CONST,           // STORE_GLOBAL
+    OPL_CONST,           // DEF_GLOBAL
+    OPL_U8,              // LOAD_UPVAL
+    OPL_U8,              // STORE_UPVAL
+    OPL_CONST_U8,        // LOAD_GLOBAL_IC
+    OPL_NONE,            // BINARY_ADD
+    OPL_NONE,            // BINARY_SUB
+    OPL_NONE,            // BINARY_MUL
+    OPL_NONE,            // BINARY_DIV
+    OPL_NONE,            // BINARY_MOD
+    OPL_NONE,            // BINARY_POW
+    OPL_NONE,            // BINARY_AND
+    OPL_NONE,            // BINARY_OR
+    OPL_NONE,            // BINARY_XOR
+    OPL_NONE,            // BINARY_SHL
+    OPL_NONE,            // BINARY_SHR
+    OPL_NONE,            // UNARY_NEG
+    OPL_NONE,            // UNARY_NOT
+    OPL_NONE,            // UNARY_INVERT
+    OPL_NONE,            // COMPARE_EQ
+    OPL_NONE,            // COMPARE_NE
+    OPL_NONE,            // COMPARE_LT
+    OPL_NONE,            // COMPARE_LE
+    OPL_NONE,            // COMPARE_GT
+    OPL_NONE,            // COMPARE_GE
+    OPL_NONE,            // IS
+    OPL_NONE,            // IN
+    OPL_NONE,            // GET_INDEX
+    OPL_NONE,            // SET_INDEX
+    OPL_U8,              // BUILD_SLICE
+    OPL_CONST_U8,        // MAKE_FUNCTION
+    OPL_CONST,           // CLOSURE
+    OPL_U8,              // CALL
+    OPL_CONST_U8_U8,     // CALL_METHOD
+    OPL_NONE,            // RETURN
+    OPL_CONST_CONST,     // NEW_CLASS
+    OPL_CONST_U8,        // DEFINE_METHOD
+    OPL_NONE,            // INHERIT_INIT
+    OPL_CONST_U8,        // GET_ATTR
+    OPL_CONST,           // SET_ATTR
+    OPL_JUMP,            // JMP
+    OPL_JUMP,            // JMP_IF_FALSE
+    OPL_JUMP,            // JMP_IF_TRUE
+    OPL_JUMP,            // JMP_IF_FALSE_OR_POP
+    OPL_JUMP,            // JMP_IF_TRUE_OR_POP
+    OPL_JUMP,            // POP_JUMP_IF_NIL
+    OPL_SPECIAL,         // SWITCH_TABLE
+    OPL_SPECIAL,         // TYPE_SWITCH_TABLE
+    OPL_CONST,           // CHECK_TYPE
+    OPL_NONE,            // GET_ITER
+    OPL_JUMP,            // FOR_ITER
+    OPL_NONE,            // YIELD
+    OPL_NONE,            // RESUME
+    OPL_JUMP_JUMP,       // PUSH_TRY
+    OPL_NONE,            // POP_TRY
+    OPL_NONE,            // THROW
+    OPL_CONST,           // MATCH_CATCH
+    OPL_CONST,           // PUSH_DEFER
+    OPL_U8,              // RUN_DEFERS
+    OPL_NONE,            // RERAISE
+    OPL_U8,              // MAKE_CHAN
+    OPL_NONE,            // SEND
+    OPL_NONE,            // RECV
+    OPL_NONE,            // CLOSE_CHAN
+    OPL_U8,              // SELECT_SETUP
+    OPL_U8,              // SELECT_ARM
+    OPL_SPECIAL,         // SELECT_GO
+    OPL_NONE,            // SELECT_COMMIT
+    OPL_NONE,            // SPAWN
+    OPL_NONE,            // AWAIT
+    OPL_U8,              // BUILD_LIST
+    OPL_U8,              // BUILD_MAP
+    OPL_U8,              // BUILD_TUPLE
+    OPL_U8,              // BUILD_SET
+    OPL_U8,              // UNPACK_SEQ
+    OPL_U8,              // UNPACK_STAR
+    OPL_CONST,           // FORMAT_STRING
+    OPL_NONE,            // CHECK_SAFEPOINT
+    OPL_SPECIAL,         // ASSERT
 };
 
 void chunkInit(Chunk* c, const char* name) {
