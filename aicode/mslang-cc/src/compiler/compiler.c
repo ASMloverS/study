@@ -52,6 +52,138 @@ static int32_t emitJump(FuncState* fs, ms_u8 op, int32_t line) {
 
 static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].target = fs->chunk->codeLen; }
 
+// 编译期指令宽度：EXT 前缀链 + opcode + 布局操作数字节（跳转占位恒 2 字节，由物化阶段扩宽）
+static int32_t operandBytesOf(MsOpndLayout layout) {
+  switch (layout) {
+    case OPL_NONE:
+    case OPL_SPECIAL:
+      return 0;
+    case OPL_U8:
+    case OPL_CONST:
+    case OPL_JUMP:
+      return 1;
+    case OPL_U8_U8:
+    case OPL_CONST_U8:
+    case OPL_CONST_CONST:
+    case OPL_JUMP_JUMP:
+      return 2;
+    case OPL_CONST_U8_U8:
+      return 3;
+  }
+  return 0;
+}
+
+static int32_t instrSize(const Chunk* c, int32_t off) {
+  int32_t p = off + 1;
+  while (c->code[p - 1] == OP_EXTENDED_ARG) {
+    p += 2;
+  }
+  return p - off + operandBytesOf(msOpLayouts[c->code[p - 1]]);
+}
+
+// 目标所需 EXT 前缀数（8 位操作数之上逐级 +1）
+static int32_t jumpWidthFor(int32_t target) {
+  if (target < 0x100) {
+    return 0;
+  }
+  if (target < 0x10000) {
+    return 1;
+  }
+  if (target < 0x1000000) {
+    return 2;
+  }
+  return 3;
+}
+
+// 收束编译单元：peephole → 宽度松弛不动点 → 物化（EXT 前缀回填 + 行号表重建）
+// EXTENDED_ARG 长度变化触发的重定位在 patch 阶段统一处理（任务书 §6）
+static void finishChunk(FuncState* fs) {
+  Chunk* c = fs->chunk;
+  chunkPeephole(c, fs->jumps, fs->jumpCount);  // T010 计划 Task 6 接入真身
+  if (fs->jumpCount == 0) {
+    return;
+  }
+  MS_ASSERT(c->codeLen > 0);
+  int32_t* widths = calloc((size_t)fs->jumpCount, sizeof(int32_t));
+  int32_t* posMap = malloc(sizeof(int32_t) * (size_t)(c->codeLen + 1));
+  MS_ASSERT(widths != NULL && posMap != NULL);
+  for (;;) {
+    // 按当前宽度走边界，填 old → new 偏移映射（fixups 按 instrOffset 有序）
+    int32_t off = 0;
+    int32_t newOff = 0;
+    int32_t j = 0;
+    while (off < c->codeLen) {
+      posMap[off] = newOff;
+      if (j < fs->jumpCount && fs->jumps[j].instrOffset == off) {
+        newOff += 2 + 2 * widths[j];  // EXT 前缀每级 2 字节（opcode + 高位字节）
+        off += 2;
+        j++;
+      } else {
+        int32_t size = instrSize(c, off);
+        newOff += size;
+        off += size;
+      }
+    }
+    posMap[c->codeLen] = newOff;
+    bool changed = false;
+    for (int32_t i = 0; i < fs->jumpCount; i++) {
+      int32_t need = jumpWidthFor(posMap[fs->jumps[i].target]);
+      if (need != widths[i]) {
+        widths[i] = need;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
+  }
+  // 物化：跳转写 EXT 链（高 → 低）+ opcode + 低字节；行号表按映射重建 RLE
+  int32_t newLen = posMap[c->codeLen];
+  ms_u8* newCode = malloc((size_t)newLen);
+  MS_ASSERT(newCode != NULL);
+  SourceRun* newLines = NULL;
+  int32_t newLinesLen = 0, newLinesCap = 0;
+  int32_t lastLine = -1;
+  int32_t off = 0;
+  int32_t newOff = 0;
+  int32_t j = 0;
+  while (off < c->codeLen) {
+    int32_t line = chunkLineAt(c, off);
+    if (line >= 0 && line != lastLine) {
+      SourceRun run = {newOff, line};
+      MS_ARRAY_PUSH(newLines, newLinesLen, newLinesCap, run);
+      lastLine = line;
+    }
+    if (j < fs->jumpCount && fs->jumps[j].instrOffset == off) {
+      int32_t t = posMap[fs->jumps[j].target];
+      for (int32_t s = widths[j] - 1; s >= 0; s--) {
+        newCode[newOff++] = OP_EXTENDED_ARG;
+        newCode[newOff++] = (ms_u8)((t >> (8 * s)) & 0xFF);
+      }
+      newCode[newOff++] = c->code[off];
+      newCode[newOff++] = (ms_u8)(t & 0xFF);
+      off += 2;
+      j++;
+    } else {
+      int32_t size = instrSize(c, off);
+      memcpy(newCode + newOff, c->code + off, (size_t)size);
+      newOff += size;
+      off += size;
+    }
+  }
+  MS_ASSERT(newOff == newLen);
+  free(c->code);
+  c->code = newCode;
+  c->codeLen = newLen;
+  c->codeCap = newLen;
+  free(c->lines);
+  c->lines = newLines;
+  c->linesLen = newLinesLen;
+  c->linesCap = newLinesCap;
+  free(widths);
+  free(posMap);
+}
+
 static int32_t nameConst(FuncState* fs, const char* name, int32_t len) {
   return chunkAddConstText(fs->chunk, CONST_STRING, name, len);
 }
@@ -167,6 +299,24 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       compileExpr(fs, n->as.binary.rhs);
       emitOp(fs, binaryOpCode(n->as.binary.op), n->line);
       break;
+    case AST_LOGIC: {  // 短路：lhs 保留值跳 / 弹出继续（21 §3.5）
+      compileExpr(fs, n->as.binary.lhs);
+      ms_u8 op = n->as.binary.op == AST_OP_AND ? OP_JMP_IF_FALSE_OR_POP : OP_JMP_IF_TRUE_OR_POP;
+      int32_t j = emitJump(fs, op, n->line);
+      compileExpr(fs, n->as.binary.rhs);
+      patchJump(fs, j);
+      break;
+    }
+    case AST_TERNARY: {
+      compileExpr(fs, n->as.ternary.cond);
+      int32_t jElse = emitJump(fs, OP_JMP_IF_FALSE, n->line);
+      compileExpr(fs, n->as.ternary.thenExpr);
+      int32_t jEnd = emitJump(fs, OP_JMP, n->line);
+      patchJump(fs, jElse);
+      compileExpr(fs, n->as.ternary.elseExpr);
+      patchJump(fs, jEnd);
+      break;
+    }
     default:
       compErr(fs, n, 1, "expression form is not supported yet");
       emitOp(fs, OP_LOAD_NIL, n->line);
@@ -233,7 +383,7 @@ static void compileFuncProto(FuncState* fs, AstNode* n, Chunk** protoOut) {
     emitOp(&inner, OP_LOAD_NIL, line);
     emitOp(&inner, OP_RETURN, line);
   }
-  // TODO(T010 Task 4)：finishChunk(&inner)（peephole + 松弛物化）
+  finishChunk(&inner);
   free(inner.jumps);
   *protoOut = proto;
 }
@@ -291,7 +441,7 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   int32_t lastLine = module->as.list.count > 0 ? module->as.list.items[module->as.list.count - 1]->line : 1;
   emitOp(&fs, OP_LOAD_NIL, lastLine);  // 模块恒以 nil 返回收尾（21 §4 main 形态）
   emitOp(&fs, OP_RETURN, lastLine);
-  // TODO(T010 Task 4)：finishChunk(&fs)（peephole + 松弛物化）
+  finishChunk(&fs);
   free(fs.jumps);
   for (int32_t i = 0; i < diags->count; i++) {
     if (diags->items[i].level == MS_DIAG_ERROR) {

@@ -324,6 +324,149 @@ TEST(interpStringUnsupported) {
   chunkFree(&c);
 }
 
+// ---------- 短路 / 三元 / 跳转回填与 EXTENDED_ARG ----------
+
+TEST(shortCircuitAnd) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("func f(a, b) { return a && b }", &c, &diags));
+  const Chunk* proto = c.consts[0].as.proto;
+  ms_u8 ops[8];
+  int32_t operands[8];
+  EXPECT_EQ(ctx, 4, decodeAll(proto, ops, operands, 8));
+  EXPECT_EQ(ctx, OP_LOAD_LOCAL, ops[0]);
+  EXPECT_EQ(ctx, OP_JMP_IF_FALSE_OR_POP, ops[1]);
+  EXPECT_EQ(ctx, 6, operands[1]);  // 跳到 RETURN（rhs 后）
+  EXPECT_EQ(ctx, OP_LOAD_LOCAL, ops[2]);
+  EXPECT_EQ(ctx, OP_RETURN, ops[3]);
+  EXPECT_EQ(ctx, 7, proto->codeLen);
+  chunkFree(&c);
+}
+
+TEST(shortCircuitOr) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("func f(a, b) { return a || b }", &c, &diags));
+  const Chunk* proto = c.consts[0].as.proto;
+  ms_u8 ops[8];
+  int32_t operands[8];
+  EXPECT_EQ(ctx, 4, decodeAll(proto, ops, operands, 8));
+  EXPECT_EQ(ctx, OP_JMP_IF_TRUE_OR_POP, ops[1]);
+  chunkFree(&c);
+}
+
+TEST(ternaryJumpShape) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("func f(a, b, c) { return a ? b : c }", &c, &diags));
+  const Chunk* proto = c.consts[0].as.proto;
+  ms_u8 ops[8];
+  int32_t operands[8];
+  EXPECT_EQ(ctx, 6, decodeAll(proto, ops, operands, 8));
+  EXPECT_EQ(ctx, OP_LOAD_LOCAL, ops[0]);
+  EXPECT_EQ(ctx, OP_JMP_IF_FALSE, ops[1]);
+  EXPECT_EQ(ctx, 8, operands[1]);  // Lelse = else 分支
+  EXPECT_EQ(ctx, OP_LOAD_LOCAL, ops[2]);
+  EXPECT_EQ(ctx, OP_JMP, ops[3]);
+  EXPECT_EQ(ctx, 10, operands[3]);  // Lend = 末尾
+  EXPECT_EQ(ctx, OP_LOAD_LOCAL, ops[4]);
+  EXPECT_EQ(ctx, OP_RETURN, ops[5]);
+  EXPECT_EQ(ctx, 11, proto->codeLen);
+  chunkFree(&c);
+}
+
+// 生成 n 个 var 声明（常量 0..n-1 互异），供大常量池/大跳距用例
+static void genDecls(char* buf, size_t cap, int32_t n, const char* tail) {
+  size_t pos = 0;
+  for (int32_t i = 0; i < n; i++) {
+    int written = snprintf(buf + pos, cap - pos, "var v%d = %d\n", i, i);
+    MS_ASSERT(written > 0 && (size_t)written < cap - pos);
+    pos += (size_t)written;
+  }
+  snprintf(buf + pos, cap - pos, "%s", tail);
+}
+
+TEST(extArgLargeConstIndex) {
+  char src[16 * 1024];
+  genDecls(src, sizeof(src), 300, "");
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc(src, &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, 600, c.constsLen);  // 300 int + 300 名字
+  // 常量索引 256 → EXTENDED_ARG 0x01 前缀 + LOAD_CONST 0x00
+  bool found = false;
+  for (int32_t i = 0; i + 3 < c.codeLen; i++) {
+    if (c.code[i] == OP_EXTENDED_ARG && c.code[i + 1] == 0x01 && c.code[i + 2] == OP_LOAD_CONST &&
+        c.code[i + 3] == 0x00) {
+      found = true;
+      break;
+    }
+  }
+  EXPECT(ctx, found);
+  // 解码器解析 EXT 链后操作数 == 256
+  ms_u8 ops[2048];
+  int32_t operands[2048];
+  int32_t n = decodeAll(&c, ops, operands, 2048);
+  EXPECT(ctx, n > 900);
+  bool resolved = false;
+  for (int32_t i = 0; i < n; i++) {
+    if (ops[i] == OP_LOAD_CONST && operands[i] == 256) {
+      resolved = true;
+      break;
+    }
+  }
+  EXPECT(ctx, resolved);
+  chunkFree(&c);
+}
+
+TEST(extArgLargeJumpDistance) {
+  char src[16 * 1024];
+  genDecls(src, sizeof(src), 300, "var r = v0 ? v1 : v299\n");
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc(src, &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  ms_u8 ops[4096];
+  int32_t operands[4096];
+  int32_t n = decodeAll(&c, ops, operands, 4096);
+  // 尾部三元的两个跳转目标均 > 255（EXTENDED_ARG 物化）
+  bool farFalse = false;
+  bool farEnd = false;
+  for (int32_t i = n - 8; i < n; i++) {
+    if (i < 0) {
+      continue;
+    }
+    if (ops[i] == OP_JMP_IF_FALSE && operands[i] >= 256) {
+      farFalse = true;
+    }
+    if (ops[i] == OP_JMP && operands[i] >= 256) {
+      farEnd = true;
+    }
+  }
+  EXPECT(ctx, farFalse);
+  EXPECT(ctx, farEnd);
+  chunkFree(&c);
+}
+
+TEST(compileIsDeterministic) {
+  char src[16 * 1024];
+  genDecls(src, sizeof(src), 120, "var r = a ? (b ? 1 : 2) : 3\n");
+  Chunk a;
+  Chunk b2;
+  MsDiagSink diags1 = {0};
+  MsDiagSink diags2 = {0};
+  EXPECT(ctx, compileSrc(src, &a, &diags1));
+  EXPECT(ctx, compileSrc(src, &b2, &diags2));
+  EXPECT_EQ(ctx, a.codeLen, b2.codeLen);
+  EXPECT(ctx, memcmp(a.code, b2.code, (size_t)a.codeLen) == 0);
+  EXPECT_EQ(ctx, a.constsLen, b2.constsLen);
+  EXPECT_EQ(ctx, a.linesLen, b2.linesLen);
+  EXPECT(ctx, memcmp(a.lines, b2.lines, (size_t)a.linesLen * sizeof(SourceRun)) == 0);
+  chunkFree(&a);
+  chunkFree(&b2);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -343,6 +486,12 @@ int main(int argc, char** argv) {
       emptyFuncBodyGetsEpilogue,
       unsupportedStmtReportsDiag,
       interpStringUnsupported,
+      shortCircuitAnd,
+      shortCircuitOr,
+      ternaryJumpShape,
+      extArgLargeConstIndex,
+      extArgLargeJumpDistance,
+      compileIsDeterministic,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
