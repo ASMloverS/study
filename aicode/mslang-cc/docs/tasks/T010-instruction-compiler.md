@@ -3,7 +3,7 @@
 - 阶段: P3 编译 + VM 基础（roadmap 期 3）
 - 依赖: T009
 - 规模: L
-- 状态: 未开始
+- 状态: 🚧 进行中
 - 设计文档: `docs/language/21-bytecode.md` 全文、`20-architecture.md` §1
 
 ## 1. 目标与范围
