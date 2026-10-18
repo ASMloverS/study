@@ -3,7 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "binder/binder.h"
 #include "common/common.h"
+#include "parser/ast.h"
+#include "parser/parser.h"
 #include "scanner/scanner.h"
 
 static void printUsage(const char* program) {
@@ -11,6 +14,7 @@ static void printUsage(const char* program) {
   fprintf(stderr, "commands:\n");
   fprintf(stderr, "  version                  print version\n");
   fprintf(stderr, "  --dump-tokens <file.ms>  dump token stream (debug)\n");
+  fprintf(stderr, "  --dump-ast <file.ms>     dump annotated AST (debug)\n");
 }
 
 static bool isMsPath(const char* path) {
@@ -115,7 +119,33 @@ static int dumpTokens(const char* path) {
   return diags.count > 0 ? 1 : 0;
 }
 
-// run 占位（T002）：T005 起先做词法检查——诊断打印 stderr、退出码 3（27 §10 编译错误；真实执行 T011 接入）
+// 前端：scan → parse → bind（T009）；返回模块树（诊断在 sink；失败为部分树）
+static AstNode* frontEnd(const char* src, int32_t len, const char* path, AstArena* arena,
+                         MsDiagSink* diags) {
+  Parser p;
+  parserInit(&p, src, len, path, arena, diags);
+  AstNode* mod = parserParseModule(&p);
+  if (mod != NULL) {
+    Binder binder;
+    binderInit(&binder, arena, path, diags);
+    binderBind(&binder, mod);
+    binderDestroy(&binder);
+  }
+  return mod;
+}
+
+static void printDiags(const MsDiagSink* diags, const char* src) {
+  for (int32_t i = 0; i < diags->count; i++) {
+    char buf[512];
+    msDiagFormat(&diags->items[i], src, buf, sizeof(buf));
+    fputs(buf, stderr);
+  }
+  if (diags->overflow > 0) {
+    fprintf(stderr, "ms: %d more diagnostics suppressed\n", (int)diags->overflow);
+  }
+}
+
+// run 占位（T002→T009）：完整前端检查（scan/parse/bind）——诊断 stderr、退出码 3（27 §10 编译错误）；T011 接入执行
 static int runScript(const char* path) {
   size_t len = 0;
   char* src = slurpFile(path, &len);
@@ -125,18 +155,36 @@ static int runScript(const char* path) {
   }
   len = normalizeLf(src);
   MsDiagSink diags = {0};
-  Scanner s;
-  scannerInit(&s, src, (int32_t)len, path, &diags);
-  MsToken tok;
-  while (scannerNext(&s, &tok)) {
-  }
-  for (int32_t i = 0; i < diags.count; i++) {
-    char buf[512];
-    msDiagFormat(&diags.items[i], src, buf, sizeof(buf));
-    fputs(buf, stderr);
-  }
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = frontEnd(src, (int32_t)len, path, &arena, &diags);
+  (void)mod;
+  printDiags(&diags, src);
+  astArenaDestroy(&arena);
   free(src);
   return diags.count > 0 ? 3 : 0;
+}
+
+// --dump-ast：规范化标注 AST 到 stdout，诊断 stderr；有错退出码 1
+static int dumpAst(const char* path) {
+  size_t len = 0;
+  char* src = slurpFile(path, &len);
+  if (src == NULL) {
+    fprintf(stderr, "ms: cannot read %s\n", path);
+    return 2;
+  }
+  len = normalizeLf(src);
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = frontEnd(src, (int32_t)len, path, &arena, &diags);
+  if (mod != NULL) {
+    astDumpModule(mod, stdout);
+  }
+  printDiags(&diags, src);
+  astArenaDestroy(&arena);
+  free(src);
+  return diags.count > 0 ? 1 : 0;
 }
 
 int main(int argc, char** argv) {
@@ -147,7 +195,10 @@ int main(int argc, char** argv) {
   if (argc == 3 && strcmp(argv[1], "--dump-tokens") == 0 && isMsPath(argv[2])) {
     return dumpTokens(argv[2]);
   }
-  // run 占位（T002）：T005 起先做词法检查（词法错即编译错）；T011 起替换为真实执行
+  if (argc == 3 && strcmp(argv[1], "--dump-ast") == 0 && isMsPath(argv[2])) {
+    return dumpAst(argv[2]);
+  }
+  // run 占位（T002→T009）：完整前端检查（编译错即退出）；T011 起替换为真实执行
   if (argc == 2 && isMsPath(argv[1])) {
     return runScript(argv[1]);
   }
