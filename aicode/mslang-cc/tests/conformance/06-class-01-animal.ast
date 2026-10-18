@@ -1,0 +1,32 @@
+(module
+  (class-decl Animal [global]
+    (var name)
+    (var age)
+    (func-decl __init__
+      (params (param name) (param age = (int 1)))
+      (block
+        (assign =
+          (member (this) name)
+          (ident name [local:0]))
+        (assign =
+          (member (this) age)
+          (ident age [local:1]))))
+    (func-decl speak
+      (params)
+      (string
+        (lit "...")))
+    (func-decl describe
+      (params)
+      (string
+        (interp
+          (member (this) name))
+        (lit " (")
+        (interp
+          (member (this) age))
+        (lit ")"))))
+  (var a [global]
+    (call
+      (ident Animal [global])
+            (string
+        (lit "Cat"))
+            (int 3))))

@@ -1,0 +1,25 @@
+(module
+  (func-decl f [global]
+    (params (param a) (param b = (int 1)) (param *r))
+    (block
+      (return
+        (list
+          (ident a [local:0])
+          (ident b [local:1])
+          (ident r [local:2])))))
+  (expr
+    (call
+      (ident f [global])
+            (int 1)))
+  (expr
+    (call
+      (ident f [global])
+            (int 1)
+            (int 2)))
+  (expr
+    (call
+      (ident f [global])
+            (int 1)
+            (int 2)
+            (int 3)
+            (int 4))))

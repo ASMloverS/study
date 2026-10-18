@@ -1,0 +1,11 @@
+(module
+  (var base [global]
+    (int 10))
+  (class-decl C [global] (bases B)
+    (static var scale
+      (int 2))
+    (var v
+      (binary * (ident base [global]) (int 3)))
+    (func-decl m
+      (params (param k))
+      (binary * (ident k [local:0]) (ident base [global])))))

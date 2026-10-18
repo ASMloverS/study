@@ -1,0 +1,10 @@
+(module
+  (func-decl f [global]
+    (params (param a) (param b))
+    (block
+      (return
+        (ident a [local:0]))))
+  (var name [global]
+    (member (ident f [global]) __name__))
+  (var ps [global]
+    (member (ident f [global]) __params__)))

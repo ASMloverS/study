@@ -1,0 +1,21 @@
+(module
+  (class-decl P [global]
+    (var x
+      (int 0))
+    (func-decl get
+      (params)
+      (block
+        (return
+          (member (this) x)))))
+  (var p [global]
+    (call
+      (ident P [global])))
+  (var m [global]
+    (member (ident p [global]) get))
+  (var v [global]
+    (call
+      (ident m [global])))
+  (var w [global]
+    (call
+      (member (ident P [global]) get)
+            (ident p [global]))))

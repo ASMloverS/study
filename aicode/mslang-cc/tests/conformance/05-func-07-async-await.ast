@@ -1,0 +1,22 @@
+(module
+  (func-decl fetchAll [global] async
+    (params (param urls))
+    (block
+      (var out [local:1]
+        (list))
+      (for-in u [local:2 fresh]
+        (block
+          (var r [local:3]
+            (await (call
+(ident fetch [global])
+(ident u [local:2]))))
+          (expr
+            (call
+              (member (ident out [local:1]) append)
+                            (ident r [local:3])))))
+      (return
+        (ident out [local:1]))))
+  (var all [global]
+    (await (call
+(ident fetchAll [global])
+(ident us [global])))))

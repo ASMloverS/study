@@ -1,0 +1,19 @@
+(module
+  (func-decl divmod [global]
+    (params (param a) (param b))
+    (block
+      (return
+        (tuple
+          (binary / (ident a [local:0]) (ident b [local:1]))
+          (binary % (ident a [local:0]) (ident b [local:1]))))))
+  (func-decl nop [global]
+    (params)
+    (block))
+  (assign =
+    (tuple
+      (ident q [global])
+      (ident r [global]))
+    (call
+      (ident divmod [global])
+            (int 7)
+            (int 2))))

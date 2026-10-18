@@ -1,0 +1,16 @@
+(module
+  (class-decl Counter [global]
+    (static var total
+      (int 0))
+    (func-decl describe static
+      (params)
+      (string
+        (lit "counters, total=")
+        (interp
+          (member (ident Counter [global]) total))))
+    (const VERSION
+      (string
+        (lit "1.0"))))
+  (assign +=
+    (member (ident Counter [global]) total)
+    (int 1)))

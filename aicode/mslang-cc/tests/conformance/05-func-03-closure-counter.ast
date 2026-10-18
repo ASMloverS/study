@@ -1,0 +1,18 @@
+(module
+  (func-decl counter [global]
+    (params)
+    (block
+      (var n [local:0]
+        (int 0))
+      (return
+        (func-expr
+          (params)
+          (block
+            (assign +=
+              (ident n [upvalue:1.0])
+              (int 1))
+            (return
+              (ident n [upvalue:1.0])))))))
+  (var c [global]
+    (call
+      (ident counter [global]))))

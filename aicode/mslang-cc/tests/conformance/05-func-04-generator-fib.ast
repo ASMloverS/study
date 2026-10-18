@@ -1,0 +1,22 @@
+(module
+  (func-decl fib [global] generator
+    (params)
+    (block
+      (var a [local:0]
+        (int 0))
+      (var b [local:1]
+        (int 1))
+      (for-inf
+        (block
+          (yield
+            (ident a [local:0]))
+          (assign =
+            (tuple
+              (ident a [local:0])
+              (ident b [local:1]))
+            (tuple
+              (ident b [local:1])
+              (binary + (ident a [local:0]) (ident b [local:1]))))))))
+  (var g [global]
+    (call
+      (ident fib [global]))))

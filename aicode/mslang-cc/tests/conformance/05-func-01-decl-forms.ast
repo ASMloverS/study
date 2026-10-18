@@ -1,0 +1,27 @@
+(module
+  (func-decl add [global]
+    (params (param a) (param b))
+    (block
+      (return
+        (binary + (ident a [local:0]) (ident b [local:1])))))
+  (func-decl double [global]
+    (params (param x))
+    (binary * (ident x [local:0]) (int 2)))
+  (func-decl greet [global]
+    (params (param name) (param prefix = (string
+(lit "Mr."))))
+    (block
+      (return
+        (string
+          (interp
+            (ident prefix [local:1]))
+          (lit " ")
+          (interp
+            (ident name [local:0]))))))
+  (func-decl varargs [global]
+    (params (param fmt) (param *args))
+    (block
+      (return
+        (list
+          (ident fmt [local:0])
+          (ident args [local:1]))))))

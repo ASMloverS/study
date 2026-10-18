@@ -1,0 +1,33 @@
+(module
+  (class-decl Base [global]
+    (func-decl who
+      (params)
+      (string
+        (lit "base")))
+    (func-decl call
+      (params)
+      (string
+        (lit "Base.call"))))
+  (trait-decl Logger [global]
+    (func-decl log
+      (params (param msg))
+      (block
+        (expr
+          (call
+            (ident print [global])
+                        (string
+              (lit "[log] ")
+              (interp
+                (ident msg [local:0]))))))))
+  (class-decl Impl [global] (bases Base Logger)
+    (func-decl who
+      (params)
+      (string
+        (lit "impl")))
+    (func-decl call
+      (params)
+      (string
+        (interp
+          (call
+            (member (ident super [global]) call)))
+        (lit " + Impl.call")))))

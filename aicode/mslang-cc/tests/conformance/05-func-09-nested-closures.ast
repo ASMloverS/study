@@ -1,0 +1,20 @@
+(module
+  (func-decl adder [global]
+    (params (param a))
+    (block
+      (return
+        (func-expr
+          (params (param b))
+          (block
+            (return
+              (func-expr
+                (params (param c))
+                (binary + (binary + (ident a [upvalue:2.0]) (ident b [upvalue:1.0])) (ident c [local:0])))))))))
+  (var t [global]
+    (call
+      (call
+        (call
+          (ident adder [global])
+                    (int 1))
+                (int 2))
+            (int 3))))

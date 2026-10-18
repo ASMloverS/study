@@ -1,0 +1,16 @@
+(module
+  (var f [global]
+    (func-expr
+      (params (param x))
+      (block
+        (return
+          (binary * (ident x [local:0]) (int 2))))))
+  (expr
+    (call
+      (member (ident list [global]) map)
+            (ident xs [global])
+            (func-expr
+        (params (param x))
+        (block
+          (return
+            (binary + (ident x [local:0]) (int 1))))))))

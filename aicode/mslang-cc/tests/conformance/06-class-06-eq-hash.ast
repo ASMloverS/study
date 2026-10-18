@@ -1,0 +1,21 @@
+(module
+  (class-decl Point [global]
+    (func-decl __init__
+      (params (param x) (param y))
+      (block
+        (assign =
+          (member (this) x)
+          (ident x [local:0]))
+        (assign =
+          (member (this) y)
+          (ident y [local:1]))))
+    (func-decl __eq__
+      (params (param o))
+      (block
+        (return
+          (and (binary == (member (this) x) (member (ident o [local:0]) x)) (binary == (member (this) y) (member (ident o [local:0]) y))))))
+    (func-decl __hash__
+      (params)
+      (block
+        (return
+          (binary + (binary * (member (this) x) (int 31)) (member (this) y)))))))

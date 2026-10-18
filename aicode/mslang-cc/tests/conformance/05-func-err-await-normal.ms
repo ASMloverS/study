@@ -1,0 +1,1 @@
+func f() { await g() }

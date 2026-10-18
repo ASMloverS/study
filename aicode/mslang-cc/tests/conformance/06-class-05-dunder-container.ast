@@ -1,0 +1,17 @@
+(module
+  (class-decl Range3 [global]
+    (var i
+      (int 0))
+    (func-decl __iter__
+      (params)
+      (block
+        (return
+          (this))))
+    (func-decl __next__
+      (params)
+      (block
+        (assign +=
+          (member (this) i)
+          (int 1))
+        (return
+          (ternary (binary < (member (this) i) (int 3)) (member (this) i) (nil)))))))
