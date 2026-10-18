@@ -3,7 +3,7 @@
 - 阶段: P2 语法（roadmap 期 2）
 - 依赖: T008
 - 规模: M
-- 状态: 未开始
+- 状态: ✅ 已完成（2026-10-18）
 - 设计文档: `docs/language/20-architecture.md` §1（Binder 职责）、`04-statements.md` §1 §6、`05-functions.md` §3
 
 ## 1. 目标与范围
@@ -38,11 +38,11 @@ typedef struct BinderScope { /* 函数/块/推导式/类体作用域 */ } Binder
 
 ## 4. 验收标准（DoD）
 
-- [ ] 快照 dump 对 03/04/05/06 文档全部示例输出稳定（两次运行 diff 为空）
-- [ ] conformance 语法树快照用例 ≥60 条全绿（roadmap 期 2 出口）
-- [ ] 位置非法（顶层 return、循环外 break、普通函数 await）各发 MSE1xxx
-- [ ] 常量折叠用例（含溢出升 bigint）通过
-- [ ] 标注槽位/类别正确（单测断言局部/upvalue 链）
+- [x] 快照 dump 对 03/04/05/06 文档全部示例输出稳定（两次运行 diff 为空）
+- [x] conformance 语法树快照用例 ≥60 条全绿（roadmap 期 2 出口；实际新增 62 条，含 6 条位置错误用例）
+- [x] 位置非法（顶层 return、循环外 break、普通函数 await）各发 MSE1xxx（MSE1017-1021）
+- [x] 常量折叠用例（含溢出升 bigint）通过
+- [x] 标注槽位/类别正确（单测断言局部/upvalue 链；test_binder 36 用例）
 
 ## 5. 测试计划
 
@@ -70,3 +70,5 @@ typedef struct BinderScope { /* 函数/块/推导式/类体作用域 */ } Binder
 
 - 快照基线一经建立不可手改：语义变更须走"改实现→审查 diff→重新生成"流程并在提交说明。
 - upvalue 捕获描述在本阶段只"记录需求"（哪个外层槽被哪层内层引用），真实 open/closed 链在 T018。
+- 快照基线由 `tools/gen_ast_snapshots.py` 生成（2026-10-18，`--check` 模式校验两跑一致）；`.ast` 跑器契约见 `tests/conformance/README.md`。
+- 语句级 `var` 仅单名（类体才支持逗号多成员）、模块顶层 for 头 `:=` 为 MSE1002——conformance 用例按当前 parser 表面编写。
