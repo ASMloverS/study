@@ -54,8 +54,8 @@ typedef enum MsOpcode {
   OP_GET_INDEX,
   OP_SET_INDEX,
   OP_BUILD_SLICE,  // <u8 argc=3>
-  // 函数与调用（21 §3.3）
-  OP_MAKE_FUNCTION,  // <const proto> <u8 flags>（默认参数个数/rest 标志在 flags）
+  // 函数与调用（21 §3.3）：原型经 LOAD_CONST 压栈后由 MAKE_FUNCTION 消费（21 §4 示例形态）
+  OP_MAKE_FUNCTION,  // <u8 flags>（默认参数个数/rest 标志在 flags）
   OP_CLOSURE,        // <const proto>（捕获描述表在 proto）
   OP_CALL,           // <u8 argc>
   OP_CALL_METHOD,    // <const name> <u8 icSlot> <u8 argc>

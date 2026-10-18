@@ -52,16 +52,17 @@ struct Chunk {
   int32_t linesLen, linesCap;
   int32_t nUpvalues;  // 闭包捕获描述（T018 填充）
   uint16_t nIcSlots;  // 内联缓存槽（T022 分配）
-  const char* name;   // 函数名 / "main"（借用）
+  const char* name;   // 函数名 / "main"（借用源文本，不保证 NUL 终止）
+  int32_t nameLen;
 };
 
 // 跳转回填记录：编译期最小宽占位（opcode + u8）期间的 patch 表（任务书 §6）
 typedef struct ChunkJump {
   int32_t instrOffset;  // 跳转 opcode 所在偏移
   int32_t target;       // 目标（编译期偏移空间的指令边界）
-};
+} ChunkJump;
 
-void chunkInit(Chunk* c, const char* name);
+void chunkInit(Chunk* c, const char* name, int32_t nameLen);
 void chunkFree(Chunk* c);  // 递归释放常量池内 proto chunk
 int32_t chunkAddConst(Chunk* c, ConstEntry entry);  // 字面量按值去重；proto 恒追加
 int32_t chunkAddConstInt(Chunk* c, ms_i64 v);

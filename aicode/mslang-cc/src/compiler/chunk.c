@@ -145,7 +145,7 @@ const MsOpndLayout msOpLayouts[OP__COUNT] = {
     OPL_NONE,            // GET_INDEX
     OPL_NONE,            // SET_INDEX
     OPL_U8,              // BUILD_SLICE
-    OPL_CONST_U8,        // MAKE_FUNCTION
+    OPL_U8,              // MAKE_FUNCTION
     OPL_CONST,           // CLOSURE
     OPL_U8,              // CALL
     OPL_CONST_U8_U8,     // CALL_METHOD
@@ -196,7 +196,7 @@ const MsOpndLayout msOpLayouts[OP__COUNT] = {
     OPL_SPECIAL,         // ASSERT
 };
 
-void chunkInit(Chunk* c, const char* name) {
+void chunkInit(Chunk* c, const char* name, int32_t nameLen) {
   c->code = NULL;
   c->codeLen = c->codeCap = 0;
   c->consts = NULL;
@@ -206,6 +206,7 @@ void chunkInit(Chunk* c, const char* name) {
   c->nUpvalues = 0;
   c->nIcSlots = 0;
   c->name = name;
+  c->nameLen = nameLen;
 }
 
 void chunkFree(Chunk* c) {
