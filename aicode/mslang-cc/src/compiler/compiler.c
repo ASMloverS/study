@@ -317,6 +317,20 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       patchJump(fs, jEnd);
       break;
     }
+    case AST_CALL: {  // 桩路径（T018 完整化）：callee + args 依序 + CALL argc
+      if (n->as.call.callee->kind != AST_IDENT) {
+        compErr(fs, n->as.call.callee, 1, "callable expression form is not supported yet");
+        emitOp(fs, OP_LOAD_NIL, n->line);
+      } else {
+        compileExpr(fs, n->as.call.callee);
+      }
+      for (int32_t i = 0; i < n->as.call.count; i++) {
+        compileExpr(fs, n->as.call.args[i]);
+      }
+      emitOp(fs, OP_CALL, n->line);
+      emitByte(fs, (ms_u8)n->as.call.count);
+      break;
+    }
     default:
       compErr(fs, n, 1, "expression form is not supported yet");
       emitOp(fs, OP_LOAD_NIL, n->line);

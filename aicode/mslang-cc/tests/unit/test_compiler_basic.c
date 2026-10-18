@@ -449,8 +449,57 @@ TEST(extArgLargeJumpDistance) {
   chunkFree(&c);
 }
 
-TEST(compileIsDeterministic) {
-  char src[16 * 1024];
+// ---------- 调用桩（21 §4 示例形态） ----------
+
+TEST(callStubPrint) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("print(1)", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  ms_u8 ops[8];
+  int32_t operands[8];
+  EXPECT_EQ(ctx, 6, decodeAll(&c, ops, operands, 8));
+  EXPECT_EQ(ctx, OP_LOAD_GLOBAL, ops[0]);  // "print"
+  EXPECT_EQ(ctx, OP_LOAD_CONST, ops[1]);   // 1
+  EXPECT_EQ(ctx, OP_CALL, ops[2]);
+  EXPECT_EQ(ctx, 1, operands[2]);
+  EXPECT_EQ(ctx, OP_POP, ops[3]);  // 表达式语句丢弃返回值
+  EXPECT_EQ(ctx, OP_LOAD_NIL, ops[4]);
+  EXPECT_EQ(ctx, OP_RETURN, ops[5]);
+  chunkFree(&c);
+}
+
+TEST(callStubNested) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("func add(a, b) { return a + b }\nprint(add(1, 2))", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, 5, c.constsLen);  // {proto add, "add", "print", int 1, int 2}
+  ms_u8 ops[16];
+  int32_t operands[16];
+  int32_t n = decodeAll(&c, ops, operands, 16);
+  // func 声明：LOAD_CONST proto / MAKE_FUNCTION / DEF_GLOBAL / STORE_GLOBAL
+  EXPECT_EQ(ctx, OP_LOAD_CONST, ops[0]);
+  EXPECT_EQ(ctx, OP_MAKE_FUNCTION, ops[1]);
+  EXPECT_EQ(ctx, OP_DEF_GLOBAL, ops[2]);
+  EXPECT_EQ(ctx, OP_STORE_GLOBAL, ops[3]);
+  // print(add(1, 2))：LOAD_GLOBAL print / LOAD_GLOBAL add / 1 / 2 / CALL 2 / CALL 1 / POP
+  EXPECT_EQ(ctx, OP_LOAD_GLOBAL, ops[4]);
+  EXPECT_EQ(ctx, OP_LOAD_GLOBAL, ops[5]);
+  EXPECT_EQ(ctx, OP_LOAD_CONST, ops[6]);
+  EXPECT_EQ(ctx, OP_LOAD_CONST, ops[7]);
+  EXPECT_EQ(ctx, OP_CALL, ops[8]);
+  EXPECT_EQ(ctx, 2, operands[8]);
+  EXPECT_EQ(ctx, OP_CALL, ops[9]);
+  EXPECT_EQ(ctx, 1, operands[9]);
+  EXPECT_EQ(ctx, OP_POP, ops[10]);
+  EXPECT_EQ(ctx, OP_LOAD_NIL, ops[11]);
+  EXPECT_EQ(ctx, OP_RETURN, ops[12]);
+  EXPECT_EQ(ctx, 13, n);
+  chunkFree(&c);
+}
+
+TEST(compileIsDeterministic) {  char src[16 * 1024];
   genDecls(src, sizeof(src), 120, "var r = a ? (b ? 1 : 2) : 3\n");
   Chunk a;
   Chunk b2;
@@ -491,6 +540,8 @@ int main(int argc, char** argv) {
       ternaryJumpShape,
       extArgLargeConstIndex,
       extArgLargeJumpDistance,
+      callStubPrint,
+      callStubNested,
       compileIsDeterministic,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
