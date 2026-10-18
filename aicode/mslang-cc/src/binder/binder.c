@@ -279,6 +279,16 @@ static void bindFuncCommon(Binder* b, AstNode* n, ms_u8 flags, AstParam* params,
   popScope(b);
 }
 
+// 最近函数边界 scope（FUNC/COMPR）；模块层返回 NULL
+static Scope* nearestFunc(const Binder* b) {
+  for (Scope* s = b->top; s != NULL; s = s->parent) {
+    if (s->kind == SCOPE_FUNC || s->kind == SCOPE_COMPR) {
+      return s;
+    }
+  }
+  return NULL;
+}
+
 static void bindStmt(Binder* b, AstNode* n) {
   if (n == NULL) {
     return;
@@ -386,13 +396,31 @@ static void bindStmt(Binder* b, AstNode* n) {
       break;
     }
     case AST_RETURN:
-    case AST_THROW:
-    case AST_YIELD:
-      bindExpr(b, n->as.exprStmt.expr);  // 载荷复用（T008）；位置检查 Task 4
+      if (nearestFunc(b) == NULL) {
+        bindErr(b, n, 6, MSE_BIND_TOP_RETURN, "return outside function body");
+      }
+      bindExpr(b, n->as.exprStmt.expr);
       break;
+    case AST_THROW:
+      bindExpr(b, n->as.exprStmt.expr);
+      break;
+    case AST_YIELD: {
+      Scope* fn = nearestFunc(b);
+      if (fn == NULL) {
+        bindErr(b, n, 5, MSE_BIND_YIELD_MISPLACED, "yield outside function body");
+      } else if (fn->isAsync) {
+        bindErr(b, n, 5, MSE_BIND_YIELD_MISPLACED, "yield in async function");
+      }
+      bindExpr(b, n->as.exprStmt.expr);
+      break;
+    }
     case AST_BREAK:
     case AST_CONTINUE:
-      break;  // 位置检查 Task 4
+      if (b->top->loopDepth == 0) {
+        bindErr(b, n, n->kind == AST_BREAK ? 5 : 8, MSE_BIND_LOOP_ESCAPE,
+                n->kind == AST_BREAK ? "break outside loop" : "continue outside loop");
+      }
+      break;
     case AST_DEFER:
       bindExpr(b, n->as.exprStmt.expr);
       break;
@@ -551,10 +579,17 @@ static void bindExpr(Binder* b, AstNode* n) {
       break;
     case AST_UNARY:
     case AST_RECV:
-    case AST_AWAIT:
     case AST_GO:
-      bindExpr(b, n->as.unary.operand);  // 载荷复用（op==0）；await 位置检查 Task 4
+      bindExpr(b, n->as.unary.operand);
       break;
+    case AST_AWAIT: {
+      Scope* fn = nearestFunc(b);
+      if (fn != NULL && !fn->isAsync) {
+        bindErr(b, n, 5, MSE_BIND_AWAIT_POS, "await in non-async function");
+      }
+      bindExpr(b, n->as.unary.operand);  // 模块顶层（含类字段初始化语境）合法
+      break;
+    }
     case AST_TERNARY:
       bindExpr(b, n->as.ternary.cond);
       bindExpr(b, n->as.ternary.thenExpr);

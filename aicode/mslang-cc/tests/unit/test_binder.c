@@ -353,6 +353,110 @@ TEST(localRefNotUpvalue) {
   astArenaDestroy(&arena);
 }
 
+TEST(topLevelReturnRejected) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("return 1", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, (long long)MSE_BIND_TOP_RETURN, (long long)diags.items[0].code);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(breakOutsideLoopRejected) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("func f() { break }", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, (long long)MSE_BIND_LOOP_ESCAPE, (long long)diags.items[0].code);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(continueOutsideLoopRejected) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("func f() { continue }", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, (long long)MSE_BIND_LOOP_ESCAPE, (long long)diags.items[0].code);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(breakInFuncInsideLoopRejected) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("while true { func g() { break } }", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1, diags.count);  // 函数边界重置循环深度
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(breakInsideLoopAccepted) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("func f(xs) {\nfor x in xs { break }\nwhile true { continue }\n}", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 0, diags.count);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(awaitInNormalFuncRejected) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("func f() { await g() }", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, (long long)MSE_BIND_AWAIT_POS, (long long)diags.items[0].code);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(awaitInAsyncFuncAndTopLevelAccepted) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("async func f() { await g() }\nvar r = await h()", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 0, diags.count);  // 模块顶层 await 合法（00 §"顶层即入口"）
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(yieldInAsyncRejected) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("async func f() { yield 1 }", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1, diags.count);
+  EXPECT_EQ(ctx, (long long)MSE_BIND_YIELD_MISPLACED, (long long)diags.items[0].code);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(yieldInGeneratorAccepted) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  bindSrc("func* fib() {\nvar a = 0\nfor { yield a }\n}", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 0, diags.count);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -367,7 +471,11 @@ int main(int argc, char** argv) {
       funcRedeclareLegalSameSlot,    classMembersTransparentToLexicalLookup,
       comprehensionScopesTargets,    closureCapturesUpvalue,
       upvalueChainDepthTwo,          comprehensionCapturesUpvalue,
-      localRefNotUpvalue,
+      localRefNotUpvalue,            topLevelReturnRejected,
+      breakOutsideLoopRejected,      continueOutsideLoopRejected,
+      breakInFuncInsideLoopRejected, breakInsideLoopAccepted,
+      awaitInNormalFuncRejected,     awaitInAsyncFuncAndTopLevelAccepted,
+      yieldInAsyncRejected,          yieldInGeneratorAccepted,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
