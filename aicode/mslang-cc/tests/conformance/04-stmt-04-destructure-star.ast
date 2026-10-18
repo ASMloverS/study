@@ -1,0 +1,5 @@
+(module
+  (destructure (a [global] b [global] *rest [global])
+    (ident xs [global]))
+  (destructure (a2 [global] *mid [global] z [global])
+    (ident ys [global])))

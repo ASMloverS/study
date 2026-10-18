@@ -1,0 +1,15 @@
+(module
+  (func-decl copyFile [global]
+    (params (param src) (param dst))
+    (block
+      (var f [local:2]
+        (call
+          (member (ident io [global]) open)
+                    (ident src [local:0])))
+      (defer
+        (call
+          (member (ident f [local:2]) close)))
+      (return
+        (call
+          (member (ident io [global]) open)
+                    (ident dst [local:1]))))))

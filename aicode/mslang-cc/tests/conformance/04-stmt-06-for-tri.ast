@@ -1,0 +1,25 @@
+(module
+  (for-tri _ _ _
+    (block
+      (break)))
+  (func-decl f [global]
+    (params (param n))
+    (block
+      (for-tri (short i [local:1 fresh]
+(int 0)) (binary < (ident i [local:1]) (ident n [local:0])) (assign +=
+(ident i)
+(int 1))
+        (block
+          (expr
+            (call
+              (ident print [global])
+                            (ident i [local:1])))))
+      (for-tri (short i [local:2 fresh]
+(int 0)) _ _
+        (block
+          (break)))
+      (for-tri _ (binary > (ident n [local:0]) (int 0)) _
+        (block
+          (assign -=
+            (ident n [local:0])
+            (int 1)))))))

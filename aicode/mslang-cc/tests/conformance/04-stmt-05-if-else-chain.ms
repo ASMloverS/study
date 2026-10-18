@@ -1,0 +1,7 @@
+if x > 0 {
+    print("pos")
+} else if x == 0 {
+    print("zero")
+} else {
+    print("neg")
+}

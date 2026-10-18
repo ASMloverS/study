@@ -1,0 +1,13 @@
+(module
+  (var fs [global]
+    (list))
+  (for-in i [global fresh]
+    (block
+      (expr
+        (call
+          (member (ident fs [global]) append)
+                    (func-expr
+            (params)
+            (block
+              (return
+                (ident i [global])))))))))

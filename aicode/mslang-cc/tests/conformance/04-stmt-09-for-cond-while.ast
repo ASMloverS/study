@@ -1,0 +1,11 @@
+(module
+  (for-cond _
+    (block
+      (assign -=
+        (ident x [global])
+        (int 1))))
+  (while (binary > (ident x [global]) (int 0))
+    (block
+      (assign -=
+        (ident x [global])
+        (int 1)))))

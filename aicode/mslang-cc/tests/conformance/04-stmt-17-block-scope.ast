@@ -1,0 +1,14 @@
+(module
+  (var x [global]
+    (int 1))
+  (block
+    (var x [global]
+      (int 2))
+    (expr
+      (call
+        (ident print [global])
+                (ident x [global]))))
+  (expr
+    (call
+      (ident print [global])
+            (ident x [global]))))

@@ -1,0 +1,32 @@
+(module
+  (expr
+    (go (call
+(ident worker [global])
+(int 1)
+(int 2))))
+  (send
+    (ident ch [global])
+    (ident v [global]))
+  (assign =
+    (ident v2 [global])
+    (recv (ident ch [global])))
+  (expr
+    (recv (ident ch [global])))
+  (select
+    (recv (ident r [global]) (recv (ident ch1 [global]))
+      (expr
+        (call
+          (ident print [global])
+                    (ident r [global]))))
+    (send (ident ch2 [global]) (ident x [global])
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "sent")))))
+    (default
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "idle")))))))

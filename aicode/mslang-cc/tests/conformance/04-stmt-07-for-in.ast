@@ -1,0 +1,13 @@
+(module
+  (for-in x [global fresh]
+    (block
+      (expr
+        (call
+          (ident print [global])
+                    (ident x [global])))))
+  (for-in x [global fresh]
+    (block
+      (expr
+        (call
+          (ident print [global])
+                    (ident x [global]))))))

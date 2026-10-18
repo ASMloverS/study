@@ -1,0 +1,15 @@
+(module
+  (assign =
+    (tuple
+      (ident a [global])
+      (ident b [global]))
+    (tuple
+      (int 1)
+      (int 2)))
+  (assign =
+    (tuple
+      (ident a [global])
+      (ident b [global]))
+    (tuple
+      (ident b [global])
+      (ident a [global]))))

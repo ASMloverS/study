@@ -1,0 +1,4 @@
+(module
+  (import "mod" as x)
+  (import "mod" {a, b as c})
+  (import "mod" *))

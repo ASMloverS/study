@@ -1,0 +1,19 @@
+(module
+  (assign =
+    (ident x [global])
+    (int 1))
+  (assign =
+    (index (ident xs [global]) (int 0))
+    (ident v [global]))
+  (assign =
+    (member (ident obj [global]) field)
+    (ident v [global]))
+  (assign +=
+    (ident x [global])
+    (int 1))
+  (assign **=
+    (ident x [global])
+    (int 2))
+  (assign <<=
+    (ident x [global])
+    (int 1)))

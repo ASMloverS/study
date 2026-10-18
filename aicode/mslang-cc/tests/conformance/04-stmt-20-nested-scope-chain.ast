@@ -1,0 +1,17 @@
+(module
+  (func-decl f [global]
+    (params)
+    (block
+      (var a [local:0]
+        (int 1))
+      (if
+        (bool true)
+        (block
+          (var b [local:1]
+            (int 2))
+          (for-in c [local:2 fresh]
+            (block
+              (var d [local:3]
+                (int 3))
+              (expr
+                (binary + (binary + (binary + (ident a [local:0]) (ident b [local:1])) (ident c [local:2])) (ident d [local:3]))))))))))

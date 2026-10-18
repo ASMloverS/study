@@ -1,0 +1,20 @@
+(module
+  (switch (ident x [global])
+    (case (int 1) (int 2)
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "low")))))
+    (case (int 3)
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "three")))))
+    (default
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "many")))))))

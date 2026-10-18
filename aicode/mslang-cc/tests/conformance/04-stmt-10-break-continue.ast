@@ -1,0 +1,21 @@
+(module
+  (func-decl f [global]
+    (params)
+    (block
+      (for-tri (short i [local:0 fresh]
+(int 0)) (binary < (ident i [local:0]) (int 10)) (assign +=
+(ident i)
+(int 1))
+        (block
+          (if
+            (binary == (ident i [local:0]) (int 2))
+            (block
+              (continue)))
+          (if
+            (binary == (ident i [local:0]) (int 5))
+            (block
+              (break)))
+          (expr
+            (call
+              (ident print [global])
+                            (ident i [local:0]))))))))

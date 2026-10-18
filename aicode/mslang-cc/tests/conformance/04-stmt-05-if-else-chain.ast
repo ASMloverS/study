@@ -1,0 +1,23 @@
+(module
+  (if
+    (binary > (ident x [global]) (int 0))
+    (block
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "pos")))))
+    (if
+      (binary == (ident x [global]) (int 0))
+      (block
+        (expr
+          (call
+            (ident print [global])
+                        (string
+              (lit "zero")))))
+      (block
+        (expr
+          (call
+            (ident print [global])
+                        (string
+              (lit "neg"))))))))

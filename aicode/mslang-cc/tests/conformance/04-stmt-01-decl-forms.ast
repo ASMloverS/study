@@ -1,0 +1,15 @@
+(module
+  (var x [global]
+    (int 10))
+  (var y [global])
+  (const MAX [global]
+    (int 100))
+  (func-decl f [global]
+    (params)
+    (block
+      (var z [local:0]
+        (int 1))
+      (short w [local:1]
+        (int 2))
+      (return
+        (binary + (ident z [local:0]) (ident w [local:1]))))))

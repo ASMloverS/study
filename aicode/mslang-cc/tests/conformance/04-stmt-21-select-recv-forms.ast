@@ -1,0 +1,8 @@
+(module
+  (select
+    (recv (ident v [global]) (recv (ident ch [global]))
+      (expr
+        (ident v [global])))
+    (recv (recv (ident ch [global]))
+      (expr
+        (nil)))))

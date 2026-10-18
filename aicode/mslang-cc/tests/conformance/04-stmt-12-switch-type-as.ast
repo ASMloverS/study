@@ -1,0 +1,28 @@
+(module
+  (switch-type (ident v [global])
+    (case (ident int [global]) (ident bigint [global])
+      (expr
+        (call
+          (ident print [global])
+                    (string
+            (lit "number")))))
+    (case (ident string [global]) as s
+      (expr
+        (call
+          (ident print [global])
+                    (call
+            (ident len [global])
+                        (ident s [global])))))
+    (case (ident Point [global]) as p
+      (expr
+        (call
+          (member (ident p [global]) move)
+                    (int 1)
+                    (int 1))))
+    (default
+      (expr
+        (call
+          (ident print [global])
+                    (call
+            (ident type [global])
+                        (ident v [global])))))))

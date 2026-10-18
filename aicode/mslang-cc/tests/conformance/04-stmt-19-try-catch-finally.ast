@@ -1,0 +1,24 @@
+(module
+  (try
+    (block
+      (expr
+        (call
+          (ident risky [global]))))
+    (catch (ValueError TypeError)
+      (block
+        (expr
+          (call
+            (ident print [global])
+                        (string
+              (lit "typed"))))))
+    (catch e
+      (block
+        (expr
+          (call
+            (ident print [global])
+                        (ident e [global])))))
+    (finally
+      (block
+        (expr
+          (call
+            (ident cleanup [global])))))))
