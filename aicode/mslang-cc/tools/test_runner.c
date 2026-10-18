@@ -450,15 +450,24 @@ static int runCase(const char* msExe, const char* casePath) {
   base[caseLen - 3] = '\0';
 
   char path[RUNNER_MAX_PATH + 16];
-  if (!joinPath(path, sizeof(path), base, ".out")) {
-    printf("FAIL %s: case path too long\n", casePath);
-    return 1;
-  }
   size_t expectedLen = 0;
-  char* expectedOut = slurpFile(path, &expectedLen);
-  if (expectedOut == NULL) {
-    printf("FAIL %s: missing expected output file %s\n", casePath, path);
-    return 1;
+  char* expectedOut = NULL;
+  // T009：.ast 快照模式——注入 --dump-ast，stdout 期望为 .ast 内容（.out 可缺省）
+  bool astMode = false;
+  if (joinPath(path, sizeof(path), base, ".ast")) {
+    expectedOut = slurpFile(path, &expectedLen);
+    astMode = expectedOut != NULL;
+  }
+  if (!astMode) {
+    if (!joinPath(path, sizeof(path), base, ".out")) {
+      printf("FAIL %s: case path too long\n", casePath);
+      return 1;
+    }
+    expectedOut = slurpFile(path, &expectedLen);
+    if (expectedOut == NULL) {
+      printf("FAIL %s: missing expected output file %s\n", casePath, path);
+      return 1;
+    }
   }
   int expectedCode = 0;
   int timeoutSec = 10;
@@ -482,13 +491,18 @@ static int runCase(const char* msExe, const char* casePath) {
       extraArgCount = splitArgs(extraArgsText, extraArgs, RUNNER_MAX_EXTRA_ARGS);
     }
   }
-  char* spawnArgv[RUNNER_MAX_EXTRA_ARGS + 3];
+  char* spawnArgv[RUNNER_MAX_EXTRA_ARGS + 4];
   spawnArgv[0] = (char*)msExe;
+  int argBase = 1;
   for (int i = 0; i < extraArgCount; i++) {
-    spawnArgv[1 + i] = (char*)extraArgs[i];
+    spawnArgv[argBase + i] = (char*)extraArgs[i];
   }
-  spawnArgv[1 + extraArgCount] = (char*)casePath;
-  spawnArgv[2 + extraArgCount] = NULL;
+  argBase += extraArgCount;
+  if (astMode) {
+    spawnArgv[argBase++] = (char*)"--dump-ast";
+  }
+  spawnArgv[argBase] = (char*)casePath;
+  spawnArgv[argBase + 1] = NULL;
 
   SpawnResult run = spawnCapture(spawnArgv, timeoutSec);
   int failed = 0;
