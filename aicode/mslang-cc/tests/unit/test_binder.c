@@ -457,6 +457,132 @@ TEST(yieldInGeneratorAccepted) {
   astArenaDestroy(&arena);
 }
 
+TEST(foldArithPrecedence) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var x = 1 + 2 * 3", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, AST_INT, stmt0(mod)->as.varDecl.init->kind);
+  EXPECT_EQ(ctx, 7, (int)stmt0(mod)->as.varDecl.init->as.intLit.v);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldLeftAssocAndTruncDiv) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var a = 10 - 3 - 2\nvar b = -7 / 2\nvar c = -7 % 2", &arena, &diags,
+                         &binder);
+  EXPECT_EQ(ctx, 5, (int)stmt0(mod)->as.varDecl.init->as.intLit.v);
+  EXPECT_EQ(ctx, -3, (int)mod->as.list.items[1]->as.varDecl.init->as.intLit.v);  // 截断除（02 §3.5）
+  EXPECT_EQ(ctx, -1, (int)mod->as.list.items[2]->as.varDecl.init->as.intLit.v);   // 符号随被除数
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldDivByZeroNotFolded) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var x = 1 / 0", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, AST_BINARY, stmt0(mod)->as.varDecl.init->kind);  // 运行时 ArithmeticError
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldOverflowAddUpgradesBigint) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var x = 9223372036854775807 + 1", &arena, &diags, &binder);
+  AstNode* lit = stmt0(mod)->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_BIGINT, lit->kind);
+  EXPECT_EQ(ctx, 19, lit->as.bigintLit.len);
+  EXPECT_EQ(ctx, 0, memcmp("9223372036854775808", lit->as.bigintLit.start, 19));
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldOverflowNegativeAndMul) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var x = -9223372036854775807 - 2\nvar y = 9223372036854775807 * 2", &arena,
+                         &diags, &binder);
+  AstNode* x = stmt0(mod)->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_BIGINT, x->kind);
+  EXPECT_EQ(ctx, 20, x->as.bigintLit.len);
+  EXPECT_EQ(ctx, 0, memcmp("-9223372036854775809", x->as.bigintLit.start, 20));
+  AstNode* y = mod->as.list.items[1]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_BIGINT, y->kind);
+  EXPECT_EQ(ctx, 20, y->as.bigintLit.len);
+  EXPECT_EQ(ctx, 0, memcmp("18446744073709551614", y->as.bigintLit.start, 20));
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldPow) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var a = 2 ** 10\nvar b = 2 ** 64", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 1024, (int)stmt0(mod)->as.varDecl.init->as.intLit.v);
+  AstNode* bigPow = mod->as.list.items[1]->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_BIGINT, bigPow->kind);
+  EXPECT_EQ(ctx, 20, bigPow->as.bigintLit.len);
+  EXPECT_EQ(ctx, 0, memcmp("18446744073709551616", bigPow->as.bigintLit.start, 20));
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldFloatAndCompareAndLogic) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc(
+      "var f = 1.5 + 2.25\nvar g = 7.0 / 2.0\nvar b = 1 < 2\nvar c = 2 == 3\nvar l = true && false\nvar n = !true",
+      &arena, &diags, &binder);
+  EXPECT_F64_EQ(ctx, 3.75, stmt0(mod)->as.varDecl.init->as.floatLit.v);
+  EXPECT_F64_EQ(ctx, 3.5, mod->as.list.items[1]->as.varDecl.init->as.floatLit.v);
+  EXPECT_EQ(ctx, true, mod->as.list.items[2]->as.varDecl.init->as.boolLit.b);
+  EXPECT_EQ(ctx, false, mod->as.list.items[3]->as.varDecl.init->as.boolLit.b);
+  EXPECT_EQ(ctx, false, mod->as.list.items[4]->as.varDecl.init->as.boolLit.b);
+  EXPECT_EQ(ctx, false, mod->as.list.items[5]->as.varDecl.init->as.boolLit.b);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldBitwiseChain) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var m = (1 << 4) | 3\nvar s = 19 >> 2", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, 19, (int)stmt0(mod)->as.varDecl.init->as.intLit.v);
+  EXPECT_EQ(ctx, 4, (int)mod->as.list.items[1]->as.varDecl.init->as.intLit.v);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(foldStringNotFolded) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var s = \"a\" + \"b\"", &arena, &diags, &binder);
+  EXPECT_EQ(ctx, AST_BINARY, stmt0(mod)->as.varDecl.init->kind);  // 字符串拼接留给运行时/插值优化
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -476,6 +602,11 @@ int main(int argc, char** argv) {
       breakInFuncInsideLoopRejected, breakInsideLoopAccepted,
       awaitInNormalFuncRejected,     awaitInAsyncFuncAndTopLevelAccepted,
       yieldInAsyncRejected,          yieldInGeneratorAccepted,
+      foldArithPrecedence,           foldLeftAssocAndTruncDiv,
+      foldDivByZeroNotFolded,        foldOverflowAddUpgradesBigint,
+      foldOverflowNegativeAndMul,    foldPow,
+      foldFloatAndCompareAndLogic,   foldBitwiseChain,
+      foldStringNotFolded,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

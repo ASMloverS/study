@@ -1,6 +1,7 @@
 // Binder 主体（T009）：作用域栈、名称解析与标注、位置合法性、常量折叠（见 docs/tasks/T009）
 #include "binder/binder.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -521,9 +522,371 @@ static void bindStmt(Binder* b, AstNode* n) {
   }
 }
 
+// ---------------- 常量折叠（20 §1；int/float/bool/nil 域；溢出 int 升 bigint） ----------------
+
+static void setIntLit(AstNode* n, ms_i64 v) {
+  n->kind = AST_INT;
+  n->as.intLit.v = v;
+}
+
+static void setFloatLit(AstNode* n, double v) {
+  n->kind = AST_FLOAT;
+  n->as.floatLit.v = v;
+}
+
+static void setBoolLit(AstNode* n, bool v) {
+  n->kind = AST_BOOL;
+  n->as.boolLit.b = v;
+}
+
+// u64 → 十进制数字串写入 out（返回长度；缓冲 ≥ 21）
+static int32_t u64ToDec(char* out, ms_u64 v) {
+  char tmp[20];
+  int32_t n = 0;
+  do {
+    tmp[n++] = (char)('0' + (int)(v % 10));
+    v /= 10;
+  } while (v != 0);
+  for (int32_t i = 0; i < n; i++) {
+    out[i] = tmp[n - 1 - i];
+  }
+  return n;
+}
+
+// 节点改为 bigint 字面量：neg + 十进制幅度串（arena 分配）
+static void setBigintMag(AstNode* n, AstArena* arena, bool neg, const char* mag, int32_t magLen) {
+  char* s = astArenaAlloc(arena, (size_t)magLen + 2);
+  int32_t len = 0;
+  if (neg) {
+    s[len++] = '-';
+  }
+  memcpy(s + len, mag, (size_t)magLen);
+  len += magLen;
+  s[len] = '\0';
+  n->kind = AST_BIGINT;
+  n->as.bigintLit.start = s;
+  n->as.bigintLit.len = len;
+}
+
+static void setBigintU64(AstNode* n, AstArena* arena, bool neg, ms_u64 mag) {
+  char buf[20];
+  int32_t m = u64ToDec(buf, mag);
+  setBigintMag(n, arena, neg, buf, m);
+}
+
+// 十进制幅度串乘法（schoolbook）；输入为无前导零数字串；结果 arena 分配
+static const char* decMul(AstArena* arena, const char* a, int32_t alen, const char* b, int32_t blen,
+                          int32_t* outLen) {
+  int32_t rlen = alen + blen;
+  int32_t* digits = malloc(sizeof(int32_t) * (size_t)rlen);  // 累加上限 ≈ 20*81，int32 充裕
+  MS_ASSERT(digits != NULL);
+  memset(digits, 0, sizeof(int32_t) * (size_t)rlen);
+  for (int32_t i = alen - 1; i >= 0; i--) {
+    for (int32_t j = blen - 1; j >= 0; j--) {
+      digits[i + j + 1] += (a[i] - '0') * (b[j] - '0');
+    }
+  }
+  for (int32_t i = rlen - 1; i > 0; i--) {
+    digits[i - 1] += digits[i] / 10;
+    digits[i] %= 10;
+  }
+  int32_t start = 0;
+  while (start < rlen - 1 && digits[start] == 0) {
+    start++;  // 去前导零（保留至少一位）
+  }
+  char* r = astArenaAlloc(arena, (size_t)(rlen - start) + 1);
+  for (int32_t i = 0; i < rlen - start; i++) {
+    r[i] = (char)('0' + digits[start + i]);
+  }
+  r[rlen - start] = '\0';
+  free(digits);
+  *outLen = rlen - start;
+  return r;
+}
+
+// i64 溢出受检运算（MSVC 无 __builtin 溢出内建，手写检查；乘法经 u64 回除校验）
+static bool addOv(ms_i64 a, ms_i64 b, ms_i64* out) {
+  if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) {
+    return true;
+  }
+  *out = a + b;
+  return false;
+}
+
+static bool subOv(ms_i64 a, ms_i64 b, ms_i64* out) {
+  if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) {
+    return true;
+  }
+  *out = a - b;
+  return false;
+}
+
+static bool mulOv(ms_i64 a, ms_i64 b, ms_i64* out) {
+  if (a == -1 && b == INT64_MIN) {
+    return true;
+  }
+  ms_u64 w = (ms_u64)a * (ms_u64)b;  // 模 2^64 良定义
+  ms_i64 s = (ms_i64)w;
+  if (a != 0 && a != -1 && s / a != b) {
+    return true;
+  }
+  *out = s;
+  return false;
+}
+
+// 溢出路径：由操作数符号重建精确值（add/sub 经 u64 环绕恒精确；mul 走十进制）
+static void foldBigintAdd(AstNode* n, AstArena* arena, ms_i64 a, ms_i64 b) {
+  ms_u64 w = (ms_u64)a + (ms_u64)b;
+  setBigintU64(n, arena, b < 0, b < 0 ? ~w + 1 : w);  // 下溢幅度 = 2^64 - w
+}
+
+static void foldBigintSub(AstNode* n, AstArena* arena, ms_i64 a, ms_i64 b) {
+  ms_u64 w = (ms_u64)a - (ms_u64)b;
+  setBigintU64(n, arena, b >= 0, b >= 0 ? ~w + 1 : w);
+}
+
+static void foldBigintMul(AstNode* n, AstArena* arena, ms_i64 a, ms_i64 b) {
+  char buf[21];
+  bool neg = (a < 0) != (b < 0);
+  int32_t alen = u64ToDec(buf, a < 0 ? ~((ms_u64)a) + 1 : (ms_u64)a);
+  char bmag[21];
+  memcpy(bmag, buf, (size_t)alen);  // u64ToDec 只写 buf → 先复制 a 幅度再用 buf 写 b
+  int32_t blen = u64ToDec(buf, b < 0 ? ~((ms_u64)b) + 1 : (ms_u64)b);
+  int32_t rlen = 0;
+  const char* r = decMul(arena, bmag, alen, buf, blen, &rlen);
+  setBigintMag(n, arena, neg, r, rlen);
+}
+
+// int 幂：先走 i64 受检快路径，溢出再十进制连乘（e ∈ [0,1024] 且位数 ≤ 256 才折叠）
+static void foldIntPow(AstNode* n, AstArena* arena, ms_i64 base, ms_i64 e) {
+  if (e < 0 || e > 1024) {
+    return;  // 负指数/巨幂留给运行时（float pow / bigint 精确运算 T016）
+  }
+  ms_i64 r = 1;
+  ms_i64 b = base;
+  ms_i64 k = e;
+  bool ok = true;
+  while (k > 0 && ok) {
+    if ((k & 1) != 0) {
+      ok = !mulOv(r, b, &r);
+    }
+    k >>= 1;
+    if (ok && k > 0) {
+      ok = !mulOv(b, b, &b);  // 平方底数（k 归零前最后一步可省）
+    }
+  }
+  if (ok) {
+    setIntLit(n, r);
+    return;
+  }
+  char buf[21];
+  int32_t baseLen = u64ToDec(buf, base < 0 ? ~((ms_u64)base) + 1 : (ms_u64)base);
+  char baseMag[21];
+  memcpy(baseMag, buf, (size_t)baseLen);
+  const char* acc = "1";
+  int32_t accLen = 1;
+  for (ms_i64 i = 0; i < e; i++) {
+    int32_t rlen = 0;
+    const char* prod = decMul(arena, acc, accLen, baseMag, baseLen, &rlen);
+    if (rlen > 256) {
+      return;  // 超出折叠预算：整体放弃（节点保持二元 **）
+    }
+    acc = prod;
+    accLen = rlen;
+  }
+  bool neg = base < 0 && (e % 2) == 1;
+  setBigintMag(n, arena, neg, acc, accLen);
+}
+
+// 二元折叠：post-order 调用（子节点已折叠）
+static void tryFoldBinary(Binder* b, AstNode* n) {
+  AstNode* lhs = n->as.binary.lhs;
+  AstNode* rhs = n->as.binary.rhs;
+  AstBinOp op = n->as.binary.op;
+  bool bothInt = lhs->kind == AST_INT && rhs->kind == AST_INT;
+  bool lhsNum = lhs->kind == AST_FLOAT || lhs->kind == AST_INT;
+  bool rhsNum = rhs->kind == AST_FLOAT || rhs->kind == AST_INT;
+  if (bothInt) {
+    ms_i64 a = lhs->as.intLit.v;
+    ms_i64 c = rhs->as.intLit.v;
+    ms_i64 r = 0;
+    switch (op) {
+      case AST_OP_ADD:
+        if (!addOv(a, c, &r)) {
+          setIntLit(n, r);
+        } else {
+          foldBigintAdd(n, b->arena, a, c);
+        }
+        return;
+      case AST_OP_SUB:
+        if (!subOv(a, c, &r)) {
+          setIntLit(n, r);
+        } else {
+          foldBigintSub(n, b->arena, a, c);
+        }
+        return;
+      case AST_OP_MUL:
+        if (!mulOv(a, c, &r)) {
+          setIntLit(n, r);
+        } else {
+          foldBigintMul(n, b->arena, a, c);
+        }
+        return;
+      case AST_OP_DIV:
+        if (c == 0) {
+          return;  // 运行时 ArithmeticError
+        }
+        if (a == INT64_MIN && c == -1) {
+          setBigintU64(n, b->arena, false, (ms_u64)INT64_MAX + 1);
+          return;
+        }
+        setIntLit(n, a / c);  // 截断除（02 §3.5）
+        return;
+      case AST_OP_MOD:
+        if (c == 0) {
+          return;
+        }
+        if (a == INT64_MIN && c == -1) {
+          setIntLit(n, 0);
+          return;
+        }
+        setIntLit(n, a % c);  // 符号随被除数
+        return;
+      case AST_OP_POW:
+        foldIntPow(n, b->arena, a, c);
+        return;
+      case AST_OP_BIT_AND:
+        setIntLit(n, a & c);
+        return;
+      case AST_OP_BIT_OR:
+        setIntLit(n, a | c);
+        return;
+      case AST_OP_BIT_XOR:
+        setIntLit(n, a ^ c);
+        return;
+      case AST_OP_SHL: {
+        if (c < 0 || c > 63) {
+          return;
+        }
+        ms_u64 w = (ms_u64)a << c;
+        if (w > (ms_u64)INT64_MAX) {
+          setBigintU64(n, b->arena, false, w);
+        } else {
+          setIntLit(n, (ms_i64)w);
+        }
+        return;
+      }
+      case AST_OP_SHR:
+        if (c < 0 || c > 63 || a < 0) {
+          return;  // 负数算术右移实现定义，不折叠
+        }
+        setIntLit(n, a >> c);
+        return;
+      case AST_OP_EQ:
+        setBoolLit(n, a == c);
+        return;
+      case AST_OP_NE:
+        setBoolLit(n, a != c);
+        return;
+      case AST_OP_LT:
+        setBoolLit(n, a < c);
+        return;
+      case AST_OP_LE:
+        setBoolLit(n, a <= c);
+        return;
+      case AST_OP_GT:
+        setBoolLit(n, a > c);
+        return;
+      case AST_OP_GE:
+        setBoolLit(n, a >= c);
+        return;
+      default:
+        return;  // is/in 不折叠
+    }
+  }
+  if (lhsNum && rhsNum && (lhs->kind == AST_FLOAT || rhs->kind == AST_FLOAT) && op != AST_OP_POW) {
+    double a = lhs->kind == AST_FLOAT ? lhs->as.floatLit.v : (double)lhs->as.intLit.v;
+    double c = rhs->kind == AST_FLOAT ? rhs->as.floatLit.v : (double)rhs->as.intLit.v;
+    if ((op == AST_OP_DIV || op == AST_OP_MOD) && c == 0.0) {
+      return;  // 运行时错误路径，不折叠
+    }
+    switch (op) {
+      case AST_OP_ADD: setFloatLit(n, a + c); return;
+      case AST_OP_SUB: setFloatLit(n, a - c); return;
+      case AST_OP_MUL: setFloatLit(n, a * c); return;
+      case AST_OP_DIV: setFloatLit(n, a / c); return;
+      case AST_OP_MOD: setFloatLit(n, fmod(a, c)); return;
+      case AST_OP_EQ: setBoolLit(n, a == c); return;
+      case AST_OP_NE: setBoolLit(n, a != c); return;
+      case AST_OP_LT: setBoolLit(n, a < c); return;
+      case AST_OP_LE: setBoolLit(n, a <= c); return;
+      case AST_OP_GT: setBoolLit(n, a > c); return;
+      case AST_OP_GE: setBoolLit(n, a >= c); return;
+      default: return;  // 位运算 float 操作数运行时 TypeError，不折叠
+    }
+  }
+  if (lhs->kind == AST_BOOL && rhs->kind == AST_BOOL) {
+    if (op == AST_OP_EQ) {
+      setBoolLit(n, lhs->as.boolLit.b == rhs->as.boolLit.b);
+    } else if (op == AST_OP_NE) {
+      setBoolLit(n, lhs->as.boolLit.b != rhs->as.boolLit.b);
+    }
+    return;
+  }
+  if (lhs->kind == AST_NIL && rhs->kind == AST_NIL) {
+    if (op == AST_OP_EQ) {
+      setBoolLit(n, true);
+    } else if (op == AST_OP_NE) {
+      setBoolLit(n, false);
+    }
+  }
+}
+
+// && ||（bool 域）
+static void tryFoldLogic(AstNode* n) {
+  AstNode* lhs = n->as.binary.lhs;
+  AstNode* rhs = n->as.binary.rhs;
+  if (lhs->kind != AST_BOOL || rhs->kind != AST_BOOL) {
+    return;
+  }
+  bool a = lhs->as.boolLit.b;
+  bool c = rhs->as.boolLit.b;
+  if (n->as.binary.op == AST_OP_AND) {
+    setBoolLit(n, a && c);
+  } else if (n->as.binary.op == AST_OP_OR) {
+    setBoolLit(n, a || c);
+  }
+}
+
+// 一元 ! - ~（字面量域）
+static void tryFoldUnary(Binder* b, AstNode* n) {
+  AstNode* t = n->as.unary.operand;
+  if (n->as.unary.op == AST_UNOP_NOT && t->kind == AST_BOOL) {
+    setBoolLit(n, !t->as.boolLit.b);
+    return;
+  }
+  if (n->as.unary.op == AST_UNOP_INV && t->kind == AST_INT) {
+    setIntLit(n, ~t->as.intLit.v);
+    return;
+  }
+  if (n->as.unary.op == AST_UNOP_NEG) {
+    if (t->kind == AST_INT) {
+      if (t->as.intLit.v == INT64_MIN) {
+        setBigintU64(n, b->arena, false, (ms_u64)INT64_MAX + 1);
+      } else {
+        setIntLit(n, -t->as.intLit.v);
+      }
+      return;
+    }
+    if (t->kind == AST_FLOAT) {
+      setFloatLit(n, -t->as.floatLit.v);
+      return;
+    }
+  }
+}
+
 // 推导式/生成器表达式（03 §2）：隐式函数作用域；逐 for 子句嵌套域，目标 fresh
-static void bindCompr(Binder* b, AstNode* n) {
-  Scope* fn = pushScope(b, SCOPE_COMPR);
+static void bindCompr(Binder* b, AstNode* n) {  Scope* fn = pushScope(b, SCOPE_COMPR);
   fn->funcNode = n;
   for (int32_t i = 0; i < n->as.compr.forCount; i++) {
     bindExpr(b, n->as.compr.fors[i].iter);  // 第 i 个迭代源在第 i 层子句域求值
@@ -572,12 +935,17 @@ static void bindExpr(Binder* b, AstNode* n) {
     case AST_BINARY:
       bindExpr(b, n->as.binary.lhs);
       bindExpr(b, n->as.binary.rhs);
-      break;  // 常量折叠 Task 5 接入
+      tryFoldBinary(b, n);
+      break;
     case AST_LOGIC:
       bindExpr(b, n->as.binary.lhs);
       bindExpr(b, n->as.binary.rhs);
+      tryFoldLogic(n);
       break;
     case AST_UNARY:
+      bindExpr(b, n->as.unary.operand);
+      tryFoldUnary(b, n);
+      break;
     case AST_RECV:
     case AST_GO:
       bindExpr(b, n->as.unary.operand);
