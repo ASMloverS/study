@@ -52,35 +52,6 @@ static int32_t emitJump(FuncState* fs, ms_u8 op, int32_t line) {
 
 static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].target = fs->chunk->codeLen; }
 
-// 编译期指令宽度：EXT 前缀链 + opcode + 布局操作数字节（跳转占位恒 2 字节，由物化阶段扩宽）
-static int32_t operandBytesOf(MsOpndLayout layout) {
-  switch (layout) {
-    case OPL_NONE:
-    case OPL_SPECIAL:
-      return 0;
-    case OPL_U8:
-    case OPL_CONST:
-    case OPL_JUMP:
-      return 1;
-    case OPL_U8_U8:
-    case OPL_CONST_U8:
-    case OPL_CONST_CONST:
-    case OPL_JUMP_JUMP:
-      return 2;
-    case OPL_CONST_U8_U8:
-      return 3;
-  }
-  return 0;
-}
-
-static int32_t instrSize(const Chunk* c, int32_t off) {
-  int32_t p = off + 1;
-  while (c->code[p - 1] == OP_EXTENDED_ARG) {
-    p += 2;
-  }
-  return p - off + operandBytesOf(msOpLayouts[c->code[p - 1]]);
-}
-
 // 目标所需 EXT 前缀数（8 位操作数之上逐级 +1）
 static int32_t jumpWidthFor(int32_t target) {
   if (target < 0x100) {
@@ -119,7 +90,7 @@ static void finishChunk(FuncState* fs) {
         off += 2;
         j++;
       } else {
-        int32_t size = instrSize(c, off);
+        int32_t size = chunkInstrSize(c, off);
         newOff += size;
         off += size;
       }
@@ -165,7 +136,7 @@ static void finishChunk(FuncState* fs) {
       off += 2;
       j++;
     } else {
-      int32_t size = instrSize(c, off);
+      int32_t size = chunkInstrSize(c, off);
       memcpy(newCode + newOff, c->code + off, (size_t)size);
       newOff += size;
       off += size;

@@ -499,6 +499,89 @@ TEST(callStubNested) {
   chunkFree(&c);
 }
 
+// ---------- peephole（NOP 压实 + JMP 链折叠） ----------
+
+TEST(peepholeNopCompaction) {
+  Chunk c;
+  chunkInit(&c, "main", 4);
+  chunkEmitOp(&c, OP_NOP, 1);          // 0
+  chunkEmitOp(&c, OP_NOP, 1);          // 1
+  chunkEmitOp(&c, OP_LOAD_TRUE, 2);    // 2
+  chunkEmitOp(&c, OP_JMP, 2);          // 3 → target 0（首 NOP）
+  chunkEmitByte(&c, 0);
+  ChunkJump jumps[1] = {{3, 0}};
+  chunkPeephole(&c, jumps, 1);
+  EXPECT_EQ(ctx, 3, c.codeLen);  // NOP×2 压实
+  EXPECT_EQ(ctx, OP_LOAD_TRUE, c.code[0]);
+  EXPECT_EQ(ctx, OP_JMP, c.code[1]);
+  EXPECT_EQ(ctx, 0, c.code[2]);  // 目标重定向到 LOAD_TRUE 新偏移
+  EXPECT_EQ(ctx, 1, jumps[0].instrOffset);
+  EXPECT_EQ(ctx, 0, jumps[0].target);
+  chunkFree(&c);
+}
+
+TEST(peepholeJumpChainFold) {
+  Chunk c;
+  chunkInit(&c, "main", 4);
+  chunkEmitOp(&c, OP_LOAD_NIL, 1);  // 0
+  chunkEmitOp(&c, OP_JMP, 1);       // 1 → 4
+  chunkEmitByte(&c, 4);
+  chunkEmitOp(&c, OP_LOAD_TRUE, 1);  // 3
+  chunkEmitOp(&c, OP_JMP, 1);        // 4 → 6（中转跳转）
+  chunkEmitByte(&c, 6);
+  chunkEmitOp(&c, OP_RETURN, 1);  // 6
+  ChunkJump jumps[2] = {{1, 4}, {4, 6}};
+  chunkPeephole(&c, jumps, 2);
+  EXPECT_EQ(ctx, 6, jumps[0].target);  // 直达最终目标
+  EXPECT_EQ(ctx, 6, jumps[1].target);
+  chunkFree(&c);
+}
+
+TEST(peepholeMutualJumpsTerminate) {
+  Chunk c;
+  chunkInit(&c, "main", 4);
+  chunkEmitOp(&c, OP_JMP, 1);  // 0 → 2
+  chunkEmitByte(&c, 2);
+  chunkEmitOp(&c, OP_JMP, 1);  // 2 → 0（互相成环）
+  chunkEmitByte(&c, 0);
+  chunkEmitOp(&c, OP_RETURN, 1);  // 4
+  ChunkJump jumps[2] = {{0, 2}, {2, 0}};
+  chunkPeephole(&c, jumps, 2);  // 不死循环即通过
+  EXPECT_EQ(ctx, 5, c.codeLen);
+  chunkFree(&c);
+}
+
+static bool isJumpOp(ms_u8 op) {
+  return op == OP_JMP || op == OP_JMP_IF_FALSE || op == OP_JMP_IF_TRUE || op == OP_JMP_IF_FALSE_OR_POP ||
+         op == OP_JMP_IF_TRUE_OR_POP || op == OP_POP_JUMP_IF_NIL || op == OP_FOR_ITER;
+}
+
+TEST(nestedTernaryFold) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var r = a ? (b ? 1 : 2) : 3", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  int32_t off = 0;
+  bool noJumpToJump = true;
+  while (off < c.codeLen) {
+    ms_u8 op = 0;
+    int32_t operand = -1;
+    int32_t size = decodeInstr(&c, off, &op, &operand);
+    if (isJumpOp(op)) {
+      ms_u8 targetOp = 0;
+      int32_t targetOperand = -1;
+      decodeInstr(&c, operand, &targetOp, &targetOperand);
+      if (targetOp == OP_JMP) {
+        noJumpToJump = false;  // 折叠后不应存在跳转→JMP
+      }
+    }
+    off += size;
+  }
+  EXPECT_EQ(ctx, c.codeLen, off);  // 解码走齐 = 指令边界对齐
+  EXPECT(ctx, noJumpToJump);
+  chunkFree(&c);
+}
+
 TEST(compileIsDeterministic) {  char src[16 * 1024];
   genDecls(src, sizeof(src), 120, "var r = a ? (b ? 1 : 2) : 3\n");
   Chunk a;
@@ -542,6 +625,10 @@ int main(int argc, char** argv) {
       extArgLargeJumpDistance,
       callStubPrint,
       callStubNested,
+      peepholeNopCompaction,
+      peepholeJumpChainFold,
+      peepholeMutualJumpsTerminate,
+      nestedTernaryFold,
       compileIsDeterministic,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));

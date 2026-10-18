@@ -330,9 +330,123 @@ int32_t chunkLineAt(const Chunk* c, int32_t offset) {
   return found >= 0 ? c->lines[found].line : -1;
 }
 
+static int32_t operandBytesOf(MsOpndLayout layout) {
+  switch (layout) {
+    case OPL_NONE:
+    case OPL_SPECIAL:
+      return 0;
+    case OPL_U8:
+    case OPL_CONST:
+    case OPL_JUMP:
+      return 1;
+    case OPL_U8_U8:
+    case OPL_CONST_U8:
+    case OPL_CONST_CONST:
+    case OPL_JUMP_JUMP:
+      return 2;
+    case OPL_CONST_U8_U8:
+      return 3;
+  }
+  return 0;
+}
+
+int32_t chunkInstrSize(const Chunk* c, int32_t off) {
+  int32_t p = off + 1;
+  while (c->code[p - 1] == OP_EXTENDED_ARG) {
+    p += 2;
+  }
+  return p - off + operandBytesOf(msOpLayouts[c->code[p - 1]]);
+}
+
+// ---- peephole（T010 §2）：NOP 压实 + JMP→JMP 链折叠 ----
+
+// fixups 按 instrOffset 有序发射，但压实后仍用线性查（规模小、调用频度低）
+static int32_t findJumpAt(const ChunkJump* jumps, int32_t n, int32_t offset) {
+  for (int32_t i = 0; i < n; i++) {
+    if (jumps[i].instrOffset == offset) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// 目标解析：跳过 NOP 链；落点为无条件 JMP 时直达其目标（步数上限防互相成环死循环）
+static int32_t resolveTarget(const Chunk* c, const ChunkJump* jumps, int32_t n, int32_t target) {
+  int32_t steps = 0;
+  for (;;) {
+    while (target < c->codeLen && c->code[target] == OP_NOP) {
+      target += chunkInstrSize(c, target);
+    }
+    int32_t j = findJumpAt(jumps, n, target);
+    if (j < 0 || c->code[target] != OP_JMP || jumps[j].target == target || steps++ > n) {
+      return target;
+    }
+    target = jumps[j].target;
+  }
+}
+
 void chunkPeephole(Chunk* c, ChunkJump* jumps, int32_t jumpCount) {
-  // 占位（T010 计划 Task 6）：NOP 压实与 JMP→JMP 链折叠（21 §2 peephole）
-  (void)c;
-  (void)jumps;
-  (void)jumpCount;
+  if (c->codeLen == 0) {
+    return;
+  }
+  // 1) 折叠重定向至不动点（先解析后写回，避免链中段丢失）
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (int32_t i = 0; i < jumpCount; i++) {
+      int32_t t = resolveTarget(c, jumps, jumpCount, jumps[i].target);
+      if (t != jumps[i].target) {
+        jumps[i].target = t;
+        changed = true;
+      }
+    }
+  }
+  // 2) NOP 压实：目标已被重定向越过 NOP，剩余 NOP 均无引用
+  bool anyNop = false;
+  for (int32_t off = 0; off < c->codeLen;) {
+    if (c->code[off] == OP_NOP) {
+      anyNop = true;
+    }
+    off += chunkInstrSize(c, off);
+  }
+  if (!anyNop) {
+    return;
+  }
+  int32_t* posMap = malloc(sizeof(int32_t) * (size_t)(c->codeLen + 1));
+  ms_u8* newCode = malloc((size_t)c->codeLen);
+  MS_ASSERT(posMap != NULL && newCode != NULL);
+  int32_t oldOff = 0;
+  int32_t newOff = 0;
+  while (oldOff < c->codeLen) {
+    posMap[oldOff] = newOff;
+    int32_t size = chunkInstrSize(c, oldOff);
+    if (c->code[oldOff] != OP_NOP) {
+      memcpy(newCode + newOff, c->code + oldOff, (size_t)size);
+      newOff += size;
+    }
+    oldOff += size;
+  }
+  posMap[c->codeLen] = newOff;
+  free(c->code);
+  c->code = newCode;
+  c->codeLen = newOff;
+  c->codeCap = newOff;
+  for (int32_t i = 0; i < jumpCount; i++) {
+    jumps[i].instrOffset = posMap[jumps[i].instrOffset];
+    jumps[i].target = posMap[jumps[i].target];
+  }
+  // 行号偏移重映射；被删 NOP 上的 run 并入同偏移后继（去重保序）
+  int32_t write = 0;
+  for (int32_t i = 0; i < c->linesLen; i++) {
+    int32_t mapped = posMap[c->lines[i].offset];
+    if (write > 0 && c->lines[write - 1].offset == mapped) {
+      c->lines[write - 1].line = c->lines[i].line;
+      continue;
+    }
+    c->lines[write].offset = mapped;
+    c->lines[write].line = c->lines[i].line;
+    write++;
+  }
+  c->linesLen = write;
+  free(posMap);
 }
