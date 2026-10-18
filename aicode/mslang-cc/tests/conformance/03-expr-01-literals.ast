@@ -1,0 +1,18 @@
+(module
+  (var i [global]
+    (int 42))
+  (var h [global]
+    (int 31))
+  (var f [global]
+    (float 3.1400000000000001))
+  (var b [global]
+    (bool true))
+  (var n [global]
+    (nil))
+  (var r [global]
+    (rune U+0061))
+  (var s [global]
+    (string
+      (lit "hi")))
+  (var big [global]
+    (bigint "123")))

@@ -1,0 +1,11 @@
+(module
+  (var a [global]
+    (bool true))
+  (var b [global]
+    (binary == (string
+(lit "a")) (string
+(lit "b"))))
+  (var c [global]
+    (binary is (ident x [global]) (ident y [global])))
+  (var d [global]
+    (binary in (ident k [global]) (ident m [global]))))

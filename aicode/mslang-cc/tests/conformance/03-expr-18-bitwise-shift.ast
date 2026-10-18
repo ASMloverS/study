@@ -1,0 +1,17 @@
+(module
+  (var a [global]
+    (int 1))
+  (var b [global]
+    (int 7))
+  (var c [global]
+    (int 6))
+  (var d [global]
+    (int 1024))
+  (var e [global]
+    (int 128))
+  (var f [global]
+    (int -1))
+  (var g [global]
+    (int -3))
+  (var h [global]
+    (int -1)))

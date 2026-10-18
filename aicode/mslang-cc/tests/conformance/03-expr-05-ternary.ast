@@ -1,0 +1,8 @@
+(module
+  (var a [global]
+    (ternary (bool true) (int 1) (int 2)))
+  (var b [global]
+    (ternary (binary > (ident x [global]) (int 0)) (string
+(lit "pos")) (ternary (binary < (ident x [global]) (int 0)) (string
+(lit "neg")) (string
+(lit "zero"))))))

@@ -1,0 +1,22 @@
+(module
+  (var name [global]
+    (string
+      (lit "mslang")))
+  (var a [global]
+    (string
+      (lit "hello ")
+      (interp
+        (ident name [global]))))
+  (var b [global]
+    (string
+      (lit "nested ")
+      (interp
+        (string
+          (lit "inner")))))
+  (var c [global]
+    (string
+      (lit "expr ")
+      (interp
+        (int 3))))
+  (var raw [global]
+    (string raw "no ${interp}")))

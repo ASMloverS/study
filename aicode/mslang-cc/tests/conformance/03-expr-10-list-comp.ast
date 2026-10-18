@@ -1,0 +1,6 @@
+(module
+  (var out [global]
+    (comp-list
+      (binary * (ident x [local:0]) (ident x [local:0]))
+      (for x [local:0 fresh] (ident xs [global]))
+      (if (binary == (binary % (ident x [local:0]) (int 2)) (int 0))))))

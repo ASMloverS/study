@@ -1,0 +1,12 @@
+(module
+  (var g [global]
+    (gen-expr
+      (binary * (ident x [local:0]) (ident x [local:0]))
+      (for x [local:0 fresh] (ident xs [global]))
+      (if (binary > (ident x [local:0]) (int 0)))))
+  (var total [global]
+    (call
+      (ident sum [global])
+            (gen-expr
+        (binary * (ident x [local:0]) (ident x [local:0]))
+        (for x [local:0 fresh] (ident xs [global]))))))

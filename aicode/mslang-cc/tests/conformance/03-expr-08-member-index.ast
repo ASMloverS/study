@@ -1,0 +1,13 @@
+(module
+  (var a [global]
+    (member (ident obj [global]) field))
+  (var b [global]
+    (index (ident xs [global]) (ident i [global])))
+  (var c [global]
+    (member (ident f [global]) __name__))
+  (var d [global]
+    (member (ident Class [global]) staticMember))
+  (var e [global]
+    (call
+      (member (ident obj [global]) method)
+            (ident arg [global]))))

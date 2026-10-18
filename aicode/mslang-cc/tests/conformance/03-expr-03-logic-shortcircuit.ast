@@ -1,0 +1,10 @@
+(module
+  (var a [global]
+    (or (nil) (string
+(lit "d"))))
+  (var b [global]
+    (bool false))
+  (var c [global]
+    (bool false))
+  (var d [global]
+    (bool true)))

@@ -1,0 +1,5 @@
+(module
+  (var out [global]
+    (comp-set
+      (binary % (ident x [local:0]) (int 3))
+      (for x [local:0 fresh] (ident xs [global])))))

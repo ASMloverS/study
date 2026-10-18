@@ -1,0 +1,14 @@
+(module
+  (var v [global]
+    (recv (ident ch [global])))
+  (send
+    (ident ch [global])
+    (int 1))
+  (var w [global]
+    (await (call
+(ident f [global]))))
+  (expr
+    (go (call
+(ident worker [global])
+(int 1)
+(int 2)))))

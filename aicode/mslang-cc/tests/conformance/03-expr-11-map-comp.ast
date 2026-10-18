@@ -1,0 +1,9 @@
+(module
+  (var out [global]
+    (comp-map
+      (ident k [local:0])
+      (call
+        (ident len [global])
+                (ident v [local:1]))
+      (for (k [local:0 fresh] v [local:1 fresh]) (call
+(member (ident m [global]) items))))))

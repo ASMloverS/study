@@ -1,0 +1,7 @@
+(module
+  (var a [global]
+    (bigint "9223372036854775808"))
+  (var b [global]
+    (bigint "-9223372036854775809"))
+  (var c [global]
+    (bigint "18446744073709551616")))

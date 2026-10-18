@@ -1,0 +1,11 @@
+(module
+  (var a [global]
+    (slice (ident xs [global]) (int 1) (int 3) _))
+  (var b [global]
+    (slice (ident xs [global]) _ _ _))
+  (var c [global]
+    (slice (ident xs [global]) _ _ (int 2)))
+  (var d [global]
+    (slice (ident xs [global]) (int 1) _ _))
+  (var e [global]
+    (slice (ident xs [global]) _ (int -1) _)))

@@ -1,0 +1,11 @@
+(module
+  (var a [global]
+    (int 7))
+  (var b [global]
+    (int 2))
+  (var c [global]
+    (int 1024))
+  (var d [global]
+    (int 19))
+  (var e [global]
+    (float 3.75)))

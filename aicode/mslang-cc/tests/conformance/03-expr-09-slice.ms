@@ -1,0 +1,5 @@
+var a = xs[1:3]
+var b = xs[:]
+var c = xs[::2]
+var d = xs[1:]
+var e = xs[:-1]

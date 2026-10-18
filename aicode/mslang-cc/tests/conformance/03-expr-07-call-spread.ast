@@ -1,0 +1,14 @@
+(module
+  (expr
+    (call
+      (ident f [global])
+            (int 1)
+      (spread
+        (ident xs [global]))))
+  (expr
+    (call
+      (ident g [global])
+            (ident a [global])
+            (ident b [global])
+      (spread
+        (ident rest [global])))))
