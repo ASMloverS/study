@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "common/common.h"
 
@@ -67,8 +68,7 @@ typedef enum AstKind {
 } AstKind;
 
 // 二元运算符：复合赋值展开与 AST_BINARY 共用；token → op 映射见 parser.c
-typedef enum AstBinOp {
-  AST_OP_NONE = 0,
+typedef enum AstBinOp {  AST_OP_NONE = 0,
   AST_OP_ADD,
   AST_OP_SUB,
   AST_OP_MUL,
@@ -91,6 +91,16 @@ typedef enum AstBinOp {
   AST_OP_AND,
   AST_OP_OR,  // 短路逻辑（T007 AST_LOGIC 载荷）
 } AstBinOp;
+
+// T009 Binder 标注类别：标识符引用与声明类节点（bindKind/bindSlot/bindUpvalDepth/bindFlags）
+typedef enum AstBindKind {
+  AST_BIND_NONE = 0,
+  AST_BIND_LOCAL,    // bindSlot = 所属函数帧槽位（参数按序 i → slot i，见 binder.h）
+  AST_BIND_GLOBAL,   // 模块层 / 未解析名的动态全局查找
+  AST_BIND_UPVALUE,  // bindSlot = 定义函数内槽位；bindUpvalDepth = 跨函数边界数（T018 消费）
+} AstBindKind;
+
+enum { AST_BIND_FRESH = 1 };  // bindFlags 位：循环/推导式每轮新鲜绑定（04 §4）
 
 // var 声明形态标志（as.varDecl.flags 位域）
 enum {
@@ -178,6 +188,10 @@ typedef struct AstImportName {
 struct AstNode {
   AstKind kind;
   int32_t line, col;  // 构造起始 token 位置（1-based，col 按 rune 计）
+  ms_u8 bindKind;          // AstBindKind（T009 Binder 写入；默认 0 = NONE）
+  ms_u8 bindFlags;         // AST_BIND_FRESH 等位域
+  int32_t bindSlot;        // local 槽位 / upvalue 定义槽位
+  int32_t bindUpvalDepth;  // upvalue：引用处与定义函数间的函数边界数
   union {
     struct {
       AstNode** items;
@@ -389,5 +403,8 @@ void* astArenaAlloc(AstArena* arena, size_t bytes);
 AstNode* astNewNode(AstArena* arena, AstKind kind, int32_t line, int32_t col);
 AstNode** astNewNodeArray(AstArena* arena, int32_t count);
 size_t astArenaBytesUsed(const AstArena* arena);
+
+// 规范化文本输出（T009）：节点 + 关键域 + Binder 标注，忽略纯位置差异；实现见 ast_dump.c
+void astDumpModule(const AstNode* module, FILE* out);
 
 #endif  // INCLUDE_MS_PARSER_AST_H_

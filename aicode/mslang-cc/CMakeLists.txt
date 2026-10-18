@@ -55,6 +55,11 @@ endforeach()
 # scanner：占位循环之外追加 T003 起的实际源文件（后续任务按目录继续 target_sources）
 target_sources(ms_scanner PRIVATE src/scanner/token.c)
 
+# T009：binder 名称解析/常量折叠；ast 规范化 dump
+target_sources(ms_parser PRIVATE src/parser/ast_dump.c)
+target_sources(ms_binder PRIVATE src/binder/binder.c)
+target_link_libraries(ms_binder PUBLIC ms_parser)
+
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)
 

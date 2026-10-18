@@ -51,6 +51,10 @@ AstNode* astNewNode(AstArena* arena, AstKind kind, int32_t line, int32_t col) {
   node->line = line;
   node->col = col;
   memset(&node->as, 0, sizeof(node->as));  // 载荷默认清零（init/items 等 NULL）
+  node->bindKind = AST_BIND_NONE;  // T009：标注默认值（arena 复用内存可能残留，此处归零）
+  node->bindFlags = 0;
+  node->bindSlot = 0;
+  node->bindUpvalDepth = 0;
   arena->nodeCount++;
   return node;
 }
