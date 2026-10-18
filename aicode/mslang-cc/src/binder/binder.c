@@ -114,21 +114,22 @@ typedef struct Resolved {
 } Resolved;
 
 // 自内向外解析；途经函数边界计数（供 upvalue 深度与捕获记录）
+// hops = 引用处与定义所在函数之间的边界数：命中函数边界域（FUNC/COMPR）自身不计，
+// 命中普通域（BLOCK/CLASS）则其所属函数边界已计入 chainLen
 static Resolved resolveName(Binder* b, const char* name, int32_t len) {
   Resolved r = {NULL, NULL, 0, false};
   int32_t chainLen = 0;
   for (Scope* s = b->top; s != NULL; s = s->parent) {
-    if (s->kind == SCOPE_FUNC || s->kind == SCOPE_COMPR) {
-      if (chainLen < MS_BIND_MAX_FUNCS) {
-        chainLen++;
-      }
+    bool isBoundary = s->kind == SCOPE_FUNC || s->kind == SCOPE_COMPR;
+    if (isBoundary && chainLen < MS_BIND_MAX_FUNCS) {
+      chainLen++;
     }
     for (int32_t i = s->count - 1; i >= 0; i--) {  // 最新声明优先（覆盖链）
       if (s->syms[i].len == len && memcmp(s->syms[i].name, name, (size_t)len) == 0) {
         r.sym = &s->syms[i];
         r.def = s;
         r.found = true;
-        r.hops = chainLen > 0 ? chainLen - 1 : 0;  // 途经函数边界中最新一个即定义所在；未过边界 = 当前函数内
+        r.hops = isBoundary ? chainLen - 1 : chainLen;
         return r;
       }
     }

@@ -266,6 +266,93 @@ TEST(comprehensionScopesTargets) {
   astArenaDestroy(&arena);
 }
 
+TEST(closureCapturesUpvalue) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("func counter() {\nvar n = 0\nreturn func() { n += 1; return n }\n}",
+                         &arena, &diags, &binder);
+  AstNode* inner = stmt0(mod)->as.funcDecl.body->as.list.items[1]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, inner->kind);
+  AstNode* nRef = inner->as.funcExpr.body->as.list.items[0]->as.assign.target;
+  EXPECT_EQ(ctx, AST_BIND_UPVALUE, nRef->bindKind);
+  EXPECT_EQ(ctx, 0, nRef->bindSlot);        // n 在 counter 内 slot 0
+  EXPECT_EQ(ctx, 1, nRef->bindUpvalDepth);  // 直接内层
+  int32_t count = 0;
+  const BinderCapture* caps = binderCaptures(&binder, &count);
+  EXPECT_EQ(ctx, 1, count);
+  if (count == 1) {
+    EXPECT_EQ(ctx, (long long)inner, (long long)caps[0].func);
+    EXPECT_EQ(ctx, 0, caps[0].slot);
+    EXPECT_EQ(ctx, 1, caps[0].depth);
+  }
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(upvalueChainDepthTwo) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("func a() {\nvar n = 0\nfunc b() {\nfunc c() { n }\nc()\n}\nb()\n}\n}",
+                         &arena, &diags, &binder);
+  AstNode* fa = stmt0(mod);
+  AstNode* fb = fa->as.funcDecl.body->as.list.items[1];
+  AstNode* fc = fb->as.funcDecl.body->as.list.items[0];
+  AstNode* nRef = fc->as.funcDecl.body->as.list.items[0]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_BIND_UPVALUE, nRef->bindKind);
+  EXPECT_EQ(ctx, 0, nRef->bindSlot);
+  EXPECT_EQ(ctx, 2, nRef->bindUpvalDepth);
+  int32_t count = 0;
+  const BinderCapture* caps = binderCaptures(&binder, &count);
+  EXPECT_EQ(ctx, 2, count);  // b 透传 + c 引用
+  bool hasB = false, hasC = false;
+  for (int32_t i = 0; i < count; i++) {
+    if (caps[i].func == (AstNode*)fb && caps[i].depth == 1) {
+      hasB = true;
+    }
+    if (caps[i].func == (AstNode*)fc && caps[i].depth == 2) {
+      hasC = true;
+    }
+  }
+  EXPECT(ctx, hasB);
+  EXPECT(ctx, hasC);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(comprehensionCapturesUpvalue) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("func f(xs) {\nvar k = 2\nreturn [x * k for x in xs]\n}", &arena, &diags,
+                         &binder);
+  AstNode* comp = stmt0(mod)->as.funcDecl.body->as.list.items[1]->as.exprStmt.expr;
+  AstNode* k = comp->as.compr.value->as.binary.rhs;
+  EXPECT_EQ(ctx, AST_BIND_UPVALUE, k->bindKind);  // 推导式隐式函数捕获外层局部
+  EXPECT_EQ(ctx, 1, k->bindUpvalDepth);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(localRefNotUpvalue) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("func f() {\nvar x = 1\nreturn func() { var x = 2; return x }\n}", &arena,
+                         &diags, &binder);
+  AstNode* inner = stmt0(mod)->as.funcDecl.body->as.list.items[1]->as.exprStmt.expr;
+  AstNode* x = inner->as.funcExpr.body->as.list.items[1]->as.exprStmt.expr;
+  EXPECT_EQ(ctx, AST_BIND_LOCAL, x->bindKind);  // 内层自有 x → 局部非 upvalue
+  EXPECT_EQ(ctx, 0, x->bindSlot);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -278,7 +365,9 @@ int main(int argc, char** argv) {
       forInFreshInsideFunc,          forTriInitIsFresh,
       catchAndSwitchAsBind,          importAliasDeclaresAndDups,
       funcRedeclareLegalSameSlot,    classMembersTransparentToLexicalLookup,
-      comprehensionScopesTargets,
+      comprehensionScopesTargets,    closureCapturesUpvalue,
+      upvalueChainDepthTwo,          comprehensionCapturesUpvalue,
+      localRefNotUpvalue,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
