@@ -18,9 +18,9 @@ typedef enum ScopeKind {
 typedef struct Sym {
   const char* name;  // 借用源文本
   int32_t len;
-  int32_t slot;   // 所属函数帧槽位；模块层 -1
-  bool fresh;     // 每轮迭代新鲜绑定（04 §4）
-  bool soft;      // 函数名：可被重复声明覆盖（05 §1 后定义覆盖先定义）
+  int32_t slot;  // 所属函数帧槽位；模块层 -1
+  bool fresh;    // 每轮迭代新鲜绑定（04 §4）
+  bool soft;     // 函数名：可被重复声明覆盖（05 §1 后定义覆盖先定义）
 } Sym;
 
 typedef struct Scope {
@@ -77,8 +77,7 @@ static void popScope(Binder* b) {
 }
 // 同作用域查重并登记；非 soft 重复发 MSE_BIND_DUP_DECL 并返回 NULL（不登记）
 // 命中 soft 符号（函数名，05 §1 覆盖合法）不报错：同槽复用
-static Sym* declareChecked(Binder* b, const char* name, int32_t len, bool fresh, const AstNode* at,
-                           bool soft) {
+static Sym* declareChecked(Binder* b, const char* name, int32_t len, bool fresh, const AstNode* at, bool soft) {
   Scope* s = b->top;
   for (int32_t i = 0; i < s->count; i++) {
     Sym* hit = &s->syms[i];
@@ -259,8 +258,8 @@ static void declareIterTargets(Binder* b, AstNode* target) {
 }
 
 // 函数声明/表达式公共绑定：默认值在外层域解析，参数按序占槽（i → slot i）
-static void bindFuncCommon(Binder* b, AstNode* n, ms_u8 flags, AstParam* params, int32_t paramCount,
-                           AstNode* body, AstNode* exprBody) {
+static void bindFuncCommon(Binder* b, AstNode* n, ms_u8 flags, AstParam* params, int32_t paramCount, AstNode* body,
+                           AstNode* exprBody) {
   for (int32_t i = 0; i < paramCount; i++) {
     if (params[i].defaultExpr != NULL) {
       bindExpr(b, params[i].defaultExpr);  // 默认值求值于定义处作用域（05 §1）
@@ -295,7 +294,7 @@ static void bindStmt(Binder* b, AstNode* n) {
     return;
   }
   switch (n->kind) {
-    case AST_MODULE: {  // 顶层语句序列（module 节点复用 list 载荷）
+    case AST_MODULE: {             // 顶层语句序列（module 节点复用 list 载荷）
       pushScope(b, SCOPE_MODULE);  // 根作用域：owner 自身（pushScope 处理）
       for (int32_t i = 0; i < n->as.list.count; i++) {
         bindStmt(b, n->as.list.items[i]);
@@ -471,8 +470,8 @@ static void bindStmt(Binder* b, AstNode* n) {
       if (sym != NULL) {
         annotateDeclNode(n, b->top, sym, false);
       }
-      bindFuncCommon(b, n, n->as.funcDecl.flags, n->as.funcDecl.params, n->as.funcDecl.paramCount,
-                     n->as.funcDecl.body, n->as.funcDecl.exprBody);
+      bindFuncCommon(b, n, n->as.funcDecl.flags, n->as.funcDecl.params, n->as.funcDecl.paramCount, n->as.funcDecl.body,
+                     n->as.funcDecl.exprBody);
       break;
     }
     case AST_CLASS_DECL: {
@@ -489,8 +488,8 @@ static void bindStmt(Binder* b, AstNode* n) {
         if (m->kind == AST_VAR_DECL) {
           bindExpr(b, m->as.varDecl.init);  // 字段初始化：仅解析初值，不登记成员名
         } else {
-          bindFuncCommon(b, m, m->as.funcDecl.flags, m->as.funcDecl.params,
-                         m->as.funcDecl.paramCount, m->as.funcDecl.body, m->as.funcDecl.exprBody);
+          bindFuncCommon(b, m, m->as.funcDecl.flags, m->as.funcDecl.params, m->as.funcDecl.paramCount,
+                         m->as.funcDecl.body, m->as.funcDecl.exprBody);
         }
       }
       popScope(b);
@@ -575,8 +574,7 @@ static void setBigintU64(AstNode* n, AstArena* arena, bool neg, ms_u64 mag) {
 }
 
 // 十进制幅度串乘法（schoolbook）；输入为无前导零数字串；结果 arena 分配
-static const char* decMul(AstArena* arena, const char* a, int32_t alen, const char* b, int32_t blen,
-                          int32_t* outLen) {
+static const char* decMul(AstArena* arena, const char* a, int32_t alen, const char* b, int32_t blen, int32_t* outLen) {
   int32_t rlen = alen + blen;
   int32_t* digits = malloc(sizeof(int32_t) * (size_t)rlen);  // 累加上限 ≈ 20*81，int32 充裕
   MS_ASSERT(digits != NULL);
@@ -811,18 +809,41 @@ static void tryFoldBinary(Binder* b, AstNode* n) {
       return;  // 运行时错误路径，不折叠
     }
     switch (op) {
-      case AST_OP_ADD: setFloatLit(n, a + c); return;
-      case AST_OP_SUB: setFloatLit(n, a - c); return;
-      case AST_OP_MUL: setFloatLit(n, a * c); return;
-      case AST_OP_DIV: setFloatLit(n, a / c); return;
-      case AST_OP_MOD: setFloatLit(n, fmod(a, c)); return;
-      case AST_OP_EQ: setBoolLit(n, a == c); return;
-      case AST_OP_NE: setBoolLit(n, a != c); return;
-      case AST_OP_LT: setBoolLit(n, a < c); return;
-      case AST_OP_LE: setBoolLit(n, a <= c); return;
-      case AST_OP_GT: setBoolLit(n, a > c); return;
-      case AST_OP_GE: setBoolLit(n, a >= c); return;
-      default: return;  // 位运算 float 操作数运行时 TypeError，不折叠
+      case AST_OP_ADD:
+        setFloatLit(n, a + c);
+        return;
+      case AST_OP_SUB:
+        setFloatLit(n, a - c);
+        return;
+      case AST_OP_MUL:
+        setFloatLit(n, a * c);
+        return;
+      case AST_OP_DIV:
+        setFloatLit(n, a / c);
+        return;
+      case AST_OP_MOD:
+        setFloatLit(n, fmod(a, c));
+        return;
+      case AST_OP_EQ:
+        setBoolLit(n, a == c);
+        return;
+      case AST_OP_NE:
+        setBoolLit(n, a != c);
+        return;
+      case AST_OP_LT:
+        setBoolLit(n, a < c);
+        return;
+      case AST_OP_LE:
+        setBoolLit(n, a <= c);
+        return;
+      case AST_OP_GT:
+        setBoolLit(n, a > c);
+        return;
+      case AST_OP_GE:
+        setBoolLit(n, a >= c);
+        return;
+      default:
+        return;  // 位运算 float 操作数运行时 TypeError，不折叠
     }
   }
   if (lhs->kind == AST_BOOL && rhs->kind == AST_BOOL) {
@@ -886,7 +907,8 @@ static void tryFoldUnary(Binder* b, AstNode* n) {
 }
 
 // 推导式/生成器表达式（03 §2）：隐式函数作用域；逐 for 子句嵌套域，目标 fresh
-static void bindCompr(Binder* b, AstNode* n) {  Scope* fn = pushScope(b, SCOPE_COMPR);
+static void bindCompr(Binder* b, AstNode* n) {
+  Scope* fn = pushScope(b, SCOPE_COMPR);
   fn->funcNode = n;
   for (int32_t i = 0; i < n->as.compr.forCount; i++) {
     bindExpr(b, n->as.compr.fors[i].iter);  // 第 i 个迭代源在第 i 层子句域求值
@@ -987,8 +1009,8 @@ static void bindExpr(Binder* b, AstNode* n) {
       bindCompr(b, n);
       break;
     case AST_FUNC_EXPR:
-      bindFuncCommon(b, n, n->as.funcExpr.flags, n->as.funcExpr.params, n->as.funcExpr.paramCount,
-                     n->as.funcExpr.body, n->as.funcExpr.exprBody);
+      bindFuncCommon(b, n, n->as.funcExpr.flags, n->as.funcExpr.params, n->as.funcExpr.paramCount, n->as.funcExpr.body,
+                     n->as.funcExpr.exprBody);
       break;
     case AST_THIS:
     case AST_NIL:

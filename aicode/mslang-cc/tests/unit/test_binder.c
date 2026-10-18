@@ -70,8 +70,8 @@ TEST(innerShadowGetsNewSlot) {
   AstNode* body = stmt0(mod)->as.funcDecl.body;
   AstNode* inner = body->as.list.items[1]->as.list.items[0];  // 内层 var x
   EXPECT_EQ(ctx, AST_BIND_LOCAL, inner->bindKind);
-  EXPECT_EQ(ctx, 1, inner->bindSlot);                    // 遮蔽 → 新槽位
-  EXPECT_EQ(ctx, 0, body->as.list.items[0]->bindSlot);   // 外层 x 不被改写
+  EXPECT_EQ(ctx, 1, inner->bindSlot);                   // 遮蔽 → 新槽位
+  EXPECT_EQ(ctx, 0, body->as.list.items[0]->bindSlot);  // 外层 x 不被改写
   EXPECT_EQ(ctx, 0, diags.count);
   binderDestroy(&binder);
   astArenaDestroy(&arena);
@@ -190,8 +190,9 @@ TEST(catchAndSwitchAsBind) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("func f(v) {\ntry { g() } catch e { e }\nswitch type(v) { case int as s: { s } default: { nil } }\n}",
-                         &arena, &diags, &binder);
+  AstNode* mod =
+      bindSrc("func f(v) {\ntry { g() } catch e { e }\nswitch type(v) { case int as s: { s } default: { nil } }\n}",
+              &arena, &diags, &binder);
   AstNode* body = stmt0(mod)->as.funcDecl.body;
   AstNode* tryNode = body->as.list.items[0];
   AstNode* e = tryNode->as.tryStmt.catches[0].block->as.list.items[0]->as.exprStmt.expr;
@@ -234,8 +235,7 @@ TEST(classMembersTransparentToLexicalLookup) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("class Counter {\nvar total = 0\nfunc get() -> total\n}", &arena, &diags,
-                         &binder);
+  AstNode* mod = bindSrc("class Counter {\nvar total = 0\nfunc get() -> total\n}", &arena, &diags, &binder);
   AstNode* cls = stmt0(mod);
   EXPECT_EQ(ctx, AST_BIND_GLOBAL, cls->bindKind);
   AstNode* get = cls->as.classDecl.members[1];
@@ -251,8 +251,7 @@ TEST(comprehensionScopesTargets) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("func f(xs) { return [x + 1 for x in xs if x > 0] }", &arena, &diags,
-                         &binder);
+  AstNode* mod = bindSrc("func f(xs) { return [x + 1 for x in xs if x > 0] }", &arena, &diags, &binder);
   AstNode* comp = stmt0(mod)->as.funcDecl.body->as.list.items[0]->as.exprStmt.expr;
   EXPECT_EQ(ctx, AST_COMPREHENSION, comp->kind);
   AstNode* xInValue = comp->as.compr.value->as.binary.lhs;
@@ -260,8 +259,7 @@ TEST(comprehensionScopesTargets) {
   AstNode* xInCond = comp->as.compr.conds[0]->as.binary.lhs;
   EXPECT_EQ(ctx, AST_BIND_LOCAL, xInCond->bindKind);
   EXPECT_EQ(ctx, xInValue->bindSlot, xInCond->bindSlot);
-  EXPECT_EQ(ctx, (long long)AST_BIND_FRESH,
-            (long long)(comp->as.compr.fors[0].target->bindFlags & AST_BIND_FRESH));
+  EXPECT_EQ(ctx, (long long)AST_BIND_FRESH, (long long)(comp->as.compr.fors[0].target->bindFlags & AST_BIND_FRESH));
   binderDestroy(&binder);
   astArenaDestroy(&arena);
 }
@@ -271,8 +269,7 @@ TEST(closureCapturesUpvalue) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("func counter() {\nvar n = 0\nreturn func() { n += 1; return n }\n}",
-                         &arena, &diags, &binder);
+  AstNode* mod = bindSrc("func counter() {\nvar n = 0\nreturn func() { n += 1; return n }\n}", &arena, &diags, &binder);
   AstNode* inner = stmt0(mod)->as.funcDecl.body->as.list.items[1]->as.exprStmt.expr;
   EXPECT_EQ(ctx, AST_FUNC_EXPR, inner->kind);
   AstNode* nRef = inner->as.funcExpr.body->as.list.items[0]->as.assign.target;
@@ -296,8 +293,8 @@ TEST(upvalueChainDepthTwo) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("func a() {\nvar n = 0\nfunc b() {\nfunc c() { n }\nc()\n}\nb()\n}\n}",
-                         &arena, &diags, &binder);
+  AstNode* mod =
+      bindSrc("func a() {\nvar n = 0\nfunc b() {\nfunc c() { n }\nc()\n}\nb()\n}\n}", &arena, &diags, &binder);
   AstNode* fa = stmt0(mod);
   AstNode* fb = fa->as.funcDecl.body->as.list.items[1];
   AstNode* fc = fb->as.funcDecl.body->as.list.items[0];
@@ -328,8 +325,7 @@ TEST(comprehensionCapturesUpvalue) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("func f(xs) {\nvar k = 2\nreturn [x * k for x in xs]\n}", &arena, &diags,
-                         &binder);
+  AstNode* mod = bindSrc("func f(xs) {\nvar k = 2\nreturn [x * k for x in xs]\n}", &arena, &diags, &binder);
   AstNode* comp = stmt0(mod)->as.funcDecl.body->as.list.items[1]->as.exprStmt.expr;
   AstNode* k = comp->as.compr.value->as.binary.rhs;
   EXPECT_EQ(ctx, AST_BIND_UPVALUE, k->bindKind);  // 推导式隐式函数捕获外层局部
@@ -343,8 +339,7 @@ TEST(localRefNotUpvalue) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("func f() {\nvar x = 1\nreturn func() { var x = 2; return x }\n}", &arena,
-                         &diags, &binder);
+  AstNode* mod = bindSrc("func f() {\nvar x = 1\nreturn func() { var x = 2; return x }\n}", &arena, &diags, &binder);
   AstNode* inner = stmt0(mod)->as.funcDecl.body->as.list.items[1]->as.exprStmt.expr;
   AstNode* x = inner->as.funcExpr.body->as.list.items[1]->as.exprStmt.expr;
   EXPECT_EQ(ctx, AST_BIND_LOCAL, x->bindKind);  // 内层自有 x → 局部非 upvalue
@@ -474,11 +469,10 @@ TEST(foldLeftAssocAndTruncDiv) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("var a = 10 - 3 - 2\nvar b = -7 / 2\nvar c = -7 % 2", &arena, &diags,
-                         &binder);
+  AstNode* mod = bindSrc("var a = 10 - 3 - 2\nvar b = -7 / 2\nvar c = -7 % 2", &arena, &diags, &binder);
   EXPECT_EQ(ctx, 5, (int)stmt0(mod)->as.varDecl.init->as.intLit.v);
   EXPECT_EQ(ctx, -3, (int)mod->as.list.items[1]->as.varDecl.init->as.intLit.v);  // 截断除（02 §3.5）
-  EXPECT_EQ(ctx, -1, (int)mod->as.list.items[2]->as.varDecl.init->as.intLit.v);   // 符号随被除数
+  EXPECT_EQ(ctx, -1, (int)mod->as.list.items[2]->as.varDecl.init->as.intLit.v);  // 符号随被除数
   binderDestroy(&binder);
   astArenaDestroy(&arena);
 }
@@ -513,8 +507,7 @@ TEST(foldOverflowNegativeAndMul) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("var x = -9223372036854775807 - 2\nvar y = 9223372036854775807 * 2", &arena,
-                         &diags, &binder);
+  AstNode* mod = bindSrc("var x = -9223372036854775807 - 2\nvar y = 9223372036854775807 * 2", &arena, &diags, &binder);
   AstNode* x = stmt0(mod)->as.varDecl.init;
   EXPECT_EQ(ctx, AST_BIGINT, x->kind);
   EXPECT_EQ(ctx, 20, x->as.bigintLit.len);
@@ -625,8 +618,7 @@ TEST(dumpStableAcrossRuns) {
   AstArena arena;
   astArenaInit(&arena);
   Binder binder;
-  AstNode* mod = bindSrc("for i in range(3) { print(i) }\nclass P : Base { var x = 1 }", &arena,
-                         &diags, &binder);
+  AstNode* mod = bindSrc("for i in range(3) { print(i) }\nclass P : Base { var x = 1 }", &arena, &diags, &binder);
   char* a = dumpTree(mod);
   char* b2 = dumpTree(mod);
   EXPECT_STREQ(ctx, a, b2);
@@ -641,25 +633,44 @@ int main(int argc, char** argv) {
   int only = argc > 1 ? atoi(argv[1]) : -1;
   typedef void (*TestFn)(TestCtx*);
   const TestFn tests[] = {
-      localSlotClassification,       paramsTakeLeadingSlots,
-      innerShadowGetsNewSlot,        moduleDeclAndRefsAreGlobal,
-      unresolvedNameIsGlobal,        dupParamsReportBindError,
-      destructureTargetsDeclare,     forInTargetIsFreshAtModuleLevel,
-      forInFreshInsideFunc,          forTriInitIsFresh,
-      catchAndSwitchAsBind,          importAliasDeclaresAndDups,
-      funcRedeclareLegalSameSlot,    classMembersTransparentToLexicalLookup,
-      comprehensionScopesTargets,    closureCapturesUpvalue,
-      upvalueChainDepthTwo,          comprehensionCapturesUpvalue,
-      localRefNotUpvalue,            topLevelReturnRejected,
-      breakOutsideLoopRejected,      continueOutsideLoopRejected,
-      breakInFuncInsideLoopRejected, breakInsideLoopAccepted,
-      awaitInNormalFuncRejected,     awaitInAsyncFuncAndTopLevelAccepted,
-      yieldInAsyncRejected,          yieldInGeneratorAccepted,
-      foldArithPrecedence,           foldLeftAssocAndTruncDiv,
-      foldDivByZeroNotFolded,        foldOverflowAddUpgradesBigint,
-      foldOverflowNegativeAndMul,    foldPow,
-      foldFloatAndCompareAndLogic,   foldBitwiseChain,
-      foldStringNotFolded,           dumpGoldenModule,
+      localSlotClassification,
+      paramsTakeLeadingSlots,
+      innerShadowGetsNewSlot,
+      moduleDeclAndRefsAreGlobal,
+      unresolvedNameIsGlobal,
+      dupParamsReportBindError,
+      destructureTargetsDeclare,
+      forInTargetIsFreshAtModuleLevel,
+      forInFreshInsideFunc,
+      forTriInitIsFresh,
+      catchAndSwitchAsBind,
+      importAliasDeclaresAndDups,
+      funcRedeclareLegalSameSlot,
+      classMembersTransparentToLexicalLookup,
+      comprehensionScopesTargets,
+      closureCapturesUpvalue,
+      upvalueChainDepthTwo,
+      comprehensionCapturesUpvalue,
+      localRefNotUpvalue,
+      topLevelReturnRejected,
+      breakOutsideLoopRejected,
+      continueOutsideLoopRejected,
+      breakInFuncInsideLoopRejected,
+      breakInsideLoopAccepted,
+      awaitInNormalFuncRejected,
+      awaitInAsyncFuncAndTopLevelAccepted,
+      yieldInAsyncRejected,
+      yieldInGeneratorAccepted,
+      foldArithPrecedence,
+      foldLeftAssocAndTruncDiv,
+      foldDivByZeroNotFolded,
+      foldOverflowAddUpgradesBigint,
+      foldOverflowNegativeAndMul,
+      foldPow,
+      foldFloatAndCompareAndLogic,
+      foldBitwiseChain,
+      foldStringNotFolded,
+      dumpGoldenModule,
       dumpStableAcrossRuns,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));

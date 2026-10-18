@@ -120,8 +120,7 @@ static int dumpTokens(const char* path) {
 }
 
 // 前端：scan → parse → bind（T009）；返回模块树（诊断在 sink；失败为部分树）
-static AstNode* frontEnd(const char* src, int32_t len, const char* path, AstArena* arena,
-                         MsDiagSink* diags) {
+static AstNode* frontEnd(const char* src, int32_t len, const char* path, AstArena* arena, MsDiagSink* diags) {
   Parser p;
   parserInit(&p, src, len, path, arena, diags);
   AstNode* mod = parserParseModule(&p);

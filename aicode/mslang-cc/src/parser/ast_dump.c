@@ -22,7 +22,7 @@ static void dumpHead(FILE* out, int depth, const char* head) {
   fprintf(out, "(%s", head);
 }
 
-static void dumpNewChild(FILE* out) { fputc('\n', out); }  // 换行子级（子级自缩进）
+static void dumpNewChild(FILE* out) { fputc('\n', out); }    // 换行子级（子级自缩进）
 static void dumpInlineChild(FILE* out) { fputc(' ', out); }  // 同行内联子级
 static void dumpEnd(FILE* out) { fputc(')', out); }          // 闭合贴最后一行
 
@@ -36,45 +36,79 @@ static void dumpKidLines(FILE* out, int depth, AstNode** kids, int32_t count) {
 
 static const char* binOpName(AstBinOp op) {
   switch (op) {
-    case AST_OP_ADD: return "+";
-    case AST_OP_SUB: return "-";
-    case AST_OP_MUL: return "*";
-    case AST_OP_DIV: return "/";
-    case AST_OP_MOD: return "%";
-    case AST_OP_POW: return "**";
-    case AST_OP_BIT_AND: return "&";
-    case AST_OP_BIT_OR: return "|";
-    case AST_OP_BIT_XOR: return "^";
-    case AST_OP_SHL: return "<<";
-    case AST_OP_SHR: return ">>";
-    case AST_OP_EQ: return "==";
-    case AST_OP_NE: return "!=";
-    case AST_OP_LT: return "<";
-    case AST_OP_LE: return "<=";
-    case AST_OP_GT: return ">";
-    case AST_OP_GE: return ">=";
-    case AST_OP_IS: return "is";
-    case AST_OP_IN: return "in";
-    case AST_OP_AND: return "&&";
-    case AST_OP_OR: return "||";
-    default: return "?";
+    case AST_OP_ADD:
+      return "+";
+    case AST_OP_SUB:
+      return "-";
+    case AST_OP_MUL:
+      return "*";
+    case AST_OP_DIV:
+      return "/";
+    case AST_OP_MOD:
+      return "%";
+    case AST_OP_POW:
+      return "**";
+    case AST_OP_BIT_AND:
+      return "&";
+    case AST_OP_BIT_OR:
+      return "|";
+    case AST_OP_BIT_XOR:
+      return "^";
+    case AST_OP_SHL:
+      return "<<";
+    case AST_OP_SHR:
+      return ">>";
+    case AST_OP_EQ:
+      return "==";
+    case AST_OP_NE:
+      return "!=";
+    case AST_OP_LT:
+      return "<";
+    case AST_OP_LE:
+      return "<=";
+    case AST_OP_GT:
+      return ">";
+    case AST_OP_GE:
+      return ">=";
+    case AST_OP_IS:
+      return "is";
+    case AST_OP_IN:
+      return "in";
+    case AST_OP_AND:
+      return "&&";
+    case AST_OP_OR:
+      return "||";
+    default:
+      return "?";
   }
 }
 
 static const char* assignOpName(AstBinOp op) {
   switch (op) {
-    case AST_OP_ADD: return "+=";
-    case AST_OP_SUB: return "-=";
-    case AST_OP_MUL: return "*=";
-    case AST_OP_DIV: return "/=";
-    case AST_OP_MOD: return "%=";
-    case AST_OP_POW: return "**=";
-    case AST_OP_BIT_AND: return "&=";
-    case AST_OP_BIT_OR: return "|=";
-    case AST_OP_BIT_XOR: return "^=";
-    case AST_OP_SHL: return "<<=";
-    case AST_OP_SHR: return ">>=";
-    default: return "=";
+    case AST_OP_ADD:
+      return "+=";
+    case AST_OP_SUB:
+      return "-=";
+    case AST_OP_MUL:
+      return "*=";
+    case AST_OP_DIV:
+      return "/=";
+    case AST_OP_MOD:
+      return "%=";
+    case AST_OP_POW:
+      return "**=";
+    case AST_OP_BIT_AND:
+      return "&=";
+    case AST_OP_BIT_OR:
+      return "|=";
+    case AST_OP_BIT_XOR:
+      return "^=";
+    case AST_OP_SHL:
+      return "<<=";
+    case AST_OP_SHR:
+      return ">>=";
+    default:
+      return "=";
   }
 }
 
@@ -96,20 +130,28 @@ static void dumpAnn(FILE* out, const AstNode* n) {
   fputc(']', out);
 }
 
-static void dumpName(FILE* out, const char* name, int32_t len) {
-  fprintf(out, "%.*s", (int)len, name);
-}
+static void dumpName(FILE* out, const char* name, int32_t len) { fprintf(out, "%.*s", (int)len, name); }
 
 static void dumpEscaped(FILE* out, const char* s, int32_t len) {
   fputc('"', out);
   for (int32_t i = 0; i < len; i++) {
     unsigned char c = (unsigned char)s[i];
     switch (c) {
-      case '\\': fputs("\\\\", out); break;
-      case '"': fputs("\\\"", out); break;
-      case '\n': fputs("\\n", out); break;
-      case '\t': fputs("\\t", out); break;
-      case '\r': fputs("\\r", out); break;
+      case '\\':
+        fputs("\\\\", out);
+        break;
+      case '"':
+        fputs("\\\"", out);
+        break;
+      case '\n':
+        fputs("\\n", out);
+        break;
+      case '\t':
+        fputs("\\t", out);
+        break;
+      case '\r':
+        fputs("\\r", out);
+        break;
       default:
         if (c < 0x20) {
           fprintf(out, "\\x%02x", c);
@@ -259,10 +301,10 @@ static void dumpNode(FILE* out, const AstNode* n, int depth) {
       dumpEnd(out);
       break;
     case AST_FOR: {
-      const char* head = n->as.forStmt.form == AST_FOR_TRI   ? "for-tri"
-                         : n->as.forStmt.form == AST_FOR_IN  ? "for-in"
+      const char* head = n->as.forStmt.form == AST_FOR_TRI    ? "for-tri"
+                         : n->as.forStmt.form == AST_FOR_IN   ? "for-in"
                          : n->as.forStmt.form == AST_FOR_COND ? "for-cond"
-                                                             : "for-inf";
+                                                              : "for-inf";
       dumpHead(out, depth, head);
       if (n->as.forStmt.form == AST_FOR_IN) {
         fputc(' ', out);
@@ -463,8 +505,7 @@ static void dumpNode(FILE* out, const AstNode* n, int depth) {
         fputs(" (bases", out);
         for (int32_t i = 0; i < n->as.classDecl.baseCount; i++) {
           dumpInlineChild(out);
-          dumpName(out, n->as.classDecl.bases[i]->as.ident.name,
-                   n->as.classDecl.bases[i]->as.ident.nameLen);
+          dumpName(out, n->as.classDecl.bases[i]->as.ident.name, n->as.classDecl.bases[i]->as.ident.nameLen);
         }
         fputc(')', out);
       }
@@ -626,9 +667,7 @@ static void dumpNode(FILE* out, const AstNode* n, int depth) {
       dumpEnd(out);
       break;
     case AST_UNARY: {
-      const char* head = n->as.unary.op == AST_UNOP_NEG   ? "neg"
-                         : n->as.unary.op == AST_UNOP_NOT ? "not"
-                                                          : "inv";
+      const char* head = n->as.unary.op == AST_UNOP_NEG ? "neg" : n->as.unary.op == AST_UNOP_NOT ? "not" : "inv";
       dumpHead(out, depth, head);
       dumpInlineChild(out);
       dumpNode(out, n->as.unary.operand, -1);
@@ -710,9 +749,9 @@ static void dumpNode(FILE* out, const AstNode* n, int depth) {
     case AST_GEN_EXPR: {
       const char* head = "gen-expr";
       if (n->kind == AST_COMPREHENSION) {
-        head = n->as.compr.compKind == AST_COMP_LIST ? "comp-list"
+        head = n->as.compr.compKind == AST_COMP_LIST  ? "comp-list"
                : n->as.compr.compKind == AST_COMP_MAP ? "comp-map"
-                                                          : "comp-set";
+                                                      : "comp-set";
       }
       dumpHead(out, depth, head);
       if (n->kind == AST_COMPREHENSION && n->as.compr.compKind == AST_COMP_MAP && n->as.compr.key != NULL) {
