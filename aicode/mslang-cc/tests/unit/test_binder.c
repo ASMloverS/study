@@ -583,6 +583,59 @@ TEST(foldStringNotFolded) {
   astArenaDestroy(&arena);
 }
 
+// dump 到临时文件再读回（MSVC 无 open_memstream）
+static char* dumpTree(const AstNode* mod) {
+  FILE* f = tmpfile();
+  MS_ASSERT(f != NULL);
+  astDumpModule(mod, f);
+  long size = ftell(f);
+  rewind(f);
+  char* buf = malloc((size_t)size + 1);
+  MS_ASSERT(buf != NULL);
+  size_t got = fread(buf, 1, (size_t)size, f);
+  buf[got] = '\0';
+  fclose(f);
+  return buf;
+}
+
+TEST(dumpGoldenModule) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("var x = 1 + 2\nfunc add(a, b) { return a + b }", &arena, &diags, &binder);
+  char* text = dumpTree(mod);
+  EXPECT_STREQ(ctx,
+               "(module\n"
+               "  (var x [global]\n"
+               "    (int 3))\n"  // 折叠后
+               "  (func-decl add [global]\n"
+               "    (params (param a) (param b))\n"
+               "    (block\n"
+               "      (return\n"
+               "        (binary + (ident a [local:0]) (ident b [local:1]))))))\n",
+               text);
+  free(text);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
+TEST(dumpStableAcrossRuns) {
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Binder binder;
+  AstNode* mod = bindSrc("for i in range(3) { print(i) }\nclass P : Base { var x = 1 }", &arena,
+                         &diags, &binder);
+  char* a = dumpTree(mod);
+  char* b2 = dumpTree(mod);
+  EXPECT_STREQ(ctx, a, b2);
+  free(a);
+  free(b2);
+  binderDestroy(&binder);
+  astArenaDestroy(&arena);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -606,7 +659,8 @@ int main(int argc, char** argv) {
       foldDivByZeroNotFolded,        foldOverflowAddUpgradesBigint,
       foldOverflowNegativeAndMul,    foldPow,
       foldFloatAndCompareAndLogic,   foldBitwiseChain,
-      foldStringNotFolded,
+      foldStringNotFolded,           dumpGoldenModule,
+      dumpStableAcrossRuns,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
