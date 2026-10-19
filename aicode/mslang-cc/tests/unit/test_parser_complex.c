@@ -1092,13 +1092,11 @@ TEST(forHeaderDeclNoEnclosingDup) {
   AstNode* body = mod->as.list.items[0]->as.funcDecl.body;
   EXPECT_EQ(ctx, 4, body->as.list.count);
   astArenaDestroy(&arena);
-  // 模块层 for 头 := 仍报 1002（04 §1）；首条即 SHORT_TOPLEVEL。
-  // 注：单行三段头失败后 synchronize 止于 ';'，残余 i++/{ 触发既有 2 条 1000 级联（修复前即如此，恢复策略另行处理）
+  // 模块层 for 头 := 合法（T011 放开：循环域为块作用域 04 §4，非裸顶层短声明）
   diags = (MsDiagSink){0};
   astArenaInit(&arena);
   parseSrc("for i := 0; i < 3; i++ { }", &arena, &diags);
-  EXPECT_EQ(ctx, true, diags.count >= 1);
-  EXPECT_EQ(ctx, MSE_SYN_SHORT_TOPLEVEL, diags.items[0].code);
+  EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
   // 块内普通 := 查重仍然生效（非 for 头路径不回归）
   diags = (MsDiagSink){0};

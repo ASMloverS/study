@@ -1628,7 +1628,7 @@ static AstNode* finishSimpleStmt(Parser* p, AstNode* first, bool firstStar, int3
     if (value == NULL) {
       return NULL;
     }
-    if (inModuleScope(p)) {
+    if (inModuleScope(p) && !p->loopHeader) {  // for 头部循环域为块作用域（04 §4）：:= 合法
       errPos(p, line, col, 1, MSE_SYN_SHORT_TOPLEVEL, "':=' is not allowed at module top level");
       return NULL;
     }

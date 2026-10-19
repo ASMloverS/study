@@ -249,6 +249,148 @@ TEST(runRangeArgErrors) {
   free(r.out);
 }
 
+// ---------- 控制流（Task 4） ----------
+
+TEST(runTruthyZeroJumps) {  // §5.1 真值：0 为真
+  RunResult r = runSrc("if 0 { print(\"t\") }");
+  EXPECT_STREQ(ctx, "t\n", r.out);
+  free(r.out);
+}
+
+TEST(runIfElseChain) {  // 04 §3
+  RunResult r = runSrc("var x = 0\nif x > 0 {\n  print(\"pos\")\n} else if x == 0 {\n  print(\"zero\")\n"
+                       "} else {\n  print(\"neg\")\n}");
+  EXPECT_STREQ(ctx, "zero\n", r.out);
+  free(r.out);
+}
+
+TEST(runForTriSum) {  // §5.1 for 三段
+  RunResult r = runSrc("var s = 0\nfor i := 0; i < 5; i++ { s += i }\nprint(s)");
+  EXPECT_STREQ(ctx, "10\n", r.out);
+  free(r.out);
+}
+
+TEST(runForRangeSum) {  // §5.1 迭代 range
+  RunResult r = runSrc("var s = 0\nfor x in range(5) { s += x }\nprint(s)");
+  EXPECT_STREQ(ctx, "10\n", r.out);
+  free(r.out);
+}
+
+TEST(runRangeForms) {  // 1/2/3 参与负步进
+  RunResult r = runSrc("var a = 0\nfor x in range(3) { a += x }\n"
+                       "var b = 0\nfor x in range(2, 5) { b += x }\n"
+                       "var c = 0\nfor x in range(8, 0, -3) { c += x }\n"
+                       "print(a, b, c)");
+  EXPECT_STREQ(ctx, "3 9 15\n", r.out);  // 0+1+2；2+3+4；8+5+2
+  free(r.out);
+}
+
+TEST(runRangeEmpty) {
+  RunResult r = runSrc("var n = 0\nfor x in range(0) { n += 1 }\nprint(n)");
+  EXPECT_STREQ(ctx, "0\n", r.out);
+  free(r.out);
+}
+
+TEST(runNestedBreak) {  // §5.1 嵌套 break：内层断、外层完整
+  RunResult r = runSrc("var total = 0\nfor i := 0; i < 3; i++ {\n"
+                       "  for j := 0; j < 5; j++ {\n"
+                       "    if j == 2 { break }\n"
+                       "    total += 1\n"
+                       "  }\n"
+                       "}\nprint(total)");
+  EXPECT_STREQ(ctx, "6\n", r.out);
+  free(r.out);
+}
+
+TEST(runContinueSkips) {
+  RunResult r = runSrc("var s = 0\nfor i := 0; i < 6; i++ {\n"
+                       "  if i % 2 == 0 { continue }\n"
+                       "  s += i\n"
+                       "}\nprint(s)");
+  EXPECT_STREQ(ctx, "9\n", r.out);
+  free(r.out);
+}
+
+TEST(runContinueInForIn) {  // for-in continue 回 FOR_ITER
+  RunResult r = runSrc("var s = 0\nfor x in range(5) {\n"
+                       "  if x == 3 { continue }\n"
+                       "  s += x\n"
+                       "}\nprint(s)");
+  EXPECT_STREQ(ctx, "7\n", r.out);  // 0+1+2+4
+  free(r.out);
+}
+
+TEST(runBreakInForIn) {  // for-in break 弹迭代器后干净退出
+  RunResult r = runSrc("var s = 0\nfor x in range(100) {\n"
+                       "  if x == 3 { break }\n"
+                       "  s += x\n"
+                       "}\nprint(s)");
+  EXPECT_STREQ(ctx, "3\n", r.out);
+  free(r.out);
+}
+
+TEST(runWhileLoop) {
+  RunResult r = runSrc("var n = 1\nwhile n < 8 { n = n * 2 }\nprint(n)");
+  EXPECT_STREQ(ctx, "8\n", r.out);
+  free(r.out);
+}
+
+TEST(runForCondForm) {  // for cond ≡ while
+  RunResult r = runSrc("var n = 3\nfor n > 0 { n -= 1 }\nprint(n)");
+  EXPECT_STREQ(ctx, "0\n", r.out);
+  free(r.out);
+}
+
+TEST(runInfiniteForBreak) {  // i++ 仅 for 头合法（01 §3），体内用复合赋值
+  RunResult r = runSrc("var i = 0\nfor {\n  i += 1\n  if i >= 3 { break }\n}\nprint(i)");
+  EXPECT_STREQ(ctx, "3\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchValueMulti) {  // §5.1 switch 值式
+  RunResult r = runSrc("switch 2 {\ncase 1, 2:\n  print(\"a\")\ndefault:\n  print(\"b\")\n}");
+  EXPECT_STREQ(ctx, "a\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchValueDefault) {
+  RunResult r = runSrc("switch 9 {\ncase 1, 2:\n  print(\"a\")\ndefault:\n  print(\"b\")\n}");
+  EXPECT_STREQ(ctx, "b\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchNoFallthrough) {  // 04 §5.1 隐式 break
+  RunResult r = runSrc("switch 1 {\ncase 1:\n  print(\"one\")\ncase 2:\n  print(\"two\")\n}");
+  EXPECT_STREQ(ctx, "one\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchExprSubject) {  // 表达式判别式
+  RunResult r = runSrc("switch 1 + 1 {\ncase 2:\n  print(\"two\")\ndefault:\n  print(\"?\")\n}");
+  EXPECT_STREQ(ctx, "two\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchTypeInt) {  // §5.1 switch 类型式
+  RunResult r = runSrc("switch type(1) {\ncase int:\n  print(\"i\")\ndefault:\n  print(\"?\")\n}");
+  EXPECT_STREQ(ctx, "i\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchTypeAsString) {  // as 绑定（模块层 → 全局）
+  RunResult r = runSrc("switch type(\"hi\") {\ncase int:\n  print(\"i\")\ncase string as s:\n  print(s)\n"
+                       "default:\n  print(\"?\")\n}");
+  EXPECT_STREQ(ctx, "hi\n", r.out);
+  free(r.out);
+}
+
+TEST(runSwitchTypeMulti) {  // case int, bigint: 多类型名
+  RunResult r = runSrc("switch type(2.5) {\ncase int, bigint:\n  print(\"int-ish\")\ncase float:\n  print(\"float\")\n"
+                       "default:\n  print(\"?\")\n}");
+  EXPECT_STREQ(ctx, "float\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -276,6 +418,26 @@ int main(int argc, char** argv) {
       runFloatReprForms,
       runCallUserFuncPlaceholder,
       runRangeArgErrors,
+      runTruthyZeroJumps,
+      runIfElseChain,
+      runForTriSum,
+      runForRangeSum,
+      runRangeForms,
+      runRangeEmpty,
+      runNestedBreak,
+      runContinueSkips,
+      runContinueInForIn,
+      runBreakInForIn,
+      runWhileLoop,
+      runForCondForm,
+      runInfiniteForBreak,
+      runSwitchValueMulti,
+      runSwitchValueDefault,
+      runSwitchNoFallthrough,
+      runSwitchExprSubject,
+      runSwitchTypeInt,
+      runSwitchTypeAsString,
+      runSwitchTypeMulti,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

@@ -352,7 +352,7 @@ static void bindStmt(Binder* b, AstNode* n) {
           }
         }
         bindExpr(b, n->as.forStmt.cond);
-        bindExpr(b, n->as.forStmt.post);
+        bindStmt(b, n->as.forStmt.post);  // post 为语句（i++ 糖已展开为复合赋值）
       } else if (n->as.forStmt.form == AST_FOR_IN) {
         bindExpr(b, n->as.forStmt.iter);  // 迭代源先于目标登记（03 §2 外层作用域求值）
         declareIterTargets(b, n->as.forStmt.target);
@@ -380,7 +380,15 @@ static void bindStmt(Binder* b, AstNode* n) {
           bindExpr(b, c->as.switchCase.values[v]);
         }
         if (c->as.switchCase.bindName != NULL) {
-          declareStrict(b, c->as.switchCase.bindName, c->as.switchCase.bindLen, false, c);
+          Sym* sym = declareStrict(b, c->as.switchCase.bindName, c->as.switchCase.bindLen, false, c);
+          if (sym != NULL) {  // T011：as 绑定槽位标注在 case 节点（编译器落 STORE_LOCAL / DEF+STORE_GLOBAL）
+            if (b->top->owner->kind == SCOPE_FUNC || b->top->owner->kind == SCOPE_COMPR) {
+              c->bindKind = AST_BIND_LOCAL;
+              c->bindSlot = sym->slot;
+            } else {
+              c->bindKind = AST_BIND_GLOBAL;
+            }
+          }
         }
         if (c->as.switchCase.body == NULL) {
           popScope(b);

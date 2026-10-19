@@ -3,11 +3,22 @@
 
 #include <string.h>
 
-// 编译单元状态：chunk + 跳转 fixup 表（emitJump 记录，finishChunk 统一回填/重定位）
+// 编译单元状态：chunk + 跳转 fixup 表（emitJump 记录，finishChunk 统一回填/重定位）+ 循环上下文
+typedef struct LoopCtx {
+  int32_t* breaks;  // break 跳转索引表
+  int32_t breakCount, breakCap;
+  int32_t* conts;  // continue 跳转索引表
+  int32_t contCount, contCap;
+  int32_t contTarget;  // continue 目标（tri：post 前；其余：条件/迭代头）
+  bool isIter;         // for-in：break 需先弹迭代器
+} LoopCtx;
+
 typedef struct FuncState {
   Chunk* chunk;
   ChunkJump* jumps;
   int32_t jumpCount, jumpCap;
+  LoopCtx* loops;
+  int32_t loopCount, loopCap;
   MsDiagSink* diags;
   const char* file;
 } FuncState;
@@ -51,6 +62,30 @@ static int32_t emitJump(FuncState* fs, ms_u8 op, int32_t line) {
 }
 
 static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].target = fs->chunk->codeLen; }
+
+// ---- 循环上下文（break/continue 跳转收集，循环收尾统一回填） ----
+
+static void beginLoop(FuncState* fs, bool isIter) {
+  LoopCtx lc = {NULL, 0, 0, NULL, 0, 0, -1, isIter};
+  MS_ARRAY_PUSH(fs->loops, fs->loopCount, fs->loopCap, lc);
+}
+
+static LoopCtx* currentLoop(FuncState* fs) { return &fs->loops[fs->loopCount - 1]; }
+
+static void endLoop(FuncState* fs) {
+  LoopCtx* lc = currentLoop(fs);
+  int32_t end = fs->chunk->codeLen;
+  for (int32_t i = 0; i < lc->breakCount; i++) {
+    fs->jumps[lc->breaks[i]].target = end;
+  }
+  MS_ASSERT(lc->contTarget >= 0);
+  for (int32_t i = 0; i < lc->contCount; i++) {
+    fs->jumps[lc->conts[i]].target = lc->contTarget;
+  }
+  free(lc->breaks);
+  free(lc->conts);
+  fs->loopCount--;
+}
 
 // 目标所需 EXT 前缀数（8 位操作数之上逐级 +1）
 static int32_t jumpWidthFor(int32_t target) {
@@ -343,6 +378,30 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
   }
 }
 
+// break/continue：仅循环体内合法（binder 已拦）；跳转收集到当前循环上下文
+static void emitBreak(FuncState* fs, const AstNode* n) {
+  if (fs->loopCount == 0) {  // 防御（MSE_BIND_LOOP_ESCAPE 已发）
+    compErr(fs, n, 1, "break outside loop");
+    return;
+  }
+  if (currentLoop(fs)->isIter) {
+    emitOp(fs, OP_POP, n->line);  // 弹迭代器，保持栈平衡
+  }
+  int32_t j = emitJump(fs, OP_JMP, n->line);
+  LoopCtx* lc = currentLoop(fs);
+  MS_ARRAY_PUSH(lc->breaks, lc->breakCount, lc->breakCap, j);
+}
+
+static void emitContinue(FuncState* fs, const AstNode* n) {
+  if (fs->loopCount == 0) {
+    compErr(fs, n, 1, "continue outside loop");
+    return;
+  }
+  int32_t j = emitJump(fs, OP_JMP, n->line);
+  LoopCtx* lc = currentLoop(fs);
+  MS_ARRAY_PUSH(lc->conts, lc->contCount, lc->contCap, j);
+}
+
 // ---- 语句 ----
 
 static void compileStmt(FuncState* fs, AstNode* n);
@@ -391,7 +450,7 @@ static void compileFuncProto(FuncState* fs, AstNode* n, Chunk** protoOut) {
   Chunk* proto = malloc(sizeof(Chunk));
   MS_ASSERT(proto != NULL);
   chunkInit(proto, n->as.funcDecl.name, n->as.funcDecl.nameLen);
-  FuncState inner = {proto, NULL, 0, 0, fs->diags, fs->file};
+  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file};
   AstNode* body = n->as.funcDecl.body;
   for (int32_t i = 0; i < body->as.list.count; i++) {
     compileStmt(&inner, body->as.list.items[i]);
@@ -404,6 +463,7 @@ static void compileFuncProto(FuncState* fs, AstNode* n, Chunk** protoOut) {
   }
   finishChunk(&inner);
   free(inner.jumps);
+  free(inner.loops);
   *protoOut = proto;
 }
 
@@ -417,7 +477,177 @@ static void compileFuncDecl(FuncState* fs, AstNode* n) {
   finishDeclStore(fs, n);
 }
 
+// ---- 控制流（T011，04 §3-§5） ----
+
+static void compileIf(FuncState* fs, AstNode* n) {
+  compileExpr(fs, n->as.ifStmt.cond);
+  int32_t jElse = emitJump(fs, OP_JMP_IF_FALSE, n->line);
+  compileStmt(fs, n->as.ifStmt.thenBlock);
+  if (n->as.ifStmt.elseNode != NULL) {
+    int32_t jEnd = emitJump(fs, OP_JMP, n->line);
+    patchJump(fs, jElse);
+    compileStmt(fs, n->as.ifStmt.elseNode);  // BLOCK 或 else-if 链（AST_IF）
+    patchJump(fs, jEnd);
+  } else {
+    patchJump(fs, jElse);
+  }
+}
+
+static void compileFor(FuncState* fs, AstNode* n) {
+  if (n->as.forStmt.form == AST_FOR_IN) {
+    beginLoop(fs, true);
+    compileExpr(fs, n->as.forStmt.iter);
+    emitOp(fs, OP_GET_ITER, n->line);
+    int32_t lTop = fs->chunk->codeLen;
+    currentLoop(fs)->contTarget = lTop;
+    int32_t jExit = emitJump(fs, OP_FOR_ITER, n->line);
+    AstNode* target = n->as.forStmt.target;
+    if (target == NULL) {
+      emitOp(fs, OP_POP, n->line);  // 无目标（BAD_TARGET 残留）：丢弃
+    } else if (target->kind == AST_IDENT && target->bindKind == AST_BIND_LOCAL) {
+      emitOp(fs, OP_STORE_LOCAL, target->line);
+      emitByte(fs, (ms_u8)target->bindSlot);
+    } else if (target->kind == AST_IDENT) {  // 模块层循环变量：声明式落盘（fresh 绑定 04 §4）
+      int32_t k = nameConst(fs, target->as.ident.name, target->as.ident.nameLen);
+      emitConstOp(fs, OP_DEF_GLOBAL, k, target->line);
+      emitConstOp(fs, OP_STORE_GLOBAL, k, target->line);
+    } else {
+      compErr(fs, target, 1, "multi-variable iteration lands in T017");
+      emitOp(fs, OP_POP, n->line);
+    }
+    compileStmt(fs, n->as.forStmt.body);
+    int32_t jBack = emitJump(fs, OP_JMP, n->line);
+    fs->jumps[jBack].target = lTop;
+    fs->jumps[jExit].target = fs->chunk->codeLen;
+    endLoop(fs);
+    return;
+  }
+  beginLoop(fs, false);
+  if (n->as.forStmt.init != NULL) {
+    compileStmt(fs, n->as.forStmt.init);  // TRI：简单语句（可省略）
+  }
+  int32_t lTop = fs->chunk->codeLen;
+  if (n->as.forStmt.form != AST_FOR_TRI) {
+    currentLoop(fs)->contTarget = lTop;  // COND/INF：continue 回条件/体首
+  }
+  int32_t jExit = -1;
+  if (n->as.forStmt.cond != NULL) {
+    compileExpr(fs, n->as.forStmt.cond);
+    jExit = emitJump(fs, OP_JMP_IF_FALSE, n->line);
+  }
+  compileStmt(fs, n->as.forStmt.body);
+  if (n->as.forStmt.form == AST_FOR_TRI) {
+    currentLoop(fs)->contTarget = fs->chunk->codeLen;  // continue 先执行 post
+  }
+  if (n->as.forStmt.post != NULL) {
+    compileStmt(fs, n->as.forStmt.post);
+  }
+  int32_t jBack = emitJump(fs, OP_JMP, n->line);
+  fs->jumps[jBack].target = lTop;
+  if (jExit >= 0) {
+    fs->jumps[jExit].target = fs->chunk->codeLen;
+  }
+  endLoop(fs);
+}
+
+static void compileWhile(FuncState* fs, AstNode* n) {
+  beginLoop(fs, false);
+  int32_t lTop = fs->chunk->codeLen;
+  currentLoop(fs)->contTarget = lTop;
+  compileExpr(fs, n->as.whileStmt.cond);
+  int32_t jExit = emitJump(fs, OP_JMP_IF_FALSE, n->line);
+  compileStmt(fs, n->as.whileStmt.body);
+  int32_t jBack = emitJump(fs, OP_JMP, n->line);
+  fs->jumps[jBack].target = lTop;
+  fs->jumps[jExit].target = fs->chunk->codeLen;
+  endLoop(fs);
+}
+
+// 类型式 as 绑定落盘（判别值已在栈顶；binder 标注见 binder.c AST_SWITCH）
+static void storeCaseBinding(FuncState* fs, const AstNode* c) {
+  if (c->bindKind == AST_BIND_LOCAL) {
+    emitOp(fs, OP_STORE_LOCAL, c->line);
+    emitByte(fs, (ms_u8)c->bindSlot);
+  } else {
+    int32_t k = nameConst(fs, c->as.switchCase.bindName, c->as.switchCase.bindLen);
+    emitConstOp(fs, OP_DEF_GLOBAL, k, c->line);
+    emitConstOp(fs, OP_STORE_GLOBAL, k, c->line);
+  }
+}
+
+// switch 值/类型式统一比较链（04 §5；SWITCH_TABLE 跳转表优化后置）
+// 判别值驻栈，逐 case 逐值 DUP+测试+假跳；命中落体，default 兜底，无 fallthrough
+static void compileSwitch(FuncState* fs, AstNode* n) {
+  compileExpr(fs, n->as.switchStmt.subject);
+  int32_t* endJumps = NULL;
+  int32_t endCount = 0, endCap = 0;
+  int32_t* pendingTests = NULL;  // 各 case 末测试假跳（体后统一补至下一 case/兜底）
+  int32_t pendingCount = 0, pendingCap = 0;
+  AstNode* defaultCase = NULL;
+  for (int32_t i = 0; i < n->as.switchStmt.count; i++) {
+    AstNode* c = n->as.switchStmt.cases[i];
+    if (c->as.switchCase.isDefault) {
+      defaultCase = c;
+      continue;
+    }
+    int32_t lastTest = -1;  // 前一测试假跳：补至下一测试/case 兜底处
+    for (int32_t v = 0; v < c->as.switchCase.valueCount; v++) {
+      if (lastTest >= 0) {
+        patchJump(fs, lastTest);
+      }
+      AstNode* vn = c->as.switchCase.values[v];
+      emitOp(fs, OP_DUP, vn->line);
+      if (n->as.switchStmt.isType) {
+        if (vn->kind != AST_IDENT) {
+          compErr(fs, vn, 1, "type case expects a type name");
+          emitOp(fs, OP_POP, vn->line);  // 弹 DUP 保持平衡
+        } else {
+          int32_t k = nameConst(fs, vn->as.ident.name, vn->as.ident.nameLen);
+          emitConstOp(fs, OP_CHECK_TYPE, k, vn->line);
+        }
+      } else {
+        compileExpr(fs, vn);  // case 值任意表达式，== 语义（04 §5.1）
+        emitOp(fs, OP_COMPARE_EQ, vn->line);
+      }
+      lastTest = emitJump(fs, OP_JMP_IF_FALSE, vn->line);
+    }
+    if (lastTest >= 0) {
+      MS_ARRAY_PUSH(pendingTests, pendingCount, pendingCap, lastTest);
+    }
+    if (c->as.switchCase.bindName != NULL) {  // 命中：判别值出栈入绑定
+      storeCaseBinding(fs, c);
+    } else {
+      emitOp(fs, OP_POP, c->line);
+    }
+    compileStmt(fs, c->as.switchCase.body);  // 可为 NULL（解析残留；诊断已发）
+    int32_t je = emitJump(fs, OP_JMP, c->line);
+    MS_ARRAY_PUSH(endJumps, endCount, endCap, je);
+    for (int32_t t = 0; t < pendingCount; t++) {
+      patchJump(fs, pendingTests[t]);  // 末测试假跳落至下一 case/兜底
+    }
+    pendingCount = 0;
+  }
+  if (defaultCase != NULL) {  // 全测试未命中：default 体（源内任意位置合法）
+    if (defaultCase->as.switchCase.bindName != NULL) {
+      storeCaseBinding(fs, defaultCase);
+    } else {
+      emitOp(fs, OP_POP, defaultCase->line);
+    }
+    compileStmt(fs, defaultCase->as.switchCase.body);
+  } else {
+    emitOp(fs, OP_POP, n->line);  // 仅弹判别值
+  }
+  for (int32_t e = 0; e < endCount; e++) {
+    patchJump(fs, endJumps[e]);
+  }
+  free(endJumps);
+  free(pendingTests);
+}
+
 static void compileStmt(FuncState* fs, AstNode* n) {
+  if (n == NULL) {  // 解析残留部分节点（诊断已发）：跳过
+    return;
+  }
   switch (n->kind) {
     case AST_EXPR_STMT:
       compileExpr(fs, n->as.exprStmt.expr);
@@ -437,6 +667,24 @@ static void compileStmt(FuncState* fs, AstNode* n) {
     case AST_FUNC_DECL:
       compileFuncDecl(fs, n);
       break;
+    case AST_IF:
+      compileIf(fs, n);
+      break;
+    case AST_FOR:
+      compileFor(fs, n);
+      break;
+    case AST_WHILE:
+      compileWhile(fs, n);
+      break;
+    case AST_SWITCH:
+      compileSwitch(fs, n);
+      break;
+    case AST_BREAK:
+      emitBreak(fs, n);
+      break;
+    case AST_CONTINUE:
+      emitContinue(fs, n);
+      break;
     case AST_RETURN:
       if (n->as.exprStmt.expr != NULL) {
         compileExpr(fs, n->as.exprStmt.expr);
@@ -453,7 +701,7 @@ static void compileStmt(FuncState* fs, AstNode* n) {
 
 bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* diags) {
   chunkInit(out, "main", 4);
-  FuncState fs = {out, NULL, 0, 0, diags, file};
+  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file};
   for (int32_t i = 0; i < module->as.list.count; i++) {
     compileStmt(&fs, module->as.list.items[i]);
   }
@@ -462,6 +710,7 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   emitOp(&fs, OP_RETURN, lastLine);
   finishChunk(&fs);
   free(fs.jumps);
+  free(fs.loops);
   for (int32_t i = 0; i < diags->count; i++) {
     if (diags->items[i].level == MS_DIAG_ERROR) {
       return false;

@@ -4,7 +4,7 @@
     (block
       (for-tri (short i [local:0 fresh]
 (int 0)) (binary < (ident i [local:0]) (int 10)) (assign +=
-(ident i)
+(ident i [local:0])
 (int 1))
         (block
           (if

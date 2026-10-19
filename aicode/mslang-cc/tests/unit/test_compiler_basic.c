@@ -306,10 +306,10 @@ TEST(emptyFuncBodyGetsEpilogue) {
   chunkFree(&c);
 }
 
-TEST(unsupportedStmtReportsDiag) {
+TEST(unsupportedStmtReportsDiag) {  // T011 起 if 等控制流已支持；class 编译归 T020
   MsDiagSink diags = {0};
   Chunk c;
-  EXPECT(ctx, !compileSrc("if true { var x = 1 }", &c, &diags));
+  EXPECT(ctx, !compileSrc("class A {}", &c, &diags));
   EXPECT_EQ(ctx, 1, diags.count);
   EXPECT_EQ(ctx, MSE_COMPILE_UNSUPPORTED, (int)diags.items[0].code);
   chunkFree(&c);
