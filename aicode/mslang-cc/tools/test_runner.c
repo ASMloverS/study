@@ -453,12 +453,18 @@ static int runCase(const char* msExe, const char* casePath) {
   size_t expectedLen = 0;
   char* expectedOut = NULL;
   // T009：.ast 快照模式——注入 --dump-ast，stdout 期望为 .ast 内容（.out 可缺省）
+  // T010：.bc 快照模式——注入 dump 子命令，stdout 期望为 .bc 内容（.out 可缺省）
   bool astMode = false;
+  bool bcMode = false;
   if (joinPath(path, sizeof(path), base, ".ast")) {
     expectedOut = slurpFile(path, &expectedLen);
     astMode = expectedOut != NULL;
   }
-  if (!astMode) {
+  if (!astMode && joinPath(path, sizeof(path), base, ".bc")) {
+    expectedOut = slurpFile(path, &expectedLen);
+    bcMode = expectedOut != NULL;
+  }
+  if (!astMode && !bcMode) {
     if (!joinPath(path, sizeof(path), base, ".out")) {
       printf("FAIL %s: case path too long\n", casePath);
       return 1;
@@ -500,6 +506,9 @@ static int runCase(const char* msExe, const char* casePath) {
   argBase += extraArgCount;
   if (astMode) {
     spawnArgv[argBase++] = (char*)"--dump-ast";
+  }
+  if (bcMode) {
+    spawnArgv[argBase++] = (char*)"dump";
   }
   spawnArgv[argBase] = (char*)casePath;
   spawnArgv[argBase + 1] = NULL;

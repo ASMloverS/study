@@ -1,0 +1,41 @@
+; main
+consts 7
+  0 string "t"
+  1 int 0
+  2 string "u"
+  3 int 1
+  4 int 2
+  5 string "v"
+  6 string "w"
+code 44
+0000 LOAD_FALSE
+0001 DEF_GLOBAL       0 ; "t"
+0003 STORE_GLOBAL     0 ; "t"
+0005 LOAD_NIL
+0006 JMP_IF_TRUE_OR_POP 10 ; -> 0010
+0008 LOAD_CONST       1 ; 0
+0010 DEF_GLOBAL       2 ; "u"
+0012 STORE_GLOBAL     2 ; "u"
+0014 LOAD_GLOBAL      0 ; "t"
+0016 JMP_IF_FALSE     22 ; -> 0022
+0018 LOAD_CONST       3 ; 1
+0020 JMP              24 ; -> 0024
+0022 LOAD_CONST       4 ; 2
+0024 DEF_GLOBAL       5 ; "v"
+0026 STORE_GLOBAL     5 ; "v"
+0028 LOAD_GLOBAL      0 ; "t"
+0030 JMP_IF_FALSE_OR_POP 34 ; -> 0034
+0032 LOAD_GLOBAL      2 ; "u"
+0034 JMP_IF_TRUE_OR_POP 38 ; -> 0038
+0036 LOAD_GLOBAL      5 ; "v"
+0038 DEF_GLOBAL       6 ; "w"
+0040 STORE_GLOBAL     6 ; "w"
+0042 LOAD_NIL
+0043 RETURN
+upvalues 0
+icslots 0
+lines 4
+  0000 1
+  0005 2
+  0014 3
+  0028 4
