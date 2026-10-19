@@ -223,6 +223,32 @@ TEST(runTernaryExpr) {
   free(r.out);
 }
 
+TEST(runPrintForms) {  // 空格连接 + 换行；空参仅换行
+  RunResult r = runSrc("print(1, 2.5, true, nil)\nprint()");
+  EXPECT_STREQ(ctx, "1 2.5 true nil\n\n", r.out);
+  free(r.out);
+}
+
+TEST(runFloatReprForms) {
+  RunResult r = runSrc("print(2.0)\nprint(0.1)\nprint(1.0e3)");
+  EXPECT_STREQ(ctx, "2.0\n0.1\n1000.0\n", r.out);
+  free(r.out);
+}
+
+TEST(runCallUserFuncPlaceholder) {  // 函数声明可执行，调用为 T018 占位错误
+  RunResult r = runSrc("func f() { return 1 }\nprint(f())");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "T018") != NULL);
+  free(r.out);
+}
+
+TEST(runRangeArgErrors) {
+  RunResult r = runSrc("var r = range(1, 2, 0)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "range step") != NULL);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -246,6 +272,10 @@ int main(int argc, char** argv) {
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,
+      runPrintForms,
+      runFloatReprForms,
+      runCallUserFuncPlaceholder,
+      runRangeArgErrors,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
