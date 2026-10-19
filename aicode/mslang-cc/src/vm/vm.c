@@ -674,7 +674,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           NEXT();
         }
         push(vm, msValueInt(cur));
-        it = &vm->stack[vm->stackTop - 1];  // push 可能扩容：重取迭代器槽位
+        it = &vm->stack[vm->stackTop - 2];  // push 可能扩容：重取迭代器槽位（-1 为新压入值）
         // 推进（饱和到 stop 防 INT64 边界回绕）
         if (step > 0 ? cur > INT64_MAX - step : cur < INT64_MIN - step) {
           it->as.range.cur = stop;
