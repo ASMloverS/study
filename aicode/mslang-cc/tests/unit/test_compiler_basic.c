@@ -582,6 +582,99 @@ TEST(nestedTernaryFold) {
   chunkFree(&c);
 }
 
+// ---------- 反汇编 ----------
+
+// chunk 树 → 文本（临时文件回读，避开平台 fmemopen 差异）
+static char* disasmToBuffer(const Chunk* c) {
+  FILE* f = tmpfile();
+  if (f == NULL) {
+    return NULL;
+  }
+  compilerDisasm(c, f);
+  long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char* buf = malloc((size_t)len + 1);
+  size_t got = fread(buf, 1, (size_t)len, f);
+  buf[got] = '\0';
+  fclose(f);
+  return buf;
+}
+
+static bool containsLine(const char* text, const char* line) {
+  return strstr(text, line) != NULL;
+}
+
+// 与 disasm 相同的 %-16s 填充构造指令行 needle（rest 形如 " 0 ; 1"）
+static bool hasInstrLine(const char* text, const char* name, const char* rest) {
+  char needle[96];
+  snprintf(needle, sizeof(needle), "%-16s%s", name, rest);
+  return strstr(text, needle) != NULL;
+}
+
+TEST(disasmBasicFormat) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var a = 1 + x", &c, &diags));
+  char* text = disasmToBuffer(&c);
+  EXPECT(ctx, text != NULL);
+  EXPECT(ctx, containsLine(text, "; main"));
+  EXPECT(ctx, containsLine(text, "consts 3"));
+  EXPECT(ctx, containsLine(text, "0 int 1"));
+  EXPECT(ctx, containsLine(text, "1 string \"x\""));
+  EXPECT(ctx, containsLine(text, "code "));
+  EXPECT(ctx, hasInstrLine(text, "LOAD_CONST", " 0 ; 1"));
+  EXPECT(ctx, hasInstrLine(text, "LOAD_GLOBAL", " 1 ; \"x\""));
+  EXPECT(ctx, containsLine(text, "BINARY_ADD"));
+  EXPECT(ctx, hasInstrLine(text, "DEF_GLOBAL", " 2 ; \"a\""));
+  EXPECT(ctx, containsLine(text, "upvalues 0"));
+  EXPECT(ctx, containsLine(text, "icslots 0"));
+  EXPECT(ctx, containsLine(text, "lines "));
+  free(text);
+  chunkFree(&c);
+}
+
+TEST(disasmFuncProtoSections) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("func add(a, b) { return a + b }\nprint(add(1, 2))", &c, &diags));
+  char* text = disasmToBuffer(&c);
+  EXPECT(ctx, text != NULL);
+  EXPECT(ctx, containsLine(text, "; func add"));
+  EXPECT(ctx, hasInstrLine(text, "LOAD_LOCAL", " 0"));
+  EXPECT(ctx, hasInstrLine(text, "LOAD_LOCAL", " 1"));
+  EXPECT(ctx, hasInstrLine(text, "MAKE_FUNCTION", " 0"));
+  EXPECT(ctx, hasInstrLine(text, "CALL", " 2"));
+  EXPECT(ctx, hasInstrLine(text, "CALL", " 1"));
+  free(text);
+  chunkFree(&c);
+}
+
+TEST(disasmJumpAnnotation) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var r = a ? b : c", &c, &diags));
+  char* text = disasmToBuffer(&c);
+  EXPECT(ctx, text != NULL);
+  EXPECT(ctx, hasInstrLine(text, "JMP_IF_FALSE", " 8 ; -> 0008"));
+  EXPECT(ctx, hasInstrLine(text, "JMP", " 10 ; -> 0010"));
+  free(text);
+  chunkFree(&c);
+}
+
+TEST(disasmDeterministicAndEscaped) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var s = \"a\\nb\"\nvar r = x ? y : z", &c, &diags));
+  char* a = disasmToBuffer(&c);
+  char* b2 = disasmToBuffer(&c);
+  EXPECT(ctx, a != NULL && b2 != NULL);
+  EXPECT_STREQ(ctx, a, b2);
+  EXPECT(ctx, containsLine(a, "string \"a\\\\nb\""));  // 源内反斜杠转义渲染
+  free(a);
+  free(b2);
+  chunkFree(&c);
+}
+
 TEST(compileIsDeterministic) {  char src[16 * 1024];
   genDecls(src, sizeof(src), 120, "var r = a ? (b ? 1 : 2) : 3\n");
   Chunk a;
@@ -629,6 +722,10 @@ int main(int argc, char** argv) {
       peepholeJumpChainFold,
       peepholeMutualJumpsTerminate,
       nestedTernaryFold,
+      disasmBasicFormat,
+      disasmFuncProtoSections,
+      disasmJumpAnnotation,
+      disasmDeterministicAndEscaped,
       compileIsDeterministic,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));

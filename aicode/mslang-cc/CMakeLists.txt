@@ -61,7 +61,7 @@ target_sources(ms_binder PRIVATE src/binder/binder.c)
 target_link_libraries(ms_binder PUBLIC ms_parser)
 
 # T010：指令集/Chunk/编译器基础；compiler 消费标注 AST（ast.h）
-target_sources(ms_compiler PRIVATE src/compiler/chunk.c)
+target_sources(ms_compiler PRIVATE src/compiler/chunk.c src/compiler/compiler.c src/compiler/disasm.c)
 target_link_libraries(ms_compiler PUBLIC ms_parser)
 
 # T006：parser 逐 token 拉取，依赖 scanner
