@@ -3,7 +3,7 @@
 - 阶段: P3 编译 + VM 基础（roadmap 期 3）
 - 依赖: T010
 - 规模: L
-- 状态: 未开始
+- 状态: ✅
 - 设计文档: `docs/language/21-bytecode.md` §6、`20-architecture.md` §1 §7、`04-statements.md` §3 §4 §5
 
 ## 1. 目标与范围
@@ -41,12 +41,12 @@ void msVmRun(MsVM* vm, Chunk* chunk);
 
 ## 4. 验收标准（DoD）
 
-- [ ] `ms tests/fixtures/smoke/hello.ms` 输出 `hello`（T002 占位用例激活）
-- [ ] `print 1+2` → `3`（roadmap 期 3 出口）
-- [ ] if/else 链、三段式 for、while、无限 for + break/continue、switch 值式/类型式（内置类型）fixtures 全绿
-- [ ] computed goto 与 switch 两路径 fixtures 输出一致（CI 双跑或本地双构建验证）
-- [ ] `--trace` 输出指令序列与 `ms dump` 一致
-- [ ] 除零/模零输出错误并退出码 1
+- [x] `ms tests/fixtures/smoke/hello.ms` 输出 `hello`（T002 占位用例激活）
+- [x] `print 1+2` → `3`（roadmap 期 3 出口）
+- [x] if/else 链、三段式 for、while、无限 for + break/continue、switch 值式/类型式（内置类型）fixtures 全绿
+- [x] computed goto 与 switch 两路径 fixtures 输出一致（CI 双跑或本地双构建验证）
+- [x] `--trace` 输出指令序列与 `ms dump` 一致
+- [x] 除零/模零输出错误并退出码 1
 
 ## 5. 测试计划
 
@@ -74,3 +74,11 @@ void msVmRun(MsVM* vm, Chunk* chunk);
 - 本任务是语义回归基线的起点：此后所有任务的 fixtures 只增不改，出错优先怀疑新变更。
 - int 溢出在 T016 前为运行时错误属已知临时语义，fixtures 避免使用（用注释标注）。
 - `&& / ||` 返回操作数本身（非 bool 化）——值栈直接传值即可，用例锁定。
+
+### 完成备注（T011 落地）
+
+- CHECK_SAFEPOINT 编译器发射本任务未接入（保持 T010 conformance .bc 基线不变），VM 执行侧已实现预算递减 NOP，发射随 T029 抢占一并开启。
+- computed goto / switch 双路径本地验证：MSVC(switch) + clang `-DMS_USE_COMPUTED_GOTO=1` 仓库外构建对比，全部 fixture 的 stdout/stderr/退出码逐字节一致。
+- 连带修复三处 T009/T010 既有缺陷（由执行路径暴露）：binder 将 for 第三段按表达式绑定导致目标未标注（04-stmt-06/10 基线再生成）；finishChunk EXT 跳转物化高位字节写错（21-bc-03 基线原值超出代码长度，再生成并新增指令边界回归用例）；空串字面量（0 段）被误诊为插值。
+- parser 放开模块层 for 头部 `:=`（循环域为块作用域，04 §4；本任务 §5.1 用例要求），裸顶层短声明仍禁。
+- 05-func-await-toplevel golden 更新为退出码 3（await 编译未启用，T031 落地时翻转）。
