@@ -3,5 +3,7 @@ __mscache__/
 ms_packages/
 .vs/
 Testing/
+*.obj
+*.exe
 # golden 期望输出是测试资产：根 .gitignore 的 *.out 在此放行（T002 fixtures 契约）
 !tests/**/*.out

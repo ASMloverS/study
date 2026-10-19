@@ -17,6 +17,7 @@ Mandatory rules for this repository. No exceptions.
 - All build output MUST go to `build/` only. Creating multiple build directories is forbidden.
 - Exactly one executable target (`ms`). Building separate executables per feature is forbidden.
 - Every rebuild MUST overwrite the existing executable in place. Generating a different executable file per build is forbidden.
+- Ad-hoc compiler invocations (`cl`/`gcc`/`clang`) MUST run with the working directory outside this repository and pass explicit output paths (`/Fo`, `/Fe`, `-o`) pointing outside it. For debug builds, prefer CMake targets instead.
 
 ## ms Code
 
