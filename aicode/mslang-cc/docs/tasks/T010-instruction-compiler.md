@@ -3,7 +3,7 @@
 - 阶段: P3 编译 + VM 基础（roadmap 期 3）
 - 依赖: T009
 - 规模: L
-- 状态: 🚧 进行中
+- 状态: ✅ 已完成
 - 设计文档: `docs/language/21-bytecode.md` 全文、`20-architecture.md` §1
 
 ## 1. 目标与范围
@@ -39,11 +39,11 @@ typedef struct Chunk {
 
 ## 4. 验收标准（DoD）
 
-- [ ] 21 §4 示例（`func add`）反汇编输出与文档样式一致（该示例含函数指令，函数 MAKE_FUNCTION 本任务生成桩指令，T018 完整化——快照基线允许 T018 后更新一次）
-- [ ] 基础表达式（四则/比较/短路/三元）生成的指令序列经单测断言
-- [ ] EXTENDED_ARG：>255 常量与 >255 跳转距离用例通过（构造大常量池源码）
-- [ ] peephole：`JMP` 链折叠与 NOP 压实用例通过
-- [ ] `.bc` 反汇编快照稳定（两次编译 diff 为空）
+- [x] 21 §4 示例（`func add`）反汇编输出与文档样式一致（`tests/conformance/21-bc-05-doc-example.bc`；func add 段与文档逐行一致，`LOAD_GLOBAL` 暂代 `LOAD_GLOBAL_IC`、MAKE_FUNCTION 为桩——T018 后更新一次基线）
+- [x] 基础表达式（四则/比较/短路/三元）生成的指令序列经单测断言（`tests/unit/test_compiler_basic.c` 31 例）
+- [x] EXTENDED_ARG：>255 常量与 >255 跳转距离用例通过（大常量池 300 声明构造 + 尾三元）
+- [x] peephole：`JMP` 链折叠与 NOP 压实用例通过（含手造 chunk 直测与嵌套三元集成）
+- [x] `.bc` 反汇编快照稳定（`gen_bc_snapshots.py --check` 两次编译 diff 为空；conformance 5 例）
 
 ## 5. 测试计划
 
@@ -71,3 +71,11 @@ typedef struct Chunk {
 
 - 指令集全集一次定义但执行按阶段启用：未启用指令在 VM 中统一 `unimplemented` 陷阱（防静默错执行）。
 - 跳转目标在编译期经 patch 表二次回填（向前跳转），EXTENDED_ARG 长度变化触发的重定位在 patch 阶段统一处理。
+
+## 7. 实现备注（完成时追加）
+
+- 偏移空间：每 chunk 独立从 0 起（21 §4 示例 main 续接编号视为文档笔误；跳转目标为 chunk 内绝对偏移）。
+- T010 启用集之外的一切构造（含一元/索引/成员/插值字符串/upvalue 装载）发 `MSE_COMPILE_UNSUPPORTED`（code 1022）尽力继续；`ms dump` 有诊断退出码 1。
+- 反汇编将 EXTENDED_ARG 前缀折叠进后续指令的操作数显示（4 字节步长 + 操作数值即编码证据）；原始字节断言在单测覆盖。
+- Binder 常量折叠在编译前发生：纯字面量算术在 `.bc` 中为单常量（如 `true && false` → `LOAD_FALSE`），用例以变量运算保持指令形态。
+- 基线再生成：`python tools/gen_bc_snapshots.py <ms> tests/conformance/21-bc-*.ms`；`.bc` 模式由 test_runner 自动注入 `dump` 子命令（`.ast` 优先）。
