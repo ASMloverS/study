@@ -191,26 +191,46 @@ static void storeIdent(FuncState* fs, const AstNode* n) {
 
 static ms_u8 binaryOpCode(AstBinOp op) {
   switch (op) {
-    case AST_OP_ADD: return OP_BINARY_ADD;
-    case AST_OP_SUB: return OP_BINARY_SUB;
-    case AST_OP_MUL: return OP_BINARY_MUL;
-    case AST_OP_DIV: return OP_BINARY_DIV;
-    case AST_OP_MOD: return OP_BINARY_MOD;
-    case AST_OP_POW: return OP_BINARY_POW;
-    case AST_OP_BIT_AND: return OP_BINARY_AND;
-    case AST_OP_BIT_OR: return OP_BINARY_OR;
-    case AST_OP_BIT_XOR: return OP_BINARY_XOR;
-    case AST_OP_SHL: return OP_BINARY_SHL;
-    case AST_OP_SHR: return OP_BINARY_SHR;
-    case AST_OP_EQ: return OP_COMPARE_EQ;
-    case AST_OP_NE: return OP_COMPARE_NE;
-    case AST_OP_LT: return OP_COMPARE_LT;
-    case AST_OP_LE: return OP_COMPARE_LE;
-    case AST_OP_GT: return OP_COMPARE_GT;
-    case AST_OP_GE: return OP_COMPARE_GE;
-    case AST_OP_IS: return OP_IS;
-    case AST_OP_IN: return OP_IN;
-    default: return OP_NOP;  // AND/OR 走 AST_LOGIC 短路，不可达
+    case AST_OP_ADD:
+      return OP_BINARY_ADD;
+    case AST_OP_SUB:
+      return OP_BINARY_SUB;
+    case AST_OP_MUL:
+      return OP_BINARY_MUL;
+    case AST_OP_DIV:
+      return OP_BINARY_DIV;
+    case AST_OP_MOD:
+      return OP_BINARY_MOD;
+    case AST_OP_POW:
+      return OP_BINARY_POW;
+    case AST_OP_BIT_AND:
+      return OP_BINARY_AND;
+    case AST_OP_BIT_OR:
+      return OP_BINARY_OR;
+    case AST_OP_BIT_XOR:
+      return OP_BINARY_XOR;
+    case AST_OP_SHL:
+      return OP_BINARY_SHL;
+    case AST_OP_SHR:
+      return OP_BINARY_SHR;
+    case AST_OP_EQ:
+      return OP_COMPARE_EQ;
+    case AST_OP_NE:
+      return OP_COMPARE_NE;
+    case AST_OP_LT:
+      return OP_COMPARE_LT;
+    case AST_OP_LE:
+      return OP_COMPARE_LE;
+    case AST_OP_GT:
+      return OP_COMPARE_GT;
+    case AST_OP_GE:
+      return OP_COMPARE_GE;
+    case AST_OP_IS:
+      return OP_IS;
+    case AST_OP_IN:
+      return OP_IN;
+    default:
+      return OP_NOP;  // AND/OR 走 AST_LOGIC 短路，不可达
   }
 }
 

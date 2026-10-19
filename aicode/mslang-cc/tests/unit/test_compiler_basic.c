@@ -1,4 +1,4 @@
-﻿// T010：Compiler/Chunk 单测（docs/tasks/T010 §5.1）
+// T010：Compiler/Chunk 单测（docs/tasks/T010 §5.1）
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -504,10 +504,10 @@ TEST(callStubNested) {
 TEST(peepholeNopCompaction) {
   Chunk c;
   chunkInit(&c, "main", 4);
-  chunkEmitOp(&c, OP_NOP, 1);          // 0
-  chunkEmitOp(&c, OP_NOP, 1);          // 1
-  chunkEmitOp(&c, OP_LOAD_TRUE, 2);    // 2
-  chunkEmitOp(&c, OP_JMP, 2);          // 3 → target 0（首 NOP）
+  chunkEmitOp(&c, OP_NOP, 1);        // 0
+  chunkEmitOp(&c, OP_NOP, 1);        // 1
+  chunkEmitOp(&c, OP_LOAD_TRUE, 2);  // 2
+  chunkEmitOp(&c, OP_JMP, 2);        // 3 → target 0（首 NOP）
   chunkEmitByte(&c, 0);
   ChunkJump jumps[1] = {{3, 0}};
   chunkPeephole(&c, jumps, 1);
@@ -600,9 +600,7 @@ static char* disasmToBuffer(const Chunk* c) {
   return buf;
 }
 
-static bool containsLine(const char* text, const char* line) {
-  return strstr(text, line) != NULL;
-}
+static bool containsLine(const char* text, const char* line) { return strstr(text, line) != NULL; }
 
 // 与 disasm 相同的 %-16s 填充构造指令行 needle（rest 形如 " 0 ; 1"）
 static bool hasInstrLine(const char* text, const char* name, const char* rest) {
@@ -675,7 +673,8 @@ TEST(disasmDeterministicAndEscaped) {
   chunkFree(&c);
 }
 
-TEST(compileIsDeterministic) {  char src[16 * 1024];
+TEST(compileIsDeterministic) {
+  char src[16 * 1024];
   genDecls(src, sizeof(src), 120, "var r = a ? (b ? 1 : 2) : 3\n");
   Chunk a;
   Chunk b2;

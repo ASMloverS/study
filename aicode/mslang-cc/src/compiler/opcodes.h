@@ -68,23 +68,23 @@ typedef enum MsOpcode {
   OP_SET_ATTR,       // <const name>
   // 控制流（21 §3.5）：目标为 chunk 内绝对偏移
   OP_JMP,
-  OP_JMP_IF_FALSE,       // 条件出栈
-  OP_JMP_IF_TRUE,        // 条件出栈
+  OP_JMP_IF_FALSE,         // 条件出栈
+  OP_JMP_IF_TRUE,          // 条件出栈
   OP_JMP_IF_FALSE_OR_POP,  // 短路：假跳（保留值）/真弹出
   OP_JMP_IF_TRUE_OR_POP,   // 短路：真跳（保留值）/假弹出
   OP_POP_JUMP_IF_NIL,
-  OP_SWITCH_TABLE,        // 变长：<u8 n> <t default> + n×(<const key>, <t>)
-  OP_TYPE_SWITCH_TABLE,   // 变长：类常量键 → 目标
-  OP_CHECK_TYPE,          // <const class>（case as 绑定校验）
+  OP_SWITCH_TABLE,       // 变长：<u8 n> <t default> + n×(<const key>, <t>)
+  OP_TYPE_SWITCH_TABLE,  // 变长：类常量键 → 目标
+  OP_CHECK_TYPE,         // <const class>（case as 绑定校验）
   // 迭代与生成器（21 §3.6）
   OP_GET_ITER,
   OP_FOR_ITER,  // <t exit>（迭代协议 + nil 耗尽跳出）
   OP_YIELD,
   OP_RESUME,
   // 异常 / defer（21 §3.7）
-  OP_PUSH_TRY,    // <t catch> <t finally>
+  OP_PUSH_TRY,  // <t catch> <t finally>
   OP_POP_TRY,
-  OP_THROW,       // 抛出栈顶值
+  OP_THROW,        // 抛出栈顶值
   OP_MATCH_CATCH,  // <const class>
   OP_PUSH_DEFER,   // <const fn>
   OP_RUN_DEFERS,   // <u8 n>
@@ -101,13 +101,13 @@ typedef enum MsOpcode {
   OP_SPAWN,  // go 语句：新 G
   OP_AWAIT,  // 挂起直至 Future 完成
   // 杂项（21 §3.9）
-  OP_BUILD_LIST,     // <u8 n>
-  OP_BUILD_MAP,      // <u8 n*2>
-  OP_BUILD_TUPLE,    // <u8 n>
-  OP_BUILD_SET,      // <u8 n>
-  OP_UNPACK_SEQ,     // <u8 n>
-  OP_UNPACK_STAR,    // <u8 slot>
-  OP_FORMAT_STRING,  // <const k-interp>
+  OP_BUILD_LIST,       // <u8 n>
+  OP_BUILD_MAP,        // <u8 n*2>
+  OP_BUILD_TUPLE,      // <u8 n>
+  OP_BUILD_SET,        // <u8 n>
+  OP_UNPACK_SEQ,       // <u8 n>
+  OP_UNPACK_STAR,      // <u8 slot>
+  OP_FORMAT_STRING,    // <const k-interp>
   OP_CHECK_SAFEPOINT,  // 回边预算：抢占 + GC safepoint（21 §6）
   OP_ASSERT,           // 变长：可选 <const msg>
   OP__COUNT

@@ -63,7 +63,7 @@ typedef struct ChunkJump {
 } ChunkJump;
 
 void chunkInit(Chunk* c, const char* name, int32_t nameLen);
-void chunkFree(Chunk* c);  // 递归释放常量池内 proto chunk
+void chunkFree(Chunk* c);                           // 递归释放常量池内 proto chunk
 int32_t chunkAddConst(Chunk* c, ConstEntry entry);  // 字面量按值去重；proto 恒追加
 int32_t chunkAddConstInt(Chunk* c, ms_i64 v);
 int32_t chunkAddConstFloat(Chunk* c, double v);
@@ -72,8 +72,8 @@ int32_t chunkAddConstRune(Chunk* c, ms_u32 cp);
 int32_t chunkAddConstText(Chunk* c, ConstKind kind, const char* start, int32_t len);  // STRING/BIGINT
 int32_t chunkAddConstProto(Chunk* c, Chunk* proto);
 int32_t chunkEmitOp(Chunk* c, ms_u8 op, int32_t line);  // 指令起始：驱动行号 RLE；返回偏移
-void chunkEmitByte(Chunk* c, ms_u8 b);                   // 操作数字节（不入行号表）
-int32_t chunkLineAt(const Chunk* c, int32_t offset);     // RLE 查询；越界/无记录返回 -1
+void chunkEmitByte(Chunk* c, ms_u8 b);                  // 操作数字节（不入行号表）
+int32_t chunkLineAt(const Chunk* c, int32_t offset);    // RLE 查询；越界/无记录返回 -1
 // 指令宽度（EXT 前缀链 + opcode + 布局操作数；跳转按物化前最小宽 2 字节计）
 int32_t chunkInstrSize(const Chunk* c, int32_t off);
 // peephole 占位（T010 §2）：NOP 压实 + JMP→JMP 链折叠，就地重映射 fixups 与行号偏移
