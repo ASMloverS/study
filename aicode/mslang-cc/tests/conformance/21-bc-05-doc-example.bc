@@ -1,0 +1,37 @@
+; main
+consts 5
+  0 proto <func add>
+  1 string "add"
+  2 string "print"
+  3 int 1
+  4 int 2
+code 23
+0000 LOAD_CONST       0 ; <func add>
+0002 MAKE_FUNCTION    0
+0004 DEF_GLOBAL       1 ; "add"
+0006 STORE_GLOBAL     1 ; "add"
+0008 LOAD_GLOBAL      2 ; "print"
+0010 LOAD_GLOBAL      1 ; "add"
+0012 LOAD_CONST       3 ; 1
+0014 LOAD_CONST       4 ; 2
+0016 CALL             2
+0018 CALL             1
+0020 POP
+0021 LOAD_NIL
+0022 RETURN
+upvalues 0
+icslots 0
+lines 2
+  0000 1
+  0008 2
+; func add
+consts 0
+code 6
+0000 LOAD_LOCAL       0
+0002 LOAD_LOCAL       1
+0004 BINARY_ADD
+0005 RETURN
+upvalues 0
+icslots 0
+lines 1
+  0000 1

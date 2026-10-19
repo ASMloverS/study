@@ -1,0 +1,70 @@
+; main
+consts 14
+  0 int 7
+  1 string "a"
+  2 int 4
+  3 int 2
+  4 string "b"
+  5 int 3
+  6 string "c"
+  7 string "d"
+  8 int 1
+  9 string "e"
+  10 string "f"
+  11 string "g"
+  12 float 2.5
+  13 string "h"
+code 73
+0000 LOAD_CONST       0 ; 7
+0002 DEF_GLOBAL       1 ; "a"
+0004 STORE_GLOBAL     1 ; "a"
+0006 LOAD_GLOBAL      1 ; "a"
+0008 LOAD_CONST       2 ; 4
+0010 BINARY_SUB
+0011 LOAD_CONST       3 ; 2
+0013 BINARY_DIV
+0014 DEF_GLOBAL       4 ; "b"
+0016 STORE_GLOBAL     4 ; "b"
+0018 LOAD_GLOBAL      1 ; "a"
+0020 LOAD_CONST       5 ; 3
+0022 BINARY_MOD
+0023 DEF_GLOBAL       6 ; "c"
+0025 STORE_GLOBAL     6 ; "c"
+0027 LOAD_GLOBAL      1 ; "a"
+0029 LOAD_CONST       3 ; 2
+0031 BINARY_SHL
+0032 DEF_GLOBAL       7 ; "d"
+0034 STORE_GLOBAL     7 ; "d"
+0036 LOAD_GLOBAL      1 ; "a"
+0038 LOAD_CONST       5 ; 3
+0040 BINARY_AND
+0041 LOAD_CONST       8 ; 1
+0043 BINARY_OR
+0044 DEF_GLOBAL       9 ; "e"
+0046 STORE_GLOBAL     9 ; "e"
+0048 LOAD_GLOBAL      1 ; "a"
+0050 LOAD_GLOBAL      4 ; "b"
+0052 COMPARE_GT
+0053 DEF_GLOBAL       10 ; "f"
+0055 STORE_GLOBAL     10 ; "f"
+0057 LOAD_FALSE
+0058 DEF_GLOBAL       11 ; "g"
+0060 STORE_GLOBAL     11 ; "g"
+0062 LOAD_CONST       12 ; 2.5
+0064 LOAD_GLOBAL      1 ; "a"
+0066 BINARY_MUL
+0067 DEF_GLOBAL       13 ; "h"
+0069 STORE_GLOBAL     13 ; "h"
+0071 LOAD_NIL
+0072 RETURN
+upvalues 0
+icslots 0
+lines 8
+  0000 1
+  0006 2
+  0018 3
+  0027 4
+  0036 5
+  0048 6
+  0057 7
+  0062 8

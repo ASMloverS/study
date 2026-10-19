@@ -5,6 +5,7 @@
 
 #include "binder/binder.h"
 #include "common/common.h"
+#include "compiler/compiler.h"
 #include "parser/ast.h"
 #include "parser/parser.h"
 #include "scanner/scanner.h"
@@ -15,6 +16,7 @@ static void printUsage(const char* program) {
   fprintf(stderr, "  version                  print version\n");
   fprintf(stderr, "  --dump-tokens <file.ms>  dump token stream (debug)\n");
   fprintf(stderr, "  --dump-ast <file.ms>     dump annotated AST (debug)\n");
+  fprintf(stderr, "  dump <file.ms>           disassemble bytecode (debug)\n");
 }
 
 static bool isMsPath(const char* path) {
@@ -186,6 +188,32 @@ static int dumpAst(const char* path) {
   return diags.count > 0 ? 1 : 0;
 }
 
+// dump（T010）：前端 + 编译 → 反汇编到 stdout；诊断 stderr、退出码同 --dump-ast
+static int dumpBytecode(const char* path) {
+  size_t len = 0;
+  char* src = slurpFile(path, &len);
+  if (src == NULL) {
+    fprintf(stderr, "ms: cannot read %s\n", path);
+    return 2;
+  }
+  len = normalizeLf(src);
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  AstNode* mod = frontEnd(src, (int32_t)len, path, &arena, &diags);
+  if (mod != NULL) {
+    Chunk chunk;
+    compilerCompile(mod, &chunk, path, &diags);
+    // 常量文本与 chunk 名借用 src：disasm 完成前不可释放
+    compilerDisasm(&chunk, stdout);
+    chunkFree(&chunk);
+  }
+  printDiags(&diags, src);
+  astArenaDestroy(&arena);
+  free(src);
+  return diags.count > 0 ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
   if (argc == 2 && strcmp(argv[1], "version") == 0) {
     printf("mslang %s\n", MS_VERSION);
@@ -196,6 +224,9 @@ int main(int argc, char** argv) {
   }
   if (argc == 3 && strcmp(argv[1], "--dump-ast") == 0 && isMsPath(argv[2])) {
     return dumpAst(argv[2]);
+  }
+  if (argc == 3 && strcmp(argv[1], "dump") == 0 && isMsPath(argv[2])) {
+    return dumpBytecode(argv[2]);
   }
   // run 占位（T002→T009）：完整前端检查（编译错即退出）；T011 起替换为真实执行
   if (argc == 2 && isMsPath(argv[1])) {
