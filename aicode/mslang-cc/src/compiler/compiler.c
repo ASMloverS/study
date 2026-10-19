@@ -285,6 +285,20 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
     case AST_IDENT:
       loadIdent(fs, n);
       break;
+    case AST_UNARY:
+      compileExpr(fs, n->as.unary.operand);
+      switch (n->as.unary.op) {
+        case AST_UNOP_NEG:
+          emitOp(fs, OP_UNARY_NEG, n->line);
+          break;
+        case AST_UNOP_NOT:
+          emitOp(fs, OP_UNARY_NOT, n->line);
+          break;
+        case AST_UNOP_INV:
+          emitOp(fs, OP_UNARY_INVERT, n->line);
+          break;
+      }
+      break;
     case AST_BINARY:
       compileExpr(fs, n->as.binary.lhs);
       compileExpr(fs, n->as.binary.rhs);

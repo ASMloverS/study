@@ -65,7 +65,7 @@ target_sources(ms_compiler PRIVATE src/compiler/chunk.c src/compiler/compiler.c 
 target_link_libraries(ms_compiler PUBLIC ms_parser)
 
 # T011：VM 值/内置桥；vm 消费 chunk（chunk.h/行号表/指令元数据）
-target_sources(ms_vm PRIVATE src/vm/value.c)
+target_sources(ms_vm PRIVATE src/vm/value.c src/vm/builtins_bridge.c)
 target_link_libraries(ms_vm PUBLIC ms_compiler)
 
 # T006：parser 逐 token 拉取，依赖 scanner
