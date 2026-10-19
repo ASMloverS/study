@@ -556,6 +556,37 @@ static bool isJumpOp(ms_u8 op) {
          op == OP_JMP_IF_TRUE_OR_POP || op == OP_POP_JUMP_IF_NIL || op == OP_FOR_ITER;
 }
 
+TEST(extArgJumpTargetsOnBoundaries) {  // T011 回归：EXT 高位字节物化错位修复
+  char src[16 * 1024];
+  genDecls(src, sizeof(src), 300, "var r = v0 ? v1 : v299\n");
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc(src, &c, &diags));
+  // 指令边界集合 + 每条跳转目标必须落在边界上（错误载荷会指向操作数字节中间）
+  bool* boundary = calloc((size_t)c.codeLen + 1, 1);
+  int32_t off = 0;
+  while (off < c.codeLen) {
+    boundary[off] = true;
+    ms_u8 op = 0;
+    int32_t operand = -1;
+    off += decodeInstr(&c, off, &op, &operand);
+  }
+  off = 0;
+  while (off < c.codeLen) {
+    ms_u8 op = 0;
+    int32_t operand = -1;
+    decodeInstr(&c, off, &op, &operand);
+    if (isJumpOp(op)) {
+      EXPECT(ctx, operand < c.codeLen && boundary[operand]);
+    }
+    ms_u8 dummyOp = 0;
+    int32_t dummyOperand = -1;
+    off += decodeInstr(&c, off, &dummyOp, &dummyOperand);
+  }
+  free(boundary);
+  chunkFree(&c);
+}
+
 TEST(nestedTernaryFold) {
   MsDiagSink diags = {0};
   Chunk c;
@@ -715,6 +746,7 @@ int main(int argc, char** argv) {
       ternaryJumpShape,
       extArgLargeConstIndex,
       extArgLargeJumpDistance,
+      extArgJumpTargetsOnBoundaries,
       callStubPrint,
       callStubNested,
       peepholeNopCompaction,

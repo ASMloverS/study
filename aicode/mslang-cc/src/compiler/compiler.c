@@ -162,7 +162,7 @@ static void finishChunk(FuncState* fs) {
     }
     if (j < fs->jumpCount && fs->jumps[j].instrOffset == off) {
       int32_t t = posMap[fs->jumps[j].target];
-      for (int32_t s = widths[j] - 1; s >= 0; s--) {
+      for (int32_t s = widths[j]; s >= 1; s--) {  // EXT 载荷 = 高位字节（t>>8 起）
         newCode[newOff++] = OP_EXTENDED_ARG;
         newCode[newOff++] = (ms_u8)((t >> (8 * s)) & 0xFF);
       }
@@ -269,9 +269,13 @@ static ms_u8 binaryOpCode(AstBinOp op) {
   }
 }
 
-// 单段无插值字符串 → 常量；插值/多段 → FORMAT_STRING 未启用
+// 无插值字符串 → 常量（空串 0 段亦然）；插值/多段 → FORMAT_STRING 未启用
 static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
   const AstStrSeg* segs = n->as.strLit.segs;
+  if (n->as.strLit.count == 0) {  // ""：空串
+    *idxOut = chunkAddConstText(fs->chunk, CONST_STRING, "", 0);
+    return true;
+  }
   if (n->as.strLit.count == 1 && segs[0].expr == NULL) {
     *idxOut = chunkAddConstText(fs->chunk, CONST_STRING, segs[0].start, segs[0].len);
     return true;
