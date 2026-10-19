@@ -391,6 +391,70 @@ TEST(runSwitchTypeMulti) {  // case int, bigint: 多类型名
   free(r.out);
 }
 
+// ---------- --trace 与 dump 一致性（DoD：指令序列与 ms dump 一致） ----------
+
+static int32_t decodeOne(const Chunk* c, int32_t off, ms_u8* opOut) {
+  int32_t p = off + 1;
+  while (c->code[p - 1] == OP_EXTENDED_ARG) {
+    p += 2;
+  }
+  *opOut = c->code[p - 1];
+  int32_t n = msOpLayouts[*opOut] == OPL_NONE || msOpLayouts[*opOut] == OPL_SPECIAL ? 0 : 1;
+  return (p - off) + n;  // 本用例仅单操作数指令即够（偏移 < 256 无 EXT 链）
+}
+
+TEST(traceMatchesInstructionStream) {
+  const char* src = "var a = 1\nvar b = a + 2\nprint(b)\n";
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Parser p;
+  parserInit(&p, src, (int32_t)strlen(src), "t.ms", &arena, &diags);
+  AstNode* mod = parserParseModule(&p);
+  Binder b;
+  binderInit(&b, &arena, "t.ms", &diags);
+  binderBind(&b, mod);
+  binderDestroy(&b);
+  Chunk c;
+  EXPECT(ctx, compilerCompile(mod, &c, "t.ms", &diags));
+  MsVM vm;
+  msVmInit(&vm);
+  FILE* f = tmpfile();
+  vm.trace = f;
+  msVmRun(&vm, &c);
+  char* trace = slurpTmp(f);
+  EXPECT(ctx, !vm.hasError);
+  // 逐行 "offset name" 必须与 chunk 对应偏移解码一致（顺序 = 执行序；手工解析避开 CRT 安全族）
+  int32_t pos = 0;
+  int32_t lines = 0;
+  while (trace[pos] != '\0') {
+    int off = 0;
+    while (trace[pos] >= '0' && trace[pos] <= '9') {
+      off = off * 10 + (trace[pos] - '0');
+      pos++;
+    }
+    EXPECT(ctx, trace[pos] == ' ');
+    pos++;
+    char name[32] = {0};
+    int n = 0;
+    while (trace[pos] != '\n' && trace[pos] != '\0' && n < 31) {
+      name[n++] = trace[pos++];
+    }
+    ms_u8 op = OP_NOP;
+    decodeOne(&c, off, &op);
+    EXPECT_STREQ(ctx, msOpNames[op], name);
+    lines++;
+    if (trace[pos] == '\n') {
+      pos++;
+    }
+  }
+  EXPECT(ctx, lines > 5);  // 至少覆盖装载/运算/print/RETURN
+  free(trace);
+  msVmFree(&vm);
+  chunkFree(&c);
+  astArenaDestroy(&arena);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -438,6 +502,7 @@ int main(int argc, char** argv) {
       runSwitchTypeInt,
       runSwitchTypeAsString,
       runSwitchTypeMulti,
+      traceMatchesInstructionStream,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

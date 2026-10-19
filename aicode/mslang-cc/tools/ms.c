@@ -9,11 +9,14 @@
 #include "parser/ast.h"
 #include "parser/parser.h"
 #include "scanner/scanner.h"
+#include "vm/vm.h"
 
 static void printUsage(const char* program) {
   fprintf(stderr, "usage: %s <command> [args]\n", program);
   fprintf(stderr, "commands:\n");
   fprintf(stderr, "  version                  print version\n");
+  fprintf(stderr, "  run <file.ms> [--trace]  execute script (same as ms <file.ms>)\n");
+  fprintf(stderr, "  --trace                  step-execute instruction log (20 §6)\n");
   fprintf(stderr, "  --dump-tokens <file.ms>  dump token stream (debug)\n");
   fprintf(stderr, "  --dump-ast <file.ms>     dump annotated AST (debug)\n");
   fprintf(stderr, "  dump <file.ms>           disassemble bytecode (debug)\n");
@@ -146,8 +149,8 @@ static void printDiags(const MsDiagSink* diags, const char* src) {
   }
 }
 
-// run 占位（T002→T009）：完整前端检查（scan/parse/bind）——诊断 stderr、退出码 3（27 §10 编译错误）；T011 接入执行
-static int runScript(const char* path) {
+// run（T011 接入执行）：前端 + 编译 + VM；诊断 stderr；编译错 3、运行时错误 1（27 §10）
+static int runScript(const char* path, bool trace) {
   size_t len = 0;
   char* src = slurpFile(path, &len);
   if (src == NULL) {
@@ -159,11 +162,32 @@ static int runScript(const char* path) {
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = frontEnd(src, (int32_t)len, path, &arena, &diags);
-  (void)mod;
+  int exitCode = 0;
+  if (mod == NULL) {
+    exitCode = 3;
+  } else {
+    Chunk chunk;
+    bool ok = compilerCompile(mod, &chunk, path, &diags);
+    // 常量文本与 chunk 名借用 src：执行完成前不可释放
+    if (ok) {
+      MsVM vm;
+      msVmInit(&vm);
+      vm.trace = trace ? stdout : NULL;
+      msVmRun(&vm, &chunk);
+      if (vm.hasError) {
+        fprintf(stderr, "%s:%d: %s\n", path, vm.errLine > 0 ? vm.errLine : 0, vm.errMsg);
+        exitCode = 1;
+      }
+      msVmFree(&vm);
+    } else {
+      exitCode = 3;
+    }
+    chunkFree(&chunk);
+  }
   printDiags(&diags, src);
   astArenaDestroy(&arena);
   free(src);
-  return diags.count > 0 ? 3 : 0;
+  return exitCode;
 }
 
 // --dump-ast：规范化标注 AST 到 stdout，诊断 stderr；有错退出码 1
@@ -228,9 +252,27 @@ int main(int argc, char** argv) {
   if (argc == 3 && strcmp(argv[1], "dump") == 0 && isMsPath(argv[2])) {
     return dumpBytecode(argv[2]);
   }
-  // run 占位（T002→T009）：完整前端检查（编译错即退出）；T011 起替换为真实执行
-  if (argc == 2 && isMsPath(argv[1])) {
-    return runScript(argv[1]);
+  // run 子命令与直接执行（27 §1）：run <file.ms> [--trace] / ms <file.ms> [--trace]
+  int argStart = 1;
+  if (argc >= 2 && strcmp(argv[1], "run") == 0) {
+    argStart = 2;
+  }
+  if (argc > argStart) {
+    const char* path = NULL;
+    bool trace = false;
+    bool usageErr = false;
+    for (int i = argStart; i < argc; i++) {
+      if (strcmp(argv[i], "--trace") == 0) {
+        trace = true;
+      } else if (isMsPath(argv[i]) && path == NULL) {
+        path = argv[i];
+      } else {
+        usageErr = true;
+      }
+    }
+    if (path != NULL && !usageErr) {
+      return runScript(path, trace);
+    }
   }
   printUsage(argv[0]);
   return 1;
