@@ -28,6 +28,7 @@
 | A | MsValue 完整五 tag | `STRING/FUNCTION/NATIVE/RANGE_ITER` 过渡 kind 并存，判型族先行（`msIsNil/msIsBool/msIsI64/msIsF64/msIsObj`） | 22 §3 string 布局归 T013、迭代协议归 T017、函数对象归 T018；不前置设计 |
 | B | gc.c 内静态 markFn 表 | 表保留在 gc.c，暴露 `gcSetMarkFn` 注册 API | 链式引用/自引用测试需要带 children 的对象；编译期表无法支撑 |
 | C | keepalive.ms fixture | 按任务书 §5.2 延后至 T013（最小 string 形态补跑） | ms 代码本任务无法构造堆对象；任务书已注明"本任务 C 单测为主" |
+| D | MsObj 头部三字段（22 §2：type/flags/next） | 增加过渡字段 `size_t size` | sweep 需按对象尺寸递减 `heap->bytes`（"堆字节回落"DoD）；T026 块分配器落地时随世代位重整头部 |
 
 ## 4. 详细设计
 
@@ -73,6 +74,7 @@ typedef struct MsObj {
   ms_u8 type;          // MsObjType
   ms_u8 flags;         // mark | permanent | 杂项
   struct MsObj* next;  // 全堆链表（GC 枚举）
+  size_t size;         // 过渡：malloc 尺寸（sweep 按 size 递减 bytes；T026 块分配器随世代位重整头部）
 } MsObj;
 
 MsObj* msObjAlloc(MsVM* vm, MsObjType type, size_t size);
