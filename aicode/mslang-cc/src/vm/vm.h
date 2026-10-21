@@ -9,16 +9,19 @@
 #include "common/common.h"
 #include "compiler/chunk.h"
 
-// 值类别（T011 无堆形态；T012 起堆对象扩展容器/string）
+typedef struct MsObj MsObj;  // 对象头（obj/obj.h，T012）
+
+// 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013、FUNCTION/NATIVE→T018、RANGE_ITER→T017）
 typedef enum MsValueKind {
   MS_VAL_NIL,
   MS_VAL_BOOL,
-  MS_VAL_INT,
-  MS_VAL_FLOAT,
-  MS_VAL_STRING,      // 借用常量池文本（转义原文；解码归 T013）
-  MS_VAL_FUNCTION,    // 函数 chunk 引用（调用执行归 T018）
-  MS_VAL_NATIVE,      // C 内置函数（print/range 最小桥，T017 扩全）
-  MS_VAL_RANGE_ITER,  // range 惰性迭代器（完整迭代协议归 T017）
+  MS_VAL_I64,
+  MS_VAL_F64,
+  MS_VAL_OBJ,         // 堆对象指针（T012）
+  MS_VAL_STRING,      // 过渡：借用常量池文本（转义原文；解码归 T013）
+  MS_VAL_FUNCTION,    // 过渡：函数 chunk 引用（MsObjFunction 归 T018）
+  MS_VAL_NATIVE,      // 过渡：C 内置函数（MsObjNative 归 T018）
+  MS_VAL_RANGE_ITER,  // 过渡：range 惰性迭代器（MsObjIter 归 T017）
 } MsValueKind;
 
 typedef struct MsVM MsVM;
@@ -31,6 +34,7 @@ typedef struct MsValue {
     bool b;
     ms_i64 i;
     double f;
+    MsObj* obj;
     struct {
       const char* bytes;  // 借用（常量池/源缓冲）
       int32_t len;
@@ -42,6 +46,13 @@ typedef struct MsValue {
     } range;
   } as;
 } MsValue;
+
+// 判型内联族（22 §1；28 §1 bool 谓词命名）
+static inline bool msIsNil(const MsValue* v) { return v->kind == MS_VAL_NIL; }
+static inline bool msIsBool(const MsValue* v) { return v->kind == MS_VAL_BOOL; }
+static inline bool msIsI64(const MsValue* v) { return v->kind == MS_VAL_I64; }
+static inline bool msIsF64(const MsValue* v) { return v->kind == MS_VAL_F64; }
+static inline bool msIsObj(const MsValue* v) { return v->kind == MS_VAL_OBJ; }
 
 // 全局表条目：简单数组 + 名字线性索引（T015 换 map）
 typedef struct MsGlobalVar {
@@ -88,6 +99,7 @@ MsValue msValueNil(void);
 MsValue msValueBool(bool b);
 MsValue msValueInt(ms_i64 v);
 MsValue msValueFloat(double v);
+MsValue msValueObj(MsObj* obj);
 bool msValueIsTruthy(const MsValue* v);  // 仅 false/nil 为假（02 §2）
 bool msValueEqual(const MsValue* a, const MsValue* b);  // == 语义（int/float 数值互比）
 bool msValueOrder(const MsValue* a, const MsValue* b, int32_t* outCmp);  // false = 不可比较
