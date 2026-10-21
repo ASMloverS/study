@@ -171,6 +171,42 @@ TEST(selfReferenceCycle) {  // 自引用：可达环存活且标记终止；失�
   msVmFree(&vm);
 }
 
+TEST(permanentSurvives) {  // permanent：无 root 引用也不回收；heapFree 释放
+  MsVM vm;
+  msVmInit(&vm);
+  MsObj* perm = &allocNode(&vm, 0x1234)->head;
+  perm->flags |= MS_OBJ_PERMANENT;  // intern/常量池雏形（intern 表归 T013）
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));
+  msVmFree(&vm);  // 含 permanent 全释放（ASan 无泄漏）
+}
+
+TEST(allocGuardAutoTrigger) {  // MS_GC_HEAP_MAX 小阈值：循环分配堆稳定（DoD）
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=4096");
+#else
+  setenv("MS_GC_HEAP_MAX", "4096", 1);
+#endif
+  MsVM vm;
+  msVmInit(&vm);  // gcHeapInit 读 env
+  size_t maxSeen = 0;
+  for (int i = 0; i < 10000; i++) {
+    (void)allocNode(&vm, (ms_u64)i);  // 死对象：guard 触发全量回收
+    size_t now = gcHeapBytes(&vm);
+    if (now > maxSeen) {
+      maxSeen = now;
+    }
+  }
+  EXPECT(ctx, maxSeen < 4096 + 2 * sizeof(TestNode));  // 阈值 + 单次分配余量
+  EXPECT(ctx, gcHeapObjCount(&vm) < 200);
+  msVmFree(&vm);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -185,6 +221,8 @@ int main(int argc, char** argv) {
       globalKeepalive,
       chainReference,
       selfReferenceCycle,
+      permanentSurvives,
+      allocGuardAutoTrigger,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
