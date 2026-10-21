@@ -6,6 +6,7 @@
 #include "gc/gc.h"
 
 MsObj* msObjAlloc(MsVM* vm, MsObjType type, size_t size) {
+  msVmAllocGuard(vm);
   MsObj* obj = malloc(size);
   if (obj == NULL) {
     return NULL;  // v1 简化：分配失败上抛 NULL，OOM 策略归 T026

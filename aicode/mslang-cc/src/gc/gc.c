@@ -51,3 +51,57 @@ void gcHeapFree(GcHeap* heap) {
 size_t gcHeapBytes(const MsVM* vm) { return vm->heap->bytes; }
 
 int32_t gcHeapObjCount(const MsVM* vm) { return vm->heap->count; }
+
+// ---- 标记清除（root = 栈 + 全局表；模块帧值栈即整个栈，无 native 帧）----
+
+void gcMarkValue(MsVM* vm, MsValue v) {
+  if (v.kind != MS_VAL_OBJ) {
+    return;  // NIL/BOOL/I64/F64 直存；过渡 kind 借用非堆存储
+  }
+  GcHeap* heap = vm->heap;
+  if (v.as.obj->flags & MS_OBJ_MARK) {
+    return;
+  }
+  v.as.obj->flags |= MS_OBJ_MARK;
+  MS_ARRAY_PUSH(heap->gray, heap->grayCount, heap->grayCap, v.as.obj);
+}
+
+static void markRoots(MsVM* vm) {
+  for (int32_t i = 0; i < vm->stackTop; i++) {
+    gcMarkValue(vm, vm->stack[i]);
+  }
+  for (int32_t i = 0; i < vm->globalCount; i++) {
+    gcMarkValue(vm, vm->globals[i].value);
+  }
+}
+
+void gcCollectAll(MsVM* vm) {
+  GcHeap* heap = vm->heap;
+  markRoots(vm);
+  while (heap->grayCount > 0) {  // 迭代 worklist（灰队列方向；防爆栈）
+    MsObj* obj = heap->gray[--heap->grayCount];
+    MarkChildrenFn fn = g_markFns[obj->type];
+    if (fn != NULL) {
+      fn(vm, obj);
+    }
+  }
+  MsObj** link = &heap->objects;
+  while (*link != NULL) {  // sweep：摘白释放，黑/永久保留
+    MsObj* obj = *link;
+    if (obj->flags & (MS_OBJ_MARK | MS_OBJ_PERMANENT)) {
+      obj->flags &= (ms_u8)~MS_OBJ_MARK;
+      link = &obj->next;
+      continue;
+    }
+    *link = obj->next;
+    heap->bytes -= obj->size;
+    heap->count--;
+    free(obj);
+  }
+}
+
+void msVmAllocGuard(MsVM* vm) {
+  if (vm->heap->bytes >= vm->heap->threshold) {
+    gcCollectAll(vm);
+  }
+}

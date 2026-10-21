@@ -62,6 +62,65 @@ TEST(vmFreeZeroesState) {  // msVmFree 后零态（不暗置新堆）；重新 i
   msVmFree(&vm);
 }
 
+TEST(valueDirectStorageNoHeap) {  // 值直存：nil/bool/i64/f64 无堆分配（DoD）
+  MsVM vm;
+  msVmInit(&vm);
+  (void)msValueNil();
+  (void)msValueBool(true);
+  (void)msValueInt(9);
+  (void)msValueFloat(1.5);
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 0, gcHeapBytes(&vm));
+  msVmFree(&vm);
+}
+
+TEST(collectDeadObjects) {  // 分配回收：死对象全收、字节回落（DoD）
+  MsVM vm;
+  msVmInit(&vm);
+  for (int i = 0; i < 50; i++) {
+    (void)allocNode(&vm, (ms_u64)i);  // 无任何引用 → 全死
+  }
+  EXPECT_EQ(ctx, 50, gcHeapObjCount(&vm));
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 0, (long long)gcHeapBytes(&vm));
+  msVmFree(&vm);
+}
+
+TEST(stackKeepalive) {  // 栈保活：模块帧值栈即整个栈（23-gc §1 过渡）
+  MsVM vm;
+  msVmInit(&vm);
+  TestNode* live = allocNode(&vm, 0xC0FFEE);
+  for (int i = 0; i < 10; i++) {
+    (void)allocNode(&vm, (ms_u64)i);  // 噪声死对象
+  }
+  vm.stack = malloc(sizeof(MsValue));  // 直接构造值栈槽
+  vm.stackTop = 1;
+  vm.stack[0] = msValueObj(&live->head);
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 0xC0FFEE, (long long)live->magic);  // 误收则 ASan UAF
+  free(vm.stack);
+  vm.stack = NULL;
+  vm.stackTop = 0;
+  msVmFree(&vm);
+}
+
+TEST(globalKeepalive) {  // 全局表保活
+  MsVM vm;
+  msVmInit(&vm);
+  TestNode* live = allocNode(&vm, 0xABCD);
+  vm.globals = malloc(sizeof(MsGlobalVar));
+  vm.globalCount = vm.globalCap = 1;
+  vm.globals[0].name = "keep";
+  vm.globals[0].len = 4;
+  vm.globals[0].value = msValueObj(&live->head);
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 0xABCD, (long long)live->magic);
+  msVmFree(&vm);  // globals 由 msVmFree 释放
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -70,6 +129,10 @@ int main(int argc, char** argv) {
       allocAndStats,
       heapFreeReleasesAll,
       vmFreeZeroesState,
+      valueDirectStorageNoHeap,
+      collectDeadObjects,
+      stackKeepalive,
+      globalKeepalive,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
