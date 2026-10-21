@@ -64,3 +64,4 @@ typedef void (*MarkChildrenFn)(MsVM* vm, MsObj* obj);
 
 - `markChildren` 分派表是后续所有容器任务的必经扩展点：每个容器任务必须同步补标记函数与对应测试，DoD 统一含"GC 单测扩展"。
 - 过渡 GC 与最终分代版共存策略：`gcCollectAll` 保留为 `runtime.gc()` 强制全量路径，不删除。
+- ASan 门禁平台差异：Windows clang ASan（LLVM 18）不含 LSan 出口泄漏检查（平台限制）；泄漏覆盖依赖 gc 单测的字节/计数回落断言，完整 LSan 验证由 Linux CI `asan` 预设承担。Windows ASan 门禁需静态 CRT（见 CMakeLists.txt MS_SANITIZERS+WIN32 块注释）。
