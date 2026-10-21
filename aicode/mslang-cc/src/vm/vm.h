@@ -87,6 +87,7 @@ struct MsVM {
 };
 
 void msVmInit(MsVM* vm);
+// 释放全部资源后 VM 处于零态（不再隐式重建堆）；复用须重新 msVmInit
 void msVmFree(MsVM* vm);
 // 执行模块 chunk 至 RETURN；错误置槽后由调用方打印 + 退出码 1（27 §10）
 void msVmRun(MsVM* vm, const Chunk* chunk);

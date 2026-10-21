@@ -39,7 +39,7 @@ void msVmFree(MsVM* vm) {
   free(vm->stack);
   free(vm->frames);
   free(vm->globals);
-  msVmInit(vm);
+  memset(vm, 0, sizeof(*vm));  // 零态收尾：不重建堆（避免每周期泄漏一个 GcHeap）；复用需再 msVmInit
 }
 
 static void push(MsVM* vm, MsValue v) {

@@ -50,6 +50,18 @@ TEST(heapFreeReleasesAll) {  // vmFree 全释放（泄漏由 ASan 门禁验证�
   msVmFree(&vm);
 }
 
+TEST(vmFreeZeroesState) {  // msVmFree 后零态（不暗置新堆）；重新 init 可复用（泄漏由 ASan 门禁验证）
+  MsVM vm;
+  msVmInit(&vm);
+  (void)allocNode(&vm, 1);
+  msVmFree(&vm);
+  EXPECT(ctx, vm.heap == NULL && vm.stack == NULL && vm.frames == NULL && vm.globals == NULL);
+  msVmInit(&vm);
+  EXPECT(ctx, allocNode(&vm, 2) != NULL);
+  EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -57,6 +69,7 @@ int main(int argc, char** argv) {
   const TestFn tests[] = {
       allocAndStats,
       heapFreeReleasesAll,
+      vmFreeZeroesState,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
