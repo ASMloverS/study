@@ -32,7 +32,7 @@ typedef enum MsObjType {
 } MsObjType;
 
 #define MS_OBJ_MARK ((ms_u8)(1u << 0))       // 标记清除黑位
-#define MS_OBJ_PERMANENT ((ms_u8)(1u << 1))  // 永久代（intern/常量池雏形）：跳过回收
+#define MS_OBJ_PERMANENT ((ms_u8)(1u << 1))  // 永久代（intern/常量池雏形）：跳过回收；仅保对象自身——持有子引用的永久对象必须同时为 root（T013 intern 表），否则 children 可能被回收
 
 typedef struct MsObj {
   ms_u8 type;          // MsObjType

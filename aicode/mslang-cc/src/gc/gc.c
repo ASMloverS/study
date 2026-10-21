@@ -31,6 +31,7 @@ void gcHeapInit(GcHeap* heap) {
   }
   heap->gray = NULL;
   heap->grayCount = heap->grayCap = 0;
+  heap->collecting = false;
 }
 
 void gcHeapFree(GcHeap* heap) {
@@ -46,6 +47,7 @@ void gcHeapFree(GcHeap* heap) {
   heap->count = 0;
   heap->gray = NULL;
   heap->grayCount = heap->grayCap = 0;
+  heap->collecting = false;
 }
 
 size_t gcHeapBytes(const MsVM* vm) { return vm->heap->bytes; }
@@ -77,6 +79,8 @@ static void markRoots(MsVM* vm) {
 
 void gcCollectAll(MsVM* vm) {
   GcHeap* heap = vm->heap;
+  MS_ASSERT(!heap->collecting);  // markFn 内再分配触发嵌套回收会在 drain/sweep 中途破坏链表（T013+ 扩展点纪律）
+  heap->collecting = true;
   markRoots(vm);
   while (heap->grayCount > 0) {  // 迭代 worklist（灰队列方向；防爆栈）
     MsObj* obj = heap->gray[--heap->grayCount];
@@ -98,9 +102,11 @@ void gcCollectAll(MsVM* vm) {
     heap->count--;
     free(obj);
   }
+  heap->collecting = false;
 }
 
 void msVmAllocGuard(MsVM* vm) {
+  // 固定阈值无退避：活集贴近阈值时每次分配都触发整堆回收（平方退化）；heapGoal 增长策略归 T026/T027
   if (vm->heap->bytes >= vm->heap->threshold) {
     gcCollectAll(vm);
   }
