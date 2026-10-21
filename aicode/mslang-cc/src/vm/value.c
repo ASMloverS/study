@@ -68,7 +68,7 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
     case MS_VAL_OBJ:  // 身份语义：值等价随容器任务接入
       return b->kind == MS_VAL_OBJ && a->as.obj == b->as.obj;
     default:
-      return false;  // 迭代器等仅同一性；对象等价 T012 起接入
+      return false;  // 迭代器等仅同一性
   }
 }
 
