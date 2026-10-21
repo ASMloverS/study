@@ -1,3 +1,22 @@
-// 占位编译单元：本目录内容由后续任务按 docs/tasks/README.md 填入
-// typedef 消除空翻译单元（MSVC /W4 /WX 视为 C4206 错误），本文件被后续任务覆盖时自然移除
-typedef int ms_placeholder;
+// 全堆链表分配器（T012，22 §2）：malloc + 头初始化 + 头插链表 + 统计累加
+#include "obj/obj.h"
+
+#include <stdlib.h>
+
+#include "gc/gc.h"
+
+MsObj* msObjAlloc(MsVM* vm, MsObjType type, size_t size) {
+  MsObj* obj = malloc(size);
+  if (obj == NULL) {
+    return NULL;  // v1 简化：分配失败上抛 NULL，OOM 策略归 T026
+  }
+  obj->type = (ms_u8)type;
+  obj->flags = 0;
+  obj->size = size;
+  GcHeap* heap = vm->heap;
+  obj->next = heap->objects;
+  heap->objects = obj;
+  heap->bytes += size;
+  heap->count++;
+  return obj;
+}

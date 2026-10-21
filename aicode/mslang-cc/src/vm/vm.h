@@ -68,7 +68,7 @@ typedef struct MsFrame {
   int32_t base;  // 帧值栈基
 } MsFrame;
 
-struct GcHeap;  // T012 接入；本任务恒 NULL 路径
+struct GcHeap;  // gc/gc.h；msVmInit 创建、msVmFree 销毁
 
 struct MsVM {
   MsValue* stack;

@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "gc/gc.h"
+
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
@@ -17,7 +19,9 @@ void msVmInit(MsVM* vm) {
   vm->frameCount = vm->frameCap = 0;
   vm->globals = NULL;
   vm->globalCount = vm->globalCap = 0;
-  vm->heap = NULL;
+  vm->heap = malloc(sizeof(GcHeap));
+  MS_ASSERT(vm->heap != NULL);
+  gcHeapInit(vm->heap);
   vm->out = stdout;
   vm->trace = NULL;
   vm->hasError = false;
@@ -27,6 +31,11 @@ void msVmInit(MsVM* vm) {
 }
 
 void msVmFree(MsVM* vm) {
+  if (vm->heap != NULL) {
+    gcHeapFree(vm->heap);
+    free(vm->heap);
+    vm->heap = NULL;
+  }
   free(vm->stack);
   free(vm->frames);
   free(vm->globals);

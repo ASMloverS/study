@@ -68,6 +68,10 @@ target_link_libraries(ms_compiler PUBLIC ms_parser)
 target_sources(ms_vm PRIVATE src/vm/value.c src/vm/builtins_bridge.c)
 target_link_libraries(ms_vm PUBLIC ms_compiler)
 
+# T012：对象头/分配器 + 过渡 GC；obj 分配经 guard（gc）、vm 持有 heap 生命周期
+target_link_libraries(ms_obj PRIVATE ms_gc)
+target_link_libraries(ms_vm PRIVATE ms_gc)
+
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)
 
