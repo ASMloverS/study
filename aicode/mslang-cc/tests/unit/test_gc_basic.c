@@ -24,6 +24,10 @@ static TestNode* allocNode(MsVM* vm, ms_u64 magic) {
   return n;
 }
 
+static void testMarkNode(MsVM* vm, MsObj* obj) {  // 标记 TestNode.child（容器任务 markFn 同构）
+  gcMarkValue(vm, ((TestNode*)obj)->child);
+}
+
 TEST(allocAndStats) {
   MsVM vm;
   msVmInit(&vm);
@@ -121,6 +125,39 @@ TEST(globalKeepalive) {  // 全局表保活
   msVmFree(&vm);  // globals 由 msVmFree 释放
 }
 
+TEST(chainReference) {  // A→B→C：A 可达全活；不可达则同收
+  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);
+  MsVM vm;
+  msVmInit(&vm);
+  TestNode* a = allocNode(&vm, 1);
+  TestNode* b = allocNode(&vm, 2);
+  TestNode* c = allocNode(&vm, 3);
+  a->child = msValueObj(&b->head);
+  b->child = msValueObj(&c->head);
+  vm.stack = malloc(sizeof(MsValue));
+  vm.stackTop = 1;
+  vm.stack[0] = msValueObj(&a->head);
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 3, gcHeapObjCount(&vm));  // A 活则 B C 活
+  free(vm.stack);
+  vm.stack = NULL;
+  vm.stackTop = 0;
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));  // A 失根后 B C 同收
+  msVmFree(&vm);
+}
+
+TEST(selfReferenceCycle) {  // 自引用：追踪式天然回收（无误删/漏删）
+  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);
+  MsVM vm;
+  msVmInit(&vm);
+  TestNode* a = allocNode(&vm, 7);
+  a->child = msValueObj(&a->head);
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -133,6 +170,8 @@ int main(int argc, char** argv) {
       collectDeadObjects,
       stackKeepalive,
       globalKeepalive,
+      chainReference,
+      selfReferenceCycle,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
