@@ -24,7 +24,9 @@ static TestNode* allocNode(MsVM* vm, ms_u64 magic) {
   return n;
 }
 
-static void testMarkNode(MsVM* vm, MsObj* obj) {  // 标记 TestNode.child（容器任务 markFn 同构）
+static void testMarkNode(MsVM* vm, MsObj* obj) {
+  // 标记 TestNode.child（容器任务 markFn 同构）
+  // 注册纪律：g_markFns 为进程级表——分配该类型的测试须自行注册；负载分配时必须初始化全部 MsValue 字段（allocNode 置 nil）
   gcMarkValue(vm, ((TestNode*)obj)->child);
 }
 
@@ -139,6 +141,8 @@ TEST(chainReference) {  // A→B→C：A 可达全活；不可达则同收
   vm.stack[0] = msValueObj(&a->head);
   gcCollectAll(&vm);
   EXPECT_EQ(ctx, 3, gcHeapObjCount(&vm));  // A 活则 B C 活
+  EXPECT_EQ(ctx, 2, (long long)b->magic);  // 幸存者金丝雀（误收则 ASan UAF）
+  EXPECT_EQ(ctx, 3, (long long)c->magic);
   free(vm.stack);
   vm.stack = NULL;
   vm.stackTop = 0;
@@ -147,14 +151,23 @@ TEST(chainReference) {  // A→B→C：A 可达全活；不可达则同收
   msVmFree(&vm);
 }
 
-TEST(selfReferenceCycle) {  // 自引用：追踪式天然回收（无误删/漏删）
+TEST(selfReferenceCycle) {  // 自引用：可达环存活且标记终止；失根后追踪式天然回收
   gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);
   MsVM vm;
   msVmInit(&vm);
   TestNode* a = allocNode(&vm, 7);
   a->child = msValueObj(&a->head);
+  vm.stack = malloc(sizeof(MsValue));
+  vm.stackTop = 1;
+  vm.stack[0] = msValueObj(&a->head);
   gcCollectAll(&vm);
-  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));  // 可达环：已标记早退保证标记终止不死循环
+  free(vm.stack);
+  vm.stack = NULL;
+  vm.stackTop = 0;
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));  // 失根环：正确回收（追踪式 vs 引用计数式分水岭）
+  EXPECT_EQ(ctx, 0, (long long)gcHeapBytes(&vm));
   msVmFree(&vm);
 }
 
