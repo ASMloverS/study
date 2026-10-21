@@ -36,6 +36,11 @@ endif()
 if(MS_SANITIZERS AND NOT MSVC)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
   add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
+  if(WIN32)
+    # Windows 上 GNU 前端 clang + MSVC ABI：默认动态 CRT 时链接缺 ucrtd 导入库，且 ucrtbased.dll 与静态 ASan 运行时的 malloc/free 导出冲突；
+    # 静态 CRT 下驱动自动补齐 libcmt/libucrt 系且与 ASan 兼容（探测验证），故门禁固定静态 CRT
+    set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+  endif()
 endif()
 
 add_library(ms_common STATIC src/common/common.c)
@@ -67,6 +72,10 @@ target_link_libraries(ms_compiler PUBLIC ms_parser)
 # T011：VM 值/内置桥；vm 消费 chunk（chunk.h/行号表/指令元数据）
 target_sources(ms_vm PRIVATE src/vm/value.c src/vm/builtins_bridge.c)
 target_link_libraries(ms_vm PUBLIC ms_compiler)
+
+# T012：对象头/分配器 + 过渡 GC；obj 分配经 guard（gc）、vm 持有 heap 生命周期
+target_link_libraries(ms_obj PRIVATE ms_gc)
+target_link_libraries(ms_vm PRIVATE ms_gc)
 
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)

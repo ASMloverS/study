@@ -8,5 +8,8 @@ else()
     add_compile_definitions(_POSIX_C_SOURCE=200809L)
     add_compile_options(-pthread)
     add_link_options(-pthread)
+  else()
+    # clang（GNU 前端）+ MSVC ABI 下 UCRT 将 fopen/tmpfile/getenv 标记 deprecated，cl 静默而 -Werror 报错；定义宏对齐 MSVC 基线（T012 ASan 门禁）
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
   endif()
 endif()

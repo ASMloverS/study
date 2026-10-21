@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "gc/gc.h"
+
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
@@ -17,7 +19,9 @@ void msVmInit(MsVM* vm) {
   vm->frameCount = vm->frameCap = 0;
   vm->globals = NULL;
   vm->globalCount = vm->globalCap = 0;
-  vm->heap = NULL;
+  vm->heap = malloc(sizeof(GcHeap));
+  MS_ASSERT(vm->heap != NULL);
+  gcHeapInit(vm->heap);
   vm->out = stdout;
   vm->trace = NULL;
   vm->hasError = false;
@@ -27,10 +31,15 @@ void msVmInit(MsVM* vm) {
 }
 
 void msVmFree(MsVM* vm) {
+  if (vm->heap != NULL) {
+    gcHeapFree(vm->heap);
+    free(vm->heap);
+    vm->heap = NULL;
+  }
   free(vm->stack);
   free(vm->frames);
   free(vm->globals);
-  msVmInit(vm);
+  memset(vm, 0, sizeof(*vm));  // 零态收尾：不重建堆（避免每周期泄漏一个 GcHeap）；复用需再 msVmInit
 }
 
 static void push(MsVM* vm, MsValue v) {
@@ -139,9 +148,9 @@ static const char* kBinArithNames[] = {"+", "-", "*", "/", "%", "**", "&", "|", 
 
 // 二元算术（21 §3.2 快路径）：int/int 与 float/float；混算升 float；失败 → false + errMsg
 static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out) {
-  bool aNum = a.kind == MS_VAL_INT || a.kind == MS_VAL_FLOAT;
-  bool bNum = b.kind == MS_VAL_INT || b.kind == MS_VAL_FLOAT;
-  if (aNum && bNum && a.kind == MS_VAL_INT && b.kind == MS_VAL_INT) {
+  bool aNum = a.kind == MS_VAL_I64 || a.kind == MS_VAL_F64;
+  bool bNum = b.kind == MS_VAL_I64 || b.kind == MS_VAL_F64;
+  if (aNum && bNum && a.kind == MS_VAL_I64 && b.kind == MS_VAL_I64) {
     ms_i64 r = 0;
     switch (k) {
       case BA_ADD:
@@ -191,8 +200,8 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
     return true;
   }
   if (aNum && bNum) {  // 含 float：升 double（02 §3.4 混算表）
-    double da = a.kind == MS_VAL_INT ? (double)a.as.i : a.as.f;
-    double db = b.kind == MS_VAL_INT ? (double)b.as.i : b.as.f;
+    double da = a.kind == MS_VAL_I64 ? (double)a.as.i : a.as.f;
+    double db = b.kind == MS_VAL_I64 ? (double)b.as.i : b.as.f;
     switch (k) {
       case BA_ADD:
         *out = msValueFloat(da + db);
@@ -497,12 +506,12 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
 
       OPCODE(OP_UNARY_NEG) {
         MsValue a = pop(vm);
-        if (a.kind == MS_VAL_INT) {
+        if (a.kind == MS_VAL_I64) {
           if (a.as.i == INT64_MIN) {
             RUNTIME_ERROR("OverflowError: int overflow (bigint promotion lands in T016)");
           }
           push(vm, msValueInt(-a.as.i));
-        } else if (a.kind == MS_VAL_FLOAT) {
+        } else if (a.kind == MS_VAL_F64) {
           push(vm, msValueFloat(-a.as.f));
         } else {
           RUNTIME_ERROR("TypeError: unary '-' requires a numeric operand, got '%s'", msValueTypeName(&a));
@@ -518,7 +527,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
 
       OPCODE(OP_UNARY_INVERT) {
         MsValue a = pop(vm);
-        if (a.kind != MS_VAL_INT) {
+        if (a.kind != MS_VAL_I64) {
           RUNTIME_ERROR("TypeError: '~' requires int operand, got '%s'", msValueTypeName(&a));
         }
         push(vm, msValueInt(~a.as.i));

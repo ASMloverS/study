@@ -18,18 +18,24 @@ MsValue msValueBool(bool b) {
 }
 
 MsValue msValueInt(ms_i64 i) {
-  MsValue v = {MS_VAL_INT, {0}};
+  MsValue v = {MS_VAL_I64, {0}};
   v.as.i = i;
   return v;
 }
 
 MsValue msValueFloat(double f) {
-  MsValue v = {MS_VAL_FLOAT, {0}};
+  MsValue v = {MS_VAL_F64, {0}};
   v.as.f = f;
   return v;
 }
 
-static bool isNumeric(const MsValue* v) { return v->kind == MS_VAL_INT || v->kind == MS_VAL_FLOAT; }
+MsValue msValueObj(MsObj* obj) {
+  MsValue v = {MS_VAL_OBJ, {0}};
+  v.as.obj = obj;
+  return v;
+}
+
+static bool isNumeric(const MsValue* v) { return v->kind == MS_VAL_I64 || v->kind == MS_VAL_F64; }
 
 bool msValueIsTruthy(const MsValue* v) {
   if (v->kind == MS_VAL_BOOL) {
@@ -40,11 +46,11 @@ bool msValueIsTruthy(const MsValue* v) {
 
 bool msValueEqual(const MsValue* a, const MsValue* b) {
   if (isNumeric(a) && isNumeric(b)) {  // 数值塔：int/float 数值互比；bool 不参与
-    if (a->kind == MS_VAL_INT && b->kind == MS_VAL_INT) {
+    if (a->kind == MS_VAL_I64 && b->kind == MS_VAL_I64) {
       return a->as.i == b->as.i;
     }
-    double da = a->kind == MS_VAL_INT ? (double)a->as.i : a->as.f;
-    double db = b->kind == MS_VAL_INT ? (double)b->as.i : b->as.f;
+    double da = a->kind == MS_VAL_I64 ? (double)a->as.i : a->as.f;
+    double db = b->kind == MS_VAL_I64 ? (double)b->as.i : b->as.f;
     return da == db;
   }
   switch (a->kind) {
@@ -59,8 +65,10 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
       return b->kind == MS_VAL_FUNCTION && a->as.func == b->as.func;
     case MS_VAL_NATIVE:
       return b->kind == MS_VAL_NATIVE && a->as.native == b->as.native;
+    case MS_VAL_OBJ:  // 身份语义：值等价随容器任务接入
+      return b->kind == MS_VAL_OBJ && a->as.obj == b->as.obj;
     default:
-      return false;  // 迭代器等仅同一性；对象等价 T012 起接入
+      return false;  // 迭代器等仅同一性
   }
 }
 
@@ -68,12 +76,12 @@ bool msValueOrder(const MsValue* a, const MsValue* b, int32_t* outCmp) {
   if (!(isNumeric(a) && isNumeric(b))) {
     return false;  // 本任务仅数值有序（string 序比较后置）
   }
-  if (a->kind == MS_VAL_INT && b->kind == MS_VAL_INT) {
+  if (a->kind == MS_VAL_I64 && b->kind == MS_VAL_I64) {
     *outCmp = a->as.i < b->as.i ? -1 : (a->as.i > b->as.i ? 1 : 0);
     return true;
   }
-  double da = a->kind == MS_VAL_INT ? (double)a->as.i : a->as.f;
-  double db = b->kind == MS_VAL_INT ? (double)b->as.i : b->as.f;
+  double da = a->kind == MS_VAL_I64 ? (double)a->as.i : a->as.f;
+  double db = b->kind == MS_VAL_I64 ? (double)b->as.i : b->as.f;
   *outCmp = da < db ? -1 : (da > db ? 1 : 0);
   return true;
 }
@@ -84,15 +92,17 @@ const char* msValueTypeName(const MsValue* v) {
       return "nil";
     case MS_VAL_BOOL:
       return "bool";
-    case MS_VAL_INT:
+    case MS_VAL_I64:
       return "int";
-    case MS_VAL_FLOAT:
+    case MS_VAL_F64:
       return "float";
     case MS_VAL_STRING:
       return "string";
     case MS_VAL_FUNCTION:
     case MS_VAL_NATIVE:
       return "function";
+    case MS_VAL_OBJ:
+      return "object";
     case MS_VAL_RANGE_ITER:
       return "iterator";
   }
@@ -149,10 +159,10 @@ void msValueToStr(const MsValue* v, char* buf, size_t cap) {
     case MS_VAL_BOOL:
       snprintf(buf, cap, v->as.b ? "true" : "false");
       break;
-    case MS_VAL_INT:
+    case MS_VAL_I64:
       snprintf(buf, cap, "%lld", (long long)v->as.i);
       break;
-    case MS_VAL_FLOAT:
+    case MS_VAL_F64:
       msFormatFloat(buf, cap, v->as.f);
       break;
     case MS_VAL_STRING:  // 防御路径：print 对 string 直写不经此
@@ -163,6 +173,9 @@ void msValueToStr(const MsValue* v, char* buf, size_t cap) {
       break;
     case MS_VAL_NATIVE:
       snprintf(buf, cap, "<native fn>");
+      break;
+    case MS_VAL_OBJ:
+      snprintf(buf, cap, "<object>");
       break;
     case MS_VAL_RANGE_ITER:
       snprintf(buf, cap, "<range-iter>");

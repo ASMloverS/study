@@ -3,7 +3,7 @@
 - 阶段: P4 对象系统（roadmap 期 4）
 - 依赖: T011
 - 规模: M
-- 状态: 未开始
+- 状态: ✅
 - 设计文档: `docs/language/22-object-model.md` §1 §2 §9、`23-gc.md`（本章仅取"追踪式全堆 STW"过渡形态）
 
 ## 1. 目标与范围
@@ -37,11 +37,11 @@ typedef void (*MarkChildrenFn)(MsVM* vm, MsObj* obj);
 
 ## 4. 验收标准（DoD）
 
-- [ ] 分配/全回收冒烟：循环分配临时对象，堆不超阈值稳定（泄漏检测）
-- [ ] 存活对象不被误收（栈/全局引用保持可达）
-- [ ] ASan 构建下 GC 单测无 UAF/泄漏
-- [ ] MsValue 判型族与 nil/bool/i64/f64 直存正确
-- [ ] 堆统计接口（对象数/字节数）可用于测试断言
+- [x] 分配/全回收冒烟：循环分配临时对象，堆不超阈值稳定（泄漏检测）
+- [x] 存活对象不被误收（栈/全局引用保持可达）
+- [x] ASan 构建下 GC 单测无 UAF/泄漏
+- [x] MsValue 判型族与 nil/bool/i64/f64 直存正确
+- [x] 堆统计接口（对象数/字节数）可用于测试断言
 
 ## 5. 测试计划
 
@@ -64,3 +64,4 @@ typedef void (*MarkChildrenFn)(MsVM* vm, MsObj* obj);
 
 - `markChildren` 分派表是后续所有容器任务的必经扩展点：每个容器任务必须同步补标记函数与对应测试，DoD 统一含"GC 单测扩展"。
 - 过渡 GC 与最终分代版共存策略：`gcCollectAll` 保留为 `runtime.gc()` 强制全量路径，不删除。
+- ASan 门禁平台差异：Windows clang ASan（LLVM 18）不含 LSan 出口泄漏检查（平台限制）；泄漏覆盖依赖 gc 单测的字节/计数回落断言，完整 LSan 验证由 Linux CI `asan` 预设承担。Windows ASan 门禁需静态 CRT（见 CMakeLists.txt MS_SANITIZERS+WIN32 块注释）。

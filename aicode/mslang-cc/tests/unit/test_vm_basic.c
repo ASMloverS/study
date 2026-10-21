@@ -22,7 +22,7 @@ TEST(valueConstructors) {
   EXPECT_EQ(ctx, MS_VAL_BOOL, b.kind);
   EXPECT_EQ(ctx, 1, b.as.b);
   MsValue i = msValueInt(42);
-  EXPECT_EQ(ctx, MS_VAL_INT, i.kind);
+  EXPECT_EQ(ctx, MS_VAL_I64, i.kind);
   EXPECT_EQ(ctx, 42, i.as.i);
 }
 
@@ -57,6 +57,24 @@ TEST(valueOrder) {
   EXPECT(ctx, msValueOrder(&b, &a, &cmp) && cmp > 0);
   EXPECT(ctx, msValueOrder(&a, &bf, &cmp) && cmp < 0);
   EXPECT(ctx, !msValueOrder(&a, &s, &cmp));  // 不可比较 → 调用方报 TypeError
+}
+
+TEST(valuePredicateFamily) {  // T012：五 tag 判型族（22 §1）+ OBJ 身份语义
+  MsValue n = msValueNil();
+  MsValue b = msValueBool(false);
+  MsValue i = msValueInt(7);
+  MsValue f = msValueFloat(0.5);
+  EXPECT(ctx, msIsNil(&n) && !msIsBool(&n) && !msIsI64(&n) && !msIsF64(&n) && !msIsObj(&n));
+  EXPECT(ctx, msIsBool(&b) && !msIsNil(&b) && !msIsI64(&b));
+  EXPECT(ctx, msIsI64(&i) && !msIsF64(&i) && !msIsBool(&i));
+  EXPECT(ctx, msIsF64(&f) && !msIsI64(&f));
+  MsValue o = msValueObj((MsObj*)(uintptr_t)0x10);  // 判型不 deref
+  EXPECT(ctx, msIsObj(&o) && !msIsI64(&o) && !msIsNil(&o));
+  EXPECT(ctx, msValueEqual(&o, &o));  // OBJ 相等 = 指针同一
+  EXPECT_STREQ(ctx, "object", msValueTypeName(&o));
+  EXPECT(ctx, msValueIsTruthy(&o));
+  MsValue o2 = msValueObj((MsObj*)(uintptr_t)0x20);
+  EXPECT(ctx, !msValueEqual(&o, &o2));
 }
 
 TEST(valueTypeNames) {
@@ -464,6 +482,7 @@ int main(int argc, char** argv) {
       valueTruthyRules,
       valueEquality,
       valueOrder,
+      valuePredicateFamily,
       valueTypeNames,
       valueToStrForms,
       floatFormatShortestRoundTrip,

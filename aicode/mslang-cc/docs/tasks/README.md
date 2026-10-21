@@ -30,7 +30,7 @@
 | T009 | Binder | [T009](T009-binder.md) | P2 | T008 | M | ✅ |
 | T010 | 指令集与 Compiler | [T010](T010-instruction-compiler.md) | P3 | T009 | L | ✅ |
 | T011 | VM 基础 | [T011](T011-vm-basic-control-flow.md) | P3 | T010 | L | ✅ |
-| T012 | 堆与临时 GC | [T012](T012-heap-basic-gc.md) | P4 | T011 | M | ⬜ |
+| T012 | 堆与临时 GC | [T012](T012-heap-basic-gc.md) | P4 | T011 | M | ✅ |
 | T013 | string 对象 | [T013](T013-string-object.md) | P4 | T012 | L | ⬜ |
 | T014 | list 与解构赋值 | [T014](T014-list-destructuring.md) | P4 | T013 | M | ⬜ |
 | T015 | map / set / tuple | [T015](T015-map-set-tuple.md) | P4 | T013 | L | ⬜ |

@@ -10,7 +10,7 @@ static void bridgeErr(MsVM* vm, const char* msg) {
 }
 
 static bool needInt(MsVM* vm, const MsValue* v, ms_i64* out) {
-  if (v->kind != MS_VAL_INT) {
+  if (v->kind != MS_VAL_I64) {
     bridgeErr(vm, "TypeError: range arguments must be int");
     return false;
   }
