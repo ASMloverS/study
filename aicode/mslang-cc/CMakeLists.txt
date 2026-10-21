@@ -36,6 +36,11 @@ endif()
 if(MS_SANITIZERS AND NOT MSVC)
   add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
   add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
+  if(WIN32)
+    # Windows 上 GNU 前端 clang + MSVC ABI：默认动态 CRT 时链接缺 ucrtd 导入库，且 ucrtbased.dll 与静态 ASan 运行时的 malloc/free 导出冲突；
+    # 静态 CRT 下驱动自动补齐 libcmt/libucrt 系且与 ASan 兼容（探测验证），故门禁固定静态 CRT
+    set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded$<$<CONFIG:Debug>:Debug>)
+  endif()
 endif()
 
 add_library(ms_common STATIC src/common/common.c)
