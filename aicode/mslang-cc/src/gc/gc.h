@@ -2,6 +2,7 @@
 #ifndef INCLUDE_MS_GC_GC_H_
 #define INCLUDE_MS_GC_GC_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -21,7 +22,7 @@ typedef struct GcHeap {
 typedef void (*MarkChildrenFn)(MsVM* vm, MsObj* obj);
 // markChildren 注册扩展点：每个容器任务为自身类型补标记并同步 GC 单测（任务书 T012 §6）
 void gcSetMarkFn(MsObjType type, MarkChildrenFn fn);
-// 标记入口：root 扫描与已注册 markFn 共用（仅追踪 MS_VAL_OBJ）
+// 标记入口：root 扫描与已注册 markFn 共用（仅追踪 MS_VAL_OBJ）；仅限收集周期内调用（收集期外置 MARK 不入队会漏扫 children）
 // mutator 纪律：C 局部/held MsValue 不是 root——分配新对象前须先把既有引用落栈/全局，防分配-填充窗口期被回收
 void gcMarkValue(MsVM* vm, MsValue v);
 // 整堆 STW 标记清除（root = 栈 + 全局表）；保留为 runtime.gc() 全量路径（归 T036）

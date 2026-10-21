@@ -11,7 +11,7 @@
 static MarkChildrenFn g_markFns[MS_OBJ_COUNT];  // 未注册 = 无 children
 
 void gcSetMarkFn(MsObjType type, MarkChildrenFn fn) {
-  MS_ASSERT(type >= 0 && type < MS_OBJ_COUNT);
+  MS_ASSERT((unsigned)type < (unsigned)MS_OBJ_COUNT);  // 无符号单侧比较：规避 GCC -Wtype-limits 恒真告警
   g_markFns[type] = fn;
 }
 
