@@ -178,6 +178,7 @@ TEST(permanentSurvives) {  // permanent：无 root 引用也不回收；heapFree
   perm->flags |= MS_OBJ_PERMANENT;  // intern/常量池雏形（intern 表归 T013）
   gcCollectAll(&vm);
   EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 0x1234, (long long)((TestNode*)perm)->magic);  // 金丝雀：统计与释放失同步时兜底（误收则 ASan UAF）
   msVmFree(&vm);  // 含 permanent 全释放（ASan 无泄漏）
 }
 
