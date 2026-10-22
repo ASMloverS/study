@@ -258,6 +258,21 @@ TEST(stringConcatRepeat) {  // 02 §4：+ 拼接、* 重复、"a"+1 TypeError（
   free(r.out);
 }
 
+TEST(buildListAndIndex) {  // D6：BUILD_LIST + GET_INDEX(int)；list 的 print str 形态归 Task 11
+  RunResult r = runSrc("var xs = [1, 2, 3]\nprint(xs[1])\nprint(xs[-1])\nprint(xs)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "2\n3\n<object>\n", r.out);  // print(list) 暂走 msValueToStr OBJ 兜底 "<object>"
+  free(r.out);
+  r = runSrc("var xs = [1]\nprint(xs[5])");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IndexError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\nprint(xs[\"k\"])");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
 TEST(runShortCircuitValues) {  // §5.1 短路值 + &&/|| 返回操作数；0 为真（02 §2）
   RunResult r = runSrc("print(nil || \"d\")\nprint(false && 1)\nprint(0 && 1)");
   EXPECT_STREQ(ctx, "d\nfalse\n1\n", r.out);
@@ -550,6 +565,7 @@ int main(int argc, char** argv) {
       stringValueMigration,
       stringConstLoadUnderGcPressure,
       stringConcatRepeat,
+      buildListAndIndex,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,

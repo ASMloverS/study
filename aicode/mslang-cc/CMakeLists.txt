@@ -83,6 +83,8 @@ target_link_libraries(ms_vm PRIVATE ms_obj)
 target_sources(ms_obj PRIVATE src/obj/obj_string.c)
 # T013：intern 表（Task 4；开放寻址线性探测 + PERMANENT 代）
 target_sources(ms_obj PRIVATE src/obj/intern.c)
+# T013：最小 MsObjList 桥（Task 7；split/join 数据面，完整容器归 T014）
+target_sources(ms_obj PRIVATE src/obj/obj_list.c)
 
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)

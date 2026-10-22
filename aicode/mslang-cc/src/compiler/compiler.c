@@ -323,6 +323,20 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       }
       break;
     }
+    case AST_LIST: {
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        compileExpr(fs, n->as.list.items[i]);
+      }
+      emitOp(fs, OP_BUILD_LIST, n->line);
+      emitByte(fs, (ms_u8)n->as.list.count);
+      break;
+    }
+    case AST_INDEX: {  // D6：obj, index → GET_INDEX（slice 形态经 BUILD_SLICE 归 Task 10）
+      compileExpr(fs, n->as.indexExpr.obj);
+      compileExpr(fs, n->as.indexExpr.index);
+      emitOp(fs, OP_GET_INDEX, n->line);
+      break;
+    }
     case AST_IDENT:
       loadIdent(fs, n);
       break;

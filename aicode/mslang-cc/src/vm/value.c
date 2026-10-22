@@ -115,8 +115,10 @@ const char* msValueTypeName(const MsValue* v) {
       switch (v->as.obj->type) {
         case MS_OBJ_STRING:
           return "string";
+        case MS_OBJ_LIST:  // T013 D6 最小桥；其余容器类型名随各容器任务接入
+          return "list";
         default:
-          return "object";  // list/iterator 等类型名随容器任务接入
+          return "object";
       }
     case MS_VAL_RANGE_ITER:
       return "iterator";

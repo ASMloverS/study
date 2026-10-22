@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_list.h"
 #include "obj/obj_string.h"
 #include "test_harness.h"
 #include "vm/vm.h"
@@ -185,6 +186,21 @@ TEST(internGrowth) {  // 负载再哈希：大批量 intern 后仍正确去重
   msVmFree(&vm);
 }
 
+TEST(minimalListBridge) {  // D6 最小 list 桥：数据面
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjList* xs = msObjListNew(&vm);
+  EXPECT(ctx, xs != NULL && xs->count == 0);
+  msObjListPush(&vm, xs, msValueInt(1));
+  msObjListPush(&vm, xs, msValueInt(2));
+  EXPECT_EQ(ctx, 2, (long long)xs->count);
+  EXPECT_EQ(ctx, 1, xs->items[0].as.i);
+  EXPECT_EQ(ctx, 2, xs->items[1].as.i);
+  MsValue lv = msValueObj(&xs->head);
+  EXPECT_STREQ(ctx, "list", msValueTypeName(&lv));
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -200,6 +216,7 @@ int main(int argc, char** argv) {
       stringSlice,
       internDedup,
       internGrowth,
+      minimalListBridge,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

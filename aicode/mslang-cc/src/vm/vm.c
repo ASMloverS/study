@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_list.h"
 #include "obj/obj_string.h"
 
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
@@ -23,6 +24,7 @@ void msVmInit(MsVM* vm) {
   vm->heap = malloc(sizeof(GcHeap));
   MS_ASSERT(vm->heap != NULL);
   gcHeapInit(vm->heap);
+  gcSetMarkFn(MS_OBJ_LIST, msObjListMarkChildren);  // D6：children 标记统一注册（进程级表，幂等）
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);
   msInternInit(vm->intern);
@@ -365,6 +367,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_COMPARE_GE);
   SET_HANDLER(OP_IS);
   SET_HANDLER(OP_IN);
+  SET_HANDLER(OP_GET_INDEX);
   SET_HANDLER(OP_MAKE_FUNCTION);
   SET_HANDLER(OP_CALL);
   SET_HANDLER(OP_RETURN);
@@ -377,6 +380,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_CHECK_TYPE);
   SET_HANDLER(OP_GET_ITER);
   SET_HANDLER(OP_FOR_ITER);
+  SET_HANDLER(OP_BUILD_LIST);
   SET_HANDLER(OP_CHECK_SAFEPOINT);
 #define OPCODE(opname) LBL(opname):
 #define NEXT()               \
@@ -594,6 +598,37 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_IN)
       RUNTIME_ERROR("RuntimeError: 'in' executes in T017");
 
+      OPCODE(OP_GET_INDEX) {  // peek 求值完成后再弹栈（分配窗口内保 root；slice 分支 Task 10）
+        MsValue idx = vm->stack[vm->stackTop - 1];
+        MsValue obj = vm->stack[vm->stackTop - 2];
+        if (msIsString(&obj)) {
+          MsObjString* s = (MsObjString*)obj.as.obj;
+          if (idx.kind == MS_VAL_I64) {
+            ms_u32 cp = 0;
+            if (!msObjStringRuneAt(vm, s, idx.as.i, &cp)) {
+              RUNTIME_ERROR("IndexError: string index out of range");
+            }
+            vm->stackTop -= 2;
+            push(vm, msValueInt((ms_i64)cp));
+            NEXT();
+          }
+          RUNTIME_ERROR("TypeError: string indices must be int (slice executes in T013 Task 10)");
+        }
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_LIST) {
+          if (idx.kind != MS_VAL_I64) {
+            RUNTIME_ERROR("TypeError: list indices must be int");
+          }
+          MsValue item;
+          if (!msObjListGet((MsObjList*)obj.as.obj, idx.as.i, &item)) {
+            RUNTIME_ERROR("IndexError: list index out of range");
+          }
+          vm->stackTop -= 2;
+          push(vm, item);
+          NEXT();
+        }
+        RUNTIME_ERROR("TypeError: '%s' is not indexable", msValueTypeName(&obj));
+      }
+
       OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（默认参/rest 形态 T018）
         (void)code[ip++];
         MsValue proto = pop(vm);
@@ -717,6 +752,26 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         } else {
           it->as.range.cur = cur + step;
         }
+        NEXT();
+      }
+
+      OPCODE(OP_BUILD_LIST) {  // <u8 n>：peek 直填（循环零分配）后统一弹栈（D6；GC 纪律）
+        int32_t n = code[ip++];
+        MsObjList* list = msObjListNew(vm);
+        if (list == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        push(vm, msValueObj(&list->head));  // list 落栈保活
+        if (!msObjListReserve(vm, list, n)) {  // 分配点：n 个源值仍在栈上安全
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        const MsValue* src = &vm->stack[vm->stackTop - 1 - n];  // 首元素（list 之下）
+        for (int32_t i = 0; i < n; i++) {
+          list->items[i] = src[i];
+        }
+        list->count = n;
+        vm->stack[vm->stackTop - n - 1] = vm->stack[vm->stackTop - 1];  // list 下移覆盖首源槽
+        vm->stackTop -= n;  // 弹出 n 个源值，list 留栈顶（n=0 时为自赋值无害）
         NEXT();
       }
 
