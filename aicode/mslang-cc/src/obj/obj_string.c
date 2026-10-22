@@ -9,6 +9,7 @@ static MsObjString* newString(MsVM* vm, const char* bytes, int32_t len) {
   if (len < 0) {
     return NULL;  // 长度非法视同失败（防 size_t 回绕溢出）
   }
+  // FNV-1a 常数与 common.c 的 msFnv1a32/msFnv1a64（common.h 声明）保持同步：两处独立展开，改须同改
   ms_u32 hash = 0x811C9DC5u;              // FNV-1a-32 offset basis / prime 见下
   ms_u64 hash64 = 0xCBF29CE484222325ull;  // FNV-1a-64 offset basis
   bool isAscii = true;
@@ -30,9 +31,10 @@ static MsObjString* newString(MsVM* vm, const char* bytes, int32_t len) {
     }
     charLen++;
   }
+  size_t pad = isAscii ? 0 : (size_t)((4 - (len & 3)) & 3);  // runeIndex 尾区 4 字节对齐填充
   size_t runeArea = isAscii ? 0 : ((size_t)charLen + 1) * sizeof(int32_t);
-  MsObjString* s =
-      (MsObjString*)msObjAlloc(vm, MS_OBJ_STRING, sizeof(MsObjString) + (size_t)len + runeArea);
+  MsObjString* s = (MsObjString*)msObjAlloc(vm, MS_OBJ_STRING,
+                                            sizeof(MsObjString) + (size_t)len + pad + runeArea);
   if (s == NULL) {
     return NULL;
   }

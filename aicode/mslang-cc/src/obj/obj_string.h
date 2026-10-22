@@ -21,8 +21,8 @@ typedef struct MsObjString {
   ms_u32 byteLen;
   ms_u32 charLen;   // 创建时一次扫描定（ASCII 时 = byteLen）
   bool isAscii;
-  int32_t* runeIndex;  // 惰性：非 ASCII 首次按需构建；指向对象内 bytes+byteLen 保留区（D1）
-  char bytes[];        // FAM；非 ASCII 时尾随 (charLen+1)*4 字节 runeIndex 空间
+  int32_t* runeIndex;  // 惰性：非 ASCII 首次按需构建；指向对象内 bytes+byteLen+pad 保留区（D1）
+  char bytes[];        // FAM；非 ASCII 时尾随 runeIndex 保留区：4 字节对齐填充 pad（= (4 - byteLen % 4) % 4）+ (charLen+1)*4 字节
 } MsObjString;
 #if defined(_MSC_VER)
 #pragma warning(pop)
