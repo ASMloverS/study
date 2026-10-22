@@ -238,10 +238,6 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
         return false;
     }
   }
-  if (k == BA_ADD && a.kind == MS_VAL_STRING && b.kind == MS_VAL_STRING) {
-    snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: string concatenation executes in T013");
-    return false;  // 堆 string 归 T012/T013
-  }
   snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: unsupported operand types for '%s': '%s' and '%s'",
            kBinArithNames[k], msValueTypeName(&a), msValueTypeName(&b));
   return false;
@@ -433,7 +429,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_LOAD_CONST) {
         READ_OPERAND(k);
         bool ok = false;
-        MsValue v = msValueFromConst(&consts[k], &ok);
+        MsValue v = msValueFromConst(vm, &consts[k], &ok);
         if (!ok) {
           RUNTIME_ERROR("RuntimeError: bigint executes in T016 (placeholder)");
         }

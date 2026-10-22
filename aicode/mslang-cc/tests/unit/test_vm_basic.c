@@ -8,6 +8,7 @@
 #include "binder/binder.h"
 #include "compiler/chunk.h"
 #include "compiler/compiler.h"
+#include "obj/obj_string.h"
 #include "parser/parser.h"
 #include "scanner/scanner.h"
 #include "test_harness.h"
@@ -59,22 +60,29 @@ TEST(valueOrder) {
   EXPECT(ctx, !msValueOrder(&a, &s, &cmp));  // 不可比较 → 调用方报 TypeError
 }
 
-TEST(valuePredicateFamily) {  // T012：五 tag 判型族（22 §1）+ OBJ 身份语义
+TEST(valuePredicateFamily) {  // T012 五 tag 判型族 + T013 OBJ 分派（typeName deref obj->type）
   MsValue n = msValueNil();
-  MsValue b = msValueBool(false);
-  MsValue i = msValueInt(7);
-  MsValue f = msValueFloat(0.5);
   EXPECT(ctx, msIsNil(&n) && !msIsBool(&n) && !msIsI64(&n) && !msIsF64(&n) && !msIsObj(&n));
+  MsValue b = msValueBool(false);
   EXPECT(ctx, msIsBool(&b) && !msIsNil(&b) && !msIsI64(&b));
+  MsValue i = msValueInt(7);
   EXPECT(ctx, msIsI64(&i) && !msIsF64(&i) && !msIsBool(&i));
+  MsValue f = msValueFloat(0.5);
   EXPECT(ctx, msIsF64(&f) && !msIsI64(&f));
-  MsValue o = msValueObj((MsObj*)(uintptr_t)0x10);  // 判型不 deref
-  EXPECT(ctx, msIsObj(&o) && !msIsI64(&o) && !msIsNil(&o));
-  EXPECT(ctx, msValueEqual(&o, &o));  // OBJ 相等 = 指针同一
-  EXPECT_STREQ(ctx, "object", msValueTypeName(&o));
-  EXPECT(ctx, msValueIsTruthy(&o));
-  MsValue o2 = msValueObj((MsObj*)(uintptr_t)0x20);
-  EXPECT(ctx, !msValueEqual(&o, &o2));
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* s = msObjStringNew(&vm, "s", 1);
+  MsValue sv = msValueObj(&s->head);
+  EXPECT(ctx, msIsObj(&sv) && !msIsI64(&sv) && !msIsNil(&sv));
+  EXPECT_STREQ(ctx, "string", msValueTypeName(&sv));
+  EXPECT(ctx, msValueIsTruthy(&sv));
+  MsObjString* s2 = msObjStringNew(&vm, "t", 1);
+  MsValue sv2 = msValueObj(&s2->head);
+  EXPECT(ctx, !msValueEqual(&sv, &sv2));  // 不同内容不同指针 → 不等
+  EXPECT(ctx, msValueEqual(&sv, &sv));    // 同指针
+  MsValue iv = msValueInt(3);
+  EXPECT(ctx, !msValueEqual(&sv, &iv));  // string vs int
+  msVmFree(&vm);
 }
 
 TEST(valueTypeNames) {
@@ -202,6 +210,13 @@ TEST(runIntOverflowPlaceholder) {  // 已知临时语义（T016 前）；字面�
   RunResult r = runSrc("var a = 9223372036854775807\nvar b = 1\nprint(a + b)");
   EXPECT(ctx, r.hasError);
   EXPECT(ctx, strstr(r.err, "OverflowError") != NULL);
+  free(r.out);
+}
+
+TEST(stringValueMigration) {  // T013：string 即 MS_VAL_OBJ；值相等（intern 合一）+ 字典序
+  RunResult r = runSrc("var a = \"abc\"\nvar b = \"\\x61\\x62c\"\nprint(a == b)\nprint(a < b)\nprint(\"b\" < \"c\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "true\nfalse\ntrue\n", r.out);
   free(r.out);
 }
 
@@ -494,6 +509,7 @@ int main(int argc, char** argv) {
       runShortCircuitValues,
       runGlobalsReadWrite,
       runBoolIntNotConvertible,
+      stringValueMigration,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,

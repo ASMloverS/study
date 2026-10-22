@@ -1,10 +1,13 @@
 // 值操作助手（T011）：构造/真值/相等/排序/类型名/str 形态/浮点格式
+// T013：string 归 MS_VAL_OBJ（值相等/字典序经 obj_string；字面量经 intern 合一）
 #include "vm/vm.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "obj/obj_string.h"
 
 MsValue msValueNil(void) {
   MsValue v = {MS_VAL_NIL, {0}};
@@ -58,15 +61,19 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
       return b->kind == MS_VAL_NIL;
     case MS_VAL_BOOL:
       return b->kind == MS_VAL_BOOL && a->as.b == b->as.b;
-    case MS_VAL_STRING:
-      return b->kind == MS_VAL_STRING && a->as.str.len == b->as.str.len &&
-             memcmp(a->as.str.bytes, b->as.str.bytes, (size_t)a->as.str.len) == 0;
     case MS_VAL_FUNCTION:
       return b->kind == MS_VAL_FUNCTION && a->as.func == b->as.func;
     case MS_VAL_NATIVE:
       return b->kind == MS_VAL_NATIVE && a->as.native == b->as.native;
-    case MS_VAL_OBJ:  // 身份语义：值等价随容器任务接入
-      return b->kind == MS_VAL_OBJ && a->as.obj == b->as.obj;
+    case MS_VAL_OBJ: {
+      if (b->kind != MS_VAL_OBJ) {
+        return false;
+      }
+      if (a->as.obj->type == MS_OBJ_STRING && b->as.obj->type == MS_OBJ_STRING) {
+        return msObjStringEqual((const MsObjString*)a->as.obj, (const MsObjString*)b->as.obj);
+      }
+      return a->as.obj == b->as.obj;  // 其余身份（list 值等价 T014）
+    }
     default:
       return false;  // 迭代器等仅同一性
   }
@@ -74,7 +81,12 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
 
 bool msValueOrder(const MsValue* a, const MsValue* b, int32_t* outCmp) {
   if (!(isNumeric(a) && isNumeric(b))) {
-    return false;  // 本任务仅数值有序（string 序比较后置）
+    if (a->kind == MS_VAL_OBJ && b->kind == MS_VAL_OBJ && a->as.obj->type == MS_OBJ_STRING &&
+        b->as.obj->type == MS_OBJ_STRING) {  // string 字典序（22 §3）
+      *outCmp = msObjStringCompare((const MsObjString*)a->as.obj, (const MsObjString*)b->as.obj);
+      return true;
+    }
+    return false;  // 其余组合不可比较
   }
   if (a->kind == MS_VAL_I64 && b->kind == MS_VAL_I64) {
     *outCmp = a->as.i < b->as.i ? -1 : (a->as.i > b->as.i ? 1 : 0);
@@ -96,15 +108,20 @@ const char* msValueTypeName(const MsValue* v) {
       return "int";
     case MS_VAL_F64:
       return "float";
-    case MS_VAL_STRING:
-      return "string";
     case MS_VAL_FUNCTION:
     case MS_VAL_NATIVE:
       return "function";
     case MS_VAL_OBJ:
-      return "object";
+      switch (v->as.obj->type) {
+        case MS_OBJ_STRING:
+          return "string";
+        default:
+          return "object";  // list/iterator 等类型名随容器任务接入
+      }
     case MS_VAL_RANGE_ITER:
       return "iterator";
+    case MS_VAL_SLICE:
+      return "slice";
   }
   return "unknown";
 }
@@ -165,25 +182,25 @@ void msValueToStr(const MsValue* v, char* buf, size_t cap) {
     case MS_VAL_F64:
       msFormatFloat(buf, cap, v->as.f);
       break;
-    case MS_VAL_STRING:  // 防御路径：print 对 string 直写不经此
-      snprintf(buf, cap, "%.*s", (int)(v->as.str.len < 40 ? v->as.str.len : 40), v->as.str.bytes);
-      break;
     case MS_VAL_FUNCTION:
       snprintf(buf, cap, "<func %.*s>", (int)v->as.func->nameLen, v->as.func->name);
       break;
     case MS_VAL_NATIVE:
       snprintf(buf, cap, "<native fn>");
       break;
-    case MS_VAL_OBJ:
+    case MS_VAL_OBJ:  // string 由 print 直写不经此（str 形态归 Task 11）
       snprintf(buf, cap, "<object>");
       break;
     case MS_VAL_RANGE_ITER:
       snprintf(buf, cap, "<range-iter>");
       break;
+    case MS_VAL_SLICE:
+      snprintf(buf, cap, "<slice>");
+      break;
   }
 }
 
-MsValue msValueFromConst(const ConstEntry* e, bool* okOut) {
+MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut) {
   *okOut = true;
   switch (e->kind) {
     case CONST_NIL:
@@ -196,11 +213,30 @@ MsValue msValueFromConst(const ConstEntry* e, bool* okOut) {
       return msValueFloat(e->as.f);
     case CONST_RUNE:
       return msValueInt((ms_i64)e->as.cp);  // rune 即 int 码点（02 §1）
-    case CONST_STRING: {
-      MsValue v = {MS_VAL_STRING, {0}};
-      v.as.str.bytes = e->as.text.start;
-      v.as.str.len = e->as.text.len;
-      return v;
+    case CONST_STRING:
+    case CONST_RAWSTRING: {
+      if (e->strVm == vm && e->strObj != NULL) {
+        return msValueObj(e->strObj);  // 缓存命中（intern 产物，永久代存活）
+      }
+      MsObjString* s = NULL;
+      if (e->kind == CONST_STRING) {
+        s = msObjStringFromEscaped(vm, e->as.text.start, e->as.text.len);
+      } else {
+        s = msObjStringNew(vm, e->as.text.start, e->as.text.len);
+      }
+      if (s == NULL) {
+        *okOut = false;
+        return msValueNil();
+      }
+      MsObjString* interned = msInternBytes(vm, s->bytes, (int32_t)s->byteLen);
+      if (interned == NULL) {
+        *okOut = false;
+        return msValueNil();
+      }
+      // 缓存写入去 const（对调用方透明的按 VM 缓存，D3：跨 VM 复跑按 strVm 失效）
+      ((ConstEntry*)e)->strObj = &interned->head;
+      ((ConstEntry*)e)->strVm = vm;
+      return msValueObj(&interned->head);
     }
     case CONST_PROTO: {
       MsValue v = {MS_VAL_FUNCTION, {0}};
@@ -209,6 +245,9 @@ MsValue msValueFromConst(const ConstEntry* e, bool* okOut) {
     }
     case CONST_BIGINT:
       *okOut = false;  // bigint 执行归 T016（占位错误由 VM 报）
+      return msValueNil();
+    case CONST_INTERP:
+      *okOut = false;  // 插值执行归 Task 11（FORMAT_STRING 消费）
       return msValueNil();
   }
   return msValueNil();

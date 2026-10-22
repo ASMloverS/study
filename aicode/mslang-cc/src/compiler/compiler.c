@@ -270,6 +270,7 @@ static ms_u8 binaryOpCode(AstBinOp op) {
 }
 
 // 无插值字符串 → 常量（空串 0 段亦然）；插值/多段 → FORMAT_STRING 未启用
+// T013：反引号原始串走 CONST_RAWSTRING（内容不解码，LOAD_CONST 直拷 intern）
 static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
   const AstStrSeg* segs = n->as.strLit.segs;
   if (n->as.strLit.count == 0) {  // ""：空串
@@ -277,7 +278,8 @@ static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
     return true;
   }
   if (n->as.strLit.count == 1 && segs[0].expr == NULL) {
-    *idxOut = chunkAddConstText(fs->chunk, CONST_STRING, segs[0].start, segs[0].len);
+    ConstKind k = n->as.strLit.raw ? CONST_RAWSTRING : CONST_STRING;
+    *idxOut = chunkAddConstText(fs->chunk, k, segs[0].start, segs[0].len);
     return true;
   }
   return false;

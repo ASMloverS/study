@@ -11,17 +11,17 @@
 
 typedef struct MsObj MsObj;  // 对象头（obj/obj.h，T012）
 
-// 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013、FUNCTION/NATIVE→T018、RANGE_ITER→T017）
+// 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013 已完成、FUNCTION/NATIVE→T018、RANGE_ITER→T017）
 typedef enum MsValueKind {
   MS_VAL_NIL,
   MS_VAL_BOOL,
   MS_VAL_I64,
   MS_VAL_F64,
-  MS_VAL_OBJ,         // 堆对象指针（T012）
-  MS_VAL_STRING,      // 过渡：借用常量池文本（转义原文；解码归 T013）
+  MS_VAL_OBJ,         // 堆对象指针（T012；string 即 MS_OBJ_STRING）
   MS_VAL_FUNCTION,    // 过渡：函数 chunk 引用（MsObjFunction 归 T018）
   MS_VAL_NATIVE,      // 过渡：C 内置函数（MsObjNative 归 T018）
   MS_VAL_RANGE_ITER,  // 过渡：range 惰性迭代器（MsObjIter 归 T017）
+  MS_VAL_SLICE,       // 过渡：切片描述（BUILD_SLICE → GET_INDEX 栈上瞬态；T014/T015 复用）
 } MsValueKind;
 
 typedef struct MsVM MsVM;
@@ -35,15 +35,15 @@ typedef struct MsValue {
     ms_i64 i;
     double f;
     MsObj* obj;
-    struct {
-      const char* bytes;  // 借用（常量池/源缓冲）
-      int32_t len;
-    } str;
     const Chunk* func;
     MsNativeFn native;
     struct {
       ms_i64 cur, stop, step;
     } range;
+    struct {
+      ms_i64 start, end, step;
+      ms_u8 mask;  // bit0/1/2：start/end/step 显式给出
+    } slice;
   } as;
 } MsValue;
 
@@ -110,6 +110,6 @@ const char* msValueTypeName(const MsValue* v);
 // print str 形态（nil/bool/int/float；string 由 print 直写不经此函数）
 void msValueToStr(const MsValue* v, char* buf, size_t cap);
 void msFormatFloat(char* buf, size_t cap, double v);  // 最短往返 + ".0" 保形
-MsValue msValueFromConst(const ConstEntry* e, bool* okOut);  // BIGINT 置 *okOut=false
+MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut);  // BIGINT 置 *okOut=false；STRING/RAWSTRING 解码/intern 并按 VM 缓存
 
 #endif  // INCLUDE_MS_VM_VM_H_

@@ -26,6 +26,7 @@ static void printConstValue(FILE* out, const ConstEntry* e) {
       fprintf(out, "%.*sn", e->as.text.len, e->as.text.start);
       break;
     case CONST_STRING:
+    case CONST_RAWSTRING:  // 反引号原始串渲染同 STRING（解码值等价）
       putc('"', out);
       for (int32_t i = 0; i < e->as.text.len; i++) {
         ms_u8 ch = (ms_u8)e->as.text.start[i];
@@ -44,6 +45,9 @@ static void printConstValue(FILE* out, const ConstEntry* e) {
         }
       }
       putc('"', out);
+      break;
+    case CONST_INTERP:  // Task 11 FORMAT_STRING 消费
+      fprintf(out, "<interp %d>", e->as.interp.count);
       break;
     case CONST_PROTO:
       fprintf(out, "<func %.*s>", e->as.proto->nameLen, e->as.proto->name);
@@ -72,7 +76,11 @@ static void printConstKind(FILE* out, const ConstEntry* e) {
       fputs("bigint", out);
       break;
     case CONST_STRING:
+    case CONST_RAWSTRING:
       fputs("string", out);
+      break;
+    case CONST_INTERP:
+      fputs("interp", out);
       break;
     case CONST_PROTO:
       fputs("proto", out);

@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "obj/obj_string.h"
+
 static void bridgeErr(MsVM* vm, const char* msg) {
   vm->hasError = true;
   snprintf(vm->errMsg, sizeof(vm->errMsg), "%s", msg);
@@ -18,14 +20,15 @@ static bool needInt(MsVM* vm, const MsValue* v, ms_i64* out) {
   return true;
 }
 
-// print(...xs)：空格连接 + 换行（Python 语义）；string 直写裸文本（转义解码归 T013）
+// print(...xs)：空格连接 + 换行（Python 语义）；string 直写解码后字节（T013 堆对象）
 static MsValue nativePrint(MsVM* vm, int32_t argc, const MsValue* args) {
   for (int32_t i = 0; i < argc; i++) {
     if (i > 0) {
       putc(' ', vm->out);
     }
-    if (args[i].kind == MS_VAL_STRING) {
-      fwrite(args[i].as.str.bytes, 1, (size_t)args[i].as.str.len, vm->out);
+    if (msIsString(&args[i])) {
+      const MsObjString* s = (const MsObjString*)args[i].as.obj;
+      fwrite(s->bytes, 1, s->byteLen, vm->out);
     } else {
       char buf[64];
       msValueToStr(&args[i], buf, sizeof(buf));
