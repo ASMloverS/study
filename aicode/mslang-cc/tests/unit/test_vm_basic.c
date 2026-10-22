@@ -220,6 +220,25 @@ TEST(stringValueMigration) {  // T013：string 即 MS_VAL_OBJ；值相等（inte
   free(r.out);
 }
 
+TEST(stringConstLoadUnderGcPressure) {  // 回归：低阈值下字面量经 LOAD_CONST 不被误收（C1 消费式 intern）
+  // runSrc 每 VM 重建：窗口前累计分配仅一个临时串（~90B），阈值须 ≤ 该值才在 intern 拷贝分配点武装 guard；
+  // 取 1 = 任意平台确定复现（reviewer 探针同值）。gcCollectAll 不使分配失败，无 OOM 环风险
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=1");
+#else
+  setenv("MS_GC_HEAP_MAX", "1", 1);
+#endif
+  RunResult r = runSrc("var s = \"abcdefghijklmnopqrstuvwxyz0123456789\"\nprint(s)\nprint(s)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "abcdefghijklmnopqrstuvwxyz0123456789\nabcdefghijklmnopqrstuvwxyz0123456789\n", r.out);
+  free(r.out);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
+}
+
 TEST(runShortCircuitValues) {  // §5.1 短路值 + &&/|| 返回操作数；0 为真（02 §2）
   RunResult r = runSrc("print(nil || \"d\")\nprint(false && 1)\nprint(0 && 1)");
   EXPECT_STREQ(ctx, "d\nfalse\n1\n", r.out);
@@ -510,6 +529,7 @@ int main(int argc, char** argv) {
       runGlobalsReadWrite,
       runBoolIntNotConvertible,
       stringValueMigration,
+      stringConstLoadUnderGcPressure,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,

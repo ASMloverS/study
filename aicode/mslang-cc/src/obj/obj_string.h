@@ -75,6 +75,9 @@ typedef struct MsInternTable {
 void msInternInit(MsInternTable* t);
 void msInternFree(MsInternTable* t);  // 仅释放槽位数组（对象归堆统一释放）
 MsObjString* msInternBytes(MsVM* vm, const char* bytes, int32_t len);  // 存在即返回既有指针
+// 消费式 intern：probe 既有等值串则返回之（s 成为待回收垃圾）；miss 则将 s 本身标永久并插表。
+// 全程零分配——s 在调用期间不可达 GC 亦不被回收（msValueFromConst 临时串唯一安全路径）
+MsObjString* msInternObj(MsVM* vm, MsObjString* s);
 
 static inline bool msIsString(const MsValue* v) {
   return v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_STRING;

@@ -218,6 +218,7 @@ MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut) {
       if (e->strVm == vm && e->strObj != NULL) {
         return msValueObj(e->strObj);  // 缓存命中（intern 产物，永久代存活）
       }
+      // 解码/拷贝源均为常量池文本（非 GC 管理）：New 内 guard 收集无窗口
       MsObjString* s = NULL;
       if (e->kind == CONST_STRING) {
         s = msObjStringFromEscaped(vm, e->as.text.start, e->as.text.len);
@@ -228,11 +229,8 @@ MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut) {
         *okOut = false;
         return msValueNil();
       }
-      MsObjString* interned = msInternBytes(vm, s->bytes, (int32_t)s->byteLen);
-      if (interned == NULL) {
-        *okOut = false;
-        return msValueNil();
-      }
+      // 消费式 intern（C1）：miss 零分配入表——未扎根临时串无回收窗口；hit 则 s 弃用归垃圾
+      MsObjString* interned = msInternObj(vm, s);
       // 缓存写入去 const（对调用方透明的按 VM 缓存，D3：跨 VM 复跑按 strVm 失效）
       ((ConstEntry*)e)->strObj = &interned->head;
       ((ConstEntry*)e)->strVm = vm;

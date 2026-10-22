@@ -63,25 +63,37 @@ MsObjString* msInternBytes(MsVM* vm, const char* bytes, int32_t len) {
     return NULL;  // 与 msObjStringNew 同口径（防 size_t 回绕）
   }
   MsInternTable* t = vm->intern;
+  if (t->slots != NULL) {  // 快路径预查（零分配）：命中免建临时对象
+    // msFnv1a32 与 newString 内联 FNV-1a-32 同步（obj_string.c 头注）
+    ms_u32 hash = msFnv1a32(bytes, (ms_u64)len);
+    MsObjString* hit = t->slots[internProbe(t, hash, bytes, len)];
+    if (hit != NULL) {
+      return hit;
+    }
+  }
+  // 消费式：New 的 memcpy 源为调用方缓冲（非 GC 管理，guard 收集无窗口）；入表路径零分配
+  MsObjString* s = msObjStringNew(vm, bytes, len);
+  return s == NULL ? NULL : msInternObj(vm, s);
+}
+
+// 消费式 intern（C1）：probe 命中既有等值串则返回之（s 未入表，无引用待回收）；
+// miss 则 s 本身标永久入表。全程零 GC 分配——调用方未扎根的临时串在窗口内不可能被回收；
+// grow 仅 calloc 槽位数组再哈希（非 GC 路径，只搬指针不读对象本体）
+MsObjString* msInternObj(MsVM* vm, MsObjString* s) {
+  MsInternTable* t = vm->intern;
   if (t->slots == NULL) {
     t->slots = calloc(INTERN_INIT_CAP, sizeof(*t->slots));
     MS_ASSERT(t->slots != NULL);
     t->cap = INTERN_INIT_CAP;
   }
-  // msFnv1a32 与 newString 内联 FNV-1a-32 同步（obj_string.c 头注）：先查后建，命中路径零对象分配
-  ms_u32 hash = msFnv1a32(bytes, (ms_u64)len);
-  MsObjString* hit = t->slots[internProbe(t, hash, bytes, len)];
-  if (hit != NULL) {
-    return hit;
-  }
-  // 分配窗口安全：msObjStringNew 内 guard 收集先于对象 malloc（obj.c msObjAlloc）；
-  // New 返回至入表间无 vm 分配点，grow 的 calloc 亦非 GC 触发点——置 PERMANENT 后入表即闭合窗口
-  MsObjString* s = msObjStringNew(vm, bytes, len);
-  if (s == NULL) {
-    return NULL;
+  // s->hash 创建即定（newString）：与入表对象同源，无需重算
+  size_t idx = internProbe(t, s->hash, s->bytes, (int32_t)s->byteLen);
+  if (t->slots[idx] != NULL) {
+    return t->slots[idx];  // 命中：s 弃用
   }
   s->head.flags |= MS_OBJ_PERMANENT;
-  internInsert(t, s);
+  t->slots[idx] = s;  // idx 即 probe 落点：两查之间零分配，必然仍空（同 internInsert 契约）
+  t->count++;
   if (t->count * 4 > t->cap * 3) {  // 负载 > 75%
     internGrow(t);
   }
