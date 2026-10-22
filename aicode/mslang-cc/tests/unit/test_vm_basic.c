@@ -239,6 +239,25 @@ TEST(stringConstLoadUnderGcPressure) {  // 回归：低阈值下字面量经 LOA
 #endif
 }
 
+TEST(stringConcatRepeat) {  // 02 §4：+ 拼接、* 重复、"a"+1 TypeError（02 §8 无隐式转换）
+  RunResult r = runSrc("print(\"ab\" + \"c\")\nprint(\"ab\" * 3)\nprint(\"x\" * 0 == \"\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "abc\nababab\ntrue\n", r.out);
+  free(r.out);
+  r = runSrc("print(\"a\" + 1)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"a\" * \"b\")");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(2 * \"ab\")");  // int * string 不支持（02 §4 仅 string * int）
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
 TEST(runShortCircuitValues) {  // §5.1 短路值 + &&/|| 返回操作数；0 为真（02 §2）
   RunResult r = runSrc("print(nil || \"d\")\nprint(false && 1)\nprint(0 && 1)");
   EXPECT_STREQ(ctx, "d\nfalse\n1\n", r.out);
@@ -530,6 +549,7 @@ int main(int argc, char** argv) {
       runBoolIntNotConvertible,
       stringValueMigration,
       stringConstLoadUnderGcPressure,
+      stringConcatRepeat,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,

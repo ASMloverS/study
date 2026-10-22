@@ -238,6 +238,28 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
         return false;
     }
   }
+  if (k == BA_ADD && a.kind == MS_VAL_OBJ && b.kind == MS_VAL_OBJ &&
+      a.as.obj->type == MS_OBJ_STRING && b.as.obj->type == MS_OBJ_STRING) {
+    const MsObjString* sa = (const MsObjString*)a.as.obj;
+    const MsObjString* sb = (const MsObjString*)b.as.obj;
+    MsObjString* r = msObjStringConcat(vm, sa, sb->bytes, (int32_t)sb->byteLen);
+    if (r == NULL) {
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "OverflowError: string concatenation result too large");
+      return false;
+    }
+    *out = msValueObj((MsObj*)r);
+    return true;
+  }
+  if (k == BA_MUL && a.kind == MS_VAL_OBJ && a.as.obj->type == MS_OBJ_STRING &&
+      b.kind == MS_VAL_I64) {
+    MsObjString* s = msObjStringRepeat(vm, (const MsObjString*)a.as.obj, b.as.i);
+    if (s != NULL) {
+      *out = msValueObj((MsObj*)s);
+      return true;
+    }
+    snprintf(vm->errMsg, sizeof(vm->errMsg), "OverflowError: string repetition result too large");
+    return false;
+  }
   snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: unsupported operand types for '%s': '%s' and '%s'",
            kBinArithNames[k], msValueTypeName(&a), msValueTypeName(&b));
   return false;
