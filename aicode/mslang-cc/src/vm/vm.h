@@ -69,6 +69,7 @@ typedef struct MsFrame {
 } MsFrame;
 
 struct GcHeap;  // gc/gc.h；msVmInit 创建、msVmFree 销毁
+typedef struct MsInternTable MsInternTable;  // obj/obj_string.h；按指针持有避免 vm.h ↔ obj 头环
 
 struct MsVM {
   MsValue* stack;
@@ -78,6 +79,7 @@ struct MsVM {
   MsGlobalVar* globals;
   int32_t globalCount, globalCap;
   struct GcHeap* heap;
+  MsInternTable* intern;  // intern 表（T013；obj/obj_string.h 完整类型，按指针避免头环）
   FILE* out;    // print 输出（默认 stdout；单测重定向 tmpfile）
   FILE* trace;  // --trace 逐步日志（NULL 关闭；20 §6）
   bool hasError;  // 运行时错误槽（28 §6：不 longjmp，主循环统一 unwind）

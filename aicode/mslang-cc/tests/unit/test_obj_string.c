@@ -155,6 +155,36 @@ TEST(stringSlice) {  // "a中b"：[0:2]="a中" [::2]="ab" [::-1]="b中a"
   msVmFree(&vm);
 }
 
+TEST(internDedup) {  // 同字面量两处出现指针相等（DoD）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* a = msInternBytes(&vm, "hello", 5);
+  MsObjString* b = msInternBytes(&vm, "hello", 5);
+  EXPECT(ctx, a == b);
+  EXPECT(ctx, a->head.flags & MS_OBJ_PERMANENT);
+  MsObjString* c = msObjStringNew(&vm, "hello", 5);
+  EXPECT(ctx, a != c);  // 运行时产物不强制 intern
+  gcCollectAll(&vm);    // permanent 无 root 也存活
+  EXPECT(ctx, a == msInternBytes(&vm, "hello", 5));
+  msInternBytes(&vm, "", 0);  // 空串可 intern
+  msVmFree(&vm);
+}
+
+TEST(internGrowth) {  // 负载再哈希：大批量 intern 后仍正确去重
+  MsVM vm;
+  msVmInit(&vm);
+  char buf[32];
+  for (int i = 0; i < 500; i++) {
+    int n = snprintf(buf, sizeof(buf), "str-%d", i);
+    EXPECT(ctx, msInternBytes(&vm, buf, n) == msInternBytes(&vm, buf, n));
+  }
+  for (int i = 0; i < 500; i++) {
+    int n = snprintf(buf, sizeof(buf), "str-%d", i);
+    EXPECT_EQ(ctx, 0, memcmp(buf, msInternBytes(&vm, buf, n)->bytes, (size_t)n));
+  }
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -168,6 +198,8 @@ int main(int argc, char** argv) {
       sliceRangeCanonical,
       runeAtByteWithoutTable,
       stringSlice,
+      internDedup,
+      internGrowth,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

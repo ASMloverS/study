@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_string.h"
 
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
@@ -22,6 +23,9 @@ void msVmInit(MsVM* vm) {
   vm->heap = malloc(sizeof(GcHeap));
   MS_ASSERT(vm->heap != NULL);
   gcHeapInit(vm->heap);
+  vm->intern = malloc(sizeof(MsInternTable));
+  MS_ASSERT(vm->intern != NULL);
+  msInternInit(vm->intern);
   vm->out = stdout;
   vm->trace = NULL;
   vm->hasError = false;
@@ -35,6 +39,11 @@ void msVmFree(MsVM* vm) {
     gcHeapFree(vm->heap);
     free(vm->heap);
     vm->heap = NULL;
+  }
+  if (vm->intern != NULL) {  // 槽位数组释放；intern 对象已随上句 gcHeapFree 归堆释放
+    msInternFree(vm->intern);
+    free(vm->intern);
+    vm->intern = NULL;
   }
   free(vm->stack);
   free(vm->frames);
