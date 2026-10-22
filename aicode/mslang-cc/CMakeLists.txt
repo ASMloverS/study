@@ -77,6 +77,9 @@ target_link_libraries(ms_vm PUBLIC ms_compiler)
 target_link_libraries(ms_obj PRIVATE ms_gc)
 target_link_libraries(ms_vm PRIVATE ms_gc)
 
+# T013：string 对象核心（FNV-1a 哈希 + UTF-8 扫描；rune/slice/iter/intern 归后续任务）
+target_sources(ms_obj PRIVATE src/obj/obj_string.c)
+
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)
 
