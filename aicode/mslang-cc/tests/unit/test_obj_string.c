@@ -112,6 +112,27 @@ TEST(sliceRangeCanonical) {  // 规范化（T014 复用）
   EXPECT(ctx, msSliceRange(3, true, 10, false, 0, false, 0, &st, &sp, &stp));
   EXPECT_EQ(ctx, 3, st);  // 越界钳位
   EXPECT(ctx, !msSliceRange(5, false, 0, false, 0, true, 0, &st, &sp, &stp));  // 步进 0
+  EXPECT(ctx, msSliceRange(3, false, 0, false, 0, true, INT64_MAX, &st, &sp, &stp));
+  EXPECT_EQ(ctx, 0, st);
+  EXPECT_EQ(ctx, 3, sp);
+  EXPECT_EQ(ctx, 3, stp);  // 步幅钳到 len：观测等价，防拷贝循环 i += step 溢出
+  EXPECT(ctx, msSliceRange(3, false, 0, false, 0, true, INT64_MIN, &st, &sp, &stp));
+  EXPECT_EQ(ctx, 2, st);
+  EXPECT_EQ(ctx, -1, sp);
+  EXPECT_EQ(ctx, -3, stp);  // 负向同理
+}
+
+TEST(runeAtByteWithoutTable) {  // 线性扫描分支：const 签名不触发惰性建表
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* s = msObjStringNew(&vm, "中a文", 7);  // 边界 0,3,4；charLen=3
+  EXPECT_EQ(ctx, 0, msObjStringRuneAtByte(s, 0));  // 边界
+  EXPECT_EQ(ctx, 1, msObjStringRuneAtByte(s, 3));  // 边界（'a'）
+  EXPECT_EQ(ctx, 2, msObjStringRuneAtByte(s, 4));  // 边界（'文'起始）
+  EXPECT_EQ(ctx, 0, msObjStringRuneAtByte(s, 1));  // '中'内部 → 前驱边界 0
+  EXPECT_EQ(ctx, 2, msObjStringRuneAtByte(s, 5));  // '文'内部 → 前驱边界 4
+  EXPECT(ctx, s->runeIndex == NULL);  // 证实全程未建表（确走线性分支）
+  msVmFree(&vm);
 }
 
 TEST(stringSlice) {  // "a中b"：[0:2]="a中" [::2]="ab" [::-1]="b中a"
@@ -128,6 +149,9 @@ TEST(stringSlice) {  // "a中b"：[0:2]="a中" [::2]="ab" [::-1]="b中a"
   r = msObjStringSlice(&vm, s, true, 0, true, 0, false, 0, &zero);
   EXPECT(ctx, r != NULL && r->byteLen == 0);  // 空切片
   EXPECT(ctx, msObjStringSlice(&vm, s, false, 0, false, 0, true, 0, &zero) == NULL && zero);
+  MsObjString* as = msObjStringNew(&vm, "abc", 3);
+  r = msObjStringSlice(&vm, as, false, 0, false, 0, true, -1, &zero);
+  EXPECT(ctx, r != NULL && r->byteLen == 3 && memcmp("cba", r->bytes, 3) == 0);  // ASCII 快路径 + 负步
   msVmFree(&vm);
 }
 
@@ -142,6 +166,7 @@ int main(int argc, char** argv) {
       repeatAndEmpty,
       runeIndexAndRuneAt,
       sliceRangeCanonical,
+      runeAtByteWithoutTable,
       stringSlice,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));

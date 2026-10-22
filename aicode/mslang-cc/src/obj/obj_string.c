@@ -224,6 +224,16 @@ bool msSliceRange(ms_i64 len, bool hasA, ms_i64 a, bool hasB, ms_i64 b, bool has
   if (step == 0) {
     return false;  // 调用方报 ValueError（T014 同口径）
   }
+  // 步幅幅值钳到 len：start/stop ∈ [-1,len] 下 |step| > len 至多迭代一次，钳后观测等价，
+  // 且防切片拷贝循环 i += step 有符号溢出（UB）；len==0 时循环零迭代无溢出风险，
+  // 且钳位会产生 step==0 违反"true ⇒ step!=0"契约，故不钳
+  if (len > 0) {
+    if (step > len) {
+      step = len;
+    } else if (step < -len) {
+      step = -len;
+    }
+  }
   if (step > 0) {
     *startOut = hasA ? clampPos(a, len) : 0;
     *stopOut = hasB ? clampPos(b, len) : len;
