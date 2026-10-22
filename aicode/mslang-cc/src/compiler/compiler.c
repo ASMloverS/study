@@ -378,6 +378,18 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       break;
     }
     case AST_CALL: {  // 桩路径（T018 完整化）：callee + args 依序 + CALL argc
+      if (n->as.call.callee->kind == AST_MEMBER) {  // s.m(args) → CALL_METHOD（21 §3.3）
+        const AstNode* m = n->as.call.callee;
+        compileExpr(fs, m->as.memberExpr.obj);
+        for (int32_t i = 0; i < n->as.call.count; i++) {
+          compileExpr(fs, n->as.call.args[i]);
+        }
+        int32_t k = nameConst(fs, m->as.memberExpr.name, m->as.memberExpr.nameLen);
+        emitConstOp(fs, OP_CALL_METHOD, k, n->line);
+        emitByte(fs, 0);  // icSlot（T022 内联缓存）
+        emitByte(fs, (ms_u8)n->as.call.count);
+        break;
+      }
       if (n->as.call.callee->kind != AST_IDENT) {
         compErr(fs, n->as.call.callee, 1, "callable expression form is not supported yet");
         emitOp(fs, OP_LOAD_NIL, n->line);
@@ -389,6 +401,13 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       }
       emitOp(fs, OP_CALL, n->line);
       emitByte(fs, (ms_u8)n->as.call.count);
+      break;
+    }
+    case AST_MEMBER: {  // 方法取值：GET_ATTR 物化 bound（类属性 T020）
+      compileExpr(fs, n->as.memberExpr.obj);
+      int32_t k = nameConst(fs, n->as.memberExpr.name, n->as.memberExpr.nameLen);
+      emitConstOp(fs, OP_GET_ATTR, k, n->line);
+      emitByte(fs, 0);  // icSlot（T022）
       break;
     }
     default:

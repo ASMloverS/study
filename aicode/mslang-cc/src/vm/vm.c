@@ -14,6 +14,13 @@
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
+// bound 方法 children 标记（T013，D5）：receiver + method（native 对象）
+static void boundMark(MsVM* vm, MsObj* obj) {
+  MsObjBoundMethod* bm = (MsObjBoundMethod*)obj;
+  gcMarkValue(vm, bm->receiver);
+  gcMarkValue(vm, msValueObj(&bm->method->head));
+}
+
 void msVmInit(MsVM* vm) {
   vm->stack = NULL;
   vm->stackTop = vm->stackCap = 0;
@@ -26,6 +33,7 @@ void msVmInit(MsVM* vm) {
   gcHeapInit(vm->heap);
   gcSetMarkFn(MS_OBJ_LIST, msObjListMarkChildren);  // D6：children 标记统一注册（进程级表，幂等）
   gcSetFreeFn(MS_OBJ_LIST, msObjListFreeData);  // items 数组随对象释放（sweep/heapFree 前回调）
+  gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);
   msInternInit(vm->intern);
@@ -371,7 +379,9 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_GET_INDEX);
   SET_HANDLER(OP_MAKE_FUNCTION);
   SET_HANDLER(OP_CALL);
+  SET_HANDLER(OP_CALL_METHOD);
   SET_HANDLER(OP_RETURN);
+  SET_HANDLER(OP_GET_ATTR);
   SET_HANDLER(OP_JMP);
   SET_HANDLER(OP_JMP_IF_FALSE);
   SET_HANDLER(OP_JMP_IF_TRUE);
@@ -641,6 +651,20 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         int32_t argc = code[ip++];
         MsValue* args = &vm->stack[vm->stackTop - argc];
         MsValue callee = vm->stack[vm->stackTop - argc - 1];
+        if (callee.kind == MS_VAL_OBJ && callee.as.obj->type == MS_OBJ_BOUND_METHOD) {
+          // bound 分派在弹栈前：接收者+实参原位留栈（调用期间为 GC root）
+          MsObjBoundMethod* bm = (MsObjBoundMethod*)callee.as.obj;
+          MsValue recv = bm->receiver;
+          MsNativeFn fn = bm->method->fn;  // 先读出：调用期间 bm/native 可能被回收（fn/recv 已在寄存器）
+          vm->stack[vm->stackTop - argc - 1] = recv;  // callee 槽改写为接收者，args 原位
+          MsValue r = fn(vm, argc + 1, &vm->stack[vm->stackTop - argc - 1]);
+          if (vm->hasError) {
+            goto dispatchExit;
+          }
+          vm->stackTop -= argc + 1;
+          push(vm, r);
+          NEXT();
+        }
         vm->stackTop -= argc + 1;
         if (callee.kind == MS_VAL_NATIVE) {
           MsValue r = callee.as.native(vm, argc, args);
@@ -653,10 +677,54 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         RUNTIME_ERROR("TypeError: '%s' is not callable", msValueTypeName(&callee));
       }
 
+      OPCODE(OP_CALL_METHOD) {  // <const name> <u8 ic> <u8 argc>：零分配直调（args[0]=接收者）
+        READ_OPERAND(k);
+        (void)code[ip++];  // icSlot（T022）
+        int32_t argc = code[ip++];
+        MsValue* args = &vm->stack[vm->stackTop - argc - 1];  // peek：接收者+实参均在栈
+        MsMethodRef ref;
+        if (msIsString(&args[0]) &&
+            msStringMethodLookup(consts[k].as.text.start, consts[k].as.text.len, &ref)) {
+          MsValue r = ref.fn(vm, argc + 1, args);
+          vm->stackTop -= argc + 1;
+          if (vm->hasError) {  // 方法内置槽：统一 unwind
+            goto dispatchExit;
+          }
+          push(vm, r);
+          NEXT();
+        }
+        RUNTIME_ERROR("TypeError: '%s' has no method '%.*s'", msValueTypeName(&args[0]),
+                      (int)consts[k].as.text.len, consts[k].as.text.start);
+      }
+
       OPCODE(OP_RETURN)
       (void)pop(vm);  // 模块帧返回值丢弃；帧切换 T018
       vm->frameCount--;
       goto dispatchExit;
+
+      OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string 方法物化 bound（类属性 T020）
+        READ_OPERAND(k);
+        (void)code[ip++];  // icSlot（T022）
+        MsValue recv = vm->stack[vm->stackTop - 1];  // peek：物化分配期间接收者在栈
+        MsMethodRef ref;
+        if (msIsString(&recv) &&
+            msStringMethodLookup(consts[k].as.text.start, consts[k].as.text.len, &ref)) {
+          MsObjNative* native = msObjNativeNew(vm, ref.fn, ref.name, ref.nameLen);
+          if (native == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          push(vm, msValueObj(&native->head));  // native 落栈保活（接收者槽未动：两次分配均有 Root）
+          MsObjBoundMethod* bound = msObjBoundNew(vm, recv, native);
+          if (bound == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stack[vm->stackTop - 2] = msValueObj(&bound->head);  // bound 覆盖接收者槽
+          vm->stackTop--;  // 弹 native
+          NEXT();
+        }
+        RUNTIME_ERROR("TypeError: '%s' has no attribute '%.*s'", msValueTypeName(&recv),
+                      (int)consts[k].as.text.len, consts[k].as.text.start);
+      }
 
       OPCODE(OP_JMP) {
         READ_OPERAND(t);

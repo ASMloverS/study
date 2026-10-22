@@ -21,3 +21,25 @@ MsObj* msObjAlloc(MsVM* vm, MsObjType type, size_t size) {
   heap->count++;
   return obj;
 }
+
+MsObjNative* msObjNativeNew(MsVM* vm, MsNativeFn fn, const char* name, int32_t nameLen) {
+  MsObjNative* n = (MsObjNative*)msObjAlloc(vm, MS_OBJ_NATIVE, sizeof(MsObjNative));
+  if (n == NULL) {
+    return NULL;
+  }
+  n->fn = fn;
+  n->name = name;
+  n->nameLen = nameLen;
+  return n;
+}
+
+MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsObjNative* method) {
+  MsObjBoundMethod* b = (MsObjBoundMethod*)msObjAlloc(vm, MS_OBJ_BOUND_METHOD, sizeof(MsObjBoundMethod));
+  if (b == NULL) {
+    return NULL;
+  }
+  b->receiver = msValueNil();  // MsValue 字段先置 nil（markFn 纪律，同 test_gc_basic allocNode）
+  b->method = method;
+  b->receiver = receiver;
+  return b;
+}

@@ -85,6 +85,8 @@ target_sources(ms_obj PRIVATE src/obj/obj_string.c)
 target_sources(ms_obj PRIVATE src/obj/intern.c)
 # T013：最小 MsObjList 桥（Task 7；split/join 数据面，完整容器归 T014）
 target_sources(ms_obj PRIVATE src/obj/obj_list.c)
+# T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
+target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)

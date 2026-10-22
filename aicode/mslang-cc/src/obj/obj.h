@@ -44,4 +44,22 @@ typedef struct MsObj {
 // 分配整体 size 字节（含 MsObj 头；调用方传 sizeof(具体对象类型)）；失败返回 NULL
 MsObj* msObjAlloc(MsVM* vm, MsObjType type, size_t size);
 
+// 原生方法对象（T013，D5）：实例方法表条目的堆形态（GET_ATTR 物化用；CALL_METHOD 零分配直调不经此）
+typedef struct MsObjNative {
+  MsObj head;
+  MsNativeFn fn;
+  const char* name;  // 借用方法表静态串
+  int32_t nameLen;
+} MsObjNative;
+
+// 绑定方法（T013，D5）：接收者 + 原生方法；OP_CALL bound 分派调用
+typedef struct MsObjBoundMethod {
+  MsObj head;
+  MsValue receiver;
+  MsObjNative* method;
+} MsObjBoundMethod;
+
+MsObjNative* msObjNativeNew(MsVM* vm, MsNativeFn fn, const char* name, int32_t nameLen);
+MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsObjNative* method);
+
 #endif  // INCLUDE_MS_OBJ_OBJ_H_

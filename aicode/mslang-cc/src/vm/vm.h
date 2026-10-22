@@ -97,6 +97,14 @@ void msVmRun(MsVM* vm, const Chunk* chunk);
 // builtins_bridge.c：LOAD_GLOBAL 未命中用户全局时的内置回查
 bool msBuiltinLookup(const char* name, int32_t len, MsValue* out);
 
+// str_methods.c：string 实例方法表（T013，10 §2；机制 D5 供容器复用）
+typedef struct MsMethodRef {
+  MsNativeFn fn;
+  const char* name;
+  int32_t nameLen;
+} MsMethodRef;
+bool msStringMethodLookup(const char* name, int32_t len, MsMethodRef* out);  // 未命中 false
+
 // ---- value.c：值操作助手 ----
 MsValue msValueNil(void);
 MsValue msValueBool(bool b);

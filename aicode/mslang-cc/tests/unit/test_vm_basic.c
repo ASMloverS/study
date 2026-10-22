@@ -273,6 +273,33 @@ TEST(buildListAndIndex) {  // D6：BUILD_LIST + GET_INDEX(int)；list 的 print 
   free(r.out);
 }
 
+TEST(stringMethodCall) {  // CALL_METHOD 零分配路径 + GET_ATTR 物化 bound（D5）
+  RunResult r = runSrc("var s = \"hello\"\nprint(s.charLen())\nprint(\"x\".compareTo(\"y\"))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "5\n-1\n", r.out);
+  free(r.out);
+  r = runSrc("var f = \"a\".compareTo\nprint(f(\"b\"))");  // 方法一等值
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "-1\n", r.out);
+  free(r.out);
+  r = runSrc("print(\"a\".nope())");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "nope") != NULL);
+  free(r.out);
+  r = runSrc("print(\"a\".nope)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "nope") != NULL);
+  free(r.out);
+  r = runSrc("print(1.charLen())");  // 非 string 接收者
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"x\\u{4E2D}\".charLen())");  // Task 5 预留形态：UTF-8 按 rune 计数
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "2\n", r.out);
+  free(r.out);
+}
+
 TEST(runShortCircuitValues) {  // §5.1 短路值 + &&/|| 返回操作数；0 为真（02 §2）
   RunResult r = runSrc("print(nil || \"d\")\nprint(false && 1)\nprint(0 && 1)");
   EXPECT_STREQ(ctx, "d\nfalse\n1\n", r.out);
@@ -566,6 +593,7 @@ int main(int argc, char** argv) {
       stringConstLoadUnderGcPressure,
       stringConcatRepeat,
       buildListAndIndex,
+      stringMethodCall,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,
