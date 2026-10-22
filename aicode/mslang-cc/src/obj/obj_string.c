@@ -4,6 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// runeIndex 保留区起始的 4 字节对齐填充（obj_string.h bytes[] 注释）；
+// newString 分配与 msObjStringRuneIndex 惰性构建两处必须一致，抽公共函数防漂移
+static size_t runeIndexPad(ms_u32 byteLen) {
+  return (size_t)((4 - (byteLen & 3)) & 3);
+}
+
 // 新建不可变串：一遍扫描 bytes[0..len) 同时算 FNV-1a-32/64、isAscii、charLen（坏序列按 1 字符计）
 static MsObjString* newString(MsVM* vm, const char* bytes, int32_t len) {
   if (len < 0) {
@@ -31,7 +37,7 @@ static MsObjString* newString(MsVM* vm, const char* bytes, int32_t len) {
     }
     charLen++;
   }
-  size_t pad = isAscii ? 0 : (size_t)((4 - (len & 3)) & 3);  // runeIndex 尾区 4 字节对齐填充
+  size_t pad = isAscii ? 0 : runeIndexPad((ms_u32)len);  // runeIndex 尾区 4 字节对齐填充
   size_t runeArea = isAscii ? 0 : ((size_t)charLen + 1) * sizeof(int32_t);
   MsObjString* s = (MsObjString*)msObjAlloc(vm, MS_OBJ_STRING,
                                             sizeof(MsObjString) + (size_t)len + pad + runeArea);
@@ -118,4 +124,143 @@ int32_t msObjStringCompare(const MsObjString* a, const MsObjString* b) {
     return 0;
   }
   return a->byteLen < b->byteLen ? -1 : 1;
+}
+
+// ---- rune 索引与规范切片（T013 Task 3，22 §3；表结构见 obj_string.h runeIndex 注释） ----
+
+const int32_t* msObjStringRuneIndex(MsVM* vm, MsObjString* s) {
+  (void)vm;  // 就地填充对象内保留区，无需分配；vm 参数为 API 对称保留
+  if (s->isAscii) {
+    return NULL;  // ASCII 快路径：字节偏移即 rune 索引，永不建表
+  }
+  if (s->runeIndex != NULL) {
+    return s->runeIndex;
+  }
+  int32_t* ri = (int32_t*)(void*)(s->bytes + s->byteLen + runeIndexPad(s->byteLen));
+  int32_t off = 0;
+  ms_u32 n = 0;
+  while (off < (int32_t)s->byteLen) {
+    ri[n] = off;  // 每 rune 起始字节偏移
+    int32_t width = 0;
+    (void)msUtf8Decode(s->bytes + off, (int32_t)s->byteLen - off, &width);  // 坏序列 width=1
+    off += width;
+    n++;
+  }
+  ri[n] = (int32_t)s->byteLen;  // 末哨兵；n == charLen（与 newString 同一扫描口径）
+  s->runeIndex = ri;
+  return ri;
+}
+
+bool msObjStringRuneAt(MsVM* vm, MsObjString* s, ms_i64 i, ms_u32* out) {
+  if (i < 0) {
+    i += (ms_i64)s->charLen;  // 负索引自尾部起
+  }
+  if (i < 0 || i >= (ms_i64)s->charLen) {
+    return false;
+  }
+  if (s->isAscii) {
+    *out = (ms_u8)s->bytes[i];  // 快路径：无表直查
+    return true;
+  }
+  const int32_t* ri = msObjStringRuneIndex(vm, s);
+  int32_t off = ri[i];
+  if ((ms_u8)s->bytes[off] < 0x80) {
+    *out = (ms_u8)s->bytes[off];
+    return true;
+  }
+  int32_t width = 0;
+  *out = msUtf8Decode(s->bytes + off, (int32_t)s->byteLen - off, &width);
+  return true;
+}
+
+int32_t msObjStringRuneAtByte(const MsObjString* s, int32_t byteOffset) {
+  if (s->isAscii) {
+    return byteOffset;  // 字节偏移即 rune 索引
+  }
+  const int32_t* ri = s->runeIndex;  // const 签名：只读既有表；无表则线性扫描（不触发惰性构建）
+  if (ri != NULL) {
+    // 二分取 ≤ byteOffset 的最大边界下标（ri[0]=0 恒成立；ri[charLen]=byteLen 兜底越尾）
+    int32_t lo = 0;
+    int32_t hi = (int32_t)s->charLen;
+    while (lo < hi) {
+      int32_t mid = lo + (hi - lo + 1) / 2;  // 上取中防死循环
+      if (ri[mid] <= byteOffset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
+  int32_t idx = 0;
+  int32_t off = 0;
+  while (off < byteOffset) {
+    int32_t width = 0;
+    (void)msUtf8Decode(s->bytes + off, (int32_t)s->byteLen - off, &width);
+    off += width;
+    idx++;
+  }
+  return off > byteOffset ? idx - 1 : idx;  // 非边界取最近前驱边界
+}
+
+// Python 切片端点规范化（D7）：负值 +len 折算后按步进方向钳位
+static ms_i64 clampPos(ms_i64 x, ms_i64 len) {  // step>0：钳到 [0, len]
+  if (x < 0) {
+    x += len;
+  }
+  return x < 0 ? 0 : (x > len ? len : x);
+}
+
+static ms_i64 clampNeg(ms_i64 x, ms_i64 len) {  // step<0：钳到 [-1, len-1]
+  if (x < 0) {
+    x += len;
+  }
+  return x < -1 ? -1 : (x > len - 1 ? len - 1 : x);
+}
+
+bool msSliceRange(ms_i64 len, bool hasA, ms_i64 a, bool hasB, ms_i64 b, bool hasC, ms_i64 c,
+                  ms_i64* startOut, ms_i64* stopOut, ms_i64* stepOut) {
+  ms_i64 step = hasC ? c : 1;
+  if (step == 0) {
+    return false;  // 调用方报 ValueError（T014 同口径）
+  }
+  if (step > 0) {
+    *startOut = hasA ? clampPos(a, len) : 0;
+    *stopOut = hasB ? clampPos(b, len) : len;
+  } else {
+    *startOut = hasA ? clampNeg(a, len) : len - 1;
+    *stopOut = hasB ? clampNeg(b, len) : -1;
+  }
+  *stepOut = step;
+  return true;
+}
+
+MsObjString* msObjStringSlice(MsVM* vm, MsObjString* s, bool hasA, ms_i64 a, bool hasB, ms_i64 b,
+                              bool hasC, ms_i64 c, bool* errStepZero) {
+  *errStepZero = false;
+  ms_i64 start, stop, step;
+  if (!msSliceRange((ms_i64)s->charLen, hasA, a, hasB, b, hasC, c, &start, &stop, &step)) {
+    *errStepZero = true;  // 规范化仅因 step==0 失败
+    return NULL;
+  }
+  char* buf = malloc((size_t)s->byteLen + 1);  // 结果为字节子集 ≤ byteLen；+1 免 malloc(0)
+  if (buf == NULL) {
+    return NULL;
+  }
+  int32_t outLen = 0;
+  if (s->isAscii) {
+    for (ms_i64 i = start; step > 0 ? i < stop : i > stop; i += step) {
+      buf[outLen++] = s->bytes[i];
+    }
+  } else {
+    const int32_t* ri = msObjStringRuneIndex(vm, s);
+    for (ms_i64 i = start; step > 0 ? i < stop : i > stop; i += step) {
+      int32_t w = ri[i + 1] - ri[i];  // rune 字节段 [ri[i], ri[i+1])
+      memcpy(buf + outLen, s->bytes + ri[i], (size_t)w);
+      outLen += w;
+    }
+  }
+  MsObjString* r = msObjStringNew(vm, buf, outLen);
+  free(buf);
+  return r;
 }

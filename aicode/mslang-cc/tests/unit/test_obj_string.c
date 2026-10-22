@@ -70,6 +70,67 @@ TEST(repeatAndEmpty) {  // Repeat 契约 + 空串 + FNV 向量锚定
   msVmFree(&vm);
 }
 
+TEST(runeIndexAndRuneAt) {  // "中文ab"[1] = '文'；ASCII 无表直查
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* s = msObjStringNew(&vm, "中文ab", 8);
+  ms_u32 cp = 0;
+  EXPECT(ctx, msObjStringRuneAt(&vm, s, 1, &cp));
+  EXPECT_EQ(ctx, 25991, (long long)cp);  // '文' U+6587
+  EXPECT(ctx, msObjStringRuneAt(&vm, s, 2, &cp) && cp == 'a');
+  EXPECT(ctx, msObjStringRuneAt(&vm, s, -1, &cp) && cp == 'b');
+  EXPECT(ctx, msObjStringRuneAt(&vm, s, -4, &cp) && cp == 20013);  // '中' U+4E2D；-4 → rune 0
+  EXPECT(ctx, !msObjStringRuneAt(&vm, s, 4, &cp));  // 越界
+  EXPECT(ctx, !msObjStringRuneAt(&vm, s, -5, &cp));
+  const int32_t* ri = msObjStringRuneIndex(&vm, s);
+  EXPECT(ctx, ri != NULL);
+  EXPECT_EQ(ctx, 0, ri[0]);
+  EXPECT_EQ(ctx, 3, ri[1]);
+  EXPECT_EQ(ctx, 6, ri[2]);
+  EXPECT_EQ(ctx, 8, ri[4]);  // 末哨兵 = byteLen（表共 charLen+1 = 5 项，哨兵在下标 4）
+  EXPECT_EQ(ctx, 1, msObjStringRuneAtByte(s, 3));
+  EXPECT_EQ(ctx, 2, msObjStringRuneAtByte(s, 6));
+  MsObjString* ascii = msObjStringNew(&vm, "abc", 3);
+  EXPECT(ctx, msObjStringRuneIndex(&vm, ascii) == NULL);  // ASCII 快路径不建表
+  EXPECT(ctx, msObjStringRuneAt(&vm, ascii, 1, &cp) && cp == 'b');
+  msVmFree(&vm);
+}
+
+TEST(sliceRangeCanonical) {  // 规范化（T014 复用）
+  ms_i64 st, sp, stp;
+  EXPECT(ctx, msSliceRange(5, true, 1, true, 4, false, 0, &st, &sp, &stp));
+  EXPECT_EQ(ctx, 1, st);
+  EXPECT_EQ(ctx, 4, sp);
+  EXPECT_EQ(ctx, 1, stp);
+  EXPECT(ctx, msSliceRange(5, false, 0, false, 0, true, -1, &st, &sp, &stp));
+  EXPECT_EQ(ctx, 4, st);
+  EXPECT_EQ(ctx, -1, sp);
+  EXPECT_EQ(ctx, -1, stp);
+  EXPECT(ctx, msSliceRange(5, true, -3, false, 0, false, 0, &st, &sp, &stp));
+  EXPECT_EQ(ctx, 2, st);
+  EXPECT_EQ(ctx, 5, sp);
+  EXPECT(ctx, msSliceRange(3, true, 10, false, 0, false, 0, &st, &sp, &stp));
+  EXPECT_EQ(ctx, 3, st);  // 越界钳位
+  EXPECT(ctx, !msSliceRange(5, false, 0, false, 0, true, 0, &st, &sp, &stp));  // 步进 0
+}
+
+TEST(stringSlice) {  // "a中b"：[0:2]="a中" [::2]="ab" [::-1]="b中a"
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* s = msObjStringNew(&vm, "a中b", 5);  // a(1)+中(3)+b(1)
+  bool zero = false;
+  MsObjString* r = msObjStringSlice(&vm, s, true, 0, true, 2, false, 0, &zero);
+  EXPECT(ctx, r != NULL && r->byteLen == 4 && memcmp("a\xE4\xB8\xAD", r->bytes, 4) == 0);
+  r = msObjStringSlice(&vm, s, false, 0, false, 0, true, 2, &zero);
+  EXPECT(ctx, r != NULL && r->byteLen == 2 && memcmp("ab", r->bytes, 2) == 0);
+  r = msObjStringSlice(&vm, s, false, 0, false, 0, true, -1, &zero);
+  EXPECT(ctx, r != NULL && r->byteLen == 5 && memcmp("b\xE4\xB8\xAD" "a", r->bytes, 5) == 0);
+  r = msObjStringSlice(&vm, s, true, 0, true, 0, false, 0, &zero);
+  EXPECT(ctx, r != NULL && r->byteLen == 0);  // 空切片
+  EXPECT(ctx, msObjStringSlice(&vm, s, false, 0, false, 0, true, 0, &zero) == NULL && zero);
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -79,6 +140,9 @@ int main(int argc, char** argv) {
       hashEqualConcat,
       fromEscapedCreatesDecoded,
       repeatAndEmpty,
+      runeIndexAndRuneAt,
+      sliceRangeCanonical,
+      stringSlice,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
