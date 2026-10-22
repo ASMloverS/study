@@ -66,3 +66,7 @@ void msObjListMarkChildren(MsVM* vm, MsObj* obj) {
     gcMarkValue(vm, list->items[i]);
   }
 }
+
+void msObjListFreeData(MsObj* obj) {
+  free(((MsObjList*)obj)->items);  // items 可为 NULL（free(NULL) 无害）
+}

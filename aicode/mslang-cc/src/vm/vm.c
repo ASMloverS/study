@@ -25,6 +25,7 @@ void msVmInit(MsVM* vm) {
   MS_ASSERT(vm->heap != NULL);
   gcHeapInit(vm->heap);
   gcSetMarkFn(MS_OBJ_LIST, msObjListMarkChildren);  // D6：children 标记统一注册（进程级表，幂等）
+  gcSetFreeFn(MS_OBJ_LIST, msObjListFreeData);  // items 数组随对象释放（sweep/heapFree 前回调）
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);
   msInternInit(vm->intern);

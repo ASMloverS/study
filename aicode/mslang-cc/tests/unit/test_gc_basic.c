@@ -7,6 +7,7 @@
 
 #include "gc/gc.h"
 #include "obj/obj.h"
+#include "obj/obj_list.h"
 #include "test_harness.h"
 #include "vm/vm.h"
 
@@ -171,6 +172,20 @@ TEST(selfReferenceCycle) {  // 自引用：可达环存活且标记终止；失�
   msVmFree(&vm);
 }
 
+TEST(freeFnReleasesListData) {  // T013：sweep/heapFree 经 freeFn 释放 list items（泄漏由 ASan 门禁验证）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjList* xs = msObjListNew(&vm);
+  EXPECT(ctx, xs != NULL);
+  EXPECT(ctx, msObjListPush(&vm, xs, msValueInt(1)));
+  EXPECT(ctx, msObjListPush(&vm, xs, msValueInt(2)));
+  gcCollectAll(&vm);  // 无 root：list 连同 items 经 freeFn 释放（误路径崩溃/UAF 即失败）
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));
+  xs = msObjListNew(&vm);  // heapFree 路径同样覆盖
+  (void)msObjListPush(&vm, xs, msValueInt(3));
+  msVmFree(&vm);
+}
+
 TEST(permanentSurvives) {  // permanent：无 root 引用也不回收；heapFree 释放
   MsVM vm;
   msVmInit(&vm);
@@ -222,6 +237,7 @@ int main(int argc, char** argv) {
       globalKeepalive,
       chainReference,
       selfReferenceCycle,
+      freeFnReleasesListData,
       permanentSurvives,
       allocGuardAutoTrigger,
   };

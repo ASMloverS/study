@@ -1,4 +1,6 @@
 // 过渡版整堆 STW 标记清除（T012，23-gc.md §1 过渡形态）
+// freeFn 机制（T013）：sweep/gcHeapFree 释放对象前回调 g_freeFns，释放对象内独立分配的数据
+// （如 list items）；T015 map/set 等同型容器复用。单块分配类型（string FAM）不注册即无开销
 #include "gc/gc.h"
 
 #include <errno.h>
@@ -9,10 +11,16 @@
 #define MS_GC_HEAP_MAX_DEFAULT (8u * 1024u * 1024u)  // 任务书 T012 §2：默认 8MB
 
 static MarkChildrenFn g_markFns[MS_OBJ_COUNT];  // 未注册 = 无 children
+static FreeDataFn g_freeFns[MS_OBJ_COUNT];      // 未注册 = 无独立分配数据
 
 void gcSetMarkFn(MsObjType type, MarkChildrenFn fn) {
   MS_ASSERT((unsigned)type < (unsigned)MS_OBJ_COUNT);  // 无符号单侧比较：规避 GCC -Wtype-limits 恒真告警
   g_markFns[type] = fn;
+}
+
+void gcSetFreeFn(MsObjType type, FreeDataFn fn) {
+  MS_ASSERT((unsigned)type < (unsigned)MS_OBJ_COUNT);
+  g_freeFns[type] = fn;
 }
 
 void gcHeapInit(GcHeap* heap) {
@@ -38,6 +46,10 @@ void gcHeapFree(GcHeap* heap) {
   MsObj* obj = heap->objects;
   while (obj != NULL) {
     MsObj* next = obj->next;
+    FreeDataFn freeFn = g_freeFns[obj->type];
+    if (freeFn != NULL) {
+      freeFn(obj);  // 先释放对象内独立数据（如 list items）
+    }
     free(obj);
     obj = next;
   }
@@ -100,6 +112,10 @@ void gcCollectAll(MsVM* vm) {
     *link = obj->next;
     heap->bytes -= obj->size;
     heap->count--;
+    FreeDataFn freeFn = g_freeFns[obj->type];
+    if (freeFn != NULL) {
+      freeFn(obj);  // 白对象释放前先释放对象内独立数据（如 list items）
+    }
     free(obj);
   }
   heap->collecting = false;

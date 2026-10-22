@@ -23,5 +23,7 @@ bool msObjListReserve(MsVM* vm, MsObjList* list, int32_t n);
 bool msObjListGet(const MsObjList* list, ms_i64 i, MsValue* out);
 // children 标记（gcSetMarkFn 注册转发；进程级表由 vm.c msVmInit 统一注册）
 void msObjListMarkChildren(MsVM* vm, MsObj* obj);
+// items 数组释放（gcSetFreeFn 注册转发；sweep/heapFree 释放对象前回调）
+void msObjListFreeData(MsObj* obj);
 
 #endif  // INCLUDE_MS_OBJ_OBJ_LIST_H_
