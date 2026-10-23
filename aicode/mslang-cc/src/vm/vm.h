@@ -9,7 +9,8 @@
 #include "common/common.h"
 #include "compiler/chunk.h"
 
-typedef struct MsObj MsObj;  // 对象头（obj/obj.h，T012）
+typedef struct MsObj MsObj;           // 对象头（obj/obj.h，T012）
+typedef struct MsObjString MsObjString;  // 字符串对象（obj/obj_string.h；StrForm 返回型，按指针避免头环）
 
 // 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013 已完成、FUNCTION/NATIVE→T018、RANGE_ITER→T017）
 typedef enum MsValueKind {
@@ -123,5 +124,9 @@ const char* msValueTypeName(const MsValue* v);
 void msValueToStr(const MsValue* v, char* buf, size_t cap);
 void msFormatFloat(char* buf, size_t cap, double v);  // 最短往返 + ".0" 保形
 MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut);  // BIGINT 置 *okOut=false；STRING/RAWSTRING 解码/intern 并按 VM 缓存
+// str/repr 形态（T013 D10；__str__/__repr__ 归 T021）：返回新建 MsObjString（string 自身直接返回）；
+// OOM 返回 NULL 不置错误槽（调用方处理）；list 递归构建期间产物经 VM 栈 root（D10 GC 纪律）
+MsObjString* msValueStrForm(MsVM* vm, const MsValue* v);
+MsObjString* msValueReprForm(MsVM* vm, const MsValue* v);
 
 #endif  // INCLUDE_MS_VM_VM_H_

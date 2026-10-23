@@ -258,10 +258,10 @@ TEST(stringConcatRepeat) {  // 02 §4：+ 拼接、* 重复、"a"+1 TypeError（
   free(r.out);
 }
 
-TEST(buildListAndIndex) {  // D6：BUILD_LIST + GET_INDEX(int)；list 的 print str 形态归 Task 11
+TEST(buildListAndIndex) {  // D6：BUILD_LIST + GET_INDEX(int)；print 走 list str 形态（Task 11）
   RunResult r = runSrc("var xs = [1, 2, 3]\nprint(xs[1])\nprint(xs[-1])\nprint(xs)");
   EXPECT(ctx, r.compileOk);
-  EXPECT_STREQ(ctx, "2\n3\n<object>\n", r.out);  // print(list) 暂走 msValueToStr OBJ 兜底 "<object>"
+  EXPECT_STREQ(ctx, "2\n3\n[1, 2, 3]\n", r.out);  // list str 形态：元素 repr（string 带引号）
   free(r.out);
   r = runSrc("var xs = [1]\nprint(xs[5])");
   EXPECT(ctx, r.hasError);
@@ -363,6 +363,62 @@ TEST(stringMethodsErrors) {  // 错误形态：参数类型 / 步进零 / repeat
   r = runSrc("print(\",\".join(\"ab\"))");  // 非 list
   EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
   free(r.out);
+}
+
+TEST(strReprLenBuiltins) {  // 10 §1 最小集：str/repr/len（__str__/__repr__ 归 T021）
+  RunResult r = runSrc("print(str(1) + str(0.5))\nprint(repr(\"a\\nb\"))\nprint(str(nil))\n"
+                       "print(len(\"abc\"))\nprint(len(\"中文\"))\nprint(len([1, 2]))\n"
+                       "print(str(true))\nprint(str(\"x\"))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "10.5\n\"a\\nb\"\nnil\n3\n6\n2\ntrue\nx\n", r.out);
+  free(r.out);
+  r = runSrc("print(len(1))");
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(str())");
+  EXPECT(ctx, r.hasError && strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+  r = runSrc("print([1, \"a\", true])");  // list str 形态（元素 repr、string 带引号）
+  EXPECT_STREQ(ctx, "[1, \"a\", true]\n", r.out);
+  free(r.out);
+}
+
+TEST(formatStringInterp) {  // 03 §9：任意表达式 + 嵌套 + str 形态
+  RunResult r = runSrc("print(\"a = ${1 + 2}, s = ${\"in${\"n\"}\"}\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "a = 3, s = inn\n", r.out);
+  free(r.out);
+  r = runSrc("var x = 4\nprint(\"${x * 2} and ${nil} and ${1.5}\")");
+  EXPECT_STREQ(ctx, "8 and nil and 1.5\n", r.out);
+  free(r.out);
+  r = runSrc("print(\"${[1, \"s\"]}\")");  // 插值内 list → str 形态
+  EXPECT_STREQ(ctx, "[1, \"s\"]\n", r.out);
+  free(r.out);
+  r = runSrc("var y = 5\nprint(\"${y}\")");  // 纯插值（无字面段）单表达式
+  EXPECT_STREQ(ctx, "5\n", r.out);
+  free(r.out);
+  r = runSrc("print(\"plain\")");  // 非插值路径不回归
+  EXPECT_STREQ(ctx, "plain\n", r.out);
+  free(r.out);
+}
+
+TEST(strFormGcPressure) {  // D10 GC 纪律：list/插值 form 构建的分配窗口内值与产物均在栈 root
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=1");
+#else
+  setenv("MS_GC_HEAP_MAX", "1", 1);
+#endif
+  // 临时 list 仅经 OP_CALL 实参槽/FORMAT_STRING 表达式槽存活：回收窗口误收即 ASan UAF
+  RunResult r = runSrc("var xs = [1, [2, \"a\"], \"b\"]\nprint([xs, 3])\nprint(str([xs]))\nprint(\"${[xs, 1]}\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[[1, [2, \"a\"], \"b\"], 3]\n[[1, [2, \"a\"], \"b\"]]\n[[1, [2, \"a\"], \"b\"], 1]\n",
+               r.out);
+  free(r.out);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
 }
 
 TEST(runShortCircuitValues) {  // §5.1 短路值 + &&/|| 返回操作数；0 为真（02 §2）
@@ -662,6 +718,9 @@ int main(int argc, char** argv) {
       stringMethodCall,
       stringMethodsFamily,
       stringMethodsErrors,
+      strReprLenBuiltins,
+      formatStringInterp,
+      strFormGcPressure,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,

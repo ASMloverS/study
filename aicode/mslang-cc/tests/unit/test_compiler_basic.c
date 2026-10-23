@@ -315,13 +315,29 @@ TEST(unsupportedStmtReportsDiag) {  // T011 起 if 等控制流已支持；class
   chunkFree(&c);
 }
 
-TEST(interpStringUnsupported) {
+TEST(interpStringCompilesToFormatString) {  // Task 11：占位报错移除；CONST_INTERP 深拷 + FORMAT_STRING
   MsDiagSink diags = {0};
   Chunk c;
-  EXPECT(ctx, !compileSrc("var s = \"a${b}c\"", &c, &diags));
-  EXPECT_EQ(ctx, 1, diags.count);
-  EXPECT_EQ(ctx, MSE_COMPILE_UNSUPPORTED, (int)diags.items[0].code);
-  chunkFree(&c);
+  EXPECT(ctx, compileSrc("var s = \"a\\t${b}c\"", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, CONST_INTERP, c.consts[0].kind);  // interp 常量先入池
+  const ConstEntry* e = &c.consts[0];
+  EXPECT_EQ(ctx, 3, e->as.interp.count);
+  EXPECT(ctx, !e->as.interp.segs[0].isExpr);  // 字面段编译期解码（\t → 0x09）且自持副本
+  EXPECT_EQ(ctx, 2, e->as.interp.segs[0].len);
+  EXPECT(ctx, e->as.interp.segs[0].start[0] == 'a' && e->as.interp.segs[0].start[1] == '\t');
+  EXPECT(ctx, e->as.interp.segs[1].isExpr);
+  EXPECT(ctx, !e->as.interp.segs[2].isExpr && e->as.interp.segs[2].len == 1 &&
+              e->as.interp.segs[2].start[0] == 'c');
+  ms_u8 ops[8];
+  int32_t operands[8];
+  EXPECT_EQ(ctx, 6, decodeAll(&c, ops, operands, 8));
+  EXPECT_EQ(ctx, OP_LOAD_GLOBAL, ops[0]);  // 表达式值先行压栈
+  EXPECT_EQ(ctx, OP_FORMAT_STRING, ops[1]);
+  EXPECT_EQ(ctx, 0, operands[1]);  // 指向 interp 常量
+  EXPECT_EQ(ctx, OP_DEF_GLOBAL, ops[2]);
+  EXPECT_EQ(ctx, OP_STORE_GLOBAL, ops[3]);
+  chunkFree(&c);  // 字面段字节随常量池释放（深拷自持）
 }
 
 // ---------- 短路 / 三元 / 跳转回填与 EXTENDED_ARG ----------
@@ -740,7 +756,7 @@ int main(int argc, char** argv) {
       funcProtoWithReturnHasNoEpilogue,
       emptyFuncBodyGetsEpilogue,
       unsupportedStmtReportsDiag,
-      interpStringUnsupported,
+      interpStringCompilesToFormatString,
       shortCircuitAnd,
       shortCircuitOr,
       ternaryJumpShape,

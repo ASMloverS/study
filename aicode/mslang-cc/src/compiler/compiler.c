@@ -269,7 +269,7 @@ static ms_u8 binaryOpCode(AstBinOp op) {
   }
 }
 
-// 无插值字符串 → 常量（空串 0 段亦然）；插值/多段 → FORMAT_STRING 未启用
+// 无插值字符串 → 常量（空串 0 段亦然）；插值/多段 → 下方 else 分支 CONST_INTERP + FORMAT_STRING
 // T013：反引号原始串走 CONST_RAWSTRING（内容不解码，LOAD_CONST 直拷 intern）
 static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
   const AstStrSeg* segs = n->as.strLit.segs;
@@ -317,9 +317,31 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       int32_t k = 0;
       if (tryStringConst(fs, n, &k)) {
         emitConstOp(fs, OP_LOAD_CONST, k, n->line);
-      } else {
-        compErr(fs, n, 1, "string interpolation is not supported yet");
-        emitOp(fs, OP_LOAD_NIL, n->line);
+      } else {  // 插值：字面段编译期解码入 CONST_INTERP；表达式段依次压栈后 FORMAT_STRING（21 §3.9）
+        int32_t count = n->as.strLit.count;
+        InterpSeg* segs = malloc(sizeof(InterpSeg) * (size_t)count);
+        MS_ASSERT(segs != NULL);
+        for (int32_t i = 0; i < count; i++) {
+          const AstStrSeg* seg = &n->as.strLit.segs[i];
+          if (seg->expr != NULL) {
+            segs[i] = (InterpSeg){true, NULL, 0};
+          } else {
+            char* decoded = malloc((size_t)seg->len + 1);  // 解码只会收缩；+1 供 NUL 终止契约
+            MS_ASSERT(decoded != NULL);
+            int32_t dlen = msTextDecodeEscapes(seg->start, seg->len, decoded, seg->len + 1);
+            segs[i] = (InterpSeg){false, decoded, dlen};
+          }
+        }
+        int32_t k2 = chunkAddConstInterp(fs->chunk, segs, count);
+        for (int32_t i = 0; i < count; i++) {
+          if (segs[i].isExpr) {
+            compileExpr(fs, n->as.strLit.segs[i].expr);
+          } else {
+            free((void*)segs[i].start);  // const 已拷贝 own 副本
+          }
+        }
+        free(segs);
+        emitConstOp(fs, OP_FORMAT_STRING, k2, n->line);
       }
       break;
     }

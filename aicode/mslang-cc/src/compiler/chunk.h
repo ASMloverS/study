@@ -89,7 +89,7 @@ int32_t chunkAddConstBool(Chunk* c, bool v);
 int32_t chunkAddConstRune(Chunk* c, ms_u32 cp);
 int32_t chunkAddConstText(Chunk* c, ConstKind kind, const char* start, int32_t len);  // STRING/RAWSTRING/BIGINT
 int32_t chunkAddConstProto(Chunk* c, Chunk* proto);
-int32_t chunkAddConstInterp(Chunk* c, const InterpSeg* segs, int32_t count);  // INTERP：自持 segs 拷贝，恒追加
+int32_t chunkAddConstInterp(Chunk* c, const InterpSeg* segs, int32_t count);  // INTERP：自持 segs 深拷贝（字面段字节同拷），恒追加
 int32_t chunkEmitOp(Chunk* c, ms_u8 op, int32_t line);  // 指令起始：驱动行号 RLE；返回偏移
 void chunkEmitByte(Chunk* c, ms_u8 b);                  // 操作数字节（不入行号表）
 int32_t chunkLineAt(const Chunk* c, int32_t offset);    // RLE 查询；越界/无记录返回 -1

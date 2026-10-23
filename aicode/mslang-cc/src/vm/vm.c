@@ -395,6 +395,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_GET_ITER);
   SET_HANDLER(OP_FOR_ITER);
   SET_HANDLER(OP_BUILD_LIST);
+  SET_HANDLER(OP_FORMAT_STRING);
   SET_HANDLER(OP_CHECK_SAFEPOINT);
 #define OPCODE(opname) LBL(opname):
 #define NEXT()               \
@@ -717,9 +718,14 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           msVmPush(vm, r);
           NEXT();
         }
-        vm->stackTop -= argc + 1;
         if (callee.kind == MS_VAL_NATIVE) {
+          // native 分派在弹栈前：callee+实参原位留栈（调用期间为 GC root，与 bound 路径同纪律）；
+          // print/str/repr 内部分配触发回收，实参若先弹即成白对象（Task 11 D10）
           MsValue r = callee.as.native(vm, argc, args);
+          if (vm->hasError) {
+            goto dispatchExit;
+          }
+          vm->stackTop -= argc + 1;
           msVmPush(vm, r);
           NEXT();
         }
@@ -904,6 +910,72 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         vm->safepointBudget = MS_SAFEPOINT_BUDGET;
       }
       NEXT();
+
+      OPCODE(OP_FORMAT_STRING) {  // <const k-interp>：表达式值已在栈顶区；逐段 str 形态拼接（D10）
+        // GC 纪律：两阶段全程栈 root——表达式值原位；各 form 逐个 push（list 递归内亦 push），
+        // 结果一次性分配后统一弹出（分配窗口内已产出 form 无一失根）
+        READ_OPERAND(k);
+        const InterpSeg* segs = consts[k].as.interp.segs;
+        int32_t count = consts[k].as.interp.count;
+        int32_t nExpr = 0;
+        for (int32_t i = 0; i < count; i++) {
+          nExpr += segs[i].isExpr ? 1 : 0;
+        }
+        int32_t base = vm->stackTop - nExpr;  // 首表达式值槽（下标语义：push 扩容搬移后仍有效）
+        int32_t j = 0;
+        for (int32_t i = 0; i < count; i++) {  // 阶段一：逐表达式物化 form 落栈 root
+          if (!segs[i].isExpr) {
+            continue;
+          }
+          MsObjString* form = msValueStrForm(vm, &vm->stack[base + j]);
+          j++;
+          if (form == NULL) {
+            if (!vm->hasError) {
+              RUNTIME_ERROR("RuntimeError: out of memory");
+            }
+            goto dispatchExit;  // StrForm 内 push 溢出：槽已置，栈由 dispatchExit 废弃
+          }
+          if (!msVmPush(vm, msValueObj(&form->head))) {
+            goto dispatchExit;  // StackOverflow 槽已置
+          }
+        }
+        ms_i64 total = 0;  // 阶段二：总长（字面段 + 栈上 form 段）
+        for (int32_t i = 0, f = 0; i < count; i++) {
+          if (segs[i].isExpr) {
+            total += (int32_t)((const MsObjString*)vm->stack[base + nExpr + f++].as.obj)->byteLen;
+          } else {
+            total += segs[i].len;
+          }
+        }
+        if (total > INT32_MAX) {
+          RUNTIME_ERROR("OverflowError: format string result too large");
+        }
+        char* buf = malloc((size_t)total + 1);  // +1：零长结果时避开 malloc(0) 语义
+        MS_ASSERT(buf != NULL);
+        int32_t len = 0;
+        for (int32_t i = 0, f = 0; i < count; i++) {
+          const char* p;
+          int32_t n;
+          if (segs[i].isExpr) {
+            const MsObjString* form = (const MsObjString*)vm->stack[base + nExpr + f++].as.obj;
+            p = form->bytes;
+            n = (int32_t)form->byteLen;
+          } else {
+            p = segs[i].start;
+            n = segs[i].len;
+          }
+          memcpy(buf + len, p, (size_t)n);
+          len += n;
+        }
+        MsObjString* result = msObjStringNew(vm, buf, len);  // 分配点：表达式值与 form 均在栈 root
+        free(buf);
+        if (result == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        vm->stackTop = base;  // 弹表达式值与全部 form，压结果
+        msVmPush(vm, msValueObj(&result->head));
+        NEXT();
+      }
 
       TRAP_DEFAULT()
       RUNTIME_ERROR("RuntimeError: unimplemented instruction: %s", msOpNames[op]);

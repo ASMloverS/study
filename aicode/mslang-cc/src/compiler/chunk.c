@@ -215,7 +215,13 @@ void chunkFree(Chunk* c) {
       chunkFree(c->consts[i].as.proto);
       free(c->consts[i].as.proto);
     } else if (c->consts[i].kind == CONST_INTERP) {
-      free(c->consts[i].as.interp.segs);
+      InterpSeg* segs = c->consts[i].as.interp.segs;
+      for (int32_t s = 0; s < c->consts[i].as.interp.count; s++) {
+        if (!segs[s].isExpr) {
+          free((void*)segs[s].start);  // 字面段字节深拷贝自持（chunkAddConstInterp）
+        }
+      }
+      free(segs);
     }
   }
   free(c->code);
@@ -316,7 +322,16 @@ int32_t chunkAddConstInterp(Chunk* c, const InterpSeg* segs, int32_t count) {
   if (count > 0) {
     copy = malloc(sizeof(InterpSeg) * (size_t)count);
     MS_ASSERT(copy != NULL);
-    memcpy(copy, segs, sizeof(InterpSeg) * (size_t)count);
+    for (int32_t i = 0; i < count; i++) {  // 深拷贝：字面段字节自持（chunk 拥有；调用方缓冲可释放）
+      copy[i] = segs[i];
+      if (!segs[i].isExpr) {
+        char* bytes = malloc((size_t)segs[i].len + 1);  // +1：NUL 终止契约（len=0 防 malloc(0)）
+        MS_ASSERT(bytes != NULL);
+        memcpy(bytes, segs[i].start, (size_t)segs[i].len);
+        bytes[segs[i].len] = '\0';
+        copy[i].start = bytes;
+      }
+    }
   }
   ConstEntry e = {0};
   e.kind = CONST_INTERP;
