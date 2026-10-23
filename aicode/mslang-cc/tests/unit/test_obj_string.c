@@ -201,6 +201,36 @@ TEST(minimalListBridge) {  // D6 最小 list 桥：数据面
   msVmFree(&vm);
 }
 
+TEST(strIterators) {  // chars/bytes 迭代与 charLen/s[i] 自洽（DoD）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* s = msObjStringNew(&vm, "a中b", 5);
+  MsObjStrIter* it = msObjStrIterNew(&vm, s, false);
+  MsValue v;
+  EXPECT(ctx, it != NULL && it->str == s && it->pos == 0 && !it->byteMode);
+  EXPECT_EQ(ctx, MS_OBJ_ITERATOR, it->head.type);
+  EXPECT(ctx, msStrIterNext(&vm, it, &v) && v.kind == MS_VAL_I64 && v.as.i == 'a');
+  EXPECT(ctx, msStrIterNext(&vm, it, &v) && v.as.i == 0x4E2D);  // '中' U+4E2D
+  EXPECT(ctx, msStrIterNext(&vm, it, &v) && v.as.i == 'b');
+  EXPECT(ctx, !msStrIterNext(&vm, it, &v));  // 耗尽
+  MsObjStrIter* bt = msObjStrIterNew(&vm, s, true);
+  int32_t sum = 0;
+  while (msStrIterNext(&vm, bt, &v)) {
+    sum += (int32_t)v.as.i;
+  }
+  EXPECT_EQ(ctx, 'a' + 0xE4 + 0xB8 + 0xAD + 'b', sum);  // 逐字节：97+228+184+173+98=780
+  vm.stack = malloc(sizeof(MsValue));  // 迭代器经栈保活过 GC（markChildren 标 str）
+  vm.stackTop = 1;
+  vm.stack[0] = msValueObj(&it->head);
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 2, gcHeapObjCount(&vm));  // it + s 存活（bt 无根被收）：markFn 漏标 str 即败
+  EXPECT(ctx, it->str == s);  // 误收则 ASan UAF
+  free(vm.stack);
+  vm.stack = NULL;
+  vm.stackTop = 0;
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -217,6 +247,7 @@ int main(int argc, char** argv) {
       internDedup,
       internGrowth,
       minimalListBridge,
+      strIterators,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

@@ -563,6 +563,17 @@ TEST(runBreakInForIn) {  // for-in break 弹迭代器后干净退出
   free(r.out);
 }
 
+TEST(forInStringChars) {  // GET_ITER/FOR_ITER string 分派 + DoD 三者自洽（len/charLen/chars/s[i]）
+  RunResult r = runSrc("var n = 0\nfor c in \"a中b\".chars() {\n  n = n + 1\n}\nprint(n)\n"
+                       "var t = 0\nfor b in \"中\".bytes() {\n  t = t + b\n}\nprint(t)\n"
+                       "var q = 0\nfor c in \"a中b\" {\n  q = q + c\n}\nprint(q)\n"
+                       "var s = \"a中b\"\nvar ok = 0\nvar i = 0\nfor c in s.chars() {\n"
+                       "  if s[i] == c {\n    ok = ok + 1\n  }\n  i = i + 1\n}\nprint(ok)\nprint(s.charLen())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "3\n585\n20208\n3\n3\n", r.out);  // q：'a'+U+4E2D+'b'=97+20013+98
+  free(r.out);
+}
+
 TEST(runWhileLoop) {
   RunResult r = runSrc("var n = 1\nwhile n < 8 { n = n * 2 }\nprint(n)");
   EXPECT_STREQ(ctx, "8\n", r.out);
@@ -738,6 +749,7 @@ int main(int argc, char** argv) {
       runContinueSkips,
       runContinueInForIn,
       runBreakInForIn,
+      forInStringChars,
       runWhileLoop,
       runForCondForm,
       runInfiniteForBreak,

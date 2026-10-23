@@ -1,4 +1,4 @@
-// string 方法族（T013，10 §2）：args[0] 恒为接收者（D5）；chars/bytes 归 Task 12 迭代器
+// string 方法族（T013，10 §2）：args[0] 恒为接收者（D5）；chars/bytes 产 MsObjStrIter（Task 12）
 // 错误约定：置 vm->hasError + errMsg 后返回 nil（OP_CALL_METHOD 检槽统一 unwind）
 #include <stdarg.h>
 #include <stdio.h>
@@ -204,6 +204,33 @@ static MsValue strmCharLen(MsVM* vm, int32_t argc, const MsValue* args) {
   }
   (void)vm;
   return msValueInt((ms_i64)recvStr(args)->charLen);
+}
+
+// chars/bytes（Task 12）：产 MsObjStrIter 落栈由调用方持（CALL_METHOD peek 接收者期间分配安全）
+static MsValue strmChars(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 1) {
+    methodError(vm, "TypeError: chars expects no arguments");
+    return msValueNil();
+  }
+  MsObjStrIter* it = msObjStrIterNew(vm, recvStr(args), false);
+  if (it == NULL) {
+    methodError(vm, "RuntimeError: out of memory");
+    return msValueNil();
+  }
+  return msValueObj(&it->head);
+}
+
+static MsValue strmBytes(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 1) {
+    methodError(vm, "TypeError: bytes expects no arguments");
+    return msValueNil();
+  }
+  MsObjStrIter* it = msObjStrIterNew(vm, recvStr(args), true);
+  if (it == NULL) {
+    methodError(vm, "RuntimeError: out of memory");
+    return msValueNil();
+  }
+  return msValueObj(&it->head);
 }
 
 // 大小写映射主体：逐 rune 查表（未命中/坏序列透传原字节保形）
@@ -812,7 +839,7 @@ static MsValue strmCompareTo(MsVM* vm, int32_t argc, const MsValue* args) {
   return msValueInt((ms_i64)msObjStringCompare(recvStr(args), other));
 }
 
-// ---- 方法表（10 §2 表序；chars/bytes 归 Task 12） ----
+// ---- 方法表（10 §2 表序） ----
 
 typedef struct StrMethodEntry {
   const char* name;
@@ -821,6 +848,8 @@ typedef struct StrMethodEntry {
 
 static const StrMethodEntry kStrMethods[] = {
     {"charLen", strmCharLen},
+    {"chars", strmChars},
+    {"bytes", strmBytes},
     {"toUpper", strmToUpper},
     {"toLower", strmToLower},
     {"split", strmSplit},

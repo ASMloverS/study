@@ -27,7 +27,9 @@ static TestNode* allocNode(MsVM* vm, ms_u64 magic) {
 
 static void testMarkNode(MsVM* vm, MsObj* obj) {
   // 标记 TestNode.child（容器任务 markFn 同构）
-  // 注册纪律：g_markFns 为进程级表——分配该类型的测试须自行注册；负载分配时必须初始化全部 MsValue 字段（allocNode 置 nil）
+  // 注册纪律：g_markFns 为进程级表，msVmInit 已注册生产 string 迭代器 mark（MS_OBJ_ITERATOR）——
+  // 分配该类型的用例须在 msVmInit 之后自行覆盖注册（TestNode 布局与 MsObjStrIter 不同，误用生产 mark 即类型混淆）；
+  // 负载分配时必须初始化全部 MsValue 字段（allocNode 置 nil）
   gcMarkValue(vm, ((TestNode*)obj)->child);
 }
 
@@ -97,6 +99,7 @@ TEST(collectDeadObjects) {  // 分配回收：死对象全收、字节回落（D
 TEST(stackKeepalive) {  // 栈保活：模块帧值栈即整个栈（23-gc §1 过渡）
   MsVM vm;
   msVmInit(&vm);
+  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);  // 覆盖生产 mark（注册纪律见 testMarkNode）
   TestNode* live = allocNode(&vm, 0xC0FFEE);
   for (int i = 0; i < 10; i++) {
     (void)allocNode(&vm, (ms_u64)i);  // 噪声死对象
@@ -116,6 +119,7 @@ TEST(stackKeepalive) {  // 栈保活：模块帧值栈即整个栈（23-gc §1 �
 TEST(globalKeepalive) {  // 全局表保活
   MsVM vm;
   msVmInit(&vm);
+  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);  // 覆盖生产 mark（注册纪律见 testMarkNode）
   TestNode* live = allocNode(&vm, 0xABCD);
   vm.globals = malloc(sizeof(MsGlobalVar));
   vm.globalCount = vm.globalCap = 1;
@@ -129,9 +133,9 @@ TEST(globalKeepalive) {  // 全局表保活
 }
 
 TEST(chainReference) {  // A→B→C：A 可达全活；不可达则同收
-  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);
   MsVM vm;
   msVmInit(&vm);
+  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);  // 覆盖生产 mark（注册纪律见 testMarkNode）
   TestNode* a = allocNode(&vm, 1);
   TestNode* b = allocNode(&vm, 2);
   TestNode* c = allocNode(&vm, 3);
@@ -153,9 +157,9 @@ TEST(chainReference) {  // A→B→C：A 可达全活；不可达则同收
 }
 
 TEST(selfReferenceCycle) {  // 自引用：可达环存活且标记终止；失根后追踪式天然回收
-  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);
   MsVM vm;
   msVmInit(&vm);
+  gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);  // 覆盖生产 mark（注册纪律见 testMarkNode）
   TestNode* a = allocNode(&vm, 7);
   a->child = msValueObj(&a->head);
   vm.stack = malloc(sizeof(MsValue));

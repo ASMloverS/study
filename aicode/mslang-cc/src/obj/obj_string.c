@@ -274,3 +274,32 @@ MsObjString* msObjStringSlice(MsVM* vm, MsObjString* s, bool hasA, ms_i64 a, boo
   free(buf);
   return r;
 }
+
+// ---- string 迭代器（Task 12，D8：MS_OBJ_ITERATOR tag，T017 泛化壳） ----
+
+MsObjStrIter* msObjStrIterNew(MsVM* vm, MsObjString* s, bool byteMode) {
+  MsObjStrIter* it = (MsObjStrIter*)msObjAlloc(vm, MS_OBJ_ITERATOR, sizeof(MsObjStrIter));
+  if (it == NULL) {
+    return NULL;
+  }
+  it->str = s;  // 指针直存（非 MsValue）：分配期间接收者由调用方 root（GET_ITER peek / CALL_METHOD 栈上）
+  it->pos = 0;
+  it->byteMode = byteMode;
+  return it;
+}
+
+bool msStrIterNext(MsVM* vm, MsObjStrIter* it, MsValue* out) {
+  (void)vm;  // 无分配：pos 前进出码点/字节
+  if (it->pos >= it->str->byteLen) {
+    return false;
+  }
+  if (it->byteMode) {
+    *out = msValueInt((ms_u8)it->str->bytes[it->pos++]);
+    return true;
+  }
+  int32_t w = 0;
+  ms_u32 cp = msUtf8Decode(it->str->bytes + it->pos, (int32_t)it->str->byteLen - (int32_t)it->pos, &w);
+  it->pos += (ms_u32)w;  // 坏序列 w=1 前进一字节（common.h 契约）
+  *out = msValueInt((ms_i64)cp);
+  return true;
+}

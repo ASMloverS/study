@@ -21,6 +21,11 @@ static void boundMark(MsVM* vm, MsObj* obj) {
   gcMarkValue(vm, msValueObj(&bm->method->head));
 }
 
+// string 迭代器 children 标记（T013，D8）：迭代器持 str；MS_OBJ_ITERATOR tag 为 T017 泛化壳
+static void strIterMark(MsVM* vm, MsObj* obj) {
+  gcMarkValue(vm, msValueObj(&((MsObjStrIter*)obj)->str->head));
+}
+
 void msVmInit(MsVM* vm) {
   vm->stack = NULL;
   vm->stackTop = vm->stackCap = 0;
@@ -34,6 +39,7 @@ void msVmInit(MsVM* vm) {
   gcSetMarkFn(MS_OBJ_LIST, msObjListMarkChildren);  // D6：children 标记统一注册（进程级表，幂等）
   gcSetFreeFn(MS_OBJ_LIST, msObjListFreeData);  // items 数组随对象释放（sweep/heapFree 前回调）
   gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
+  gcSetMarkFn(MS_OBJ_ITERATOR, strIterMark);  // D8：string 迭代器持 str（tag 共享，T017 泛化）
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);
   msInternInit(vm->intern);
@@ -850,18 +856,39 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
-      OPCODE(OP_GET_ITER) {  // T011 仅 range 迭代器直通（协议 T017）
-        MsValue v = pop(vm);
-        if (v.kind != MS_VAL_RANGE_ITER) {
-          RUNTIME_ERROR("TypeError: '%s' is not iterable (T011 supports range only)", msValueTypeName(&v));
+      OPCODE(OP_GET_ITER) {  // 迭代器直通（range/对象）；string → 新 rune 迭代器（D8；协议 T017 泛化）
+        MsValue v = vm->stack[vm->stackTop - 1];  // peek：迭代器分配期间接收者在栈保 root
+        if (v.kind == MS_VAL_RANGE_ITER ||
+            (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_ITERATOR)) {
+          NEXT();
         }
-        msVmPush(vm, v);
-        NEXT();
+        if (msIsString(&v)) {
+          MsObjStrIter* it = msObjStrIterNew(vm, (MsObjString*)v.as.obj, false);
+          if (it == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stack[vm->stackTop - 1] = msValueObj(&it->head);  // 覆盖接收者槽：迭代器持 str
+          NEXT();
+        }
+        if (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_LIST) {
+          RUNTIME_ERROR("RuntimeError: list iteration executes in T014");
+        }
+        RUNTIME_ERROR("TypeError: '%s' is not iterable", msValueTypeName(&v));
       }
 
       OPCODE(OP_FOR_ITER) {  // <t exit>：有值压值；耗尽弹迭代器并跳出
         READ_OPERAND(t);
         MsValue* it = &vm->stack[vm->stackTop - 1];
+        if (it->kind == MS_VAL_OBJ && it->as.obj->type == MS_OBJ_ITERATOR) {  // string 迭代器（D8）
+          MsValue item;
+          if (!msStrIterNext(vm, (MsObjStrIter*)it->as.obj, &item)) {
+            (void)pop(vm);  // 耗尽弹迭代器（再迭代须重新 chars()）
+            ip = t;
+            NEXT();
+          }
+          msVmPush(vm, item);  // msStrIterNext 无分配；it 槽位此后不再经缓存指针访问
+          NEXT();
+        }
         if (it->kind != MS_VAL_RANGE_ITER) {
           RUNTIME_ERROR("TypeError: FOR_ITER over non-iterator '%s'", msValueTypeName(it));
         }
