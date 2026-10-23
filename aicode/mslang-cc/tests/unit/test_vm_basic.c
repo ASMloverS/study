@@ -300,6 +300,43 @@ TEST(stringMethodCall) {  // CALL_METHOD 零分配路径 + GET_ATTR 物化 bound
   free(r.out);
 }
 
+TEST(stringMethodsFamily) {  // 10 §2 检索/变换/判断组合（split 产物经 list 桥取元素）
+  RunResult r = runSrc("var s = \"Hello, World\"\n"
+                       "print(s.indexOf(\"o\"))\nprint(s.lastIndexOf(\"o\"))\n"
+                       "print(s.contains(\"World\"))\nprint(s.startsWith(\"Hell\"))\n"
+                       "print(s.endsWith(\"rld\"))\nprint(s.toUpper())\nprint(s.toLower())\n"
+                       "print(s.replace(\"o\", \"0\"))\nprint(s.count(\"l\"))\n"
+                       "print(s.slice(0, 5))\nprint(\"  hi  \".trim())\nprint(\"  hi  \".trimLeft())\n"
+                       "print(\"  hi  \".trimRight())\nprint(\"abc\".isAlpha())\nprint(\" \".isSpace())\n"
+                       "print(\"123\".isDigit())\nprint(\"aXbXc\".count(\"X\"))\n"
+                       "var parts = \"a,b,c\".split(\",\")\nprint(parts[0])\nprint(parts[2])\n"
+                       "print(\"line1\\nline2\".splitLines()[1])\nprint(\"a\".repeat(3))\n"
+                       "print(\"ab\".padRight(4))\nprint(\"5\".padLeft(3, '0'))\n"
+                       "print(\"中文\".toUpper())\nprint(\"x\\u{4E2D}\".indexOf(\"\\u{4E2D}\"))");
+  EXPECT(ctx, r.compileOk);
+  // lastIndexOf("o") = 8：H e l l o , ␠ W o r l d（第二 o 在 rune 8；任务书预期 7 为笔误，按语义校正）
+  EXPECT_STREQ(ctx, "4\n8\ntrue\ntrue\ntrue\nHELLO, WORLD\nhello, world\nHell0, W0rld\n3\n"
+                    "Hello\nhi\nhi  \n  hi\ntrue\ntrue\ntrue\n2\n"
+                    "a\nc\nline2\naaa\nab  \n005\n中文\n1\n", r.out);
+  free(r.out);
+}
+
+TEST(stringMethodsErrors) {  // 错误形态：参数类型 / 步进零 / repeat 负数按 Python 语义为空串
+  RunResult r = runSrc("print(\"abc\".indexOf(1))");
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"abc\".split(\"b\", \"x\"))");
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"abc\".slice(0, 1, 0))");
+  EXPECT(ctx, r.hasError && strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"abc\".repeat(-1))");  // repeat 负数 → 空串（Python 语义）不报错
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "\n", r.out);
+  free(r.out);
+}
+
 TEST(runShortCircuitValues) {  // §5.1 短路值 + &&/|| 返回操作数；0 为真（02 §2）
   RunResult r = runSrc("print(nil || \"d\")\nprint(false && 1)\nprint(0 && 1)");
   EXPECT_STREQ(ctx, "d\nfalse\n1\n", r.out);
@@ -594,6 +631,8 @@ int main(int argc, char** argv) {
       stringConcatRepeat,
       buildListAndIndex,
       stringMethodCall,
+      stringMethodsFamily,
+      stringMethodsErrors,
       runUnaryOps,
       runShiftOps,
       runTernaryExpr,

@@ -94,6 +94,10 @@ void msVmFree(MsVM* vm);
 // 执行模块 chunk 至 RETURN；错误置槽后由调用方打印 + 退出码 1（27 §10）
 void msVmRun(MsVM* vm, const Chunk* chunk);
 
+// 值栈压入（GC root 面）：溢出置错误槽（StackOverflowError）返回 false，调用方按需检查；
+// str_methods.c 等方法实现借 VM 栈 root 中间对象（D6 纪律），须在返回前弹净自压部分（pop 保持 VM 内部）
+bool msVmPush(MsVM* vm, MsValue v);
+
 // builtins_bridge.c：LOAD_GLOBAL 未命中用户全局时的内置回查
 bool msBuiltinLookup(const char* name, int32_t len, MsValue* out);
 

@@ -62,15 +62,16 @@ void msVmFree(MsVM* vm) {
   memset(vm, 0, sizeof(*vm));  // 零态收尾：不重建堆（避免每周期泄漏一个 GcHeap）；复用需再 msVmInit
 }
 
-static void push(MsVM* vm, MsValue v) {
+bool msVmPush(MsVM* vm, MsValue v) {
   if (vm->stackTop >= MS_STACK_MAX) {
     vm->hasError = true;
     snprintf(vm->errMsg, sizeof(vm->errMsg), "StackOverflowError: value stack exceeded %d entries",
              MS_STACK_MAX);
     vm->errLine = -1;
-    return;
+    return false;
   }
   MS_ARRAY_PUSH(vm->stack, vm->stackTop, vm->stackCap, v);
+  return true;
 }
 
 static MsValue pop(MsVM* vm) {
@@ -424,15 +425,15 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
 
       OPCODE(OP_DUP) {
         MsValue v = vm->stack[vm->stackTop - 1];
-        push(vm, v);
+        msVmPush(vm, v);
         NEXT();
       }
 
       OPCODE(OP_DUP2) {  // a b → a b a b
         MsValue a = vm->stack[vm->stackTop - 2];
-        push(vm, a);
+        msVmPush(vm, a);
         MsValue b = vm->stack[vm->stackTop - 2];
-        push(vm, b);
+        msVmPush(vm, b);
         NEXT();
       }
 
@@ -452,15 +453,15 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       }
 
       OPCODE(OP_LOAD_NIL)
-      push(vm, msValueNil());
+      msVmPush(vm, msValueNil());
       NEXT();
 
       OPCODE(OP_LOAD_TRUE)
-      push(vm, msValueBool(true));
+      msVmPush(vm, msValueBool(true));
       NEXT();
 
       OPCODE(OP_LOAD_FALSE)
-      push(vm, msValueBool(false));
+      msVmPush(vm, msValueBool(false));
       NEXT();
 
       OPCODE(OP_LOAD_CONST) {
@@ -470,13 +471,13 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         if (!ok) {
           RUNTIME_ERROR("RuntimeError: bigint executes in T016 (placeholder)");
         }
-        push(vm, v);
+        msVmPush(vm, v);
         NEXT();
       }
 
       OPCODE(OP_LOAD_LOCAL) {
         int32_t slot = code[ip++];
-        push(vm, vm->stack[vm->frames[vm->frameCount - 1].base + slot]);
+        msVmPush(vm, vm->stack[vm->frames[vm->frameCount - 1].base + slot]);
         NEXT();
       }
 
@@ -491,12 +492,12 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         const ConstEntry* name = &consts[k];
         MsGlobalVar* g = findGlobal(vm, name->as.text.start, name->as.text.len);
         if (g != NULL) {
-          push(vm, g->value);
+          msVmPush(vm, g->value);
           NEXT();
         }
         MsValue builtin = msValueNil();
         if (msBuiltinLookup(name->as.text.start, name->as.text.len, &builtin)) {
-          push(vm, builtin);
+          msVmPush(vm, builtin);
           NEXT();
         }
         RUNTIME_ERROR("RuntimeError: undefined name '%.*s'", (int)name->as.text.len, name->as.text.start);
@@ -530,7 +531,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
     if (!arithBinary(vm, (kind), a, b, &r)) { \
       RUNTIME_ERROR("%s", vm->errMsg);        \
     }                                         \
-    push(vm, r);                              \
+    msVmPush(vm, r);                              \
     NEXT();                                   \
   }
 
@@ -552,9 +553,9 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           if (a.as.i == INT64_MIN) {
             RUNTIME_ERROR("OverflowError: int overflow (bigint promotion lands in T016)");
           }
-          push(vm, msValueInt(-a.as.i));
+          msVmPush(vm, msValueInt(-a.as.i));
         } else if (a.kind == MS_VAL_F64) {
-          push(vm, msValueFloat(-a.as.f));
+          msVmPush(vm, msValueFloat(-a.as.f));
         } else {
           RUNTIME_ERROR("TypeError: unary '-' requires a numeric operand, got '%s'", msValueTypeName(&a));
         }
@@ -563,7 +564,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
 
       OPCODE(OP_UNARY_NOT) {  // ! 返回 bool（03 §2）：真值取反
         MsValue a = pop(vm);
-        push(vm, msValueBool(!msValueIsTruthy(&a)));
+        msVmPush(vm, msValueBool(!msValueIsTruthy(&a)));
         NEXT();
       }
 
@@ -572,7 +573,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         if (a.kind != MS_VAL_I64) {
           RUNTIME_ERROR("TypeError: '~' requires int operand, got '%s'", msValueTypeName(&a));
         }
-        push(vm, msValueInt(~a.as.i));
+        msVmPush(vm, msValueInt(~a.as.i));
         NEXT();
       }
 
@@ -580,7 +581,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   OPCODE(opname) {                 \
     MsValue b = pop(vm);           \
     MsValue a = pop(vm);           \
-    push(vm, msValueBool(expr));   \
+    msVmPush(vm, msValueBool(expr));   \
     NEXT();                        \
   }
 
@@ -597,7 +598,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       RUNTIME_ERROR("TypeError: '%s' not supported between '%s' and '%s'", symbol, \
                     msValueTypeName(&a), msValueTypeName(&b));           \
     }                                                                    \
-    push(vm, msValueBool(okExpr));                                       \
+    msVmPush(vm, msValueBool(okExpr));                                       \
     NEXT();                                                              \
   }
 
@@ -620,7 +621,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
               RUNTIME_ERROR("IndexError: string index out of range");
             }
             vm->stackTop -= 2;
-            push(vm, msValueInt((ms_i64)cp));
+            msVmPush(vm, msValueInt((ms_i64)cp));
             NEXT();
           }
           RUNTIME_ERROR("TypeError: string indices must be int (slice executes in T013 Task 10)");
@@ -634,7 +635,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
             RUNTIME_ERROR("IndexError: list index out of range");
           }
           vm->stackTop -= 2;
-          push(vm, item);
+          msVmPush(vm, item);
           NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' is not indexable", msValueTypeName(&obj));
@@ -643,7 +644,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（默认参/rest 形态 T018）
         (void)code[ip++];
         MsValue proto = pop(vm);
-        push(vm, proto);  // T011：函数值即 chunk 引用，闭包捕获 T018
+        msVmPush(vm, proto);  // T011：函数值即 chunk 引用，闭包捕获 T018
         NEXT();
       }
 
@@ -662,13 +663,13 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
             goto dispatchExit;
           }
           vm->stackTop -= argc + 1;
-          push(vm, r);
+          msVmPush(vm, r);
           NEXT();
         }
         vm->stackTop -= argc + 1;
         if (callee.kind == MS_VAL_NATIVE) {
           MsValue r = callee.as.native(vm, argc, args);
-          push(vm, r);
+          msVmPush(vm, r);
           NEXT();
         }
         if (callee.kind == MS_VAL_FUNCTION) {
@@ -690,7 +691,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           if (vm->hasError) {  // 方法内置槽：统一 unwind
             goto dispatchExit;
           }
-          push(vm, r);
+          msVmPush(vm, r);
           NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' has no method '%.*s'", msValueTypeName(&args[0]),
@@ -713,7 +714,10 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           if (native == NULL) {
             RUNTIME_ERROR("RuntimeError: out of memory");
           }
-          push(vm, msValueObj(&native->head));  // native 落栈保活（接收者槽未动：两次分配均有 Root）
+          msVmPush(vm, msValueObj(&native->head));  // native 落栈保活（接收者槽未动：两次分配均有 Root）
+          if (vm->hasError) {  // push 溢出：后续裸栈操作（-2 槽）会越界，须立即 unwind（Task 8 review）
+            goto dispatchExit;
+          }
           MsObjBoundMethod* bound = msObjBoundNew(vm, recv, native);
           if (bound == NULL) {
             RUNTIME_ERROR("RuntimeError: out of memory");
@@ -784,7 +788,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         MsValue v = pop(vm);
         const ConstEntry* name = &consts[k];
         const char* tn = msValueTypeName(&v);
-        push(vm, msValueBool((int32_t)strlen(tn) == name->as.text.len &&
+        msVmPush(vm, msValueBool((int32_t)strlen(tn) == name->as.text.len &&
                              memcmp(tn, name->as.text.start, (size_t)name->as.text.len) == 0));
         NEXT();
       }
@@ -794,7 +798,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         if (v.kind != MS_VAL_RANGE_ITER) {
           RUNTIME_ERROR("TypeError: '%s' is not iterable (T011 supports range only)", msValueTypeName(&v));
         }
-        push(vm, v);
+        msVmPush(vm, v);
         NEXT();
       }
 
@@ -813,7 +817,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           ip = t;
           NEXT();
         }
-        push(vm, msValueInt(cur));
+        msVmPush(vm, msValueInt(cur));
         it = &vm->stack[vm->stackTop - 2];  // push 可能扩容：重取迭代器槽位（-1 为新压入值）
         // 推进（饱和到 stop 防 INT64 边界回绕）
         if (step > 0 ? cur > INT64_MAX - step : cur < INT64_MIN - step) {
@@ -830,7 +834,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         if (list == NULL) {
           RUNTIME_ERROR("RuntimeError: out of memory");
         }
-        push(vm, msValueObj(&list->head));  // list 落栈保活
+        msVmPush(vm, msValueObj(&list->head));  // list 落栈保活
         if (!msObjListReserve(vm, list, n)) {  // 分配点：n 个源值仍在栈上安全
           RUNTIME_ERROR("RuntimeError: out of memory");
         }
