@@ -312,12 +312,13 @@ TEST(stringMethodsFamily) {  // 10 §2 检索/变换/判断组合（split 产物
                        "var parts = \"a,b,c\".split(\",\")\nprint(parts[0])\nprint(parts[2])\n"
                        "print(\"line1\\nline2\".splitLines()[1])\nprint(\"a\".repeat(3))\n"
                        "print(\"ab\".padRight(4))\nprint(\"5\".padLeft(3, '0'))\n"
-                       "print(\"中文\".toUpper())\nprint(\"x\\u{4E2D}\".indexOf(\"\\u{4E2D}\"))");
+                       "print(\"中文\".toUpper())\nprint(\"x\\u{4E2D}\".indexOf(\"\\u{4E2D}\"))\n"
+                       "print(\",\".join([\"a\", \"b\"]))");
   EXPECT(ctx, r.compileOk);
   // lastIndexOf("o") = 8：H e l l o , ␠ W o r l d（第二 o 在 rune 8；任务书预期 7 为笔误，按语义校正）
   EXPECT_STREQ(ctx, "4\n8\ntrue\ntrue\ntrue\nHELLO, WORLD\nhello, world\nHell0, W0rld\n3\n"
                     "Hello\nhi\nhi  \n  hi\ntrue\ntrue\ntrue\n2\n"
-                    "a\nc\nline2\naaa\nab  \n005\n中文\n1\n", r.out);
+                    "a\nc\nline2\naaa\nab  \n005\n中文\n1\na,b\n", r.out);
   free(r.out);
 }
 
@@ -334,6 +335,9 @@ TEST(stringMethodsErrors) {  // 错误形态：参数类型 / 步进零 / repeat
   r = runSrc("print(\"abc\".repeat(-1))");  // repeat 负数 → 空串（Python 语义）不报错
   EXPECT(ctx, r.compileOk);
   EXPECT_STREQ(ctx, "\n", r.out);
+  free(r.out);
+  r = runSrc("print(\",\".join(\"ab\"))");  // 非 list
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
   free(r.out);
 }
 
