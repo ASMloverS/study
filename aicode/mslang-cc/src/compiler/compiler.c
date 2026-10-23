@@ -410,6 +410,21 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       emitByte(fs, 0);  // icSlot（T022）
       break;
     }
+    case AST_SLICE: {  // 切片对象不独立暴露：BUILD_SLICE 后立即 GET_INDEX（03 §3）
+      compileExpr(fs, n->as.slice.obj);
+      const AstNode* parts[3] = {n->as.slice.start, n->as.slice.end, n->as.slice.step};
+      for (int i = 0; i < 3; i++) {
+        if (parts[i] != NULL) {
+          compileExpr(fs, parts[i]);
+        } else {
+          emitOp(fs, OP_LOAD_NIL, n->line);
+        }
+      }
+      emitOp(fs, OP_BUILD_SLICE, n->line);
+      emitByte(fs, 3);
+      emitOp(fs, OP_GET_INDEX, n->line);
+      break;
+    }
     default:
       compErr(fs, n, 1, "expression form is not supported yet");
       emitOp(fs, OP_LOAD_NIL, n->line);
@@ -468,6 +483,14 @@ static void compileVarDecl(FuncState* fs, AstNode* n) {
 
 static void compileAssign(FuncState* fs, AstNode* n) {
   AstNode* target = n->as.assign.target;
+  if (target->kind == AST_INDEX && n->as.assign.op == AST_OP_NONE) {
+    // obj[idx] = v（string 只读在运行时报；03 §4 求值序 obj→idx→v；复合赋值 index 目标维持不支持）
+    compileExpr(fs, target->as.indexExpr.obj);
+    compileExpr(fs, target->as.indexExpr.index);
+    compileExpr(fs, n->as.assign.value);
+    emitOp(fs, OP_SET_INDEX, n->line);
+    return;
+  }
   if (target->kind != AST_IDENT) {
     compileExpr(fs, n->as.assign.value);  // 先求值保持副作用序
     compErr(fs, target, 1, "assignment target form is not supported yet");

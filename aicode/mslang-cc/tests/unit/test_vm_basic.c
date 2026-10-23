@@ -273,6 +273,30 @@ TEST(buildListAndIndex) {  // D6：BUILD_LIST + GET_INDEX(int)；list 的 print 
   free(r.out);
 }
 
+TEST(indexAndSliceExec) {  // 02 §4 rune 语义 + 越界/步进 0/只读赋值错误
+  RunResult r = runSrc("var s = \"Hello, 世界\"\nprint(s[0])\nprint(s[7])\nprint(s[-1])\n"
+                       "print(s[0:5])\nprint(s[::2])\nprint(s[::-1])\nprint(s.charLen())");
+  EXPECT(ctx, r.compileOk);
+  // [::2] 取 rune 0,2,4,6,8 = H,l,o,␠,界（rune 8 是界——任务书原文写 世 为笔误，按 Python 语义校正）
+  EXPECT_STREQ(ctx, "72\n19990\n30028\nHello\nHlo 界\n界世 ,olleH\n9\n", r.out);
+  free(r.out);
+  r = runSrc("print(\"abc\"[5])");
+  EXPECT(ctx, r.hasError && strstr(r.err, "IndexError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"abc\"[::0])");
+  EXPECT(ctx, r.hasError && strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+  r = runSrc("var s = \"abc\"\ns[0] = 1");  // string 只读
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"abc\"[\"x\"])");
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(\"abc\"[1.5])");
+  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
 TEST(stringMethodCall) {  // CALL_METHOD 零分配路径 + GET_ATTR 物化 bound（D5）
   RunResult r = runSrc("var s = \"hello\"\nprint(s.charLen())\nprint(\"x\".compareTo(\"y\"))");
   EXPECT(ctx, r.compileOk);
@@ -634,6 +658,7 @@ int main(int argc, char** argv) {
       stringConstLoadUnderGcPressure,
       stringConcatRepeat,
       buildListAndIndex,
+      indexAndSliceExec,
       stringMethodCall,
       stringMethodsFamily,
       stringMethodsErrors,

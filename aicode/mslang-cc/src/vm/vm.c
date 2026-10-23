@@ -378,6 +378,8 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_IS);
   SET_HANDLER(OP_IN);
   SET_HANDLER(OP_GET_INDEX);
+  SET_HANDLER(OP_SET_INDEX);
+  SET_HANDLER(OP_BUILD_SLICE);
   SET_HANDLER(OP_MAKE_FUNCTION);
   SET_HANDLER(OP_CALL);
   SET_HANDLER(OP_CALL_METHOD);
@@ -610,7 +612,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_IN)
       RUNTIME_ERROR("RuntimeError: 'in' executes in T017");
 
-      OPCODE(OP_GET_INDEX) {  // peek 求值完成后再弹栈（分配窗口内保 root；slice 分支 Task 10）
+      OPCODE(OP_GET_INDEX) {  // peek 求值完成后再弹栈（分配窗口内保 root；slice 分支同守 peek 纪律）
         MsValue idx = vm->stack[vm->stackTop - 1];
         MsValue obj = vm->stack[vm->stackTop - 2];
         if (msIsString(&obj)) {
@@ -624,7 +626,22 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
             msVmPush(vm, msValueInt((ms_i64)cp));
             NEXT();
           }
-          RUNTIME_ERROR("TypeError: string indices must be int (slice executes in T013 Task 10)");
+          if (idx.kind == MS_VAL_SLICE) {
+            bool zero = false;
+            MsObjString* r = msObjStringSlice(vm, s, (idx.as.slice.mask & 1) != 0, idx.as.slice.start,
+                                              (idx.as.slice.mask & 2) != 0, idx.as.slice.end,
+                                              (idx.as.slice.mask & 4) != 0, idx.as.slice.step, &zero);
+            if (r == NULL) {  // s 在栈上保 root：msObjStringSlice 分配期间不被回收
+              if (zero) {
+                RUNTIME_ERROR("ValueError: slice step must not be zero");
+              }
+              RUNTIME_ERROR("OverflowError: string slice result too large");
+            }
+            vm->stackTop -= 2;
+            msVmPush(vm, msValueObj(&r->head));
+            NEXT();
+          }
+          RUNTIME_ERROR("TypeError: string indices must be int or slice");
         }
         if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_LIST) {
           if (idx.kind != MS_VAL_I64) {
@@ -639,6 +656,40 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' is not indexable", msValueTypeName(&obj));
+      }
+
+      OPCODE(OP_SET_INDEX) {  // string 只读；list 写入归 T014
+        (void)pop(vm);  // val（03 §4 求值序 obj→idx→v 已在编译侧定型，此处仅按 obj 分派）
+        (void)pop(vm);  // idx
+        MsValue obj = pop(vm);
+        if (msIsString(&obj)) {
+          RUNTIME_ERROR("TypeError: 'string' does not support item assignment");
+        }
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_LIST) {
+          RUNTIME_ERROR("RuntimeError: list item assignment executes in T014");
+        }
+        RUNTIME_ERROR("TypeError: '%s' does not support item assignment", msValueTypeName(&obj));
+      }
+
+      OPCODE(OP_BUILD_SLICE) {  // <u8 argc=3>：start/end/step（nil = 省略）→ MS_VAL_SLICE（无分配）
+        (void)code[ip++];
+        MsValue step = vm->stack[vm->stackTop - 1];
+        MsValue end = vm->stack[vm->stackTop - 2];
+        MsValue start = vm->stack[vm->stackTop - 3];
+        if ((start.kind != MS_VAL_NIL && start.kind != MS_VAL_I64) ||
+            (end.kind != MS_VAL_NIL && end.kind != MS_VAL_I64) ||
+            (step.kind != MS_VAL_NIL && step.kind != MS_VAL_I64)) {
+          RUNTIME_ERROR("TypeError: slice indices must be int");
+        }
+        vm->stackTop -= 3;
+        MsValue v = {MS_VAL_SLICE, {0}};
+        v.as.slice.start = start.kind == MS_VAL_I64 ? start.as.i : 0;
+        v.as.slice.end = end.kind == MS_VAL_I64 ? end.as.i : 0;
+        v.as.slice.step = step.kind == MS_VAL_I64 ? step.as.i : 0;
+        v.as.slice.mask = (ms_u8)((start.kind == MS_VAL_I64 ? 1 : 0) | (end.kind == MS_VAL_I64 ? 2 : 0) |
+                                  (step.kind == MS_VAL_I64 ? 4 : 0));
+        msVmPush(vm, v);
+        NEXT();
       }
 
       OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（默认参/rest 形态 T018）
