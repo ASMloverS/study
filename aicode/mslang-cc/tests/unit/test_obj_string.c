@@ -246,7 +246,7 @@ TEST(gcStressStrings) {  // DoD：字符串循环分配无泄漏（ASan 门禁�
   char buf[32];
   for (int i = 0; i < 20000; i++) {
     int n = snprintf(buf, sizeof(buf), "%d", i);
-    MsObjString* base = msObjStringNew(&vm, "seed-", 5);  // 每轮新基底：更真实的分配模式
+    MsObjString* base = msObjStringNew(&vm, "种-", 4);  // 每轮新基底（非 ASCII：连带产物走 rune 路径）
     if (base == NULL) {
       break;
     }
@@ -260,8 +260,9 @@ TEST(gcStressStrings) {  // DoD：字符串循环分配无泄漏（ASan 门禁�
     if (i % 7 == 0) {
       bool zero = false;
       MsObjString* sliced = msObjStringSlice(&vm, s, false, 0, true, 1, true, 2, &zero);
+      EXPECT(ctx, s->runeIndex != NULL);  // 非 ASCII 切片物化惰性 runeIndex（退回 ASCII 种子即败）
       if (sliced != NULL) {
-        vm.stack[0] = msValueObj(&sliced->head);  // 切片含惰性 runeIndex 的对象也参与回收
+        vm.stack[0] = msValueObj(&sliced->head);  // 带已物化 runeIndex 的对象失引用后统一回收
       }
     }
     size_t now = gcHeapBytes(&vm);
