@@ -114,6 +114,78 @@ TEST(listIndexOf) {
   msVmFree(&vm);
 }
 
+// ---------- 数据面（Task 2） ----------
+
+static MsObjList* listFromInts(MsVM* vm, const ms_i64* xs, int32_t n) {
+  MsObjList* list = msObjListNew(vm);
+  for (int32_t i = 0; i < n; i++) {
+    if (!msObjListPush(vm, list, msValueInt(xs[i]))) {
+      return NULL;
+    }
+  }
+  msVmPush(vm, msValueObj(&list->head));  // root：slice/concat 内分配点 GC 不误收
+  return list;
+}
+
+TEST(listSliceRanges) {  // §5.1 切片：[1,2,3,4][1::2] → [2,4]；[::-1] → [4,3,2,1]
+  MsVM vm;
+  msVmInit(&vm);
+  const ms_i64 xs[] = {1, 2, 3, 4};
+  MsObjList* list = listFromInts(&vm, xs, 4);
+  bool zero = true;
+  MsObjList* r = msObjListSlice(&vm, list, true, 1, false, 0, true, 2, &zero);
+  EXPECT(ctx, r != NULL && !zero && r->count == 2);
+  MsValue v = msValueNil();
+  EXPECT(ctx, msObjListGet(r, 0, &v) && v.as.i == 2);
+  EXPECT(ctx, msObjListGet(r, 1, &v) && v.as.i == 4);
+  r = msObjListSlice(&vm, list, false, 0, false, 0, true, -1, &zero);  // [::-1]
+  EXPECT(ctx, r != NULL && r->count == 4);
+  EXPECT(ctx, msObjListGet(r, 0, &v) && v.as.i == 4);
+  EXPECT(ctx, msObjListGet(r, 3, &v) && v.as.i == 1);
+  r = msObjListSlice(&vm, list, true, 0, true, 0, true, 0, &zero);  // step 显式 0
+  EXPECT(ctx, r == NULL && zero);
+  msVmFree(&vm);
+}
+
+TEST(listConcatRepeat) {  // §5.1 拼接/重复
+  MsVM vm;
+  msVmInit(&vm);
+  const ms_i64 a[] = {1};
+  const ms_i64 b[] = {2};
+  MsObjList* la = listFromInts(&vm, a, 1);
+  MsObjList* lb = listFromInts(&vm, b, 1);
+  MsObjList* r = msObjListConcat(&vm, la, lb);
+  EXPECT(ctx, r != NULL && r->count == 2);
+  MsValue v = msValueNil();
+  EXPECT(ctx, msObjListGet(r, 0, &v) && v.as.i == 1);
+  EXPECT(ctx, msObjListGet(r, 1, &v) && v.as.i == 2);
+  const ms_i64 z[] = {0};
+  MsObjList* lz = listFromInts(&vm, z, 1);
+  r = msObjListRepeat(&vm, lz, 3);  // [0]*3
+  EXPECT(ctx, r != NULL && r->count == 3);
+  EXPECT(ctx, msObjListGet(r, 2, &v) && v.as.i == 0);
+  r = msObjListRepeat(&vm, lz, -2);  // 负数 → 空表
+  EXPECT(ctx, r != NULL && r->count == 0);
+  msVmFree(&vm);
+}
+
+TEST(listSortStableAndTyped) {  // 缺省 < 序；不可比较失败原序保持
+  MsVM vm;
+  msVmInit(&vm);
+  const ms_i64 xs[] = {3, 1, 2};
+  MsObjList* list = listFromInts(&vm, xs, 3);
+  EXPECT_EQ(ctx, MS_LIST_SORT_OK, msObjListSort(list));
+  MsValue v = msValueNil();
+  EXPECT(ctx, msObjListGet(list, 0, &v) && v.as.i == 1);
+  EXPECT(ctx, msObjListGet(list, 2, &v) && v.as.i == 3);
+  MsObjString* s = msObjStringNew(&vm, "b", 1);
+  msVmPush(&vm, msValueObj(&s->head));
+  EXPECT(ctx, msObjListPush(&vm, list, msValueObj(&s->head)));  // [1,2,3,"b"]
+  EXPECT_EQ(ctx, MS_LIST_SORT_TYPE, msObjListSort(list));  // int vs string 不可比较
+  EXPECT(ctx, msObjListGet(list, 0, &v) && v.as.i == 1);   // 原序保持
+  msVmFree(&vm);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -121,6 +193,9 @@ int main(void) {
   listInsertRemoveClearReverse(&ctx);
   listVersionBumpRules(&ctx);
   listIndexOf(&ctx);
+  listSliceRanges(&ctx);
+  listConcatRepeat(&ctx);
+  listSortStableAndTyped(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

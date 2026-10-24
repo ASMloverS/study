@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_string.h"
 
 MsObjList* msObjListNew(MsVM* vm) {
   MsObjList* list = (MsObjList*)msObjAlloc(vm, MS_OBJ_LIST, sizeof(MsObjList));
@@ -151,4 +152,141 @@ void msObjListMarkChildren(MsVM* vm, MsObj* obj) {
 
 void msObjListFreeData(MsObj* obj) {
   free(((MsObjList*)obj)->items);  // items 可为 NULL（free(NULL) 无害）
+}
+
+// ---- 切片/拼接/重复（msObjListNew 为 GC 触发点：源由调用方 root） ----
+
+static ms_i64 sliceCount(ms_i64 start, ms_i64 stop, ms_i64 step) {
+  ms_i64 span = step > 0 ? stop - start : start - stop;
+  ms_i64 inc = step > 0 ? step : -step;
+  return (span + inc - 1) / inc;  // 规范化后 span >= 0：上取整计元素数
+}
+
+MsObjList* msObjListSlice(MsVM* vm, const MsObjList* list, bool hasA, ms_i64 a, bool hasB, ms_i64 b,
+                          bool hasC, ms_i64 c, bool* errStepZero) {
+  *errStepZero = false;
+  ms_i64 start = 0;
+  ms_i64 stop = 0;
+  ms_i64 step = 1;
+  if (!msSliceRange(list->count, hasA, a, hasB, b, hasC, c, &start, &stop, &step)) {
+    *errStepZero = true;  // 与 string 同一规范切片算法（T013 抽出复用点）
+    return NULL;
+  }
+  ms_i64 n = sliceCount(start, stop, step);
+  if (n > INT32_MAX) {
+    return NULL;
+  }
+  MsObjList* r = msObjListNew(vm);  // 分配点：源 list 由调用方 root
+  if (r == NULL) {
+    return NULL;
+  }
+  if (n > 0 && !msObjListReserve(vm, r, (int32_t)n)) {
+    return NULL;  // r 挂堆但不可达，交 GC 回收
+  }
+  for (ms_i64 k = 0; k < n; k++) {
+    r->items[k] = list->items[start + k * step];
+  }
+  r->count = (int32_t)n;
+  return r;
+}
+
+MsObjList* msObjListConcat(MsVM* vm, const MsObjList* a, const MsObjList* b) {
+  if ((ms_i64)a->count + b->count > INT32_MAX) {
+    return NULL;
+  }
+  MsObjList* r = msObjListNew(vm);  // 分配点：a/b 由调用方 root
+  if (r == NULL) {
+    return NULL;
+  }
+  if (!msObjListReserve(vm, r, a->count + b->count)) {
+    return NULL;
+  }
+  memcpy(r->items, a->items, sizeof(MsValue) * (size_t)a->count);
+  memcpy(r->items + a->count, b->items, sizeof(MsValue) * (size_t)b->count);
+  r->count = a->count + b->count;
+  return r;
+}
+
+MsObjList* msObjListRepeat(MsVM* vm, const MsObjList* a, ms_i64 n) {
+  if (n < 0) {
+    n = 0;  // 负数重复为空（Python 语义，同 string repeat）
+  }
+  MsObjList* r = msObjListNew(vm);  // 分配点：源由调用方 root
+  if (r == NULL) {
+    return NULL;
+  }
+  if (a->count == 0 || n == 0) {
+    return r;
+  }
+  ms_i64 total = (ms_i64)a->count * n;
+  if (total > INT32_MAX) {
+    return NULL;
+  }
+  if (!msObjListReserve(vm, r, (int32_t)total)) {
+    return NULL;
+  }
+  for (ms_i64 k = 0; k < total; k++) {
+    r->items[k] = a->items[k % a->count];
+  }
+  r->count = (int32_t)total;
+  return r;
+}
+
+// ---- 原地稳定归并排序（temp 缓冲 ping-pong；比较失败原序保持） ----
+
+static MsListSortResult mergeHalves(MsValue* dst, const MsValue* src, ms_i64 lo, ms_i64 mid,
+                                    ms_i64 hi) {
+  ms_i64 i = lo;
+  ms_i64 j = mid;
+  ms_i64 k = lo;
+  while (i < mid && j < hi) {
+    int32_t cmp = 0;
+    if (!msValueOrder(&src[i], &src[j], &cmp)) {
+      return MS_LIST_SORT_TYPE;
+    }
+    dst[k++] = cmp <= 0 ? src[i++] : src[j++];  // <= 保稳定（相等取左半）
+  }
+  if (i < mid) {
+    memcpy(&dst[k], &src[i], sizeof(MsValue) * (size_t)(mid - i));
+  } else if (j < hi) {
+    memcpy(&dst[k], &src[j], sizeof(MsValue) * (size_t)(hi - j));
+  }
+  return MS_LIST_SORT_OK;
+}
+
+MsListSortResult msObjListSort(MsObjList* list) {
+  int32_t n = list->count;
+  if (n < 2) {
+    return MS_LIST_SORT_OK;  // 无结构变化：不 bump
+  }
+  MsValue* tmp = malloc(sizeof(MsValue) * (size_t)n);  // 非 GC 分配点
+  if (tmp == NULL) {
+    return MS_LIST_SORT_OOM;
+  }
+  MsValue* src = list->items;
+  MsValue* dst = tmp;
+  for (ms_i64 width = 1; width < n; width *= 2) {
+    for (ms_i64 lo = 0; lo < n; lo += 2 * width) {
+      ms_i64 mid = lo + width < n ? lo + width : n;
+      ms_i64 hi = lo + 2 * width < n ? lo + 2 * width : n;
+      if (mid == hi) {
+        memcpy(&dst[lo], &src[lo], sizeof(MsValue) * (size_t)(hi - lo));  // 尾段直通
+        continue;
+      }
+      MsListSortResult r = mergeHalves(dst, src, lo, mid, hi);
+      if (r != MS_LIST_SORT_OK) {
+        free(tmp);  // list->items 未被触碰：原序保持
+        return r;
+      }
+    }
+    MsValue* swap = src;
+    src = dst;
+    dst = swap;
+  }
+  if (src != list->items) {
+    memcpy(list->items, src, sizeof(MsValue) * (size_t)n);
+  }
+  free(tmp);
+  list->version++;
+  return MS_LIST_SORT_OK;
 }

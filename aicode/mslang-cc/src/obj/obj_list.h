@@ -35,6 +35,21 @@ void msObjListClear(MsObjList* list);
 void msObjListReverse(MsObjList* list);
 // 按值首查（msValueEqual 深等价）；未命中 -1
 int32_t msObjListIndexOf(const MsObjList* list, const MsValue* v);
+// 原地稳定排序结果（缺省 < 序；比较失败原序保持）
+typedef enum MsListSortResult {
+  MS_LIST_SORT_OK = 0,
+  MS_LIST_SORT_TYPE,  // 元素两两不可比较
+  MS_LIST_SORT_OOM,
+} MsListSortResult;
+// 规范切片 → 新 list（源由调用方 root；step==0 返回 NULL 且 *errStepZero 置 true）
+MsObjList* msObjListSlice(MsVM* vm, const MsObjList* list, bool hasA, ms_i64 a, bool hasB, ms_i64 b,
+                          bool hasC, ms_i64 c, bool* errStepZero);
+// 拼接 → 新 list（源由调用方 root；溢出/OOM 返回 NULL）
+MsObjList* msObjListConcat(MsVM* vm, const MsObjList* a, const MsObjList* b);
+// 重复 → 新 list（n<=0 空表；源由调用方 root；溢出/OOM 返回 NULL）
+MsObjList* msObjListRepeat(MsVM* vm, const MsObjList* a, ms_i64 n);
+// 原地稳定归并排序（缺省 < 序，msValueOrder；成功 version++；失败原序保持）
+MsListSortResult msObjListSort(MsObjList* list);
 // children 标记（gcSetMarkFn 注册转发；进程级表由 vm.c msVmInit 统一注册）
 void msObjListMarkChildren(MsVM* vm, MsObj* obj);
 // items 数组释放（gcSetFreeFn 注册转发；sweep/heapFree 释放对象前回调）
