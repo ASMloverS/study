@@ -348,10 +348,10 @@ TEST(stringMethodsFamily) {  // 10 §2 检索/变换/判断组合（split 产物
 
 TEST(stringMethodsErrors) {  // 错误形态：参数类型 / 步进零 / repeat 负数按 Python 语义为空串
   RunResult r = runSrc("print(\"abc\".indexOf(1))");
-  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  EXPECT(ctx, r.hasError && strstr(r.err, "ArgumentError") != NULL);
   free(r.out);
   r = runSrc("print(\"abc\".split(\"b\", \"x\"))");
-  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  EXPECT(ctx, r.hasError && strstr(r.err, "ArgumentError") != NULL);
   free(r.out);
   r = runSrc("print(\"abc\".slice(0, 1, 0))");
   EXPECT(ctx, r.hasError && strstr(r.err, "ValueError") != NULL);
@@ -361,7 +361,7 @@ TEST(stringMethodsErrors) {  // 错误形态：参数类型 / 步进零 / repeat
   EXPECT_STREQ(ctx, "\n", r.out);
   free(r.out);
   r = runSrc("print(\",\".join(\"ab\"))");  // 非 list
-  EXPECT(ctx, r.hasError && strstr(r.err, "TypeError") != NULL);
+  EXPECT(ctx, r.hasError && strstr(r.err, "ArgumentError") != NULL);
   free(r.out);
 }
 

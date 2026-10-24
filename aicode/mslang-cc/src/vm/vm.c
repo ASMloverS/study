@@ -532,6 +532,9 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
+// 分配纪律：两操作数先弹入 C 局部再进 arithBinary——string concat/repeat 的分配窗口内操作数
+// 不在栈 root。安全依赖 msObjStringConcat/msObjStringRepeat 的次序契约：源字节先 memcpy 进
+// malloc 缓冲、之后才经 newString 触发 GC（见 obj_string.c），此序不可倒。
 #define BINARY_ARITH_CASE(opname, kind)       \
   OPCODE(opname) {                            \
     MsValue b = pop(vm);                      \
@@ -919,6 +922,9 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           RUNTIME_ERROR("RuntimeError: out of memory");
         }
         msVmPush(vm, msValueObj(&list->head));  // list 落栈保活
+        if (vm->hasError) {  // push 溢出：后续槽位腾挪（-1-n 索引）会越界，须立即 unwind（同 OP_GET_ATTR）
+          goto dispatchExit;
+        }
         if (!msObjListReserve(vm, list, n)) {  // 分配点：n 个源值仍在栈上安全
           RUNTIME_ERROR("RuntimeError: out of memory");
         }

@@ -58,6 +58,8 @@ MsObjString* msObjStringNew(MsVM* vm, const char* bytes, int32_t len) {
   return newString(vm, bytes, len);
 }
 
+// 分配纪律：源字节先拷入 malloc 缓冲，之后才经 newString 触发 GC——调用方（arithBinary）
+// 持有 C 局部而非栈 root，此序不可倒。
 MsObjString* msObjStringConcat(MsVM* vm, const MsObjString* a, const char* bytesB, int32_t lenB) {
   if (lenB < 0 || (ms_i64)a->byteLen + (ms_i64)lenB > INT32_MAX) {
     return NULL;
@@ -74,6 +76,8 @@ MsObjString* msObjStringConcat(MsVM* vm, const MsObjString* a, const char* bytes
   return s;
 }
 
+// 分配纪律：源字节先拷入 malloc 缓冲，之后才经 newString 触发 GC——调用方（arithBinary）
+// 持有 C 局部而非栈 root，此序不可倒。
 MsObjString* msObjStringRepeat(MsVM* vm, const MsObjString* a, ms_i64 n) {
   if (n <= 0) {
     return newString(vm, "", 0);

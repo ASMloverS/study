@@ -26,10 +26,10 @@ static MsObjString* recvStr(const MsValue* args) {
   return (MsObjString*)args[0].as.obj;
 }
 
-// args[i] 须为 string 否则 TypeError 置槽（调用方先完成元数检查）
+// args[i] 须为 string 否则 ArgumentError 置槽（调用方先完成元数检查）
 static bool argStr(MsVM* vm, int32_t i, const MsValue* args, const char* mname, const MsObjString** out) {
   if (!msIsString(&args[i])) {
-    methodError(vm, "TypeError: %s expects a string argument", mname);
+    methodError(vm, "ArgumentError: %s expects a string argument", mname);
     return false;
   }
   *out = (const MsObjString*)args[i].as.obj;
@@ -38,7 +38,7 @@ static bool argStr(MsVM* vm, int32_t i, const MsValue* args, const char* mname, 
 
 static bool argInt(MsVM* vm, int32_t i, const MsValue* args, const char* mname, ms_i64* out) {
   if (args[i].kind != MS_VAL_I64) {
-    methodError(vm, "TypeError: %s expects an int argument", mname);
+    methodError(vm, "ArgumentError: %s expects an int argument", mname);
     return false;
   }
   *out = args[i].as.i;
@@ -199,7 +199,7 @@ static bool runeInSet(ms_u32 cp, const MsObjString* set) {
 
 static MsValue strmCharLen(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
-    methodError(vm, "TypeError: charLen expects no arguments");
+    methodError(vm, "ArgumentError: charLen expects no arguments");
     return msValueNil();
   }
   (void)vm;
@@ -209,7 +209,7 @@ static MsValue strmCharLen(MsVM* vm, int32_t argc, const MsValue* args) {
 // chars/bytes（Task 12）：产 MsObjStrIter 落栈由调用方持（CALL_METHOD peek 接收者期间分配安全）
 static MsValue strmChars(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
-    methodError(vm, "TypeError: chars expects no arguments");
+    methodError(vm, "ArgumentError: chars expects no arguments");
     return msValueNil();
   }
   MsObjStrIter* it = msObjStrIterNew(vm, recvStr(args), false);
@@ -222,7 +222,7 @@ static MsValue strmChars(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmBytes(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
-    methodError(vm, "TypeError: bytes expects no arguments");
+    methodError(vm, "ArgumentError: bytes expects no arguments");
     return msValueNil();
   }
   MsObjStrIter* it = msObjStrIterNew(vm, recvStr(args), true);
@@ -237,7 +237,7 @@ static MsValue strmBytes(MsVM* vm, int32_t argc, const MsValue* args) {
 static MsValue caseMapImpl(MsVM* vm, int32_t argc, const MsValue* args, bool toUpper) {
   const char* mname = toUpper ? "toUpper" : "toLower";
   if (argc != 1) {
-    methodError(vm, "TypeError: %s expects no arguments", mname);
+    methodError(vm, "ArgumentError: %s expects no arguments", mname);
     return msValueNil();
   }
   MsObjString* s = recvStr(args);
@@ -346,7 +346,7 @@ static MsValue splitByWs(MsVM* vm, MsObjString* s, ms_i64 n) {
 
 static MsValue strmSplit(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc < 2 || argc > 3) {
-    methodError(vm, "TypeError: split expects 1 or 2 arguments");
+    methodError(vm, "ArgumentError: split expects 1 or 2 arguments");
     return msValueNil();
   }
   const MsObjString* sep = NULL;
@@ -366,7 +366,7 @@ static MsValue strmSplit(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmSplitLines(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
-    methodError(vm, "TypeError: splitLines expects no arguments");
+    methodError(vm, "ArgumentError: splitLines expects no arguments");
     return msValueNil();
   }
   MsObjString* s = recvStr(args);
@@ -400,7 +400,7 @@ static MsValue strmSplitLines(MsVM* vm, int32_t argc, const MsValue* args) {
 // join 仅接受 list（D6：沿 data 直读不依赖迭代协议）；元素须全 string
 static MsValue strmJoin(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2 || !msIsObj(&args[1]) || args[1].as.obj->type != MS_OBJ_LIST) {
-    methodError(vm, "TypeError: join expects a list argument");
+    methodError(vm, "ArgumentError: join expects a list argument");
     return msValueNil();
   }
   const MsObjList* xs = (const MsObjList*)args[1].as.obj;  // 列表为实参在栈：元素全 root
@@ -408,7 +408,7 @@ static MsValue strmJoin(MsVM* vm, int32_t argc, const MsValue* args) {
   ByteBuf buf = {NULL, 0, 0};
   for (int32_t i = 0; i < xs->count; i++) {
     if (!msIsString(&xs->items[i])) {
-      methodError(vm, "TypeError: join expects string elements");
+      methodError(vm, "ArgumentError: join expects string elements");
       goto fail;
     }
     const MsObjString* e = (const MsObjString*)xs->items[i].as.obj;
@@ -429,7 +429,7 @@ fail:
 
 static MsValue strmContains(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: contains expects 1 argument");
+    methodError(vm, "ArgumentError: contains expects 1 argument");
     return msValueNil();
   }
   const MsObjString* sub = NULL;
@@ -443,7 +443,7 @@ static MsValue strmContains(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmStartsWith(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: startsWith expects 1 argument");
+    methodError(vm, "ArgumentError: startsWith expects 1 argument");
     return msValueNil();
   }
   const MsObjString* sub = NULL;
@@ -458,7 +458,7 @@ static MsValue strmStartsWith(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmEndsWith(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: endsWith expects 1 argument");
+    methodError(vm, "ArgumentError: endsWith expects 1 argument");
     return msValueNil();
   }
   const MsObjString* sub = NULL;
@@ -474,7 +474,7 @@ static MsValue strmEndsWith(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmIndexOf(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc < 2 || argc > 3) {
-    methodError(vm, "TypeError: indexOf expects 1 or 2 arguments");
+    methodError(vm, "ArgumentError: indexOf expects 1 or 2 arguments");
     return msValueNil();
   }
   const MsObjString* sub = NULL;
@@ -505,7 +505,7 @@ static MsValue strmIndexOf(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmLastIndexOf(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: lastIndexOf expects 1 argument");
+    methodError(vm, "ArgumentError: lastIndexOf expects 1 argument");
     return msValueNil();
   }
   const MsObjString* sub = NULL;
@@ -529,7 +529,7 @@ static MsValue strmLastIndexOf(MsVM* vm, int32_t argc, const MsValue* args) {
 // old 为空按“无替换”返回拷贝（语义注记：Python 的逐缝插入不采）；n 到额后余文原样
 static MsValue strmReplace(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc < 3 || argc > 4) {
-    methodError(vm, "TypeError: replace expects 2 or 3 arguments");
+    methodError(vm, "ArgumentError: replace expects 2 or 3 arguments");
     return msValueNil();
   }
   const MsObjString* old = NULL;
@@ -585,7 +585,7 @@ oom:
 // 剪除主体：mode 0=两端 1=左 2=右；chars 省略 NULL = 默认空白集，给定则按其 rune 集剪
 static MsValue trimImpl(MsVM* vm, int32_t argc, const MsValue* args, int mode, const char* mname) {
   if (argc > 2) {
-    methodError(vm, "TypeError: %s expects at most 1 argument", mname);
+    methodError(vm, "ArgumentError: %s expects at most 1 argument", mname);
     return msValueNil();
   }
   const MsObjString* chars = NULL;
@@ -637,7 +637,7 @@ static MsValue strmTrimRight(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmRepeat(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: repeat expects 1 argument");
+    methodError(vm, "ArgumentError: repeat expects 1 argument");
     return msValueNil();
   }
   ms_i64 n = 0;
@@ -654,7 +654,7 @@ static MsValue strmRepeat(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmCount(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: count expects 1 argument");
+    methodError(vm, "ArgumentError: count expects 1 argument");
     return msValueNil();
   }
   const MsObjString* sub = NULL;
@@ -682,7 +682,7 @@ static MsValue strmCount(MsVM* vm, int32_t argc, const MsValue* args) {
 // 填充主体：目标按 rune 宽度；ch 形参接受 rune（int 码点，01 §3.4）或单 rune string，默认空格
 static MsValue padImpl(MsVM* vm, int32_t argc, const MsValue* args, bool left, const char* mname) {
   if (argc < 2 || argc > 3) {
-    methodError(vm, "TypeError: %s expects 1 or 2 arguments", mname);
+    methodError(vm, "ArgumentError: %s expects 1 or 2 arguments", mname);
     return msValueNil();
   }
   ms_i64 w = 0;
@@ -702,7 +702,7 @@ static MsValue padImpl(MsVM* vm, int32_t argc, const MsValue* args, bool left, c
       }
       ch = msUtf8Decode(cs->bytes, (int32_t)cs->byteLen, &wd);
     } else {
-      methodError(vm, "TypeError: %s expects an int or string pad character", mname);
+      methodError(vm, "ArgumentError: %s expects an int or string pad character", mname);
       return msValueNil();
     }
   }
@@ -749,7 +749,7 @@ static MsValue strmPadRight(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmSlice(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc < 2 || argc > 4) {
-    methodError(vm, "TypeError: slice expects 1 to 3 arguments");
+    methodError(vm, "ArgumentError: slice expects 1 to 3 arguments");
     return msValueNil();
   }
   ms_i64 a = 0, b = 0, c = 0;
@@ -795,7 +795,7 @@ static bool isRuneMatch(ms_u32 cp, StrIsKind kind) {
 // 逐 rune 判定（全真才真；空串 false）
 static MsValue isImpl(MsVM* vm, int32_t argc, const MsValue* args, StrIsKind kind) {
   if (argc != 1) {
-    methodError(vm, "TypeError: isDigit/isSpace/isAlpha expect no arguments");
+    methodError(vm, "ArgumentError: isDigit/isSpace/isAlpha expect no arguments");
     return msValueNil();
   }
   (void)vm;
@@ -829,7 +829,7 @@ static MsValue strmIsAlpha(MsVM* vm, int32_t argc, const MsValue* args) {
 
 static MsValue strmCompareTo(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
-    methodError(vm, "TypeError: compareTo expects 1 argument");
+    methodError(vm, "ArgumentError: compareTo expects 1 argument");
     return msValueNil();
   }
   const MsObjString* other = NULL;
