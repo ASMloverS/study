@@ -120,32 +120,7 @@ static bool pushRange(MsVM* vm, const MsObjString* s, int32_t start, int32_t end
   return pushPiece(vm, piece);
 }
 
-// 栈顶 n 个已 root 片段 → list：list 落栈后再 Reserve/Fill（BUILD_LIST 同款），末尾整体收缩；
-// 返回值在寄存器安全（收缩至 OP_CALL_METHOD 回压结果间无分配窗口）。
-// 错误路径不恢复 stackTop：hasError 置位后整场 run 经 dispatchExit 废弃值栈
-static MsValue collectToList(MsVM* vm, int32_t n) {
-  MsObjList* list = msObjListNew(vm);  // 片段均已落栈 root：分配安全
-  if (list == NULL) {
-    methodError(vm, "RuntimeError: out of memory");
-    return msValueNil();
-  }
-  msVmPush(vm, msValueObj(&list->head));
-  if (vm->hasError) {
-    return msValueNil();
-  }
-  if (!msObjListReserve(vm, list, n)) {
-    methodError(vm, "RuntimeError: out of memory");
-    return msValueNil();
-  }
-  const MsValue* src = &vm->stack[vm->stackTop - 1 - n];
-  for (int32_t i = 0; i < n; i++) {
-    list->items[i] = src[i];
-  }
-  list->count = n;
-  MsValue r = vm->stack[vm->stackTop - 1];
-  vm->stackTop -= n + 1;
-  return r;
-}
+// 栈顶 n 个已 root 片段 → list：共用 msVmCollectStackToList（value.c，T014 抽出）
 
 // ---- rune 层小工具 ----
 
@@ -300,7 +275,7 @@ static MsValue splitBySep(MsVM* vm, MsObjString* s, const MsObjString* sep, ms_i
     return msValueNil();
   }
   made++;
-  return collectToList(vm, made);
+  return msVmCollectStackToList(vm, made);
 }
 
 // 空白模式：空白段聚一刀、首尾空白不产空段；n 到额后余文原样收尾（尾空白保留）
@@ -311,7 +286,7 @@ static MsValue splitByWs(MsVM* vm, MsObjString* s, ms_i64 n) {
     i++;
   }
   if (i == len) {
-    return collectToList(vm, 0);  // 全空白/空串 → []（Python split() 一致）
+    return msVmCollectStackToList(vm, 0);  // 全空白/空串 → []（Python split() 一致）
   }
   int32_t made = 0;
   int32_t seps = 0;
@@ -341,7 +316,7 @@ static MsValue splitByWs(MsVM* vm, MsObjString* s, ms_i64 n) {
     seps++;
     i = k;
   }
-  return collectToList(vm, made);
+  return msVmCollectStackToList(vm, made);
 }
 
 static MsValue strmSplit(MsVM* vm, int32_t argc, const MsValue* args) {
@@ -394,7 +369,7 @@ static MsValue strmSplitLines(MsVM* vm, int32_t argc, const MsValue* args) {
       }
     }
   }
-  return collectToList(vm, made);
+  return msVmCollectStackToList(vm, made);
 }
 
 // join 仅接受 list（D6：沿 data 直读不依赖迭代协议）；元素须全 string

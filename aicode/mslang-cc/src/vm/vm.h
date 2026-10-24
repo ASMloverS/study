@@ -109,6 +109,10 @@ typedef struct MsMethodRef {
   int32_t nameLen;
 } MsMethodRef;
 bool msStringMethodLookup(const char* name, int32_t len, MsMethodRef* out);  // 未命中 false
+// list_methods.c：list 实例方法表（T014，10 §3；机制同 D5）
+bool msListMethodLookup(const char* name, int32_t len, MsMethodRef* out);  // 未命中 false
+// value.c：栈顶 n 个已 root 值 → list（BUILD_LIST 同款；split/map 共用面；错误路径不恢复 stackTop）
+MsValue msVmCollectStackToList(MsVM* vm, int32_t n);
 
 // ---- value.c：值操作助手 ----
 MsValue msValueNil(void);

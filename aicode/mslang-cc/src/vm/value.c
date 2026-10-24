@@ -353,6 +353,35 @@ MsObjString* msValueReprForm(MsVM* vm, const MsValue* v) {
   return fallbackForm(vm, v);
 }
 
+// 栈顶 n 个已 root 值 → list（BUILD_LIST 同款 peek 直填 + 收缩；T014 自 str_methods 抽出共用）
+// 返回值在寄存器安全（收缩至调用方回压结果间无分配窗口）
+// 错误路径不恢复 stackTop：hasError 置位后整场 run 经 dispatchExit 废弃值栈
+MsValue msVmCollectStackToList(MsVM* vm, int32_t n) {
+  MsObjList* list = msObjListNew(vm);  // 源值均已落栈 root：分配安全
+  if (list == NULL) {
+    snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: out of memory");
+    vm->hasError = true;
+    return msValueNil();
+  }
+  msVmPush(vm, msValueObj(&list->head));
+  if (vm->hasError) {
+    return msValueNil();  // StackOverflow 槽已置
+  }
+  if (!msObjListReserve(vm, list, n)) {
+    snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: out of memory");
+    vm->hasError = true;
+    return msValueNil();
+  }
+  const MsValue* src = &vm->stack[vm->stackTop - 1 - n];
+  for (int32_t i = 0; i < n; i++) {
+    list->items[i] = src[i];
+  }
+  list->count = n;
+  MsValue r = vm->stack[vm->stackTop - 1];
+  vm->stackTop -= n + 1;  // 弹源值与 list
+  return r;
+}
+
 MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut) {
   *okOut = true;
   switch (e->kind) {

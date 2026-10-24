@@ -324,6 +324,57 @@ TEST(runListDeepEquality) {  // 02 §6：list 逐元素；指针短路
   free(r.out);
 }
 
+// ---------- 方法族（Task 5） ----------
+
+TEST(runListMethodFamily) {  // 10 §3 方法族组合
+  RunResult r = runSrc("var xs = [3, 1, 2]\nxs.insert(1, 9)\nprint(xs)\nxs.remove(9)\nprint(xs)\n"
+                       "print(xs.indexOf(2))\nprint(xs.contains(5))\nxs.sort()\nprint(xs)\n"
+                       "xs.reverse()\nprint(xs)\nprint(xs.concat([7, 8]))\nprint(xs.repeat(2))\n"
+                       "print(xs.first())\nprint(xs.last())\nvar ys = xs.copy()\nys.append(99)\n"
+                       "print(xs)\nprint(ys)\nprint(xs.pop())\nprint(xs.pop(0))\nprint(xs)\n"
+                       "xs.clear()\nprint(xs)\nprint(len(xs))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[3, 9, 1, 2]\n[3, 1, 2]\n2\nfalse\n[1, 2, 3]\n[3, 2, 1]\n"
+                   "[3, 2, 1, 7, 8]\n[3, 2, 1, 3, 2, 1]\n3\n1\n[3, 2, 1]\n[3, 2, 1, 99]\n"
+                   "1\n3\n[2]\n[]\n0\n", r.out);
+  free(r.out);
+}
+
+TEST(runListMethodErrors) {  // remove 缺值 ValueError；pop 越界 IndexError；元数错
+  RunResult r = runSrc("var xs = [1]\nxs.remove(5)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\nprint(xs.pop(5))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IndexError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\nprint(xs.first())\nxs.clear()\nprint(xs.first())");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IndexError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\nxs.append()");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+
+TEST(runListSortTypeError) {  // 混型排序 TypeError
+  RunResult r = runSrc("var xs = [1, \"a\"]\nxs.sort()\nprint(xs)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(runListHigherOrderNatives) {  // map/filter/each/reduce：本任务仅原生函数（print/str 桩）
+  RunResult r = runSrc("var xs = [1, 2]\nvar ys = xs.map(str)\nprint(ys)\n"
+                       "print(xs.filter(str))\nxs.each(print)\nprint(xs.reduce(print, 0))\n"
+                       "print(xs)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[\"1\", \"2\"]\n[1, 2]\n1 0\n2 1\n0 1\nnil 2\nnil\n[1, 2]\n", r.out);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -340,6 +391,10 @@ int main(void) {
   runListIndexWriteErrors(&ctx);
   runListConcatRepeatOps(&ctx);
   runListDeepEquality(&ctx);
+  runListMethodFamily(&ctx);
+  runListMethodErrors(&ctx);
+  runListSortTypeError(&ctx);
+  runListHigherOrderNatives(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

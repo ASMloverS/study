@@ -26,6 +26,17 @@ static void strIterMark(MsVM* vm, MsObj* obj) {
   gcMarkValue(vm, msValueObj(&((MsObjStrIter*)obj)->str->head));
 }
 
+// 方法查找公共面（T013 string / T014 list）：命中 0；未命中 -1
+static int methodRefLookup(const MsValue* recv, const char* name, int32_t len, MsMethodRef* out) {
+  if (msIsString(recv)) {
+    return msStringMethodLookup(name, len, out) ? 0 : -1;
+  }
+  if (recv->kind == MS_VAL_OBJ && recv->as.obj->type == MS_OBJ_LIST) {
+    return msListMethodLookup(name, len, out) ? 0 : -1;
+  }
+  return -1;
+}
+
 void msVmInit(MsVM* vm) {
   vm->stack = NULL;
   vm->stackTop = vm->stackCap = 0;
@@ -816,8 +827,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         int32_t argc = code[ip++];
         MsValue* args = &vm->stack[vm->stackTop - argc - 1];  // peek：接收者+实参均在栈
         MsMethodRef ref;
-        if (msIsString(&args[0]) &&
-            msStringMethodLookup(consts[k].as.text.start, consts[k].as.text.len, &ref)) {
+        if (methodRefLookup(&args[0], consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {
           MsValue r = ref.fn(vm, argc + 1, args);
           vm->stackTop -= argc + 1;
           if (vm->hasError) {  // 方法内置槽：统一 unwind
@@ -840,8 +850,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         (void)code[ip++];  // icSlot（T022）
         MsValue recv = vm->stack[vm->stackTop - 1];  // peek：物化分配期间接收者在栈
         MsMethodRef ref;
-        if (msIsString(&recv) &&
-            msStringMethodLookup(consts[k].as.text.start, consts[k].as.text.len, &ref)) {
+        if (methodRefLookup(&recv, consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {
           MsObjNative* native = msObjNativeNew(vm, ref.fn, ref.name, ref.nameLen);
           if (native == NULL) {
             RUNTIME_ERROR("RuntimeError: out of memory");
