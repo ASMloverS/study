@@ -227,6 +227,39 @@ TEST(allocGuardAutoTrigger) {  // MS_GC_HEAP_MAX 小阈值：循环分配堆稳�
 #endif
 }
 
+TEST(listChildrenKeepalive) {  // T014：list 子引用标记（markChildren 递归链）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjList* inner = msObjListNew(&vm);
+  msVmPush(&vm, msValueInt(42));
+  EXPECT(ctx, msObjListPush(&vm, inner, vm.stack[vm.stackTop - 1]));  // inner 持 int（无堆子）
+  vm.stackTop--;
+  MsObjList* outer = msObjListNew(&vm);
+  msVmPush(&vm, msValueObj(&outer->head));  // 仅 outer 为根：inner 只能经 outer 存活
+  EXPECT(ctx, msObjListPush(&vm, outer, msValueObj(&inner->head)));
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 2, gcHeapObjCount(&vm));
+  EXPECT_EQ(ctx, 1, outer->count);
+  EXPECT(ctx, ((MsObjList*)outer->items[0].as.obj) == inner);  // inner 存活且未被误收
+  msVmFree(&vm);
+}
+
+TEST(listIterKeepalive) {  // T014：迭代器持 list——iter 栈 root → list 经 iterMark 存活
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjList* list = msObjListNew(&vm);
+  EXPECT(ctx, msObjListPush(&vm, list, msValueInt(7)));
+  MsObjListIter* it = msObjListIterNew(&vm, list);
+  msVmPush(&vm, msValueObj(&it->head));  // 仅迭代器为根
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 2, gcHeapObjCount(&vm));  // iter + list
+  EXPECT_EQ(ctx, 1, it->list->count);
+  MsValue v = msValueNil();
+  bool modified = false;
+  EXPECT(ctx, msListIterNext(it, &v, &modified) && v.as.i == 7 && !modified);
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -244,6 +277,8 @@ int main(int argc, char** argv) {
       freeFnReleasesListData,
       permanentSurvives,
       allocGuardAutoTrigger,
+      listChildrenKeepalive,
+      listIterKeepalive,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
