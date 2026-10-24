@@ -41,6 +41,38 @@ MsValue msValueObj(MsObj* obj) {
 
 static bool isNumeric(const MsValue* v) { return v->kind == MS_VAL_I64 || v->kind == MS_VAL_F64; }
 
+// list 深相等递归（深度限幅 T014 review：互引环超限判 false 不爆栈；环检测归 T021 __eq__ 协议）
+#define MS_LIST_EQ_MAX_DEPTH 100
+
+static bool listEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
+  if (a->as.obj == b->as.obj) {
+    return true;  // 同一对象短路（自引用安全）
+  }
+  const MsObjList* la = (const MsObjList*)a->as.obj;
+  const MsObjList* lb = (const MsObjList*)b->as.obj;
+  if (la->count != lb->count) {
+    return false;
+  }
+  if (depth >= MS_LIST_EQ_MAX_DEPTH) {
+    return false;  // 深嵌套/互引环截断（保守判不等）
+  }
+  for (int32_t i = 0; i < la->count; i++) {
+    const MsValue* x = &la->items[i];
+    const MsValue* y = &lb->items[i];
+    if (x->kind == MS_VAL_OBJ && y->kind == MS_VAL_OBJ && x->as.obj->type == MS_OBJ_LIST &&
+        y->as.obj->type == MS_OBJ_LIST) {
+      if (!listEqualDepth(x, y, depth + 1)) {
+        return false;
+      }
+      continue;
+    }
+    if (!msValueEqual(x, y)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool msValueIsTruthy(const MsValue* v) {
   if (v->kind == MS_VAL_BOOL) {
     return v->as.b;
@@ -74,20 +106,7 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
         return msObjStringEqual((const MsObjString*)a->as.obj, (const MsObjString*)b->as.obj);
       }
       if (a->as.obj->type == MS_OBJ_LIST && b->as.obj->type == MS_OBJ_LIST) {  // 02 §6 逐元素深等价
-        if (a->as.obj == b->as.obj) {
-          return true;  // 同一对象短路（自引用安全；互引环检测归 T021 __eq__ 协议）
-        }
-        const MsObjList* la = (const MsObjList*)a->as.obj;
-        const MsObjList* lb = (const MsObjList*)b->as.obj;
-        if (la->count != lb->count) {
-          return false;
-        }
-        for (int32_t i = 0; i < la->count; i++) {
-          if (!msValueEqual(&la->items[i], &lb->items[i])) {
-            return false;
-          }
-        }
-        return true;
+        return listEqualDepth(a, b, 0);
       }
       return a->as.obj == b->as.obj;  // 其余身份
     }
@@ -300,12 +319,20 @@ static MsObjString* fallbackForm(MsVM* vm, const MsValue* v) {
 // list 形态：`[` + 元素 repr（`, ` 分隔）+ `]`（空表 `[]`）；str/repr 同构（元素一律 repr）
 // GC 纪律（D10）：元素 form 逐个落 VM 栈 root（嵌套 list 递归分配窗口内产物不失根）后统一拼装；
 // 成功路径弹净自压槽；失败（OOM/栈溢出）返回 NULL 不恢复 stackTop——错误路径整栈由调用场景废弃。
-// 自引用 list 当前不可构造（SET_INDEX 归 T014），递归无环
-static MsObjString* listForm(MsVM* vm, const MsValue* v) {
+// 深度限幅（T014 review）：SET_INDEX 落地后自引用/深嵌套可构造，超限层级渲染 `[...]`（同 Python 循环 repr 形态）
+#define MS_LIST_FORM_MAX_DEPTH 100
+
+static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth);
+static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth);
+
+static MsObjString* listForm(MsVM* vm, const MsValue* v, int32_t depth) {
   const MsObjList* list = (const MsObjList*)v->as.obj;
+  if (depth >= MS_LIST_FORM_MAX_DEPTH) {
+    return msObjStringNew(vm, "[...]", 5);  // 深嵌套/循环截断（调用方持有处已 root）
+  }
   int32_t startTop = vm->stackTop;
   for (int32_t i = 0; i < list->count; i++) {
-    MsObjString* f = msValueReprForm(vm, &list->items[i]);
+    MsObjString* f = reprFormDepth(vm, &list->items[i], depth + 1);
     if (f == NULL || !msVmPush(vm, msValueObj(&f->head))) {
       return NULL;  // OOM；或 push 置 StackOverflow 槽（hasError 已真）
     }
@@ -323,19 +350,23 @@ static MsObjString* listForm(MsVM* vm, const MsValue* v) {
   return r;
 }
 
-MsObjString* msValueStrForm(MsVM* vm, const MsValue* v) {
+static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
   if (v->kind == MS_VAL_OBJ) {
     if (v->as.obj->type == MS_OBJ_STRING) {
       return (MsObjString*)v->as.obj;  // string 自身（调用方持有处已 root）
     }
     if (v->as.obj->type == MS_OBJ_LIST) {
-      return listForm(vm, v);
+      return listForm(vm, v, depth);
     }
   }
   return fallbackForm(vm, v);
 }
 
-MsObjString* msValueReprForm(MsVM* vm, const MsValue* v) {
+MsObjString* msValueStrForm(MsVM* vm, const MsValue* v) {
+  return strFormDepth(vm, v, 0);
+}
+
+static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
   if (v->kind == MS_VAL_OBJ) {
     if (v->as.obj->type == MS_OBJ_STRING) {
       const MsObjString* s = (const MsObjString*)v->as.obj;
@@ -347,10 +378,14 @@ MsObjString* msValueReprForm(MsVM* vm, const MsValue* v) {
       return r;
     }
     if (v->as.obj->type == MS_OBJ_LIST) {
-      return listForm(vm, v);
+      return listForm(vm, v, depth);
     }
   }
   return fallbackForm(vm, v);
+}
+
+MsObjString* msValueReprForm(MsVM* vm, const MsValue* v) {
+  return reprFormDepth(vm, v, 0);
 }
 
 // 栈顶 n 个已 root 值 → list（BUILD_LIST 同款 peek 直填 + 收缩；T014 自 str_methods 抽出共用）

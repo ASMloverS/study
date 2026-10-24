@@ -470,6 +470,40 @@ TEST(runUnpackIndexTargets) {  // 索引目标（04 §2）：元组与星号形�
   free(r.out);
 }
 
+// ---------- review 回归 ----------
+
+TEST(runRepeatOverflowGuard) {  // 除法式防溢出：count*n 乘法不得回绕（Critical 1）
+  RunResult r = runSrc("print([1, 2] * 4611686018427387904)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "OverflowError") != NULL);
+  free(r.out);
+}
+
+TEST(runSelfRefReprDepthCap) {  // 自引用 repr 深度限幅：不爆栈、输出含 [...]（Critical 2）
+  RunResult r = runSrc("var xs = [1]\nxs[0] = xs\nprint(xs)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT(ctx, strstr(r.out, "[...]") != NULL);
+  free(r.out);
+}
+
+TEST(runMutualCycleEqualityCap) {  // 互引环深相等限幅：不爆栈（Important 4）
+  RunResult r = runSrc("var a = [1]\nvar b = [1]\na[0] = b\nb[0] = a\nprint(a == b)\nprint(a == a)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "false\ntrue\n", r.out);
+  free(r.out);
+}
+
+TEST(runUnpackTupleRhsCountCap) {  // 星号右值元数 > 255 编译期拦截（Critical 3）
+  char src[2048];
+  int32_t pos = snprintf(src, sizeof(src), "*all = 1");
+  for (int i = 2; i <= 300; i++) {
+    pos += snprintf(src + pos, sizeof(src) - (size_t)pos, ", %d", i);
+  }
+  RunResult r = runSrc(src);
+  EXPECT(ctx, !r.compileOk);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -498,6 +532,10 @@ int main(void) {
   runUnpackStarTupleRhs(&ctx);
   runUnpackErrors(&ctx);
   runUnpackIndexTargets(&ctx);
+  runRepeatOverflowGuard(&ctx);
+  runSelfRefReprDepthCap(&ctx);
+  runMutualCycleEqualityCap(&ctx);
+  runUnpackTupleRhsCountCap(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

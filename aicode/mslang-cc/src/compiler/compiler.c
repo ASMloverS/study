@@ -579,6 +579,10 @@ static void compileDestructure(FuncState* fs, AstNode* n) {
     return;
   }
   if (value->kind == AST_TUPLE) {
+    if (value->as.tuple.count > 255) {  // BUILD_LIST u8 计数上限（review：防截断错位）
+      compErr(fs, n, 1, "too many values to unpack");
+      return;
+    }
     for (int32_t i = 0; i < value->as.tuple.count; i++) {
       compileExpr(fs, value->as.tuple.items[i]);
     }

@@ -35,7 +35,7 @@ void msObjListClear(MsObjList* list);
 void msObjListReverse(MsObjList* list);
 // 按值首查（msValueEqual 深等价）；未命中 -1
 int32_t msObjListIndexOf(const MsObjList* list, const MsValue* v);
-// 原地稳定排序结果（缺省 < 序；比较失败原序保持）
+// 原地稳定排序结果（缺省 < 序；比较失败元素多重集不变——偶数趟可能部分重排，快照恢复归 T021）
 typedef enum MsListSortResult {
   MS_LIST_SORT_OK = 0,
   MS_LIST_SORT_TYPE,  // 元素两两不可比较

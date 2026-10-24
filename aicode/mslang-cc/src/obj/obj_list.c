@@ -201,8 +201,12 @@ MsObjList* msObjListConcat(MsVM* vm, const MsObjList* a, const MsObjList* b) {
   if (!msObjListReserve(vm, r, a->count + b->count)) {
     return NULL;
   }
-  memcpy(r->items, a->items, sizeof(MsValue) * (size_t)a->count);
-  memcpy(r->items + a->count, b->items, sizeof(MsValue) * (size_t)b->count);
+  if (a->count > 0) {
+    memcpy(r->items, a->items, sizeof(MsValue) * (size_t)a->count);
+  }
+  if (b->count > 0) {
+    memcpy(r->items + a->count, b->items, sizeof(MsValue) * (size_t)b->count);
+  }
   r->count = a->count + b->count;
   return r;
 }
@@ -218,10 +222,10 @@ MsObjList* msObjListRepeat(MsVM* vm, const MsObjList* a, ms_i64 n) {
   if (a->count == 0 || n == 0) {
     return r;
   }
-  ms_i64 total = (ms_i64)a->count * n;
-  if (total > INT32_MAX) {
+  if (n > (ms_i64)(INT32_MAX / a->count)) {  // 除法式防乘法溢出（同 obj_string.c repeat）
     return NULL;
   }
+  ms_i64 total = (ms_i64)a->count * n;
   if (!msObjListReserve(vm, r, (int32_t)total)) {
     return NULL;
   }
@@ -275,9 +279,9 @@ MsListSortResult msObjListSort(MsObjList* list) {
       }
       MsListSortResult r = mergeHalves(dst, src, lo, mid, hi);
       if (r != MS_LIST_SORT_OK) {
-        free(tmp);  // list->items 未被触碰：原序保持
-        return r;
-      }
+        free(tmp);
+        return r;  // 奇数趟（dst=tmp）items 原序未动；偶数趟（dst=items）前段可能已部分归并——
+      }             // 元素多重集不变（内置比较子族内同质恒通过）；快照恢复归 T021 cmp 协议
     }
     MsValue* swap = src;
     src = dst;

@@ -247,7 +247,9 @@ static MsValue lstCopy(MsVM* vm, int32_t argc, const MsValue* args) {
     methodError(vm, "RuntimeError: out of memory");
     return msValueNil();
   }
-  memcpy(r->items, src->items, sizeof(MsValue) * (size_t)src->count);
+  if (src->count > 0) {
+    memcpy(r->items, src->items, sizeof(MsValue) * (size_t)src->count);
+  }
   r->count = src->count;
   return msValueObj(&r->head);
 }
