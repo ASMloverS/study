@@ -3,7 +3,7 @@
 - 阶段: P4 对象系统（roadmap 期 4）
 - 依赖: T012
 - 规模: L
-- 状态: 未开始
+- 状态: 已完成
 - 设计文档: `docs/language/02-types.md` §4 §6、`10-builtins.md` §2、`22-object-model.md` §3
 
 ## 1. 目标与范围
@@ -29,12 +29,12 @@
 
 ## 4. 验收标准（DoD）
 
-- [ ] 02 §4 与 10 §2 全部行为用例通过
-- [ ] `s[i]`/切片在纯 ASCII 与中文混合串上 rune 语义正确
-- [ ] `len(s)` 字节、`s.charLen()` 字符、`s.chars()` 迭代三者自洽
-- [ ] intern：同一字面量两处出现指针相等（单测断言）
-- [ ] 插值 `"a = ${a}"` 输出正确（含嵌套与 instance 前 str 形态占位——`__str__` 归 T021 后增强）
-- [ ] GC 压力：字符串循环分配下无泄漏（ASan）
+- [x] 02 §4 与 10 §2 全部行为用例通过
+- [x] `s[i]`/切片在纯 ASCII 与中文混合串上 rune 语义正确
+- [x] `len(s)` 字节、`s.charLen()` 字符、`s.chars()` 迭代三者自洽
+- [x] intern：同一字面量两处出现指针相等（单测断言）
+- [x] 插值 `"a = ${a}"` 输出正确（含嵌套与 instance 前 str 形态占位——`__str__` 归 T021 后增强）
+- [x] GC 压力：字符串循环分配下无泄漏（ASan）
 
 ## 5. 测试计划
 
@@ -75,3 +75,7 @@ print(s.charLen())     // 9
 
 - runeIndex 惰性构建的线程安全：本任务单线程访问（调度器 T028 后仅 worker 自对象访问，跨 G 共享 string 的构建需在 T028 复核——设计上仅读缓存 + 原子发布）。
 - toUpper/toLower 的 Unicode 简单映射表体积控制：仅 SimpleCaseMapping，生成脚本统计行数入报告。
+- unicode_case.h 简单大小写映射：上表 1424 条 / 下表 1433 条（Unicode 16.0.0，gen_unicode_table.py 统计）。
+- 最小 MsObjList 桥随本任务落地（BUILD_LIST/GET_INDEX/list str 形态；方法族/切片/迭代器壳/SET_INDEX 归 T014）。
+- isDigit/isSpace 非 ASCII 暂 false、isAlpha 非 ASCII 借 ID_START 表（T034 复核）。
+- runeIndex 于对象内对齐保留区分配（pad 4 字节），随对象单块回收；list items 经 GC freeFn 注册表释放（T015 map/set 复用）。
