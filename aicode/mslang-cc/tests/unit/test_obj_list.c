@@ -16,6 +16,63 @@
 #include "test_harness.h"
 #include "vm/vm.h"
 
+// ---------- 执行面桥（Task 4+：全管线跑 .ms 源码） ----------
+
+typedef struct RunResult {
+  char* out;
+  bool compileOk;
+  bool hasError;
+  char err[240];
+  int32_t errLine;
+} RunResult;
+
+static char* slurpTmp(FILE* f) {
+  fflush(f);
+  long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char* buf = malloc((size_t)len + 1);
+  size_t got = fread(buf, 1, (size_t)len, f);
+  buf[got] = '\0';
+  fclose(f);
+  return buf;
+}
+
+static RunResult runSrc(const char* src) {
+  RunResult r = {NULL, false, false, "", -1};
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Parser p;
+  parserInit(&p, src, (int32_t)strlen(src), "t.ms", &arena, &diags);
+  AstNode* mod = parserParseModule(&p);
+  if (mod != NULL) {
+    Binder b;
+    binderInit(&b, &arena, "t.ms", &diags);
+    binderBind(&b, mod);
+    binderDestroy(&b);
+    Chunk c;
+    if (compilerCompile(mod, &c, "t.ms", &diags)) {
+      r.compileOk = true;
+      MsVM vm;
+      msVmInit(&vm);
+      FILE* f = tmpfile();
+      vm.out = f;
+      msVmRun(&vm, &c);
+      r.hasError = vm.hasError;
+      snprintf(r.err, sizeof(r.err), "%s", vm.errMsg);
+      r.errLine = vm.errLine;
+      r.out = slurpTmp(f);
+      msVmFree(&vm);
+      chunkFree(&c);
+    }
+  }
+  astArenaDestroy(&arena);
+  if (r.out == NULL) {
+    r.out = calloc(1, 1);
+  }
+  return r;
+}
+
 // ---------- 数据面（Task 1） ----------
 
 TEST(listGrowthDoubling) {  // §5.1 倍增：append 1000，cap 序列 8→16→…、均摊 O(1)
@@ -219,6 +276,54 @@ TEST(listIterVersionInvalidation) {  // §5.1 版本号：迭代中 append 后 n
   msVmFree(&vm);
 }
 
+// ---------- 执行面（Task 4） ----------
+
+TEST(runListIndexWriteAndSlice) {  // §5.1：xs[0]=v、xs[a:b:c]、xs[-1]
+  RunResult r = runSrc("var xs = [1, 2, 3, 4]\nxs[0] = 9\nprint(xs)\nprint(xs[1::2])\n"
+                       "print(xs[::-1])\nprint(xs[1:3])\nprint(xs[-1])\nprint(len(xs))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[9, 2, 3, 4]\n[2, 4]\n[4, 3, 2, 9]\n[2, 3]\n4\n4\n", r.out);
+  free(r.out);
+}
+
+TEST(runListIndexWriteErrors) {
+  RunResult r = runSrc("var xs = [1]\nxs[5] = 0");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IndexError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\nxs[\"k\"] = 0");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\nprint(xs[::0])");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+}
+
+TEST(runListConcatRepeatOps) {  // §5.1：[1]+[2] / [0]*3 / 3*[0] 不支持
+  RunResult r = runSrc("print([1] + [2])\nprint([0] * 3)\nprint([1, 2] * 0)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[1, 2]\n[0, 0, 0]\n[]\n", r.out);
+  free(r.out);
+  r = runSrc("print([1] + 2)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("print(3 * [0])");  // int * list 不支持（同 string * int 单向）
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(runListDeepEquality) {  // 02 §6：list 逐元素；指针短路
+  RunResult r = runSrc("var a = [1, [2, \"x\"]]\nvar b = [1, [2, \"x\"]]\n"
+                       "print(a == b)\nprint(a == a)\nprint(a == [1])\nprint(a != b)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "true\ntrue\nfalse\nfalse\n", r.out);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -231,6 +336,10 @@ int main(void) {
   listSortStableAndTyped(&ctx);
   listIterWalkAndExhaust(&ctx);
   listIterVersionInvalidation(&ctx);
+  runListIndexWriteAndSlice(&ctx);
+  runListIndexWriteErrors(&ctx);
+  runListConcatRepeatOps(&ctx);
+  runListDeepEquality(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

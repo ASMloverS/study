@@ -547,9 +547,54 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
     NEXT();                                   \
   }
 
-      BINARY_ARITH_CASE(OP_BINARY_ADD, BA_ADD)
+      OPCODE(OP_BINARY_ADD) {  // list+list 拼接 peek（分配窗口 operands 栈 root）；其余走 arithBinary
+        if (vm->stack[vm->stackTop - 1].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 1].as.obj->type == MS_OBJ_LIST &&
+            vm->stack[vm->stackTop - 2].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 2].as.obj->type == MS_OBJ_LIST) {
+          MsObjList* r = msObjListConcat(vm, (MsObjList*)vm->stack[vm->stackTop - 2].as.obj,
+                                         (MsObjList*)vm->stack[vm->stackTop - 1].as.obj);
+          if (r == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, msValueObj(&r->head));
+          NEXT();
+        }
+        MsValue b = pop(vm);
+        MsValue a = pop(vm);
+        MsValue r;
+        if (!arithBinary(vm, BA_ADD, a, b, &r)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
+        }
+        msVmPush(vm, r);
+        NEXT();
+      }
+
+      OPCODE(OP_BINARY_MUL) {  // list*int 重复 peek（02 §5.1 单向，同 string*int）；其余走 arithBinary
+        if (vm->stack[vm->stackTop - 2].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 2].as.obj->type == MS_OBJ_LIST &&
+            vm->stack[vm->stackTop - 1].kind == MS_VAL_I64) {
+          MsObjList* r = msObjListRepeat(vm, (MsObjList*)vm->stack[vm->stackTop - 2].as.obj,
+                                         vm->stack[vm->stackTop - 1].as.i);
+          if (r == NULL) {
+            RUNTIME_ERROR("OverflowError: list repetition result too large");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, msValueObj(&r->head));
+          NEXT();
+        }
+        MsValue b = pop(vm);
+        MsValue a = pop(vm);
+        MsValue r;
+        if (!arithBinary(vm, BA_MUL, a, b, &r)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
+        }
+        msVmPush(vm, r);
+        NEXT();
+      }
+
       BINARY_ARITH_CASE(OP_BINARY_SUB, BA_SUB)
-      BINARY_ARITH_CASE(OP_BINARY_MUL, BA_MUL)
       BINARY_ARITH_CASE(OP_BINARY_DIV, BA_DIV)
       BINARY_ARITH_CASE(OP_BINARY_MOD, BA_MOD)
       BINARY_ARITH_CASE(OP_BINARY_POW, BA_POW)
@@ -654,6 +699,21 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           RUNTIME_ERROR("TypeError: string indices must be int or slice");
         }
         if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_LIST) {
+          if (idx.kind == MS_VAL_SLICE) {  // T014：切片返回新 list（源 peek 保 root）
+            bool zero = false;
+            MsObjList* r = msObjListSlice(vm, (MsObjList*)obj.as.obj, (idx.as.slice.mask & 1) != 0,
+                                          idx.as.slice.start, (idx.as.slice.mask & 2) != 0, idx.as.slice.end,
+                                          (idx.as.slice.mask & 4) != 0, idx.as.slice.step, &zero);
+            if (r == NULL) {
+              if (zero) {
+                RUNTIME_ERROR("ValueError: slice step must not be zero");
+              }
+              RUNTIME_ERROR("RuntimeError: out of memory");
+            }
+            vm->stackTop -= 2;
+            msVmPush(vm, msValueObj(&r->head));
+            NEXT();
+          }
           if (idx.kind != MS_VAL_I64) {
             RUNTIME_ERROR("TypeError: list indices must be int");
           }
@@ -668,15 +728,21 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         RUNTIME_ERROR("TypeError: '%s' is not indexable", msValueTypeName(&obj));
       }
 
-      OPCODE(OP_SET_INDEX) {  // string 只读；list 写入归 T014
-        (void)pop(vm);  // val（03 §4 求值序 obj→idx→v 已在编译侧定型，此处仅按 obj 分派）
-        (void)pop(vm);  // idx
+      OPCODE(OP_SET_INDEX) {  // 弹序 val/idx/obj（03 §4 求值序 obj→idx→v 已在编译侧定型）
+        MsValue val = pop(vm);
+        MsValue idx = pop(vm);
         MsValue obj = pop(vm);
         if (msIsString(&obj)) {
           RUNTIME_ERROR("TypeError: 'string' does not support item assignment");
         }
-        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_LIST) {
-          RUNTIME_ERROR("RuntimeError: list item assignment executes in T014");
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_LIST) {  // T014：负索引/越界
+          if (idx.kind != MS_VAL_I64) {
+            RUNTIME_ERROR("TypeError: list indices must be int");
+          }
+          if (!msObjListSet((MsObjList*)obj.as.obj, idx.as.i, val)) {
+            RUNTIME_ERROR("IndexError: list index out of range");
+          }
+          NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' does not support item assignment", msValueTypeName(&obj));
       }

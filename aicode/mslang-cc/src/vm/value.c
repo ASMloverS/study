@@ -73,7 +73,23 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
       if (a->as.obj->type == MS_OBJ_STRING && b->as.obj->type == MS_OBJ_STRING) {
         return msObjStringEqual((const MsObjString*)a->as.obj, (const MsObjString*)b->as.obj);
       }
-      return a->as.obj == b->as.obj;  // 其余身份（list 值等价 T014）
+      if (a->as.obj->type == MS_OBJ_LIST && b->as.obj->type == MS_OBJ_LIST) {  // 02 §6 逐元素深等价
+        if (a->as.obj == b->as.obj) {
+          return true;  // 同一对象短路（自引用安全；互引环检测归 T021 __eq__ 协议）
+        }
+        const MsObjList* la = (const MsObjList*)a->as.obj;
+        const MsObjList* lb = (const MsObjList*)b->as.obj;
+        if (la->count != lb->count) {
+          return false;
+        }
+        for (int32_t i = 0; i < la->count; i++) {
+          if (!msValueEqual(&la->items[i], &lb->items[i])) {
+            return false;
+          }
+        }
+        return true;
+      }
+      return a->as.obj == b->as.obj;  // 其余身份
     }
     default:
       return false;  // 迭代器等仅同一性
