@@ -3,7 +3,7 @@
 - 阶段: P4 对象系统（roadmap 期 4）
 - 依赖: T013
 - 规模: M
-- 状态: 未开始
+- 状态: 进行中
 - 设计文档: `docs/language/02-types.md` §5.1、`10-builtins.md` §3、`22-object-model.md` §4、`04-statements.md` §2（解构）
 
 ## 1. 目标与范围
