@@ -231,6 +231,56 @@ TEST(strIterators) {  // chars/bytes 迭代与 charLen/s[i] 自洽（DoD）
   msVmFree(&vm);
 }
 
+TEST(gcStressStrings) {  // DoD：字符串循环分配无泄漏（ASan 门禁验证）；小阈值下堆稳定
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=65536");
+#else
+  setenv("MS_GC_HEAP_MAX", "65536", 1);
+#endif
+  MsVM vm;
+  msVmInit(&vm);
+  vm.stack = malloc(sizeof(MsValue));  // 上一轮产物落栈保活 + 旧值失引用
+  vm.stackTop = 1;
+  vm.stack[0] = msValueNil();
+  size_t maxSeen = 0;
+  char buf[32];
+  for (int i = 0; i < 20000; i++) {
+    int n = snprintf(buf, sizeof(buf), "%d", i);
+    MsObjString* base = msObjStringNew(&vm, "seed-", 5);  // 每轮新基底：更真实的分配模式
+    if (base == NULL) {
+      break;
+    }
+    vm.stack[0] = msValueObj(&base->head);
+    MsObjString* s = msObjStringConcat(&vm, base, buf, n);
+    EXPECT(ctx, s != NULL);
+    if (s == NULL) {
+      break;
+    }
+    vm.stack[0] = msValueObj(&s->head);
+    if (i % 7 == 0) {
+      bool zero = false;
+      MsObjString* sliced = msObjStringSlice(&vm, s, false, 0, true, 1, true, 2, &zero);
+      if (sliced != NULL) {
+        vm.stack[0] = msValueObj(&sliced->head);  // 切片含惰性 runeIndex 的对象也参与回收
+      }
+    }
+    size_t now = gcHeapBytes(&vm);
+    if (now > maxSeen) {
+      maxSeen = now;
+    }
+  }
+  EXPECT(ctx, maxSeen < 65536 + 8192);  // 阈值 + 少量余量
+  free(vm.stack);
+  vm.stack = NULL;
+  vm.stackTop = 0;
+  msVmFree(&vm);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -248,6 +298,7 @@ int main(int argc, char** argv) {
       internGrowth,
       minimalListBridge,
       strIterators,
+      gcStressStrings,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
