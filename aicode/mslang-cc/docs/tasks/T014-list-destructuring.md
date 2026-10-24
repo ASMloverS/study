@@ -3,7 +3,7 @@
 - 阶段: P4 对象系统（roadmap 期 4）
 - 依赖: T013
 - 规模: M
-- 状态: 进行中
+- 状态: 已完成
 - 设计文档: `docs/language/02-types.md` §5.1、`10-builtins.md` §3、`22-object-model.md` §4、`04-statements.md` §2（解构）
 
 ## 1. 目标与范围
@@ -29,11 +29,11 @@
 
 ## 4. 验收标准（DoD）
 
-- [ ] 02 §5.1 与 10 §3 全部行为用例通过
-- [ ] 切片/索引/拼接/重复 fixtures 全绿
-- [ ] 迭代中修改抛 IteratorError
-- [ ] 解构：少收/星号任意位/交换正确；不可解构 TypeError
-- [ ] GC 扩展：list 子引用标记单测 + ASan 压力通过
+- [x] 02 §5.1 与 10 §3 全部行为用例通过
+- [x] 切片/索引/拼接/重复 fixtures 全绿
+- [x] 迭代中修改抛 IteratorError
+- [x] 解构：少收/星号任意位/交换正确；不可解构 TypeError
+- [x] GC 扩展：list 子引用标记单测 + ASan 压力通过
 
 ## 5. 测试计划
 
