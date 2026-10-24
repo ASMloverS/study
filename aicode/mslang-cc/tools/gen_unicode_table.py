@@ -55,8 +55,8 @@ typedef struct MsUnicodeRange {{
 """
 
 FOOTER = """\
-// 区间表二分查找
-static bool msUnicodeInRange(const MsUnicodeRange* ranges, size_t count, uint32_t cp) {
+// 区间表二分查找（static inline：未用函数的引入方不触发 -Wunused-function）
+static inline bool msUnicodeInRange(const MsUnicodeRange* ranges, size_t count, uint32_t cp) {
   size_t lo = 0;
   size_t hi = count;
   while (lo < hi) {
@@ -73,7 +73,7 @@ static bool msUnicodeInRange(const MsUnicodeRange* ranges, size_t count, uint32_
 }
 
 // ID_START：Unicode 字母或 '_'（ASCII 快路径）
-static bool msUnicodeIdStart(uint32_t cp) {
+static inline bool msUnicodeIdStart(uint32_t cp) {
   if (cp < 0x80) {
     return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') || cp == '_';
   }
@@ -81,7 +81,7 @@ static bool msUnicodeIdStart(uint32_t cp) {
 }
 
 // ID_CONTINUE：ID_START | Unicode 数字（ASCII 快路径）
-static bool msUnicodeIdContinue(uint32_t cp) {
+static inline bool msUnicodeIdContinue(uint32_t cp) {
   if (cp < 0x80) {
     return msUnicodeIdStart(cp) || (cp >= '0' && cp <= '9');
   }
@@ -136,8 +136,8 @@ typedef struct MsUnicodeCaseMap {{
 """
 
 CASE_FOOTER = """\
-// 映射表二分查找（按 from 升序；未命中返回 cp 原值）
-static uint32_t msUnicodeCaseLookup(const MsUnicodeCaseMap* table, size_t count, uint32_t cp) {
+// 映射表二分查找（按 from 升序；未命中返回 cp 原值；static inline 同 unicode_table.h）
+static inline uint32_t msUnicodeCaseLookup(const MsUnicodeCaseMap* table, size_t count, uint32_t cp) {
   size_t lo = 0;
   size_t hi = count;
   while (lo < hi) {
@@ -154,7 +154,7 @@ static uint32_t msUnicodeCaseLookup(const MsUnicodeCaseMap* table, size_t count,
 }
 
 // 简单大写映射（ASCII 快路径 'a'-'z'；无映射返回原码点）
-static uint32_t msUnicodeToUpper(uint32_t cp) {
+static inline uint32_t msUnicodeToUpper(uint32_t cp) {
   if (cp < 0x80) {
     return (cp >= 'a' && cp <= 'z') ? cp - 'a' + 'A' : cp;
   }
@@ -162,7 +162,7 @@ static uint32_t msUnicodeToUpper(uint32_t cp) {
 }
 
 // 简单小写映射（ASCII 快路径 'A'-'Z'；无映射返回原码点）
-static uint32_t msUnicodeToLower(uint32_t cp) {
+static inline uint32_t msUnicodeToLower(uint32_t cp) {
   if (cp < 0x80) {
     return (cp >= 'A' && cp <= 'Z') ? cp - 'A' + 'a' : cp;
   }

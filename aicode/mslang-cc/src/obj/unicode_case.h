@@ -2877,8 +2877,8 @@ static const MsUnicodeCaseMap MS_UNICODE_CASE_LOWER[] = {
     {0x1E921, 0x1E943},
 };
 
-// 映射表二分查找（按 from 升序；未命中返回 cp 原值）
-static uint32_t msUnicodeCaseLookup(const MsUnicodeCaseMap* table, size_t count, uint32_t cp) {
+// 映射表二分查找（按 from 升序；未命中返回 cp 原值；static inline 同 unicode_table.h）
+static inline uint32_t msUnicodeCaseLookup(const MsUnicodeCaseMap* table, size_t count, uint32_t cp) {
   size_t lo = 0;
   size_t hi = count;
   while (lo < hi) {
@@ -2895,7 +2895,7 @@ static uint32_t msUnicodeCaseLookup(const MsUnicodeCaseMap* table, size_t count,
 }
 
 // 简单大写映射（ASCII 快路径 'a'-'z'；无映射返回原码点）
-static uint32_t msUnicodeToUpper(uint32_t cp) {
+static inline uint32_t msUnicodeToUpper(uint32_t cp) {
   if (cp < 0x80) {
     return (cp >= 'a' && cp <= 'z') ? cp - 'a' + 'A' : cp;
   }
@@ -2903,7 +2903,7 @@ static uint32_t msUnicodeToUpper(uint32_t cp) {
 }
 
 // 简单小写映射（ASCII 快路径 'A'-'Z'；无映射返回原码点）
-static uint32_t msUnicodeToLower(uint32_t cp) {
+static inline uint32_t msUnicodeToLower(uint32_t cp) {
   if (cp < 0x80) {
     return (cp >= 'A' && cp <= 'Z') ? cp - 'A' + 'a' : cp;
   }
