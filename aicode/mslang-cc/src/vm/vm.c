@@ -21,8 +21,12 @@ static void boundMark(MsVM* vm, MsObj* obj) {
   gcMarkValue(vm, msValueObj(&bm->method->head));
 }
 
-// string 迭代器 children 标记（T013，D8）：迭代器持 str；MS_OBJ_ITERATOR tag 为 T017 泛化壳
-static void strIterMark(MsVM* vm, MsObj* obj) {
+// 迭代器 children 标记（T013 D8 / T014）：str/list 共享 MS_OBJ_ITERATOR tag，按首载荷 kind 分派
+static void iterMark(MsVM* vm, MsObj* obj) {
+  if (((MsObjIterShell*)obj)->kind == MS_ITER_LIST) {
+    gcMarkValue(vm, msValueObj(&((MsObjListIter*)obj)->list->head));
+    return;
+  }
   gcMarkValue(vm, msValueObj(&((MsObjStrIter*)obj)->str->head));
 }
 
@@ -50,7 +54,7 @@ void msVmInit(MsVM* vm) {
   gcSetMarkFn(MS_OBJ_LIST, msObjListMarkChildren);  // D6：children 标记统一注册（进程级表，幂等）
   gcSetFreeFn(MS_OBJ_LIST, msObjListFreeData);  // items 数组随对象释放（sweep/heapFree 前回调）
   gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
-  gcSetMarkFn(MS_OBJ_ITERATOR, strIterMark);  // D8：string 迭代器持 str（tag 共享，T017 泛化）
+  gcSetMarkFn(MS_OBJ_ITERATOR, iterMark);  // D8/T014：迭代器持 str/list（kind 分派，T017 泛化）
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);
   msInternInit(vm->intern);
@@ -949,7 +953,12 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           NEXT();
         }
         if (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_LIST) {
-          RUNTIME_ERROR("RuntimeError: list iteration executes in T014");
+          MsObjListIter* it = msObjListIterNew(vm, (MsObjList*)v.as.obj);  // peek：分配期间源在栈
+          if (it == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stack[vm->stackTop - 1] = msValueObj(&it->head);  // 覆盖接收者槽：迭代器持 list
+          NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' is not iterable", msValueTypeName(&v));
       }
@@ -957,14 +966,25 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_FOR_ITER) {  // <t exit>：有值压值；耗尽弹迭代器并跳出
         READ_OPERAND(t);
         MsValue* it = &vm->stack[vm->stackTop - 1];
-        if (it->kind == MS_VAL_OBJ && it->as.obj->type == MS_OBJ_ITERATOR) {  // string 迭代器（D8）
+        if (it->kind == MS_VAL_OBJ && it->as.obj->type == MS_OBJ_ITERATOR) {
+          ms_u8 ik = ((const MsObjIterShell*)it->as.obj)->kind;  // str/list 首载荷判别（T014）
           MsValue item;
-          if (!msStrIterNext(vm, (MsObjStrIter*)it->as.obj, &item)) {
-            (void)pop(vm);  // 耗尽弹迭代器（再迭代须重新 chars()）
+          bool modified = false;
+          bool done;
+          if (ik == MS_ITER_LIST) {  // 22 §4：版本号防并发修改
+            done = !msListIterNext((MsObjListIter*)it->as.obj, &item, &modified);
+          } else {
+            done = !msStrIterNext(vm, (MsObjStrIter*)it->as.obj, &item);  // D8
+          }
+          if (done) {
+            if (modified) {
+              RUNTIME_ERROR("IteratorError: list modified during iteration");
+            }
+            (void)pop(vm);  // 耗尽弹迭代器（再迭代须重新 GET_ITER）
             ip = t;
             NEXT();
           }
-          msVmPush(vm, item);  // msStrIterNext 无分配；it 槽位此后不再经缓存指针访问
+          msVmPush(vm, item);  // 两迭代器 next 均无分配：it 槽位此后不再经缓存指针访问
           NEXT();
         }
         if (it->kind != MS_VAL_RANGE_ITER) {

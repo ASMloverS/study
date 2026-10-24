@@ -375,6 +375,43 @@ TEST(runListHigherOrderNatives) {  // map/filter/each/reduce：本任务仅原�
   free(r.out);
 }
 
+// ---------- 迭代接线（Task 6） ----------
+
+TEST(runListForIteration) {  // list 迭代 + for 解构铺垫（单目标）
+  RunResult r = runSrc("var s = 0\nfor v in [1, 2, 3] { s += v }\nprint(s)\n"
+                       "var t = \"\"\nfor c in [\"a\", \"b\"] { t = t + c }\nprint(t)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "6\nab\n", r.out);
+  free(r.out);
+}
+
+TEST(runListIterConcurrentModify) {  // §5.1 迭代中修改 → IteratorError
+  RunResult r = runSrc("var xs = [1, 2, 3]\nfor v in xs {\n  xs.append(v)\n}\nprint(\"unreachable\")");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IteratorError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1, 2, 3]\nfor v in xs {\n  xs.pop()\n}");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IteratorError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1, 2, 3]\nfor v in xs {\n  xs.sort()\n}");  // sort 亦失效（任务书 §2）
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "IteratorError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1, 2, 3]\nvar n = 0\nfor v in xs {\n  xs[0] = 9\n  n += 1\n}\nprint(n)");  // SET_INDEX 不失效
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "3\n", r.out);
+  free(r.out);
+}
+
+TEST(runListIterExhaustNoError) {  // 耗尽后重新迭代新迭代器
+  RunResult r = runSrc("var xs = [1]\nfor v in xs { }\nxs.append(2)\nvar n = 0\n"
+                       "for v in xs { n += 1 }\nprint(n)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "2\n", r.out);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -395,6 +432,9 @@ int main(void) {
   runListMethodErrors(&ctx);
   runListSortTypeError(&ctx);
   runListHigherOrderNatives(&ctx);
+  runListForIteration(&ctx);
+  runListIterConcurrentModify(&ctx);
+  runListIterExhaustNoError(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;
