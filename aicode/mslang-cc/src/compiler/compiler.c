@@ -503,6 +503,98 @@ static void compileVarDecl(FuncState* fs, AstNode* n) {
   finishDeclStore(fs, n);
 }
 
+// 声明式落盘（DESTRUCTURE 目标 = binder 登记的新绑定）：global DEF+STORE；local STORE
+// （同 finishDeclStore 语义，载荷取 as.ident）
+static void storeDeclIdent(FuncState* fs, const AstNode* t) {
+  if (t->bindKind == AST_BIND_LOCAL) {
+    emitOp(fs, OP_STORE_LOCAL, t->line);
+    emitByte(fs, (ms_u8)t->bindSlot);
+  } else {
+    int32_t k = nameConst(fs, t->as.ident.name, t->as.ident.nameLen);
+    emitConstOp(fs, OP_DEF_GLOBAL, k, t->line);
+    emitConstOp(fs, OP_STORE_GLOBAL, k, t->line);
+  }
+}
+
+// 解构落盘：值在栈顶（逆序消费）——IDENT 按声明/引用语义直存；INDEX 先 obj/idx 再 ROT 对齐
+// SET_INDEX 弹序（v obj idx → obj idx v）；MEMBER 目标与单目标赋值同样归 T020
+static void storeUnpackTarget(FuncState* fs, AstNode* t, bool declare) {
+  if (t->kind == AST_IDENT) {
+    if (declare) {
+      storeDeclIdent(fs, t);
+    } else {
+      storeIdent(fs, t);
+    }
+    return;
+  }
+  if (t->kind == AST_INDEX) {
+    compileExpr(fs, t->as.indexExpr.obj);
+    compileExpr(fs, t->as.indexExpr.index);
+    emitOp(fs, OP_ROT, t->line);
+    emitOp(fs, OP_SET_INDEX, t->line);
+    return;
+  }
+  compErr(fs, t, 1, "assignment target form is not supported yet");
+  emitOp(fs, OP_POP, t->line);
+}
+
+// 元组目标赋值（04 §2，无星号）：右值多表达式逐个压栈（临时栈序列，T015 统一走 BUILD_TUPLE）；
+// 单表达式 UNPACK_SEQ 展开；目标数可少于右值元素（多余丢弃）
+static void compileTupleAssign(FuncState* fs, AstNode* n, AstNode* target) {
+  int32_t count = target->as.tuple.count;
+  const AstNode* value = n->as.assign.value;
+  if (count > 255) {
+    compErr(fs, n, 1, "too many unpack targets");
+    return;
+  }
+  if (value->kind == AST_TUPLE) {
+    int32_t m = value->as.tuple.count;
+    for (int32_t i = 0; i < m; i++) {
+      compileExpr(fs, value->as.tuple.items[i]);
+    }
+    if (m != count) {  // 字面计数失配：编译期诊断（发射面保持平衡）
+      compErr(fs, n, 1, "unpack target and value counts differ");
+      for (int32_t i = 0; i < m; i++) {
+        emitOp(fs, OP_POP, n->line);
+      }
+      return;
+    }
+  } else {
+    compileExpr(fs, value);
+    emitOp(fs, OP_UNPACK_SEQ, n->line);
+    emitByte(fs, (ms_u8)count);
+  }
+  for (int32_t i = count - 1; i >= 0; i--) {  // 目标为既有绑定的赋值：引用式落盘
+    storeUnpackTarget(fs, target->as.tuple.items[i], false);
+  }
+}
+
+// 含 *rest 的解构赋值（04 §2）：右值物化为 list（多表达式经 BUILD_LIST）后 UNPACK_STAR 展平
+static void compileDestructure(FuncState* fs, AstNode* n) {
+  int32_t count = n->as.destructure.count;
+  int32_t rest = n->as.destructure.restIndex;
+  const AstNode* value = n->as.destructure.value;
+  if (count > 255) {
+    compErr(fs, n, 1, "too many unpack targets");
+    return;
+  }
+  if (value->kind == AST_TUPLE) {
+    for (int32_t i = 0; i < value->as.tuple.count; i++) {
+      compileExpr(fs, value->as.tuple.items[i]);
+    }
+    emitOp(fs, OP_BUILD_LIST, n->line);
+    emitByte(fs, (ms_u8)value->as.tuple.count);
+  } else {
+    compileExpr(fs, value);
+  }
+  emitOp(fs, OP_UNPACK_STAR, n->line);
+  emitByte(fs, (ms_u8)rest);
+  emitByte(fs, (ms_u8)(count - rest - 1));
+  for (int32_t i = count - 1; i >= 0; i--) {  // 目标为 binder 登记的新绑定：声明式落盘
+    storeUnpackTarget(fs, n->as.destructure.targets[i], true);
+  }
+}
+
 static void compileAssign(FuncState* fs, AstNode* n) {
   AstNode* target = n->as.assign.target;
   if (target->kind == AST_INDEX && n->as.assign.op == AST_OP_NONE) {
@@ -511,6 +603,10 @@ static void compileAssign(FuncState* fs, AstNode* n) {
     compileExpr(fs, target->as.indexExpr.index);
     compileExpr(fs, n->as.assign.value);
     emitOp(fs, OP_SET_INDEX, n->line);
+    return;
+  }
+  if (target->kind == AST_TUPLE && n->as.assign.op == AST_OP_NONE) {  // 元组目标解构（04 §2）
+    compileTupleAssign(fs, n, target);
     return;
   }
   if (target->kind != AST_IDENT) {
@@ -742,6 +838,9 @@ static void compileStmt(FuncState* fs, AstNode* n) {
       break;
     case AST_ASSIGN:
       compileAssign(fs, n);
+      break;
+    case AST_DESTRUCTURE:
+      compileDestructure(fs, n);
       break;
     case AST_BLOCK:
       for (int32_t i = 0; i < n->as.list.count; i++) {

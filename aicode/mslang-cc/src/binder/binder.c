@@ -312,11 +312,15 @@ static void bindStmt(Binder* b, AstNode* n) {
       bindExpr(b, n->as.assign.target);
       bindExpr(b, n->as.assign.value);
       break;
-    case AST_DESTRUCTURE: {  // *rest 形态：全部目标在当前作用域登记（任务书 §2）
+    case AST_DESTRUCTURE: {  // *rest 形态：IDENT 目标登记新绑定；INDEX/MEMBER 目标按引用绑定（04 §2）
       bindExpr(b, n->as.destructure.value);
       for (int32_t i = 0; i < n->as.destructure.count; i++) {
         AstNode* t = n->as.destructure.targets[i];
         if (t == NULL) {
+          continue;
+        }
+        if (t->kind != AST_IDENT) {
+          bindExpr(b, t);
           continue;
         }
         Sym* sym = declareStrict(b, t->as.ident.name, t->as.ident.nameLen, false, t);

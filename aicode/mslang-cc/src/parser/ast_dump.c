@@ -271,9 +271,11 @@ static void dumpNode(FILE* out, const AstNode* n, int depth) {
         }
         if (t == NULL) {
           fputc('_', out);
-        } else {
+        } else if (t->kind == AST_IDENT) {
           dumpName(out, t->as.ident.name, t->as.ident.nameLen);
           dumpAnn(out, t);
+        } else {
+          dumpNode(out, t, -1);  // 索引等复合目标：紧凑形态（修联合体硬解）
         }
       }
       fputc(')', out);

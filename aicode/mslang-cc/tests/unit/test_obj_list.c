@@ -412,6 +412,64 @@ TEST(runListIterExhaustNoError) {  // 耗尽后重新迭代新迭代器
   free(r.out);
 }
 
+// ---------- 解构（Task 7） ----------
+
+TEST(runUnpackSwapAndFewer) {  // §5.1 交换 / 3 目标收 5 元素多余丢弃
+  RunResult r = runSrc("var a = 1\nvar b = 2\na, b = b, a\nprint(a)\nprint(b)\n"
+                       "var xs = [1, 2, 3, 4, 5]\nvar p = 0\nvar q = 0\nvar w = 0\n"
+                       "p, q, w = xs\nprint(p)\nprint(q)\nprint(w)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "2\n1\n1\n2\n3\n", r.out);
+  free(r.out);
+}
+
+TEST(runUnpackStarPositions) {  // §5.1 星号任意位：a, *m, z = [1,2,3,4]
+  RunResult r = runSrc("var xs = [1, 2, 3, 4]\nx1, *mid, z9 = xs\nprint(x1)\nprint(mid)\nprint(z9)\n"
+                       "*head2, tail = xs\nprint(head2)\nprint(tail)\n"
+                       "a0, *rest0 = xs\nprint(rest0)\n*all = xs\nprint(all)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1\n[2, 3]\n4\n[1, 2, 3]\n4\n[2, 3, 4]\n[1, 2, 3, 4]\n", r.out);
+  free(r.out);
+}
+
+TEST(runUnpackStarTupleRhs) {  // 右值多表达式：BUILD_LIST 物化后统一 UNPACK_STAR
+  RunResult r = runSrc("x1, *mid, z9 = 1, 2, 3, 4\nprint(x1)\nprint(mid)\nprint(z9)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1\n[2, 3]\n4\n", r.out);
+  free(r.out);
+}
+
+TEST(runUnpackErrors) {  // 不可解构 TypeError；不足 ValueError；未声明目标 RuntimeError
+  RunResult r = runSrc("a, b = 5");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\na, b = xs");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+  r = runSrc("a, *m, z = 5");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1]\na, *m, z = xs");  // before+after=2 > 1
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+  r = runSrc("var xs = [1, 2, 3]\nvar a = 0\nvar b = 0\na, b, c = xs");  // c 未声明：同单目标赋值语义
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "undefined name") != NULL);
+  free(r.out);
+}
+
+TEST(runUnpackIndexTargets) {  // 索引目标（04 §2）：元组与星号形态
+  RunResult r = runSrc("var xs = [0, 0]\nvar v = 0\nxs[0], v = [7, 8]\nprint(xs)\nprint(v)\n"
+                       "xs[1], *tail = [9, 1, 2]\nprint(xs[1])\nprint(tail)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[7, 0]\n8\n9\n[1, 2]\n", r.out);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -435,6 +493,11 @@ int main(void) {
   runListForIteration(&ctx);
   runListIterConcurrentModify(&ctx);
   runListIterExhaustNoError(&ctx);
+  runUnpackSwapAndFewer(&ctx);
+  runUnpackStarPositions(&ctx);
+  runUnpackStarTupleRhs(&ctx);
+  runUnpackErrors(&ctx);
+  runUnpackIndexTargets(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

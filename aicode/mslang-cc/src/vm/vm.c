@@ -416,6 +416,8 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_GET_ITER);
   SET_HANDLER(OP_FOR_ITER);
   SET_HANDLER(OP_BUILD_LIST);
+  SET_HANDLER(OP_UNPACK_SEQ);
+  SET_HANDLER(OP_UNPACK_STAR);
   SET_HANDLER(OP_FORMAT_STRING);
   SET_HANDLER(OP_CHECK_SAFEPOINT);
 #define OPCODE(opname) LBL(opname):
@@ -1030,6 +1032,72 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         list->count = n;
         vm->stack[vm->stackTop - n - 1] = vm->stack[vm->stackTop - 1];  // list 下移覆盖首源槽
         vm->stackTop -= n;  // 弹出 n 个源值，list 留栈顶（n=0 时为自赋值无害）
+        NEXT();
+      }
+
+      OPCODE(OP_UNPACK_SEQ) {  // <u8 n>：TOS list → 弹源；不足 n 报 ValueError；按序压 items[0..n)（多余丢弃）
+        int32_t n = code[ip++];
+        MsValue v = vm->stack[vm->stackTop - 1];
+        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {  // tuple/string 解构归 T015/T017
+          RUNTIME_ERROR("TypeError: cannot unpack '%s' value", msValueTypeName(&v));
+        }
+        MsObjList* list = (MsObjList*)v.as.obj;
+        if (list->count < n) {
+          RUNTIME_ERROR("ValueError: not enough values to unpack (expected %d, got %d)", n, list->count);
+        }
+        vm->stackTop--;  // 弹源：后续纯值拷贝无分配窗口
+        for (int32_t i = 0; i < n; i++) {
+          msVmPush(vm, list->items[i]);
+        }
+        NEXT();
+      }
+
+      OPCODE(OP_UNPACK_STAR) {  // <u8 before> <u8 after>：前段逐值 + 中段新 list + 后段逐值
+        int32_t before = code[ip++];
+        int32_t after = code[ip++];
+        MsValue v = vm->stack[vm->stackTop - 1];
+        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {
+          RUNTIME_ERROR("TypeError: cannot unpack '%s' value", msValueTypeName(&v));
+        }
+        MsObjList* list = (MsObjList*)v.as.obj;
+        if (list->count < before + after) {
+          RUNTIME_ERROR("ValueError: not enough values to unpack (expected at least %d, got %d)",
+                        before + after, list->count);
+        }
+        // 源保留在栈直至 rest 物化（msObjListNew 为 GC 触发点：源/已压前段均 root）
+        int32_t base = vm->stackTop - 1;  // 源槽
+        for (int32_t i = 0; i < before; i++) {
+          msVmPush(vm, list->items[i]);
+          if (vm->hasError) {  // push 溢出：裸槽位运算前必须 unwind
+            goto dispatchExit;
+          }
+        }
+        MsObjList* rest = msObjListNew(vm);
+        if (rest == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        msVmPush(vm, msValueObj(&rest->head));
+        if (vm->hasError) {
+          goto dispatchExit;
+        }
+        int32_t mid = list->count - before - after;
+        if (mid > 0 && !msObjListReserve(vm, rest, mid)) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        for (int32_t k = 0; k < mid; k++) {
+          rest->items[k] = list->items[before + k];
+        }
+        rest->count = mid;
+        for (int32_t j = 0; j < after; j++) {
+          msVmPush(vm, list->items[before + mid + j]);
+          if (vm->hasError) {
+            goto dispatchExit;
+          }
+        }
+        // 移除源槽：[src, p…, rest, s…] → [p…, rest, s…]
+        memmove(&vm->stack[base], &vm->stack[base + 1],
+                sizeof(MsValue) * (size_t)(before + 1 + after));
+        vm->stackTop--;
         NEXT();
       }
 

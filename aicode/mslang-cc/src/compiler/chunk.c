@@ -190,7 +190,7 @@ const MsOpndLayout msOpLayouts[OP__COUNT] = {
     OPL_U8,           // BUILD_TUPLE
     OPL_U8,           // BUILD_SET
     OPL_U8,           // UNPACK_SEQ
-    OPL_U8,           // UNPACK_STAR
+    OPL_U8_U8,        // UNPACK_STAR
     OPL_CONST,        // FORMAT_STRING
     OPL_NONE,         // CHECK_SAFEPOINT
     OPL_SPECIAL,      // ASSERT

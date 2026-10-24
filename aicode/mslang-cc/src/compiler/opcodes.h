@@ -106,7 +106,7 @@ typedef enum MsOpcode {
   OP_BUILD_TUPLE,      // <u8 n>
   OP_BUILD_SET,        // <u8 n>
   OP_UNPACK_SEQ,       // <u8 n>
-  OP_UNPACK_STAR,      // <u8 slot>
+  OP_UNPACK_STAR,      // <u8 before> <u8 after>（T014：星号任意位需双计数）
   OP_FORMAT_STRING,    // <const k-interp>
   OP_CHECK_SAFEPOINT,  // 回边预算：抢占 + GC safepoint（21 §6）
   OP_ASSERT,           // 变长：可选 <const msg>
