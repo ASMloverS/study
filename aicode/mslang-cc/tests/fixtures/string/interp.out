@@ -1,0 +1,3 @@
+a = 3, s = inn
+x = 10, double = 20, nested list = [10, "s"]
+repr in interp: "q\"t"

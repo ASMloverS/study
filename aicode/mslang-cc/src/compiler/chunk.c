@@ -214,6 +214,14 @@ void chunkFree(Chunk* c) {
     if (c->consts[i].kind == CONST_PROTO) {
       chunkFree(c->consts[i].as.proto);
       free(c->consts[i].as.proto);
+    } else if (c->consts[i].kind == CONST_INTERP) {
+      InterpSeg* segs = c->consts[i].as.interp.segs;
+      for (int32_t s = 0; s < c->consts[i].as.interp.count; s++) {
+        if (!segs[s].isExpr) {
+          free((void*)segs[s].start);  // 字面段字节深拷贝自持（chunkAddConstInterp）
+        }
+      }
+      free(segs);
     }
   }
   free(c->code);
@@ -245,10 +253,12 @@ static bool constEquals(const ConstEntry* a, const ConstEntry* b) {
       return a->as.cp == b->as.cp;
     case CONST_BIGINT:
     case CONST_STRING:
+    case CONST_RAWSTRING:
       return a->as.text.len == b->as.text.len &&
              memcmp(a->as.text.start, b->as.text.start, (size_t)a->as.text.len) == 0;
+    case CONST_INTERP:
     case CONST_PROTO:
-      return false;
+      return false;  // 恒追加（interp 原样不去重，proto 各自独立）
   }
   return false;
 }
@@ -264,39 +274,69 @@ int32_t chunkAddConst(Chunk* c, ConstEntry entry) {
 }
 
 int32_t chunkAddConstInt(Chunk* c, ms_i64 v) {
-  ConstEntry e = {CONST_INT, {0}};
+  ConstEntry e = {0};
+  e.kind = CONST_INT;
   e.as.i = v;
   return chunkAddConst(c, e);
 }
 
 int32_t chunkAddConstFloat(Chunk* c, double v) {
-  ConstEntry e = {CONST_FLOAT, {0}};
+  ConstEntry e = {0};
+  e.kind = CONST_FLOAT;
   e.as.f = v;
   return chunkAddConst(c, e);
 }
 
 int32_t chunkAddConstBool(Chunk* c, bool v) {
-  ConstEntry e = {CONST_BOOL, {0}};
+  ConstEntry e = {0};
+  e.kind = CONST_BOOL;
   e.as.b = v;
   return chunkAddConst(c, e);
 }
 
 int32_t chunkAddConstRune(Chunk* c, ms_u32 cp) {
-  ConstEntry e = {CONST_RUNE, {0}};
+  ConstEntry e = {0};
+  e.kind = CONST_RUNE;
   e.as.cp = cp;
   return chunkAddConst(c, e);
 }
 
 int32_t chunkAddConstText(Chunk* c, ConstKind kind, const char* start, int32_t len) {
-  ConstEntry e = {kind, {0}};
+  ConstEntry e = {0};
+  e.kind = kind;
   e.as.text.start = start;
   e.as.text.len = len;
   return chunkAddConst(c, e);
 }
 
 int32_t chunkAddConstProto(Chunk* c, Chunk* proto) {
-  ConstEntry e = {CONST_PROTO, {0}};
+  ConstEntry e = {0};
+  e.kind = CONST_PROTO;
   e.as.proto = proto;
+  MS_ARRAY_PUSH(c->consts, c->constsLen, c->constsCap, e);
+  return c->constsLen - 1;
+}
+
+int32_t chunkAddConstInterp(Chunk* c, const InterpSeg* segs, int32_t count) {
+  InterpSeg* copy = NULL;
+  if (count > 0) {
+    copy = malloc(sizeof(InterpSeg) * (size_t)count);
+    MS_ASSERT(copy != NULL);
+    for (int32_t i = 0; i < count; i++) {  // 深拷贝：字面段字节自持（chunk 拥有；调用方缓冲可释放）
+      copy[i] = segs[i];
+      if (!segs[i].isExpr) {
+        char* bytes = malloc((size_t)segs[i].len + 1);  // +1：NUL 终止契约（len=0 防 malloc(0)）
+        MS_ASSERT(bytes != NULL);
+        memcpy(bytes, segs[i].start, (size_t)segs[i].len);
+        bytes[segs[i].len] = '\0';
+        copy[i].start = bytes;
+      }
+    }
+  }
+  ConstEntry e = {0};
+  e.kind = CONST_INTERP;
+  e.as.interp.segs = copy;
+  e.as.interp.count = count;
   MS_ARRAY_PUSH(c->consts, c->constsLen, c->constsCap, e);
   return c->constsLen - 1;
 }

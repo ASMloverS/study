@@ -38,4 +38,13 @@ typedef double ms_f64;
 ms_u32 msFnv1a32(const void* data, ms_u64 len);
 ms_u64 msFnv1a64(const void* data, ms_u64 len);
 
+// ---- UTF-8 与转义（T013，01 §3.3；scanner 静态副本不动，此处为共享版） ----
+// 解码 p 处一个 rune 并写回字节宽 width；非法/截断/代理区/超长序列按 1 字节返回 0xFFFD
+uint32_t msUtf8Decode(const char* p, int32_t avail, int32_t* width);
+// 编码 cp 到 out（容量 ≥4）；越界/代理区码点写 U+FFFD；返回字节宽 1-4
+int32_t msUtf8Encode(uint32_t cp, char* out);
+// 解码 01 §3.3 转义序列（\n \r \t \\ \" \' \0 \xHH \u{...}）；返回解码长度并 NUL 终止 dst（终止符计入容量），cap 不足返回 -1
+// 源文本经 scanner 校验后到达，非法形态按字面拷贝（防御路径）
+int32_t msTextDecodeEscapes(const char* src, int32_t len, char* dst, int32_t cap);
+
 #endif

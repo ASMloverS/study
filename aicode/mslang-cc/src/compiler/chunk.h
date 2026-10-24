@@ -8,22 +8,36 @@
 #include "common/common.h"
 #include "compiler/opcodes.h"
 
-// 常量池条目：T010 为字面量记录（文本借用源缓冲）；T012 起替换为完整 MsValue
+struct MsVM;                // 缓存字段仅用指针（vm/vm.h；避免头环）
+typedef struct MsObj MsObj; // T013：ConstEntry 字符串值缓存
+
+// 常量池条目：T010 为字面量记录（文本借用源缓冲）；T013 起字符串运行时解码为对象
 typedef enum ConstKind {
   CONST_NIL,
   CONST_BOOL,
   CONST_INT,
   CONST_FLOAT,
   CONST_RUNE,
-  CONST_BIGINT,  // 借用源文本（n 后缀已剥离，精确解析归 T016）
-  CONST_STRING,  // 借用源文本段（转义原文，解码归 T013）
-  CONST_PROTO,   // 函数原型：持有独立 Chunk
+  CONST_BIGINT,     // 借用源文本（n 后缀已剥离，精确解析归 T016）
+  CONST_STRING,     // 借用源文本段（转义原文，LOAD_CONST 时解码+intern）
+  CONST_RAWSTRING,  // 原始串：内容不解码，反引号字面量
+  CONST_INTERP,     // 插值段描述，Task 11 FORMAT_STRING 消费
+  CONST_PROTO,      // 函数原型：持有独立 Chunk
 } ConstKind;
 
 typedef struct Chunk Chunk;
 
+// 插值段（T013，Task 11 FORMAT_STRING 消费）：字面段编译期已解码，chunk 拥有
+typedef struct InterpSeg {
+  bool isExpr;         // true：表达式段（值运行时前置压栈）
+  const char* start;   // false：字面段
+  int32_t len;
+} InterpSeg;
+
 typedef struct ConstEntry {
   ConstKind kind;
+  MsObj* strObj;           // T013：STRING/RAWSTRING 值缓存（intern 产物，永久代）
+  struct MsVM* strVm;      // 缓存归属 VM（chunk 跨 VM 复跑按此失效）
   union {
     bool b;
     ms_i64 i;
@@ -32,7 +46,11 @@ typedef struct ConstEntry {
     struct {
       const char* start;
       int32_t len;
-    } text;  // BIGINT / STRING 借用文本
+    } text;  // BIGINT / STRING / RAWSTRING 借用文本
+    struct {
+      InterpSeg* segs;
+      int32_t count;
+    } interp;
     Chunk* proto;
   } as;
 } ConstEntry;
@@ -69,8 +87,9 @@ int32_t chunkAddConstInt(Chunk* c, ms_i64 v);
 int32_t chunkAddConstFloat(Chunk* c, double v);
 int32_t chunkAddConstBool(Chunk* c, bool v);
 int32_t chunkAddConstRune(Chunk* c, ms_u32 cp);
-int32_t chunkAddConstText(Chunk* c, ConstKind kind, const char* start, int32_t len);  // STRING/BIGINT
+int32_t chunkAddConstText(Chunk* c, ConstKind kind, const char* start, int32_t len);  // STRING/RAWSTRING/BIGINT
 int32_t chunkAddConstProto(Chunk* c, Chunk* proto);
+int32_t chunkAddConstInterp(Chunk* c, const InterpSeg* segs, int32_t count);  // INTERP：自持 segs 深拷贝（字面段字节同拷），恒追加
 int32_t chunkEmitOp(Chunk* c, ms_u8 op, int32_t line);  // 指令起始：驱动行号 RLE；返回偏移
 void chunkEmitByte(Chunk* c, ms_u8 b);                  // 操作数字节（不入行号表）
 int32_t chunkLineAt(const Chunk* c, int32_t offset);    // RLE 查询；越界/无记录返回 -1

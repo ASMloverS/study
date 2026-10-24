@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "common/common.h"
 #include "plat/plat_atomic.h"
 #include "plat/plat_thread.h"
 #include "plat/plat_time.h"
+#include "test_harness.h"
 
 _Static_assert(sizeof(ms_u8) == 1, "ms_u8 must be 8 bits");
 _Static_assert(sizeof(ms_i32) == 4, "ms_i32 must be 32 bits");
@@ -155,6 +158,47 @@ static void testTimeMonotonic(void) {
   }
 }
 
+TEST(utf8RoundTrip) {  // T013：编码后解码还原码点与宽度
+  char buf[4];
+  struct { uint32_t cp; int32_t width; } cases[] = {
+      {'a', 1}, {0xE9, 2}, {0x4E2D, 3}, {0x1F600, 4}, {0xFFFD, 3},
+  };
+  for (int i = 0; i < 5; i++) {
+    int32_t w = msUtf8Encode(cases[i].cp, buf);
+    EXPECT_EQ(ctx, cases[i].width, w);
+    int32_t dw = 0;
+    EXPECT_EQ(ctx, cases[i].cp, msUtf8Decode(buf, w, &dw));
+    EXPECT_EQ(ctx, cases[i].width, dw);
+  }
+  EXPECT_EQ(ctx, 3, msUtf8Encode(0x7FFFFFFF, buf));  // 越界码点 → U+FFFD（3 字节）
+}
+
+TEST(utf8DecodeInvalid) {  // 截断/坏续字节/代理区/超界 → U+FFFD 宽 1（与 scanner 同规则）
+  int32_t w = 0;
+  EXPECT_EQ(ctx, 0xFFFD, msUtf8Decode("\xE4\xB8", 2, &w));
+  EXPECT_EQ(ctx, 1, w);
+  EXPECT_EQ(ctx, 0xFFFD, msUtf8Decode("\xED\xA0\x80", 3, &w));  // 代理区
+  EXPECT_EQ(ctx, 1, w);
+  EXPECT_EQ(ctx, 0xFFFD, msUtf8Decode("\xC0\x80", 2, &w));  // 过长编码
+  EXPECT_EQ(ctx, 1, w);
+}
+
+TEST(escapeDecode) {  // 01 §3.3 全转义集
+  char dst[64];
+  EXPECT_EQ(ctx, 5, msTextDecodeEscapes("a\\nb\\tc", 7, dst, sizeof(dst)));
+  EXPECT_STREQ(ctx, "a\nb\tc", dst);
+  EXPECT_EQ(ctx, 1, msTextDecodeEscapes("\\x41", 4, dst, sizeof(dst)));
+  EXPECT_STREQ(ctx, "A", dst);
+  EXPECT_EQ(ctx, 3, msTextDecodeEscapes("\\u{4E2D}", 8, dst, sizeof(dst)));
+  EXPECT_EQ(ctx, 0, memcmp("\xE4\xB8\xAD", dst, 3));
+  EXPECT_EQ(ctx, 7, msTextDecodeEscapes("a\\'b\\\"c\\\\d", 10, dst, sizeof(dst)));
+  EXPECT_STREQ(ctx, "a'b\"c\\d", dst);
+  EXPECT_EQ(ctx, 1, msTextDecodeEscapes("\\0", 2, dst, sizeof(dst)));
+  EXPECT_EQ(ctx, 0, dst[0]);
+  EXPECT_EQ(ctx, 1, msTextDecodeEscapes("\\r", 2, dst, sizeof(dst)));
+  EXPECT_EQ(ctx, '\r', dst[0]);
+}
+
 int main(void) {
   testFnv1a32();
   testFnv1a64();
@@ -163,6 +207,11 @@ int main(void) {
   testThreadSmoke();
   testAtomicConcurrent();
   testTimeMonotonic();
+  TestCtx ctx = {0};
+  utf8RoundTrip(&ctx);
+  utf8DecodeInvalid(&ctx);
+  escapeDecode(&ctx);
+  gFailures += ctx.failures;
   if (gFailures == 0) {
     printf("all tests passed\n");
     return 0;

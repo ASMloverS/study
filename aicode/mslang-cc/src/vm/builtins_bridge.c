@@ -1,8 +1,11 @@
-// 内置桥（T011）：print / range 最小实现（10-builtins §1；完整 Tier0 归 T017）
+// 内置桥（T011）：print / range / len / str / repr 最小实现（10-builtins §1；完整 Tier0 归 T017）
 #include "vm/vm.h"
 
 #include <stdio.h>
 #include <string.h>
+
+#include "obj/obj_list.h"
+#include "obj/obj_string.h"
 
 static void bridgeErr(MsVM* vm, const char* msg) {
   vm->hasError = true;
@@ -18,22 +21,82 @@ static bool needInt(MsVM* vm, const MsValue* v, ms_i64* out) {
   return true;
 }
 
-// print(...xs)：空格连接 + 换行（Python 语义）；string 直写裸文本（转义解码归 T013）
+// print(...xs)：空格连接 + 换行（Python 语义）；string 直写解码后字节（T013 堆对象）
+// 非 string 经 msValueStrForm（list 等堆形态递归构建）；args 指向 VM 栈槽（OP_CALL peek 纪律），
+// StrForm 内部 push 可能扩容搬移栈数组——按栈基下标逐参重取
 static MsValue nativePrint(MsVM* vm, int32_t argc, const MsValue* args) {
+  int32_t base = (int32_t)(args - vm->stack);
   for (int32_t i = 0; i < argc; i++) {
     if (i > 0) {
       putc(' ', vm->out);
     }
-    if (args[i].kind == MS_VAL_STRING) {
-      fwrite(args[i].as.str.bytes, 1, (size_t)args[i].as.str.len, vm->out);
-    } else {
-      char buf[64];
-      msValueToStr(&args[i], buf, sizeof(buf));
-      fputs(buf, vm->out);
+    const MsValue* v = &vm->stack[base + i];
+    if (msIsString(v)) {
+      const MsObjString* s = (const MsObjString*)v->as.obj;
+      fwrite(s->bytes, 1, s->byteLen, vm->out);
+      continue;
     }
+    MsObjString* form = msValueStrForm(vm, v);  // 返回值在寄存器安全：fwrite 前无分配窗口
+    if (form == NULL) {
+      if (!vm->hasError) {
+        bridgeErr(vm, "RuntimeError: out of memory");
+      }
+      return msValueNil();
+    }
+    fwrite(form->bytes, 1, form->byteLen, vm->out);
   }
   putc('\n', vm->out);
   return msValueNil();
+}
+
+// len(x)：string 字节数 / list 元素数（10 §1；其余容器 T014+）
+static MsValue nativeLen(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 1) {
+    bridgeErr(vm, "ArgumentError: len expects 1 argument");
+    return msValueNil();
+  }
+  if (msIsString(&args[0])) {
+    return msValueInt((ms_i64)((const MsObjString*)args[0].as.obj)->byteLen);
+  }
+  if (args[0].kind == MS_VAL_OBJ && args[0].as.obj->type == MS_OBJ_LIST) {
+    return msValueInt((ms_i64)((const MsObjList*)args[0].as.obj)->count);
+  }
+  bridgeErr(vm, "TypeError: len expects a string or list");
+  return msValueNil();
+}
+
+// str(x)：str 形态转换（02 §8 显式转换；__str__ 归 T021）
+static MsValue nativeStr(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 1) {
+    bridgeErr(vm, "ArgumentError: str expects 1 argument");
+    return msValueNil();
+  }
+  MsValue a = args[0];  // 值拷贝：StrForm 内部 push 可能搬移栈，args 指针不跨分配复用
+  MsObjString* s = msValueStrForm(vm, &a);
+  if (s == NULL) {
+    if (!vm->hasError) {
+      bridgeErr(vm, "RuntimeError: out of memory");
+    }
+    return msValueNil();
+  }
+  return msValueObj(&s->head);
+}
+
+// repr(x)：repr 形态转换（string 带引号转义；__repr__ 归 T021）
+static MsValue nativeRepr(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 1) {
+    bridgeErr(vm, "ArgumentError: repr expects 1 argument");
+    return msValueNil();
+  }
+  MsValue a = args[0];
+  MsObjString* s = msValueReprForm(vm, &a);
+  if (s == NULL) {
+    if (!vm->hasError) {
+      bridgeErr(vm, "RuntimeError: out of memory");
+    }
+    return msValueNil();
+  }
+  return msValueObj(&s->head);
 }
 
 // range([start,] stop[, step])：惰性 int 迭代器
@@ -72,6 +135,21 @@ bool msBuiltinLookup(const char* name, int32_t len, MsValue* out) {
   if (len == 5 && memcmp(name, "range", 5) == 0) {
     out->kind = MS_VAL_NATIVE;
     out->as.native = nativeRange;
+    return true;
+  }
+  if (len == 3 && memcmp(name, "len", 3) == 0) {
+    out->kind = MS_VAL_NATIVE;
+    out->as.native = nativeLen;
+    return true;
+  }
+  if (len == 3 && memcmp(name, "str", 3) == 0) {
+    out->kind = MS_VAL_NATIVE;
+    out->as.native = nativeStr;
+    return true;
+  }
+  if (len == 4 && memcmp(name, "repr", 4) == 0) {
+    out->kind = MS_VAL_NATIVE;
+    out->as.native = nativeRepr;
     return true;
   }
   return false;

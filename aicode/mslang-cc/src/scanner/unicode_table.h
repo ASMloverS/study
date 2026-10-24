@@ -1462,8 +1462,8 @@ static const MsUnicodeRange MS_UNICODE_ID_CONTINUE[] = {
     {0x31350, 0x323AF},
 };
 
-// 区间表二分查找
-static bool msUnicodeInRange(const MsUnicodeRange* ranges, size_t count, uint32_t cp) {
+// 区间表二分查找（static inline：未用函数的引入方不触发 -Wunused-function）
+static inline bool msUnicodeInRange(const MsUnicodeRange* ranges, size_t count, uint32_t cp) {
   size_t lo = 0;
   size_t hi = count;
   while (lo < hi) {
@@ -1480,7 +1480,7 @@ static bool msUnicodeInRange(const MsUnicodeRange* ranges, size_t count, uint32_
 }
 
 // ID_START：Unicode 字母或 '_'（ASCII 快路径）
-static bool msUnicodeIdStart(uint32_t cp) {
+static inline bool msUnicodeIdStart(uint32_t cp) {
   if (cp < 0x80) {
     return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') || cp == '_';
   }
@@ -1488,7 +1488,7 @@ static bool msUnicodeIdStart(uint32_t cp) {
 }
 
 // ID_CONTINUE：ID_START | Unicode 数字（ASCII 快路径）
-static bool msUnicodeIdContinue(uint32_t cp) {
+static inline bool msUnicodeIdContinue(uint32_t cp) {
   if (cp < 0x80) {
     return msUnicodeIdStart(cp) || (cp >= '0' && cp <= '9');
   }

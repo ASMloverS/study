@@ -269,7 +269,8 @@ static ms_u8 binaryOpCode(AstBinOp op) {
   }
 }
 
-// 无插值字符串 → 常量（空串 0 段亦然）；插值/多段 → FORMAT_STRING 未启用
+// 无插值字符串 → 常量（空串 0 段亦然）；插值/多段 → 下方 else 分支 CONST_INTERP + FORMAT_STRING
+// T013：反引号原始串走 CONST_RAWSTRING（内容不解码，LOAD_CONST 直拷 intern）
 static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
   const AstStrSeg* segs = n->as.strLit.segs;
   if (n->as.strLit.count == 0) {  // ""：空串
@@ -277,7 +278,8 @@ static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
     return true;
   }
   if (n->as.strLit.count == 1 && segs[0].expr == NULL) {
-    *idxOut = chunkAddConstText(fs->chunk, CONST_STRING, segs[0].start, segs[0].len);
+    ConstKind k = n->as.strLit.raw ? CONST_RAWSTRING : CONST_STRING;
+    *idxOut = chunkAddConstText(fs->chunk, k, segs[0].start, segs[0].len);
     return true;
   }
   return false;
@@ -315,10 +317,46 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       int32_t k = 0;
       if (tryStringConst(fs, n, &k)) {
         emitConstOp(fs, OP_LOAD_CONST, k, n->line);
-      } else {
-        compErr(fs, n, 1, "string interpolation is not supported yet");
-        emitOp(fs, OP_LOAD_NIL, n->line);
+      } else {  // 插值：字面段编译期解码入 CONST_INTERP；表达式段依次压栈后 FORMAT_STRING（21 §3.9）
+        int32_t count = n->as.strLit.count;
+        InterpSeg* segs = malloc(sizeof(InterpSeg) * (size_t)count);
+        MS_ASSERT(segs != NULL);
+        for (int32_t i = 0; i < count; i++) {
+          const AstStrSeg* seg = &n->as.strLit.segs[i];
+          if (seg->expr != NULL) {
+            segs[i] = (InterpSeg){true, NULL, 0};
+          } else {
+            char* decoded = malloc((size_t)seg->len + 1);  // 解码只会收缩；+1 供 NUL 终止契约
+            MS_ASSERT(decoded != NULL);
+            int32_t dlen = msTextDecodeEscapes(seg->start, seg->len, decoded, seg->len + 1);
+            segs[i] = (InterpSeg){false, decoded, dlen};
+          }
+        }
+        int32_t k2 = chunkAddConstInterp(fs->chunk, segs, count);
+        for (int32_t i = 0; i < count; i++) {
+          if (segs[i].isExpr) {
+            compileExpr(fs, n->as.strLit.segs[i].expr);
+          } else {
+            free((void*)segs[i].start);  // const 已拷贝 own 副本
+          }
+        }
+        free(segs);
+        emitConstOp(fs, OP_FORMAT_STRING, k2, n->line);
       }
+      break;
+    }
+    case AST_LIST: {
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        compileExpr(fs, n->as.list.items[i]);
+      }
+      emitOp(fs, OP_BUILD_LIST, n->line);
+      emitByte(fs, (ms_u8)n->as.list.count);
+      break;
+    }
+    case AST_INDEX: {  // D6：obj, index → GET_INDEX（slice 形态经 BUILD_SLICE 归 Task 10）
+      compileExpr(fs, n->as.indexExpr.obj);
+      compileExpr(fs, n->as.indexExpr.index);
+      emitOp(fs, OP_GET_INDEX, n->line);
       break;
     }
     case AST_IDENT:
@@ -362,6 +400,18 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       break;
     }
     case AST_CALL: {  // 桩路径（T018 完整化）：callee + args 依序 + CALL argc
+      if (n->as.call.callee->kind == AST_MEMBER) {  // s.m(args) → CALL_METHOD（21 §3.3）
+        const AstNode* m = n->as.call.callee;
+        compileExpr(fs, m->as.memberExpr.obj);
+        for (int32_t i = 0; i < n->as.call.count; i++) {
+          compileExpr(fs, n->as.call.args[i]);
+        }
+        int32_t k = nameConst(fs, m->as.memberExpr.name, m->as.memberExpr.nameLen);
+        emitConstOp(fs, OP_CALL_METHOD, k, n->line);
+        emitByte(fs, 0);  // icSlot（T022 内联缓存）
+        emitByte(fs, (ms_u8)n->as.call.count);
+        break;
+      }
       if (n->as.call.callee->kind != AST_IDENT) {
         compErr(fs, n->as.call.callee, 1, "callable expression form is not supported yet");
         emitOp(fs, OP_LOAD_NIL, n->line);
@@ -373,6 +423,28 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       }
       emitOp(fs, OP_CALL, n->line);
       emitByte(fs, (ms_u8)n->as.call.count);
+      break;
+    }
+    case AST_MEMBER: {  // 方法取值：GET_ATTR 物化 bound（类属性 T020）
+      compileExpr(fs, n->as.memberExpr.obj);
+      int32_t k = nameConst(fs, n->as.memberExpr.name, n->as.memberExpr.nameLen);
+      emitConstOp(fs, OP_GET_ATTR, k, n->line);
+      emitByte(fs, 0);  // icSlot（T022）
+      break;
+    }
+    case AST_SLICE: {  // 切片对象不独立暴露：BUILD_SLICE 后立即 GET_INDEX（03 §3）
+      compileExpr(fs, n->as.slice.obj);
+      const AstNode* parts[3] = {n->as.slice.start, n->as.slice.end, n->as.slice.step};
+      for (int i = 0; i < 3; i++) {
+        if (parts[i] != NULL) {
+          compileExpr(fs, parts[i]);
+        } else {
+          emitOp(fs, OP_LOAD_NIL, n->line);
+        }
+      }
+      emitOp(fs, OP_BUILD_SLICE, n->line);
+      emitByte(fs, 3);
+      emitOp(fs, OP_GET_INDEX, n->line);
       break;
     }
     default:
@@ -433,6 +505,14 @@ static void compileVarDecl(FuncState* fs, AstNode* n) {
 
 static void compileAssign(FuncState* fs, AstNode* n) {
   AstNode* target = n->as.assign.target;
+  if (target->kind == AST_INDEX && n->as.assign.op == AST_OP_NONE) {
+    // obj[idx] = v（string 只读在运行时报；03 §4 求值序 obj→idx→v；复合赋值 index 目标维持不支持）
+    compileExpr(fs, target->as.indexExpr.obj);
+    compileExpr(fs, target->as.indexExpr.index);
+    compileExpr(fs, n->as.assign.value);
+    emitOp(fs, OP_SET_INDEX, n->line);
+    return;
+  }
   if (target->kind != AST_IDENT) {
     compileExpr(fs, n->as.assign.value);  // 先求值保持副作用序
     compErr(fs, target, 1, "assignment target form is not supported yet");

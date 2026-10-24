@@ -76,6 +76,17 @@ target_link_libraries(ms_vm PUBLIC ms_compiler)
 # T012：对象头/分配器 + 过渡 GC；obj 分配经 guard（gc）、vm 持有 heap 生命周期
 target_link_libraries(ms_obj PRIVATE ms_gc)
 target_link_libraries(ms_vm PRIVATE ms_gc)
+# T013：vm 持有 intern 表（intern.c 归 ms_obj）；静态库 PRIVATE 依赖仍传递至链接消费者
+target_link_libraries(ms_vm PRIVATE ms_obj)
+
+# T013：string 对象核心（FNV-1a 哈希 + UTF-8 扫描；rune/slice/iter/intern 归后续任务）
+target_sources(ms_obj PRIVATE src/obj/obj_string.c)
+# T013：intern 表（Task 4；开放寻址线性探测 + PERMANENT 代）
+target_sources(ms_obj PRIVATE src/obj/intern.c)
+# T013：最小 MsObjList 桥（Task 7；split/join 数据面，完整容器归 T014）
+target_sources(ms_obj PRIVATE src/obj/obj_list.c)
+# T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
+target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)

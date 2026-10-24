@@ -1,0 +1,18 @@
+// T013 方法族样例（10 §2）
+var s = "a,b,c"
+var parts = s.split(",")
+print(parts)
+print(s.split(",", 1))
+print(s.indexOf("b"))
+print(s.contains("b"))
+print(s.toUpper())
+print("Hello".replace("l", "L"))
+print("aXbXc".count("X"))
+print("5".padLeft(3, '0'))
+print("  hi  ".trim())
+print("12a".isDigit())
+print("中文".charLen())
+print(len("中文"))
+print(",".join(["a", "b"]))
+print("line1\nline2".splitLines()[1])
+print("abc".repeat(2))
