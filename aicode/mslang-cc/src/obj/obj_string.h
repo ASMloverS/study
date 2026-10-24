@@ -57,6 +57,7 @@ int32_t msObjStringRuneAtByte(const MsObjString* s, int32_t byteOffset);
 // ---- string 迭代器（chars/bytes；MS_OBJ_ITERATOR tag，T017 泛化壳） ----
 typedef struct MsObjStrIter {
   MsObj head;
+  ms_u8 kind;        // 恒 MS_ITER_STR（str/list 迭代器共享 tag 判别，obj.h MsObjIterShell）
   MsObjString* str;  // markChildren 标记（D8）
   ms_u32 pos;        // chars：字节游标；bytes：字节下标
   bool byteMode;

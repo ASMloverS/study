@@ -55,6 +55,20 @@ void msObjListMarkChildren(MsVM* vm, MsObj* obj);
 // items 数组释放（gcSetFreeFn 注册转发；sweep/heapFree 释放对象前回调）
 void msObjListFreeData(MsObj* obj);
 
+// ---- list 迭代器（T014，22 §4 版本号；MS_OBJ_ITERATOR tag，kind 判别见 obj.h） ----
+
+typedef struct MsObjListIter {
+  MsObj head;
+  ms_u8 kind;       // 恒 MS_ITER_LIST
+  MsObjList* list;  // markChildren 标记
+  int32_t pos;      // 游标
+  ms_u32 version;   // 创建时结构版本快照
+} MsObjListIter;
+
+MsObjListIter* msObjListIterNew(MsVM* vm, MsObjList* list);
+// 推进一格；耗尽返回 false；版本失配返回 false 且 *errModified 置 true（调用方报 IteratorError）
+bool msListIterNext(MsObjListIter* it, MsValue* out, bool* errModified);
+
 static inline bool msIsList(const MsValue* v) {
   return v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_LIST;
 }

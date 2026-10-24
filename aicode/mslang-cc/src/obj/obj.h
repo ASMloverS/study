@@ -62,4 +62,16 @@ typedef struct MsObjBoundMethod {
 MsObjNative* msObjNativeNew(MsVM* vm, MsNativeFn fn, const char* name, int32_t nameLen);
 MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsObjNative* method);
 
+// 迭代器壳种类（T014，22 §4）：str/list 等共享 MS_OBJ_ITERATOR tag，首载荷 kind 判别（T017 泛化）
+typedef enum MsIterKind {
+  MS_ITER_STR = 1,
+  MS_ITER_LIST,
+} MsIterKind;
+
+// 迭代器对象公共前缀：kind 紧随 head（MsObjStrIter / MsObjListIter 均以本布局起头）
+typedef struct MsObjIterShell {
+  MsObj head;
+  ms_u8 kind;
+} MsObjIterShell;
+
 #endif  // INCLUDE_MS_OBJ_OBJ_H_

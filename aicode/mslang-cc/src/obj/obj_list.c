@@ -290,3 +290,30 @@ MsListSortResult msObjListSort(MsObjList* list) {
   list->version++;
   return MS_LIST_SORT_OK;
 }
+
+// ---- list 迭代器（22 §4：游标 + 结构版本快照） ----
+
+MsObjListIter* msObjListIterNew(MsVM* vm, MsObjList* list) {
+  MsObjListIter* it = (MsObjListIter*)msObjAlloc(vm, MS_OBJ_ITERATOR, sizeof(MsObjListIter));
+  if (it == NULL) {
+    return NULL;
+  }
+  it->kind = MS_ITER_LIST;
+  it->list = list;  // 分配期间源由调用方 root（GET_ITER peek）
+  it->pos = 0;
+  it->version = list->version;
+  return it;
+}
+
+bool msListIterNext(MsObjListIter* it, MsValue* out, bool* errModified) {
+  *errModified = false;
+  if (it->version != it->list->version) {
+    *errModified = true;  // 22 §4：修改即失效，继续 next 抛 IteratorError（调用方翻译）
+    return false;
+  }
+  if (it->pos >= it->list->count) {
+    return false;  // 耗尽
+  }
+  *out = it->list->items[it->pos++];
+  return true;
+}

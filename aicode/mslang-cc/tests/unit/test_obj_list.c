@@ -186,6 +186,39 @@ TEST(listSortStableAndTyped) {  // 缺省 < 序；不可比较失败原序保持
   msVmFree(&vm);
 }
 
+// ---------- 迭代器（Task 3） ----------
+
+TEST(listIterWalkAndExhaust) {
+  MsVM vm;
+  msVmInit(&vm);
+  const ms_i64 xs[] = {1, 2, 3};
+  MsObjList* list = listFromInts(&vm, xs, 3);
+  MsObjListIter* it = msObjListIterNew(&vm, list);
+  msVmPush(&vm, msValueObj(&it->head));  // root
+  MsValue v = msValueNil();
+  bool modified = true;
+  EXPECT(ctx, msListIterNext(it, &v, &modified) && v.as.i == 1 && !modified);
+  EXPECT(ctx, msListIterNext(it, &v, &modified) && v.as.i == 2);
+  EXPECT(ctx, msListIterNext(it, &v, &modified) && v.as.i == 3);
+  EXPECT(ctx, !msListIterNext(it, &v, &modified) && !modified);  // 耗尽
+  msVmFree(&vm);
+}
+
+TEST(listIterVersionInvalidation) {  // §5.1 版本号：迭代中 append 后 next → errModified
+  MsVM vm;
+  msVmInit(&vm);
+  const ms_i64 xs[] = {1, 2, 3};
+  MsObjList* list = listFromInts(&vm, xs, 3);
+  MsObjListIter* it = msObjListIterNew(&vm, list);
+  msVmPush(&vm, msValueObj(&it->head));
+  MsValue v = msValueNil();
+  bool modified = false;
+  EXPECT(ctx, msListIterNext(it, &v, &modified) && !modified);
+  EXPECT(ctx, msObjListPush(&vm, list, msValueInt(4)));  // 迭代中修改
+  EXPECT(ctx, !msListIterNext(it, &v, &modified) && modified);
+  msVmFree(&vm);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   listGrowthDoubling(&ctx);
@@ -196,6 +229,8 @@ int main(void) {
   listSliceRanges(&ctx);
   listConcatRepeat(&ctx);
   listSortStableAndTyped(&ctx);
+  listIterWalkAndExhaust(&ctx);
+  listIterVersionInvalidation(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

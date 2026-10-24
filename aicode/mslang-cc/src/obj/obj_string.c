@@ -286,6 +286,7 @@ MsObjStrIter* msObjStrIterNew(MsVM* vm, MsObjString* s, bool byteMode) {
   if (it == NULL) {
     return NULL;
   }
+  it->kind = MS_ITER_STR;
   it->str = s;  // 指针直存（非 MsValue）：分配期间接收者由调用方 root（GET_ITER peek / CALL_METHOD 栈上）
   it->pos = 0;
   it->byteMode = byteMode;
