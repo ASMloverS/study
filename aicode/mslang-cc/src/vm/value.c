@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "obj/obj_list.h"
+#include "obj/obj_map.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 
@@ -88,6 +89,32 @@ static bool tupleEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
   return true;
 }
 
+// map 深相等（T015，22 §4）：键集与键值逐对等价（插入序无关）；键必可 hash（入表即证），
+// msObjMapGet 触发 tuple 键 hash 缓存写入（纯位写无分配，非 GC 窗口）
+static bool mapEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
+  if (a->as.obj == b->as.obj) {
+    return true;  // 同一对象短路（自引用安全）
+  }
+  const MsObjMap* ma = (const MsObjMap*)a->as.obj;
+  const MsObjMap* mb = (const MsObjMap*)b->as.obj;
+  if (ma->liveCount != mb->liveCount) {
+    return false;
+  }
+  if (depth >= MS_EQ_MAX_DEPTH) {
+    return false;  // 深嵌套/互引环截断（保守判不等）
+  }
+  for (ms_i64 cur = msObjMapFirst(ma); cur >= 0; cur = msObjMapNext(ma, cur)) {
+    MsValue ov = msValueNil();
+    if (msObjMapGet(mb, msObjMapKeyAt(ma, cur), &ov) != MS_MAP_OK) {
+      return false;  // 键缺失
+    }
+    if (!valueEqualDepth(msObjMapValueAt(ma, cur), &ov, depth + 1)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool msValueIsTruthy(const MsValue* v) {
   if (v->kind == MS_VAL_BOOL) {
     return v->as.b;
@@ -125,6 +152,9 @@ static bool valueEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
       }
       if (a->as.obj->type == MS_OBJ_TUPLE && b->as.obj->type == MS_OBJ_TUPLE) {  // T015 定长逐元素
         return tupleEqualDepth(a, b, depth);
+      }
+      if (a->as.obj->type == MS_OBJ_MAP && b->as.obj->type == MS_OBJ_MAP) {  // T015 键值逐对
+        return mapEqualDepth(a, b, depth);
       }
       return a->as.obj == b->as.obj;  // 其余身份
     }
@@ -177,6 +207,8 @@ const char* msValueTypeName(const MsValue* v) {
           return "list";
         case MS_OBJ_TUPLE:
           return "tuple";
+        case MS_OBJ_MAP:
+          return "map";
         default:
           return "object";
       }
@@ -340,8 +372,9 @@ static MsObjString* fallbackForm(MsVM* vm, const MsValue* v) {
   return msObjStringNew(vm, buf, (int32_t)strlen(buf));
 }
 
-// 深度限幅（T014 review）：SET_INDEX 落地后自引用/深嵌套可构造，超限层级渲染 `[...]`/`(...)`（同 Python 循环 repr 形态）
-#define MS_LIST_FORM_MAX_DEPTH 100
+// 深度限幅（T014 review）：SET_INDEX 落地后自引用/深嵌套可构造，超限层级渲染 `[...]`/`(...)`/`{...}`
+// （同 Python 循环 repr 形态；list/tuple/map 容器共用）
+#define MS_FORM_MAX_DEPTH 100
 
 static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth);
 static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth);
@@ -363,7 +396,7 @@ static MsObjString* seqForm(MsVM* vm, const MsValue* v, int32_t depth, const cha
     items = list->items;
     count = list->count;
   }
-  if (depth >= MS_LIST_FORM_MAX_DEPTH) {
+  if (depth >= MS_FORM_MAX_DEPTH) {
     return msObjStringNew(vm, isTuple ? "(...)" : "[...]", 5);  // 深嵌套/循环截断（调用方持有处已 root）
   }
   int32_t startTop = vm->stackTop;
@@ -399,6 +432,40 @@ static MsObjString* tupleForm(MsVM* vm, const MsValue* v, int32_t depth) {
   return seqForm(vm, v, depth, "(", ")", ((const MsObjTuple*)v->as.obj)->count == 1);
 }
 
+// map 形态（T015，22 §4）：`{` + `k: v`（`, ` 连接）+ `}`；空表 `{}`；str/repr 同构（键值一律 repr）
+// GC 纪律同 seqForm（D10）：键/值 form 逐个落 VM 栈 root（每条目 2 push）后统一拼装
+static MsObjString* mapForm(MsVM* vm, const MsValue* v, int32_t depth) {
+  const MsObjMap* m = (const MsObjMap*)v->as.obj;
+  if (depth >= MS_FORM_MAX_DEPTH) {
+    return msObjStringNew(vm, "{...}", 5);  // 深嵌套/循环截断（调用方持有处已 root）
+  }
+  int32_t startTop = vm->stackTop;
+  for (ms_i64 cur = msObjMapFirst(m); cur >= 0; cur = msObjMapNext(m, cur)) {
+    MsObjString* fk = reprFormDepth(vm, msObjMapKeyAt(m, cur), depth + 1);
+    if (fk == NULL || !msVmPush(vm, msValueObj(&fk->head))) {
+      return NULL;  // OOM；或 push 置 StackOverflow 槽（hasError 已真）
+    }
+    MsObjString* fv = reprFormDepth(vm, msObjMapValueAt(m, cur), depth + 1);
+    if (fv == NULL || !msVmPush(vm, msValueObj(&fv->head))) {
+      return NULL;
+    }
+  }
+  FormBuf b = {NULL, 0, 0};
+  bool ok = formAppend(&b, "{", 1);
+  int32_t i = 0;
+  for (ms_i64 cur = msObjMapFirst(m); ok && cur >= 0; cur = msObjMapNext(m, cur), i++) {
+    const MsObjString* fk = (const MsObjString*)vm->stack[startTop + i * 2].as.obj;
+    const MsObjString* fv = (const MsObjString*)vm->stack[startTop + i * 2 + 1].as.obj;
+    ok = (i == 0 || formAppend(&b, ", ", 2)) && formAppend(&b, fk->bytes, (int32_t)fk->byteLen) &&
+         formAppend(&b, ": ", 2) && formAppend(&b, fv->bytes, (int32_t)fv->byteLen);
+  }
+  ok = ok && formAppend(&b, "}", 1);
+  MsObjString* r = ok ? msObjStringNew(vm, b.data, b.len) : NULL;  // 分配点：键值 form 均在栈 root
+  free(b.data);
+  vm->stackTop = startTop;  // 弹自压 form（结果已物化/失败均安全：此后无分配）
+  return r;
+}
+
 static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
   if (v->kind == MS_VAL_OBJ) {
     if (v->as.obj->type == MS_OBJ_STRING) {
@@ -409,6 +476,9 @@ static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     }
     if (v->as.obj->type == MS_OBJ_TUPLE) {
       return tupleForm(vm, v, depth);
+    }
+    if (v->as.obj->type == MS_OBJ_MAP) {
+      return mapForm(vm, v, depth);
     }
   }
   return fallbackForm(vm, v);
@@ -434,6 +504,9 @@ static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     }
     if (v->as.obj->type == MS_OBJ_TUPLE) {
       return tupleForm(vm, v, depth);
+    }
+    if (v->as.obj->type == MS_OBJ_MAP) {
+      return mapForm(vm, v, depth);
     }
   }
   return fallbackForm(vm, v);
