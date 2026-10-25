@@ -139,6 +139,80 @@ TEST(mapNumericTowerKeys) {  // m[1]=1; m[1.0]=2 → 单键值 2（02 §7 hash(1
   msVmFree(&vm);
 }
 
+TEST(mapNumericEdgeDomains) {  // -0.0/0 同键；±2^63 域边界（钉死 UBSan 行为）；同容墓碑净化
+  MsVM vm;
+  msVmInit(&vm);
+  MsValue out = msValueNil();
+  // -0.0 / 0(int) / 0.0 数值塔同域（02 §7）：三写单键
+  MsObjMap* m1 = msObjMapNew(&vm);
+  EXPECT(ctx, m1 != NULL);
+  msVmPush(&vm, msValueObj(&m1->head));
+  MsValue kneg = msValueFloat(-0.0);
+  MsValue kint = msValueInt(0);
+  MsValue kpos = msValueFloat(0.0);
+  EXPECT(ctx, msObjMapPut(&vm, m1, &kneg, MV_INT(1)) == MS_MAP_OK);
+  EXPECT(ctx, msObjMapPut(&vm, m1, &kint, MV_INT(2)) == MS_MAP_OK);
+  EXPECT(ctx, msObjMapPut(&vm, m1, &kpos, MV_INT(3)) == MS_MAP_OK);
+  EXPECT_EQ(ctx, 1, m1->liveCount);
+  EXPECT(ctx, msObjMapGet(m1, &kint, &out) == MS_MAP_OK && out.as.i == 3);
+  EXPECT(ctx, msObjMapGet(m1, &kneg, &out) == MS_MAP_OK && out.as.i == 3);
+  // -2^63 ↔ INT64_MIN：i64 精确表示域边界，同 hash 同键；+2^63 越域位型仅自一致
+  MsObjMap* m2 = msObjMapNew(&vm);
+  EXPECT(ctx, m2 != NULL);
+  msVmPush(&vm, msValueObj(&m2->head));
+  MsValue kmin = msValueFloat(-9223372036854775808.0);
+  MsValue kimin = msValueInt(INT64_MIN);
+  ms_u64 h1 = 0;
+  ms_u64 h2 = 0;
+  EXPECT(ctx, msValueHash(&kmin, &h1) == MS_HASH_OK);
+  EXPECT(ctx, msValueHash(&kimin, &h2) == MS_HASH_OK);
+  EXPECT(ctx, h1 == h2);  // u64 全位比较（EXPECT_EQ 经 long long 截高位）
+  EXPECT(ctx, msObjMapPut(&vm, m2, &kmin, MV_INT(1)) == MS_MAP_OK);
+  EXPECT(ctx, msObjMapPut(&vm, m2, &kimin, MV_INT(2)) == MS_MAP_OK);
+  EXPECT_EQ(ctx, 1, m2->liveCount);  // 同键改值
+  EXPECT(ctx, msObjMapGet(m2, &kmin, &out) == MS_MAP_OK && out.as.i == 2);
+  MsValue kmax = msValueFloat(9223372036854775808.0);
+  ms_u64 h3 = 0;
+  ms_u64 h4 = 0;
+  EXPECT(ctx, msValueHash(&kmax, &h3) == MS_HASH_OK);
+  EXPECT(ctx, msValueHash(&kmax, &h4) == MS_HASH_OK);
+  EXPECT(ctx, h3 == h4);  // 位型自一致
+  EXPECT(ctx, msObjMapPut(&vm, m2, &kmax, MV_INT(5)) == MS_MAP_OK);
+  EXPECT_EQ(ctx, 2, m2->liveCount);  // 与 int 域键共存
+  EXPECT(ctx, msObjMapGet(m2, &kmax, &out) == MS_MAP_OK && out.as.i == 5);
+  // 同容净化：put 6（第 6 次门控 (5+1)*4=24 ≤ 24 不扩容）→ remove 4（used=6 墓碑 4）→
+  // 再 put 门控 (6+1)*4=28 > 24 且 live*2=4 < 8 → 原容 rehash 净化墓碑
+  MsObjMap* m3 = msObjMapNew(&vm);
+  EXPECT(ctx, m3 != NULL);
+  msVmPush(&vm, msValueObj(&m3->head));
+  for (int i = 1; i <= 6; i++) {
+    MsValue k = msValueInt(i);
+    EXPECT(ctx, msObjMapPut(&vm, m3, &k, MV_INT(i)) == MS_MAP_OK);
+  }
+  EXPECT_EQ(ctx, 6, m3->liveCount);
+  EXPECT_EQ(ctx, 8, m3->cap);
+  for (int i = 1; i <= 4; i++) {
+    MsValue k = msValueInt(i);
+    EXPECT(ctx, msObjMapRemove(m3, &k, NULL) == MS_MAP_OK);
+  }
+  EXPECT_EQ(ctx, 2, m3->liveCount);
+  EXPECT_EQ(ctx, 6, m3->usedCount);  // 墓碑占位
+  MsValue k7 = msValueInt(7);
+  EXPECT(ctx, msObjMapPut(&vm, m3, &k7, MV_INT(7)) == MS_MAP_OK);
+  EXPECT_EQ(ctx, 8, m3->cap);        // 同容净化（非倍容）
+  EXPECT_EQ(ctx, 3, m3->usedCount);  // 墓碑已清：used 回落至 live
+  EXPECT_EQ(ctx, 3, m3->liveCount);
+  ms_i64 wantKeys[] = {5, 6, 7};  // 幸存原序（5,6）+ 新键在尾（7）
+  int32_t n = 0;
+  for (ms_i64 s = msObjMapFirst(m3); s >= 0; s = msObjMapNext(m3, s)) {
+    const MsValue* k = msObjMapKeyAt(m3, s);
+    EXPECT(ctx, n < 3 && msIsI64(k) && k->as.i == wantKeys[n]);
+    n++;
+  }
+  EXPECT_EQ(ctx, 3, n);
+  msVmFree(&vm);
+}
+
 TEST(mapUnhashableKey) {  // list 键 MS_MAP_UNHASHABLE（TypeError 源）；bool 与 int 键分离
   MsVM vm;
   msVmInit(&vm);
@@ -339,6 +413,7 @@ int main(void) {
   TestCtx ctx = {0};
   mapInsertionOrder(&ctx);
   mapNumericTowerKeys(&ctx);
+  mapNumericEdgeDomains(&ctx);
   mapUnhashableKey(&ctx);
   mapRehashStress(&ctx);
   mapNaNKeyIEEE(&ctx);

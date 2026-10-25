@@ -23,11 +23,10 @@ static ms_u64 mix64(ms_u64 x) {  // splitmix64 finalizer：int/float 域充分�
   return x;
 }
 
-// 数值塔归一（02 §6/§7）：整值 float 与同值 int 同域（1 == 1.0 键等价）；-0.0 归 0；
-// NaN/inf/超 i64 域整值走位型（仅自一致即可，相等门控在 msValueEqual）
+// 数值塔归一（02 §6/§7）：[-2^63, 2^63) 整值与同值 int 同域（含 -2^63 ↔ INT64_MIN、-0.0 ↔ 0）；
+// NaN/inf/±2^63 及以上走位型（不等于任何 i64，仅自一致；相等门控在 msValueEqual）
 static ms_u64 hashNumeric(double f) {
-  double r = f < 0 ? -f : f;
-  if (r <= 9223372036854775807.0 && r == floor(r)) {
+  if (f >= -9223372036854775808.0 && f < 9223372036854775808.0 && f == floor(f)) {
     return mix64((ms_u64)(ms_i64)f);
   }
   ms_u64 bits;
@@ -35,6 +34,8 @@ static ms_u64 hashNumeric(double f) {
   return mix64(bits);
 }
 
+// 精度注记：≥2^53 域 i64→double 相等判定存在舍入（既有 value.c 数值塔语义），极端相等键可能
+// 异 hash 共存——数值塔精确化归 T016（docs/language/02-types.md §3.4）
 MsHashStatus msValueHash(const MsValue* v, ms_u64* out) {
   switch (v->kind) {
     case MS_VAL_NIL:
