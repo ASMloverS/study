@@ -9,6 +9,7 @@
 
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
+#include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 
@@ -115,6 +116,28 @@ static bool mapEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
   return true;
 }
 
+// set 深相等（T015，22 §4）：元素集等价（插入序无关）；元素必可 hash（入表即证），
+// 经 msObjSetHas 探测比对（同 mapEqualDepth 键路径：纯位写无分配，非 GC 窗口）
+static bool setEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
+  if (a->as.obj == b->as.obj) {
+    return true;  // 同一对象短路（自引用安全）
+  }
+  const MsObjSet* sa = (const MsObjSet*)a->as.obj;
+  const MsObjSet* sb = (const MsObjSet*)b->as.obj;
+  if (msObjSetCount(sa) != msObjSetCount(sb)) {
+    return false;
+  }
+  if (depth >= MS_EQ_MAX_DEPTH) {
+    return false;  // 深嵌套/互引环截断（保守判不等）
+  }
+  for (ms_i64 cur = msObjMapFirst(sa->map); cur >= 0; cur = msObjMapNext(sa->map, cur)) {
+    if (!msObjSetHas(sb, msObjMapKeyAt(sa->map, cur))) {
+      return false;  // 元素缺失
+    }
+  }
+  return true;
+}
+
 bool msValueIsTruthy(const MsValue* v) {
   if (v->kind == MS_VAL_BOOL) {
     return v->as.b;
@@ -155,6 +178,9 @@ static bool valueEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
       }
       if (a->as.obj->type == MS_OBJ_MAP && b->as.obj->type == MS_OBJ_MAP) {  // T015 键值逐对
         return mapEqualDepth(a, b, depth);
+      }
+      if (a->as.obj->type == MS_OBJ_SET && b->as.obj->type == MS_OBJ_SET) {  // T015 元素集等价
+        return setEqualDepth(a, b, depth);
       }
       return a->as.obj == b->as.obj;  // 其余身份
     }
@@ -209,6 +235,8 @@ const char* msValueTypeName(const MsValue* v) {
           return "tuple";
         case MS_OBJ_MAP:
           return "map";
+        case MS_OBJ_SET:
+          return "set";
         default:
           return "object";
       }
@@ -466,6 +494,37 @@ static MsObjString* mapForm(MsVM* vm, const MsValue* v, int32_t depth) {
   return r;
 }
 
+// set 形态（T015，22 §4）：`{` + 元素 repr（`, ` 连接）+ `}`；空集 `set()`（`{}` 为空 map，02 §5.4）
+// GC 纪律同 mapForm（D10）：元素 form 逐个落 VM 栈 root 后统一拼装
+static MsObjString* setForm(MsVM* vm, const MsValue* v, int32_t depth) {
+  const MsObjSet* st = (const MsObjSet*)v->as.obj;
+  if (depth >= MS_FORM_MAX_DEPTH) {
+    return msObjStringNew(vm, "{...}", 5);  // 深嵌套/循环截断（调用方持有处已 root）
+  }
+  if (msObjSetCount(st) == 0) {
+    return msObjStringNew(vm, "set()", 5);  // 空集（`{}` 已被空 map 占用）
+  }
+  int32_t startTop = vm->stackTop;
+  for (ms_i64 cur = msObjMapFirst(st->map); cur >= 0; cur = msObjMapNext(st->map, cur)) {
+    MsObjString* f = reprFormDepth(vm, msObjMapKeyAt(st->map, cur), depth + 1);
+    if (f == NULL || !msVmPush(vm, msValueObj(&f->head))) {
+      return NULL;  // OOM；或 push 置 StackOverflow 槽（hasError 已真）
+    }
+  }
+  FormBuf b = {NULL, 0, 0};
+  bool ok = formAppend(&b, "{", 1);
+  int32_t i = 0;
+  for (ms_i64 cur = msObjMapFirst(st->map); ok && cur >= 0; cur = msObjMapNext(st->map, cur), i++) {
+    const MsObjString* f = (const MsObjString*)vm->stack[startTop + i].as.obj;
+    ok = (i == 0 || formAppend(&b, ", ", 2)) && formAppend(&b, f->bytes, (int32_t)f->byteLen);
+  }
+  ok = ok && formAppend(&b, "}", 1);
+  MsObjString* r = ok ? msObjStringNew(vm, b.data, b.len) : NULL;  // 分配点：元素 form 均在栈 root
+  free(b.data);
+  vm->stackTop = startTop;  // 弹自压 form（结果已物化/失败均安全：此后无分配）
+  return r;
+}
+
 static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
   if (v->kind == MS_VAL_OBJ) {
     if (v->as.obj->type == MS_OBJ_STRING) {
@@ -479,6 +538,9 @@ static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     }
     if (v->as.obj->type == MS_OBJ_MAP) {
       return mapForm(vm, v, depth);
+    }
+    if (v->as.obj->type == MS_OBJ_SET) {
+      return setForm(vm, v, depth);
     }
   }
   return fallbackForm(vm, v);
@@ -507,6 +569,9 @@ static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     }
     if (v->as.obj->type == MS_OBJ_MAP) {
       return mapForm(vm, v, depth);
+    }
+    if (v->as.obj->type == MS_OBJ_SET) {
+      return setForm(vm, v, depth);
     }
   }
   return fallbackForm(vm, v);

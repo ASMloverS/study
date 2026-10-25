@@ -12,6 +12,7 @@
 #include "gc/gc.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
+#include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 #include "parser/parser.h"
@@ -409,6 +410,163 @@ TEST(mapRunSrcSmoke) {  // 编译面前态：AST_MAP 字面量暂不支持（Tas
   free(r.out);
 }
 
+// ---------- 数据面（Task 3：set = map 特例 + 集合运算） ----------
+
+TEST(setBasicsAndOrder) {  // 增删查/数值塔去重/插入序快照/深相等与形态（02 §5.4）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjSet* st = msObjSetNew(&vm);
+  EXPECT(ctx, st != NULL);
+  msVmPush(&vm, msValueObj(&st->head));  // root：源/结果分配窗口 GC 纪律（D6）
+  MsValue k1 = msValueInt(1);
+  MsValue k2 = msValueInt(2);
+  MsValue kf = msValueFloat(1.0);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &k1) == MS_MAP_OK);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &k2) == MS_MAP_OK);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &kf) == MS_MAP_OK);  // 1.0 与 1 同元素（02 §7 数值塔）
+  EXPECT(ctx, msObjSetHas(st, &kf));
+  EXPECT_EQ(ctx, 2, msObjSetCount(st));
+  MsObjList* l = msObjSetToList(&vm, st);
+  EXPECT(ctx, l != NULL);
+  msVmPush(&vm, msValueObj(&l->head));  // root
+  EXPECT_EQ(ctx, 2, l->count);  // 插入序快照：1, 2（1.0 并入首键）
+  EXPECT(ctx, msIsI64(&l->items[0]) && l->items[0].as.i == 1);
+  EXPECT(ctx, msIsI64(&l->items[1]) && l->items[1].as.i == 2);
+  MsObjSet* o = msObjSetNew(&vm);  // {2,1}：插入序无关深相等（22 §4）
+  EXPECT(ctx, o != NULL);
+  msVmPush(&vm, msValueObj(&o->head));
+  EXPECT(ctx, msObjSetAdd(&vm, o, &k2) == MS_MAP_OK);
+  EXPECT(ctx, msObjSetAdd(&vm, o, &k1) == MS_MAP_OK);
+  MsValue va = msValueObj(&st->head);
+  MsValue vo = msValueObj(&o->head);
+  EXPECT(ctx, msValueEqual(&va, &vo));
+  MsObjString* rf = msValueReprForm(&vm, &va);
+  EXPECT(ctx, rf != NULL);
+  EXPECT_EQ(ctx, 6, rf->byteLen);
+  EXPECT(ctx, memcmp(rf->bytes, "{1, 2}", 6) == 0);
+  MsObjSet* e = msObjSetNew(&vm);  // 空集 `set()`（`{}` 为空 map，02 §5.4）
+  EXPECT(ctx, e != NULL);
+  msVmPush(&vm, msValueObj(&e->head));
+  MsValue ve = msValueObj(&e->head);
+  MsObjString* ef = msValueReprForm(&vm, &ve);
+  EXPECT(ctx, ef != NULL);
+  EXPECT_EQ(ctx, 5, ef->byteLen);
+  EXPECT(ctx, memcmp(ef->bytes, "set()", 5) == 0);
+  EXPECT(ctx, !msValueEqual(&va, &ve));
+  EXPECT(ctx, msObjSetRemove(st, &k1) == MS_MAP_OK);
+  EXPECT(ctx, !msObjSetHas(st, &k1));
+  EXPECT_EQ(ctx, MS_MAP_NOENT, msObjSetRemove(st, &k1));
+  MsValue lv = msValueObj(&l->head);  // list 不可为元素（hashable 门控，02 §5.4）
+  EXPECT_EQ(ctx, MS_MAP_UNHASHABLE, msObjSetAdd(&vm, st, &lv));
+  msVmFree(&vm);
+}
+
+TEST(setAlgebra) {  // | & - ^ 运算族（结果序：左序在前）+ copy 独立性（02 §5.4）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjSet* a = msObjSetNew(&vm);
+  EXPECT(ctx, a != NULL);
+  msVmPush(&vm, msValueObj(&a->head));  // 源 root（运算族契约：源由调用方 root）
+  MsObjSet* b = msObjSetNew(&vm);
+  EXPECT(ctx, b != NULL);
+  msVmPush(&vm, msValueObj(&b->head));
+  MsValue k1 = msValueInt(1);
+  MsValue k2 = msValueInt(2);
+  MsValue k3 = msValueInt(3);
+  EXPECT(ctx, msObjSetAdd(&vm, a, &k1) == MS_MAP_OK);  // a = {1,2}
+  EXPECT(ctx, msObjSetAdd(&vm, a, &k2) == MS_MAP_OK);
+  EXPECT(ctx, msObjSetAdd(&vm, b, &k2) == MS_MAP_OK);  // b = {2,3}
+  EXPECT(ctx, msObjSetAdd(&vm, b, &k3) == MS_MAP_OK);
+  MsObjSet* u = msObjSetUnion(&vm, a, b);  // {1,2,3}
+  EXPECT(ctx, u != NULL);
+  msVmPush(&vm, msValueObj(&u->head));  // 结果 root
+  EXPECT_EQ(ctx, 3, msObjSetCount(u));
+  MsObjList* ul = msObjSetToList(&vm, u);
+  EXPECT(ctx, ul != NULL);
+  msVmPush(&vm, msValueObj(&ul->head));
+  EXPECT_EQ(ctx, 3, ul->count);  // 序：a 序 1,2 在前，并入 b 新元素 3
+  EXPECT(ctx, msIsI64(&ul->items[0]) && ul->items[0].as.i == 1);
+  EXPECT(ctx, msIsI64(&ul->items[1]) && ul->items[1].as.i == 2);
+  EXPECT(ctx, msIsI64(&ul->items[2]) && ul->items[2].as.i == 3);
+  MsObjSet* is = msObjSetIntersect(&vm, a, b);  // {2}
+  EXPECT(ctx, is != NULL);
+  msVmPush(&vm, msValueObj(&is->head));
+  EXPECT_EQ(ctx, 1, msObjSetCount(is));
+  EXPECT(ctx, msObjSetHas(is, &k2));
+  EXPECT(ctx, !msObjSetHas(is, &k1));
+  MsObjSet* d = msObjSetDiff(&vm, a, b);  // {1}
+  EXPECT(ctx, d != NULL);
+  msVmPush(&vm, msValueObj(&d->head));
+  EXPECT_EQ(ctx, 1, msObjSetCount(d));
+  EXPECT(ctx, msObjSetHas(d, &k1));
+  EXPECT(ctx, !msObjSetHas(d, &k2));
+  MsObjSet* s = msObjSetSymDiff(&vm, a, b);  // {1,3}
+  EXPECT(ctx, s != NULL);
+  msVmPush(&vm, msValueObj(&s->head));
+  EXPECT_EQ(ctx, 2, msObjSetCount(s));
+  MsObjList* sl = msObjSetToList(&vm, s);
+  EXPECT(ctx, sl != NULL);
+  msVmPush(&vm, msValueObj(&sl->head));
+  EXPECT_EQ(ctx, 2, sl->count);  // 序：a-only（1）后 b-only（3）
+  EXPECT(ctx, msIsI64(&sl->items[0]) && sl->items[0].as.i == 1);
+  EXPECT(ctx, msIsI64(&sl->items[1]) && sl->items[1].as.i == 3);
+  MsObjSet* c = msObjSetCopy(&vm, a);  // 拷贝独立
+  EXPECT(ctx, c != NULL);
+  msVmPush(&vm, msValueObj(&c->head));
+  MsValue k9 = msValueInt(9);
+  EXPECT(ctx, msObjSetAdd(&vm, c, &k9) == MS_MAP_OK);
+  EXPECT_EQ(ctx, 3, msObjSetCount(c));
+  EXPECT_EQ(ctx, 2, msObjSetCount(a));  // 源不被改动
+  msVmFree(&vm);
+}
+
+TEST(setGcKeepalive) {  // setMarkChildren → 内层 map → seq 链：堆 string 元素存活（误收则 UAF）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjString* str = msObjStringNew(&vm, "x", 1);  // 非 intern 堆对象：可回收
+  EXPECT(ctx, str != NULL);
+  msVmPush(&vm, msValueObj(&str->head));  // root：set 分配窗口 GC 纪律
+  MsObjSet* st = msObjSetNew(&vm);
+  EXPECT(ctx, st != NULL);
+  msVmPush(&vm, msValueObj(&st->head));
+  MsValue sv = msValueObj(&str->head);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &sv) == MS_MAP_OK);
+  vm.stack[0] = vm.stack[1];  // 撤 string 槽：set 成唯一根（string 只能经 set→map seq 链存活）
+  vm.stackTop--;
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 3, gcHeapObjCount(&vm));  // set + 内层 map + string
+  EXPECT(ctx, msObjSetHas(st, &sv));
+  ms_i64 cur = msObjMapFirst(st->map);
+  const MsValue* k = cur >= 0 ? msObjMapKeyAt(st->map, cur) : NULL;
+  EXPECT(ctx, k != NULL && k->as.obj == &str->head);  // 幸存金丝雀：指针不变
+  EXPECT_EQ(ctx, 1, ((MsObjString*)k->as.obj)->byteLen);
+  EXPECT(ctx, ((MsObjString*)k->as.obj)->bytes[0] == 'x');  // 回收后内容可读
+  msVmFree(&vm);
+}
+
+TEST(setConstructorGcSafety) {  // 构造器双分配窗口：小阈值批量构造不失根不崩溃（D6）
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=4096");
+#else
+  setenv("MS_GC_HEAP_MAX", "4096", 1);
+#endif
+  MsVM vm;
+  msVmInit(&vm);  // gcHeapInit 读 env
+  for (int i = 0; i < 500; i++) {  // 每轮 set+map 双分配，guard 常态触发整堆回收
+    MsObjSet* st = msObjSetNew(&vm);
+    EXPECT(ctx, st != NULL);
+    MsValue k = msValueInt(i);
+    EXPECT(ctx, msObjSetAdd(&vm, st, &k) == MS_MAP_OK);
+  }
+  EXPECT(ctx, gcHeapObjCount(&vm) > 0);
+  msVmFree(&vm);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
+}
+
 int main(void) {
   TestCtx ctx = {0};
   mapInsertionOrder(&ctx);
@@ -421,6 +579,10 @@ int main(void) {
   mapDeepEqualAndRepr(&ctx);
   mapGcKeepalive(&ctx);
   mapRunSrcSmoke(&ctx);
+  setBasicsAndOrder(&ctx);
+  setAlgebra(&ctx);
+  setGcKeepalive(&ctx);
+  setConstructorGcSafety(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

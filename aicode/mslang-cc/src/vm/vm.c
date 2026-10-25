@@ -10,6 +10,7 @@
 #include "gc/gc.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
+#include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 
@@ -58,6 +59,7 @@ void msVmInit(MsVM* vm) {
   gcSetMarkFn(MS_OBJ_TUPLE, msObjTupleMarkChildren);  // T015：FAM 元素（单块分配无 freeFn）
   gcSetMarkFn(MS_OBJ_MAP, msObjMapMarkChildren);  // T015：entry 键值（seq 链遍历）
   gcSetFreeFn(MS_OBJ_MAP, msObjMapFreeData);  // slots 数组随对象释放
+  gcSetMarkFn(MS_OBJ_SET, msObjSetMarkChildren);  // T015：内层 map（无独立数据，freeFn 不需）
   gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
   gcSetMarkFn(MS_OBJ_ITERATOR, iterMark);  // D8/T014：迭代器持 str/list（kind 分派，T017 泛化）
   vm->intern = malloc(sizeof(MsInternTable));

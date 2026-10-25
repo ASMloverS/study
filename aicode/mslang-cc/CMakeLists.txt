@@ -89,6 +89,8 @@ target_sources(ms_obj PRIVATE src/obj/obj_list.c)
 target_sources(ms_obj PRIVATE src/obj/obj_tuple.c)
 # T015：map 对象（开放寻址 + 墓碑 + 插入序 seq 链 + 数值塔 hash）
 target_sources(ms_obj PRIVATE src/obj/obj_map.c)
+# T015：set 对象（map 特例占位值 + 集合运算族）
+target_sources(ms_obj PRIVATE src/obj/obj_set.c)
 # T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
 target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 target_sources(ms_vm PRIVATE src/vm/list_methods.c)
