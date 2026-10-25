@@ -85,6 +85,8 @@ target_sources(ms_obj PRIVATE src/obj/obj_string.c)
 target_sources(ms_obj PRIVATE src/obj/intern.c)
 # T013：最小 MsObjList 桥（Task 7；split/join 数据面，完整容器归 T014）
 target_sources(ms_obj PRIVATE src/obj/obj_list.c)
+# T015：tuple 对象（FAM 定长不可变序列 + 惰性 hash 缓存）
+target_sources(ms_obj PRIVATE src/obj/obj_tuple.c)
 # T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
 target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 target_sources(ms_vm PRIVATE src/vm/list_methods.c)

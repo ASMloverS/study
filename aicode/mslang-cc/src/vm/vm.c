@@ -10,6 +10,7 @@
 #include "gc/gc.h"
 #include "obj/obj_list.h"
 #include "obj/obj_string.h"
+#include "obj/obj_tuple.h"
 
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
@@ -53,6 +54,7 @@ void msVmInit(MsVM* vm) {
   gcHeapInit(vm->heap);
   gcSetMarkFn(MS_OBJ_LIST, msObjListMarkChildren);  // D6：children 标记统一注册（进程级表，幂等）
   gcSetFreeFn(MS_OBJ_LIST, msObjListFreeData);  // items 数组随对象释放（sweep/heapFree 前回调）
+  gcSetMarkFn(MS_OBJ_TUPLE, msObjTupleMarkChildren);  // T015：FAM 元素（单块分配无 freeFn）
   gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
   gcSetMarkFn(MS_OBJ_ITERATOR, iterMark);  // D8/T014：迭代器持 str/list（kind 分派，T017 泛化）
   vm->intern = malloc(sizeof(MsInternTable));
