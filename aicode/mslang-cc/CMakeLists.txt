@@ -94,6 +94,10 @@ target_sources(ms_obj PRIVATE src/obj/obj_set.c)
 # T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
 target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 target_sources(ms_vm PRIVATE src/vm/list_methods.c)
+# T015：map/set/tuple 实例方法表（10 §4）
+target_sources(ms_vm PRIVATE src/vm/map_methods.c)
+target_sources(ms_vm PRIVATE src/vm/set_methods.c)
+target_sources(ms_vm PRIVATE src/vm/tuple_methods.c)
 
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)

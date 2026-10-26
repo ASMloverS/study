@@ -10,6 +10,7 @@
 #include "compiler/compiler.h"
 #include "gc/gc.h"
 #include "obj/obj_list.h"
+#include "obj/obj_map.h"  // Task 6：msValueHash（tuple 惰性缓存断言）
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 #include "parser/parser.h"
@@ -243,6 +244,33 @@ TEST(execForInMultiVarBreakCont) {  // 多变量 for-in 内 break/continue 控�
   free(r.out);
 }
 
+TEST(execTupleMapKeyNested) {  // 嵌套 tuple 作 map 键（任务 §5.2 tuple.ms 语义前置：hash 递归/等值同槽）
+  RunResult r = runSrc(
+      "var m = {}\nm[(1, (2, 3))] = \"deep\"\nprint(m[(1, (2, 3))])\n"
+      "var k = (1, (2, 3))\nprint(m.has(k))\nprint((1, (2, 3)) == (1, (2, 3)))\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "deep\ntrue\ntrue\n") == 0);
+  free(r.out);
+}
+
+TEST(tupleHashCachedOnce) {  // DoD：两次 hash 值一致且仅计算一次（hashValid 断言）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjTuple* t = msObjTupleNew(&vm, 2);
+  msVmPush(&vm, msValueObj(&t->head));
+  MsObjString* s = msObjStringNew(&vm, "x", 1);
+  msVmPush(&vm, msValueObj(&s->head));
+  t->items[0] = msValueInt(5);
+  t->items[1] = msValueObj(&s->head);
+  MsValue vt = msValueObj(&t->head);
+  ms_u64 h1 = 0, h2 = 0;
+  EXPECT(ctx, msValueHash(&vt, &h1) == MS_HASH_OK);
+  EXPECT(ctx, t->hashValid);  // 首次计算即缓存
+  EXPECT(ctx, msValueHash(&vt, &h2) == MS_HASH_OK);
+  EXPECT(ctx, h1 == h2 && t->hash == h1);  // 二次取缓存
+  msVmFree(&vm);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   tupleAllocItemsNil(&ctx);
@@ -255,6 +283,8 @@ int main(void) {
   execTupleLiteralErrors(&ctx);
   execTupleEqualityExec(&ctx);
   execForInMultiVarBreakCont(&ctx);
+  execTupleMapKeyNested(&ctx);
+  tupleHashCachedOnce(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

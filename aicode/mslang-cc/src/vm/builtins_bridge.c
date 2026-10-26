@@ -5,7 +5,10 @@
 #include <string.h>
 
 #include "obj/obj_list.h"
+#include "obj/obj_map.h"
+#include "obj/obj_set.h"
 #include "obj/obj_string.h"
+#include "obj/obj_tuple.h"
 
 static void bridgeErr(MsVM* vm, const char* msg) {
   vm->hasError = true;
@@ -49,7 +52,7 @@ static MsValue nativePrint(MsVM* vm, int32_t argc, const MsValue* args) {
   return msValueNil();
 }
 
-// len(x)：string 字节数 / list 元素数（10 §1；其余容器 T014+）
+// len(x)：string 字节数 / 容器元素数（10 §1：list/tuple/map/set）
 static MsValue nativeLen(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
     bridgeErr(vm, "ArgumentError: len expects 1 argument");
@@ -61,8 +64,48 @@ static MsValue nativeLen(MsVM* vm, int32_t argc, const MsValue* args) {
   if (args[0].kind == MS_VAL_OBJ && args[0].as.obj->type == MS_OBJ_LIST) {
     return msValueInt((ms_i64)((const MsObjList*)args[0].as.obj)->count);
   }
-  bridgeErr(vm, "TypeError: len expects a string or list");
+  if (msIsTuple(&args[0])) {
+    return msValueInt((ms_i64)((const MsObjTuple*)args[0].as.obj)->count);
+  }
+  if (msIsMap(&args[0])) {
+    return msValueInt((ms_i64)((const MsObjMap*)args[0].as.obj)->liveCount);
+  }
+  if (msIsSet(&args[0])) {
+    return msValueInt((ms_i64)msObjSetCount((const MsObjSet*)args[0].as.obj));
+  }
+  bridgeErr(vm, "TypeError: len expects a string, list, tuple, map or set");
   return msValueNil();
+}
+
+// set()：空集构造（{} 为空 map，02 §5.4；可迭代实参形态归 T017）
+static MsValue nativeSet(MsVM* vm, int32_t argc, const MsValue* args) {
+  (void)args;
+  if (argc != 0) {
+    bridgeErr(vm, "ArgumentError: set expects 0 arguments (iterable forms land in T017)");
+    return msValueNil();
+  }
+  MsObjSet* st = msObjSetNew(vm);  // 构造器自 root（D6）
+  if (st == NULL) {
+    bridgeErr(vm, "RuntimeError: out of memory");
+    return msValueNil();
+  }
+  return msValueObj(&st->head);
+}
+
+// type(x)：类型名字符串（10 §1）
+static MsValue nativeType(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 1) {
+    bridgeErr(vm, "ArgumentError: type expects 1 argument");
+    return msValueNil();
+  }
+  MsValue a = args[0];  // 值拷贝：msObjStringNew 分配窗口实参在 OP_CALL 栈 root，指针不跨调用复用
+  const char* n = msValueTypeName(&a);
+  MsObjString* s = msObjStringNew(vm, n, (int32_t)strlen(n));
+  if (s == NULL) {
+    bridgeErr(vm, "RuntimeError: out of memory");
+    return msValueNil();
+  }
+  return msValueObj(&s->head);
 }
 
 // str(x)：str 形态转换（02 §8 显式转换；__str__ 归 T021）
@@ -150,6 +193,16 @@ bool msBuiltinLookup(const char* name, int32_t len, MsValue* out) {
   if (len == 4 && memcmp(name, "repr", 4) == 0) {
     out->kind = MS_VAL_NATIVE;
     out->as.native = nativeRepr;
+    return true;
+  }
+  if (len == 3 && memcmp(name, "set", 3) == 0) {
+    out->kind = MS_VAL_NATIVE;
+    out->as.native = nativeSet;
+    return true;
+  }
+  if (len == 4 && memcmp(name, "type", 4) == 0) {
+    out->kind = MS_VAL_NATIVE;
+    out->as.native = nativeType;
     return true;
   }
   return false;

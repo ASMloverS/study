@@ -712,6 +712,94 @@ TEST(execLiteralDedup) {  // Task 4 review 补课：字面量重键后值胜/同
   free(r.out);
 }
 
+// ---------- 执行面（Task 6：方法族 + set()/type() 内置） ----------
+
+TEST(execMapMethods) {  // 10 §4 map 方法族（get 默认值不抛/keys/values/items 快照/copy 独立/update/len）
+  RunResult r = runSrc(
+      "var m = {\"a\": 1, \"b\": 2}\n"
+      "print(m.get(\"x\", 7))\nprint(m.get(\"a\"))\nprint(m.has(\"b\"))\nprint(m.has(\"z\"))\n"
+      "print(m.keys())\nprint(m.values())\nprint(m.items())\nprint(len(m))\nprint(m.len())\n"
+      "var n = m.copy()\nn.update({\"c\": 3})\nprint(n)\nprint(m)\n"
+      "print(m.remove(\"a\"))\nprint(m)\nprint(m.items())\n"
+      "m.clear()\nprint(m)\nprint(len(m))\nprint(m.keys())\n"
+      "for k, v in m.items() { }\nprint(m.items())\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  // remove 返回 nil（list.remove 先例）；clear 后 keys/items 空 list
+  EXPECT(ctx, strcmp(r.out,
+      "7\n1\ntrue\nfalse\n"
+      "[\"a\", \"b\"]\n[1, 2]\n[(\"a\", 1), (\"b\", 2)]\n2\n2\n"
+      "{\"a\": 1, \"b\": 2, \"c\": 3}\n{\"a\": 1, \"b\": 2}\n"
+      "nil\n{\"b\": 2}\n[(\"b\", 2)]\n"
+      "{}\n0\n[]\n"
+      "[]\n") == 0);
+  free(r.out);
+}
+
+TEST(execMapMethodErrors) {  // remove 缺键 KeyError；update 非 map 实参 ArgumentError（10 §4）
+  RunResult r = runSrc("var m = {\"a\": 1}\nm.remove(\"z\")\n");
+  EXPECT(ctx, r.compileOk && r.hasError);
+  EXPECT(ctx, strstr(r.err, "KeyError: key not found") != NULL);
+  free(r.out);
+  RunResult r2 = runSrc("var m = {}\nm.update([1])\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "ArgumentError: update expects a map argument") != NULL);
+  free(r2.out);
+  RunResult r3 = runSrc("var m = {}\nprint(m.get([1]))\n");  // get 缺键不抛但不可 hash 键是类型错
+  EXPECT(ctx, r3.compileOk && r3.hasError);
+  EXPECT(ctx, strstr(r3.err, "TypeError: unhashable type: 'list'") != NULL);
+  free(r3.out);
+}
+
+TEST(execSetTupleMethods) {  // 10 §4 set/tuple 方法族（symDiff({9}) 于 {1,2,3} → {1,2,3,9}）
+  RunResult r = runSrc(
+      "var s = set()\ns.add(1)\ns.add(1)\ns.add(2)\nprint(s)\nprint(len(s))\nprint(s.toList())\n"
+      "var u = s.union({3})\nprint(u)\nprint(u.intersect({2, 3}))\nprint(u.diff({1}))\nprint(u.symmetricDiff({9}))\n"
+      "print(s.copy())\ns.remove(1)\nprint(s)\nprint(s.has(2))\n"
+      "var t = (1, \"a\", 1)\nprint(t.count(1))\nprint(t.indexOf(\"a\"))\nprint(t.indexOf(\"zz\"))\n"
+      "print(t.contains(1))\nprint(t.contains(9))\nprint(t.toList())\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out,
+      "{1, 2}\n2\n[1, 2]\n"
+      "{1, 2, 3}\n{2, 3}\n{2, 3}\n{1, 2, 3, 9}\n"
+      "{1, 2}\n{2}\ntrue\n"
+      "2\n1\n-1\ntrue\nfalse\n[1, \"a\", 1]\n") == 0);
+  free(r.out);
+}
+
+TEST(execSetMethodErrors) {  // remove 缺元素 KeyError；运算族实参非 set ArgumentError（10 §4）
+  RunResult r = runSrc("var s = {1}\ns.remove(9)\n");
+  EXPECT(ctx, r.compileOk && r.hasError);
+  EXPECT(ctx, strstr(r.err, "KeyError: key not found") != NULL);
+  free(r.out);
+  RunResult r2 = runSrc("var s = {1}\nprint(s.union([1, 2]))\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "ArgumentError: union expects a set argument") != NULL);
+  free(r2.out);
+  RunResult r3 = runSrc("var s = {1}\nprint(s.has([1]))\n");  // 不可 hash 元素探测同 TypeError
+  EXPECT(ctx, r3.compileOk && r3.hasError);
+  EXPECT(ctx, strstr(r3.err, "TypeError: unhashable type: 'list'") != NULL);
+  free(r3.out);
+}
+
+TEST(execInBoolProbeAndSetSide) {  // Task 5 review 补课：bool 与 int 键分离探测；set 侧不可 hash
+  RunResult r = runSrc("print(true in {1: 1})\nprint(true in {true: 1})\n");
+  EXPECT(ctx, r.compileOk && !r.hasError && strcmp(r.out, "false\ntrue\n") == 0);
+  free(r.out);
+  RunResult r2 = runSrc("print([1] in {1})\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "TypeError: unhashable type: 'list'") != NULL);
+  free(r2.out);
+}
+
+TEST(execTypeBuiltin) {  // type() 类型名（10 §1）；{} 为 map 与 set() 区分（02 §5.4 空 literal 行）
+  RunResult r = runSrc(
+      "print(type({}))\nprint(type(set()))\nprint(type((1,)))\nprint(type([1]))\nprint(type(\"s\"))\n"
+      "print(type(1))\nprint(type(1.0))\nprint(type(true))\nprint(type(nil))\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "map\nset\ntuple\nlist\nstring\nint\nfloat\nbool\nnil\n") == 0);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   mapInsertionOrder(&ctx);
@@ -737,6 +825,12 @@ int main(void) {
   execInContainers(&ctx);
   execInUnhashableAndNonContainer(&ctx);
   execLiteralDedup(&ctx);
+  execMapMethods(&ctx);
+  execMapMethodErrors(&ctx);
+  execSetTupleMethods(&ctx);
+  execSetMethodErrors(&ctx);
+  execInBoolProbeAndSetSide(&ctx);
+  execTypeBuiltin(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

@@ -33,13 +33,22 @@ static void iterMark(MsVM* vm, MsObj* obj) {
   gcMarkValue(vm, msValueObj(&((MsObjStrIter*)obj)->str->head));
 }
 
-// 方法查找公共面（T013 string / T014 list）：命中 0；未命中 -1
+// 方法查找公共面（T013 string / T014 list / T015 map,set,tuple）：命中 0；未命中 -1
 static int methodRefLookup(const MsValue* recv, const char* name, int32_t len, MsMethodRef* out) {
   if (msIsString(recv)) {
     return msStringMethodLookup(name, len, out) ? 0 : -1;
   }
   if (recv->kind == MS_VAL_OBJ && recv->as.obj->type == MS_OBJ_LIST) {
     return msListMethodLookup(name, len, out) ? 0 : -1;
+  }
+  if (msIsMap(recv)) {
+    return msMapMethodLookup(name, len, out) ? 0 : -1;
+  }
+  if (msIsSet(recv)) {
+    return msSetMethodLookup(name, len, out) ? 0 : -1;
+  }
+  if (msIsTuple(recv)) {
+    return msTupleMethodLookup(name, len, out) ? 0 : -1;
   }
   return -1;
 }
