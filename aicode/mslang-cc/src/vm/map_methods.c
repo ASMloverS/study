@@ -110,6 +110,9 @@ static MsValue mapUpdate(MsVM* vm, int32_t argc, const MsValue* args) {
   }
   MsObjMap* dst = recvMap(args);
   const MsObjMap* other = (const MsObjMap*)args[1].as.obj;
+  if (dst == other) {
+    return msValueNil();  // 自别名：按语义 no-op（put 再哈希会失效遍历下标，obj_map.h 契约）
+  }
   for (ms_i64 s = msObjMapFirst(other); s >= 0; s = msObjMapNext(other, s)) {
     // put 内部 calloc 再哈希无 GC 触发点；dst/other 均在 CALL_METHOD 栈
     if (msObjMapPut(vm, dst, msObjMapKeyAt(other, s), msObjMapValueAt(other, s)) == MS_MAP_OOM) {

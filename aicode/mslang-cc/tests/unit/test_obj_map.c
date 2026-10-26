@@ -714,24 +714,33 @@ TEST(execLiteralDedup) {  // Task 4 review 补课：字面量重键后值胜/同
 
 // ---------- 执行面（Task 6：方法族 + set()/type() 内置） ----------
 
-TEST(execMapMethods) {  // 10 §4 map 方法族（get 默认值不抛/keys/values/items 快照/copy 独立/update/len）
+TEST(execMapMethods) {  // 10 §4 map 方法族（get 默认值不抛/键在不用默认/keys/values/items 快照/copy 独立）
   RunResult r = runSrc(
       "var m = {\"a\": 1, \"b\": 2}\n"
-      "print(m.get(\"x\", 7))\nprint(m.get(\"a\"))\nprint(m.has(\"b\"))\nprint(m.has(\"z\"))\n"
+      "print(m.get(\"x\", 7))\nprint(m.get(\"a\"))\nprint(m.get(\"a\", 7))\nprint(m.has(\"b\"))\nprint(m.has(\"z\"))\n"
       "print(m.keys())\nprint(m.values())\nprint(m.items())\nprint(len(m))\nprint(m.len())\n"
       "var n = m.copy()\nn.update({\"c\": 3})\nprint(n)\nprint(m)\n"
       "print(m.remove(\"a\"))\nprint(m)\nprint(m.items())\n"
-      "m.clear()\nprint(m)\nprint(len(m))\nprint(m.keys())\n"
+      "m.clear()\nprint(m)\nprint(len(m))\nprint(m.keys())\nvar e = {}\nprint(e.values())\n"
       "for k, v in m.items() { }\nprint(m.items())\n");
   EXPECT(ctx, r.compileOk && !r.hasError);
-  // remove 返回 nil（list.remove 先例）；clear 后 keys/items 空 list
+  // remove 返回 nil（list.remove 先例）；clear 后 keys/values/items 空 list；键在时 default 不生效
   EXPECT(ctx, strcmp(r.out,
-      "7\n1\ntrue\nfalse\n"
+      "7\n1\n1\ntrue\nfalse\n"
       "[\"a\", \"b\"]\n[1, 2]\n[(\"a\", 1), (\"b\", 2)]\n2\n2\n"
       "{\"a\": 1, \"b\": 2, \"c\": 3}\n{\"a\": 1, \"b\": 2}\n"
       "nil\n{\"b\": 2}\n[(\"b\", 2)]\n"
-      "{}\n0\n[]\n"
+      "{}\n0\n[]\n[]\n"
       "[]\n") == 0);
+  free(r.out);
+}
+
+TEST(execMapUpdateSelfAlias) {  // m.update(m) no-op（review：自别名 put 再哈希失效遍历下标）
+  RunResult r = runSrc(
+      "var m = {\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4, \"e\": 5, \"f\": 6}\n"
+      "m.update(m)\nprint(m)\nprint(len(m))\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "{\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4, \"e\": 5, \"f\": 6}\n6\n") == 0);
   free(r.out);
 }
 
@@ -826,6 +835,7 @@ int main(void) {
   execInUnhashableAndNonContainer(&ctx);
   execLiteralDedup(&ctx);
   execMapMethods(&ctx);
+  execMapUpdateSelfAlias(&ctx);
   execMapMethodErrors(&ctx);
   execSetTupleMethods(&ctx);
   execSetMethodErrors(&ctx);
