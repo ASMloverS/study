@@ -845,6 +845,47 @@ TEST(globalsExecSmoke) {  // 全局读写/未定义赋值与读取报错走 map 
   free(r3.out);
 }
 
+// ---------- GC 压力（Task 8：DoD 扩展 + 压力） ----------
+
+TEST(gcPressureMapsSetsTuples) {  // 小堆 200 轮混合容器：墓碑/再哈希窗口下无失根无悬垂
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=65536");
+#else
+  setenv("MS_GC_HEAP_MAX", "65536", 1);
+#endif
+  MsVM vm;
+  msVmInit(&vm);  // gcHeapInit 读 env
+  for (int i = 0; i < 200; i++) {  // 每轮 map(20 put 含再哈希) + set(add) + tuple(持 map+set)
+    MsObjMap* m = msObjMapNew(&vm);
+    EXPECT(ctx, m != NULL);
+    msVmPush(&vm, msValueObj(&m->head));  // root：构建期分配窗口 GC 纪律
+    for (int j = 0; j < 20; j++) {
+      MsValue k = msValueInt(j);
+      EXPECT(ctx, msObjMapPut(&vm, m, &k, MV_INT(j)) == MS_MAP_OK);
+    }
+    MsObjSet* st = msObjSetNew(&vm);
+    EXPECT(ctx, st != NULL);
+    msVmPush(&vm, msValueObj(&st->head));
+    MsValue e = msValueInt(i);
+    EXPECT(ctx, msObjSetAdd(&vm, st, &e) == MS_MAP_OK);
+    MsObjTuple* t = msObjTupleNew(&vm, 2);
+    EXPECT(ctx, t != NULL);
+    msVmPush(&vm, msValueObj(&t->head));
+    t->items[0] = msValueObj(&m->head);
+    t->items[1] = msValueObj(&st->head);
+    EXPECT(ctx, !vm.hasError);  // 分配失败即纪律 bug（每轮核查）
+    vm.stackTop -= 3;  // 本轮产物出栈不可达（槽位下轮复用）
+  }
+  gcCollectAll(&vm);
+  EXPECT_EQ(ctx, 0, gcHeapObjCount(&vm));  // 整堆回收后归零：无失根泄漏
+  msVmFree(&vm);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
+}
+
 int main(void) {
   TestCtx ctx = {0};
   mapInsertionOrder(&ctx);
@@ -879,6 +920,7 @@ int main(void) {
   execTypeBuiltin(&ctx);
   globalsMapKeepalive(&ctx);
   globalsExecSmoke(&ctx);
+  gcPressureMapsSetsTuples(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

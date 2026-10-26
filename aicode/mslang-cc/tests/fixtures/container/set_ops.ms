@@ -1,0 +1,16 @@
+var a = {1, 2}
+var b = {2, 3}
+print(a | b)
+print(a & b)
+print(a - b)
+print(a ^ b)
+print(a.union(b).toList())
+print(a.toList())
+var e = set()
+e.add(7)
+print(e)
+print(e.has(7))
+print(e.copy())
+e.clear()
+print(e)
+print(len({4, 5, 6}))
