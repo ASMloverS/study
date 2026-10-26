@@ -809,6 +809,42 @@ TEST(execTypeBuiltin) {  // type() 类型名（10 §1）；{} 为 map 与 set() 
   free(r.out);
 }
 
+// ---------- 执行面（Task 7：全局表 map 承载） ----------
+
+TEST(globalsMapKeepalive) {  // 全局表 map 承载后仍为 GC root（对齐 test_gc_basic globalKeepalive）
+  MsVM vm;
+  msVmInit(&vm);
+  vm.globals = msObjMapNew(&vm);  // 手动落全局表（生产路径：msVmRun 首次进入分配）
+  MsObjList* l = msObjListNew(&vm);
+  msVmPush(&vm, msValueObj(&l->head));  // 暂存源（put 后清栈，仅剩 globals root）
+  MsObjString* k = msInternBytes(&vm, "gx", 2);
+  EXPECT(ctx, k != NULL);
+  MsValue kv = msValueObj(&k->head);
+  MsValue lv = msValueObj(&l->head);
+  EXPECT(ctx, msObjMapPut(&vm, vm.globals, &kv, &lv) == MS_MAP_OK);
+  vm.stackTop = 0;  // 清栈：map 内 list 仅经 globals 可达
+  gcCollectAll(&vm);
+  MsValue out;
+  EXPECT(ctx, msObjMapGet(vm.globals, &kv, &out) == MS_MAP_OK);
+  EXPECT(ctx, out.kind == MS_VAL_OBJ && out.as.obj->type == MS_OBJ_LIST);
+  EXPECT(ctx, ((const MsObjList*)out.as.obj)->count == 0);  // 解引用验证未悬挂
+  msVmFree(&vm);
+}
+
+TEST(globalsExecSmoke) {  // 全局读写/未定义赋值与读取报错走 map 路径
+  RunResult r = runSrc("var g = 41\ng = g + 1\nprint(g)\n");
+  EXPECT(ctx, r.compileOk && !r.hasError && strcmp(r.out, "42\n") == 0);
+  free(r.out);
+  RunResult r2 = runSrc("x = 1\n");  // 未定义赋值
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "assignment to undefined name 'x'") != NULL);
+  free(r2.out);
+  RunResult r3 = runSrc("print(zz)\n");  // 未定义读取（builtin 回查亦未命中）
+  EXPECT(ctx, r3.compileOk && r3.hasError);
+  EXPECT(ctx, strstr(r3.err, "undefined name 'zz'") != NULL);
+  free(r3.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   mapInsertionOrder(&ctx);
@@ -841,6 +877,8 @@ int main(void) {
   execSetMethodErrors(&ctx);
   execInBoolProbeAndSetSide(&ctx);
   execTypeBuiltin(&ctx);
+  globalsMapKeepalive(&ctx);
+  globalsExecSmoke(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

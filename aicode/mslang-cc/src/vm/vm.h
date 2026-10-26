@@ -55,13 +55,6 @@ static inline bool msIsI64(const MsValue* v) { return v->kind == MS_VAL_I64; }
 static inline bool msIsF64(const MsValue* v) { return v->kind == MS_VAL_F64; }
 static inline bool msIsObj(const MsValue* v) { return v->kind == MS_VAL_OBJ; }
 
-// 全局表条目：简单数组 + 名字线性索引（T015 换 map）
-typedef struct MsGlobalVar {
-  const char* name;  // 借用常量池字符串
-  int32_t len;
-  MsValue value;
-} MsGlobalVar;
-
 // 调用帧（本任务仅模块帧；T018 起函数帧切换）
 typedef struct MsFrame {
   const Chunk* chunk;
@@ -71,14 +64,14 @@ typedef struct MsFrame {
 
 struct GcHeap;  // gc/gc.h；msVmInit 创建、msVmFree 销毁
 typedef struct MsInternTable MsInternTable;  // obj/obj_string.h；按指针持有避免 vm.h ↔ obj 头环
+struct MsObjMap;  // obj/obj_map.h；全局表承载（T015），按指针避免头环
 
 struct MsVM {
   MsValue* stack;
   int32_t stackTop, stackCap;
   MsFrame* frames;
   int32_t frameCount, frameCap;
-  MsGlobalVar* globals;
-  int32_t globalCount, globalCap;
+  struct MsObjMap* globals;  // 全局表（T015 map 承载；键 = intern 名；msVmRun 首入分配，root 由 markRoots 标记）
   struct GcHeap* heap;
   MsInternTable* intern;  // intern 表（T013；obj/obj_string.h 完整类型，按指针避免头环）
   FILE* out;    // print 输出（默认 stdout；单测重定向 tmpfile）

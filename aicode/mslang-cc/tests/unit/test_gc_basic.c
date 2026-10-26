@@ -8,6 +8,8 @@
 #include "gc/gc.h"
 #include "obj/obj.h"
 #include "obj/obj_list.h"
+#include "obj/obj_map.h"
+#include "obj/obj_string.h"
 #include "test_harness.h"
 #include "vm/vm.h"
 
@@ -116,20 +118,23 @@ TEST(stackKeepalive) {  // 栈保活：模块帧值栈即整个栈（23-gc §1 �
   msVmFree(&vm);
 }
 
-TEST(globalKeepalive) {  // 全局表保活
+TEST(globalKeepalive) {  // 全局表保活（T015 map 承载：map 自身为 root，值经 markFn 展开标记）
   MsVM vm;
   msVmInit(&vm);
   gcSetMarkFn(MS_OBJ_ITERATOR, testMarkNode);  // 覆盖生产 mark（注册纪律见 testMarkNode）
+  vm.globals = msObjMapNew(&vm);  // 手动落全局表（生产路径 msVmRun 首入分配；先于负载——分配窗口零未根对象）
   TestNode* live = allocNode(&vm, 0xABCD);
-  vm.globals = malloc(sizeof(MsGlobalVar));
-  vm.globalCount = vm.globalCap = 1;
-  vm.globals[0].name = "keep";
-  vm.globals[0].len = 4;
-  vm.globals[0].value = msValueObj(&live->head);
+  msVmPush(&vm, msValueObj(&live->head));  // 暂根：intern/put 分配窗口纪律
+  MsObjString* k = msInternBytes(&vm, "keep", 4);
+  EXPECT(ctx, k != NULL);
+  MsValue kv = msValueObj(&k->head);
+  MsValue lv = msValueObj(&live->head);
+  EXPECT(ctx, msObjMapPut(&vm, vm.globals, &kv, &lv) == MS_MAP_OK);
+  vm.stackTop = 0;  // 清栈：live 仅经 globals map 可达
   gcCollectAll(&vm);
-  EXPECT_EQ(ctx, 1, gcHeapObjCount(&vm));
-  EXPECT_EQ(ctx, 0xABCD, (long long)live->magic);
-  msVmFree(&vm);  // globals 由 msVmFree 释放
+  EXPECT_EQ(ctx, 3, gcHeapObjCount(&vm));  // globals map + TestNode + PERMANENT intern 键
+  EXPECT_EQ(ctx, 0xABCD, (long long)live->magic);  // 误收则 ASan UAF
+  msVmFree(&vm);  // globals map 归堆释放
 }
 
 TEST(chainReference) {  // A→B→C：A 可达全活；不可达则同收

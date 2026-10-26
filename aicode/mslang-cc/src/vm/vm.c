@@ -58,8 +58,7 @@ void msVmInit(MsVM* vm) {
   vm->stackTop = vm->stackCap = 0;
   vm->frames = NULL;
   vm->frameCount = vm->frameCap = 0;
-  vm->globals = NULL;
-  vm->globalCount = vm->globalCap = 0;
+  vm->globals = NULL;  // 全局表 msVmRun 首入分配（T015 map 承载；保持 init 后零堆基线）
   vm->heap = malloc(sizeof(GcHeap));
   MS_ASSERT(vm->heap != NULL);
   gcHeapInit(vm->heap);
@@ -95,7 +94,7 @@ void msVmFree(MsVM* vm) {
   }
   free(vm->stack);
   free(vm->frames);
-  free(vm->globals);
+  // globals map 归堆所有：随上方 gcHeapFree 释放（T015）
   memset(vm, 0, sizeof(*vm));  // 零态收尾：不重建堆（避免每周期泄漏一个 GcHeap）；复用需再 msVmInit
 }
 
@@ -116,23 +115,10 @@ static MsValue pop(MsVM* vm) {
   return vm->stack[--vm->stackTop];
 }
 
-static MsGlobalVar* findGlobal(MsVM* vm, const char* name, int32_t len) {
-  for (int32_t i = vm->globalCount - 1; i >= 0; i--) {  // 后定义覆盖（soft 函数名 05 §1）
-    if (vm->globals[i].len == len && memcmp(vm->globals[i].name, name, (size_t)len) == 0) {
-      return &vm->globals[i];
-    }
-  }
-  return NULL;
-}
-
-static void defGlobal(MsVM* vm, const char* name, int32_t len, MsValue v) {
-  MsGlobalVar* hit = findGlobal(vm, name, len);
-  if (hit != NULL) {  // 运行时重定义仅 as 绑定兜底等边角；同名重复声明由 binder 拦截
-    hit->value = v;
-    return;
-  }
-  MsGlobalVar g = {name, len, v};
-  MS_ARRAY_PUSH(vm->globals, vm->globalCount, vm->globalCap, g);
+// 全局名 → intern 键（T015）：miss 建 PERMANENT 串——跨 GC 存活（未定义名探测的无害残留），
+// 临时串入表前无分配窗口（intern.c 消费式契约）；NULL = OOM，调用方翻译 RuntimeError
+static MsObjString* globalKey(MsVM* vm, const char* name, int32_t len) {
+  return msInternBytes(vm, name, len);
 }
 
 // ---- 溢出检查助手（int/int 快路径；溢出为占位错误，bigint 升级归 T016） ----
@@ -336,6 +322,15 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   if (vm->hasError) {
     return;
   }
+  if (vm->globals == NULL) {  // 全局表首入落堆（T015）：值栈此时为空，分配窗口无未根对象
+    vm->globals = msObjMapNew(vm);
+    if (vm->globals == NULL) {
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: out of memory");
+      vm->errLine = -1;
+      vm->hasError = true;
+      return;
+    }
+  }
   MsFrame initFrame = {chunk, 0, 0};  // 本任务单模块帧（T018 起函数帧切换）
   MS_ARRAY_PUSH(vm->frames, vm->frameCount, vm->frameCap, initFrame);
   const ms_u8* code = chunk->code;
@@ -535,9 +530,14 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_LOAD_GLOBAL) {
         READ_OPERAND(k);
         const ConstEntry* name = &consts[k];
-        MsGlobalVar* g = findGlobal(vm, name->as.text.start, name->as.text.len);
-        if (g != NULL) {
-          msVmPush(vm, g->value);
+        MsObjString* key = globalKey(vm, name->as.text.start, name->as.text.len);
+        if (key == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        MsValue kv = msValueObj(&key->head);
+        MsValue v;
+        if (msObjMapGet(vm->globals, &kv, &v) == MS_MAP_OK) {
+          msVmPush(vm, v);
           NEXT();
         }
         MsValue builtin = msValueNil();
@@ -550,21 +550,38 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
 
       OPCODE(OP_STORE_GLOBAL) {
         READ_OPERAND(k);
-        MsValue v = pop(vm);
         const ConstEntry* name = &consts[k];
-        MsGlobalVar* g = findGlobal(vm, name->as.text.start, name->as.text.len);
-        if (g == NULL) {
+        // GC 纪律（T015 关键序）：先建键、值留栈——intern miss 分配窗口内若值已弹入 C 局部即失根，
+        // GC 触发则被收后再写入即悬垂；故 pop 推迟到 put 成功之后
+        MsObjString* key = globalKey(vm, name->as.text.start, name->as.text.len);
+        if (key == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        MsValue kv = msValueObj(&key->head);
+        MsValue cur;
+        if (msObjMapGet(vm->globals, &kv, &cur) != MS_MAP_OK) {  // 键在而值 nil 亦 OK（按槽态非值判存）
           RUNTIME_ERROR("RuntimeError: assignment to undefined name '%.*s'", (int)name->as.text.len,
                         name->as.text.start);
         }
-        g->value = v;
+        if (msObjMapPut(vm, vm->globals, &kv, &vm->stack[vm->stackTop - 1]) == MS_MAP_OOM) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        vm->stackTop--;  // put 成功后才弹：put 再哈希分配窗口内值仍在栈 root
         NEXT();
       }
 
-      OPCODE(OP_DEF_GLOBAL) {  // peek TOS 定义（STORE_GLOBAL 随后弹出落盘；21 §4 声明形态）
+      OPCODE(OP_DEF_GLOBAL) {  // peek TOS 定义/覆盖（STORE_GLOBAL 随后弹出落盘；21 §4 声明形态；put 同键原位换值 = 后定义覆盖）
         READ_OPERAND(k);
         const ConstEntry* name = &consts[k];
-        defGlobal(vm, name->as.text.start, name->as.text.len, vm->stack[vm->stackTop - 1]);
+        // GC 纪律：peek 不弹——intern miss 与 put 再哈希的分配窗口内值均在栈 root
+        MsObjString* key = globalKey(vm, name->as.text.start, name->as.text.len);
+        if (key == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        MsValue kv = msValueObj(&key->head);
+        if (msObjMapPut(vm, vm->globals, &kv, &vm->stack[vm->stackTop - 1]) == MS_MAP_OOM) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
         NEXT();
       }
 
