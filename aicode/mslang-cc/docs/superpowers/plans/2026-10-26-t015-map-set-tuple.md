@@ -1438,7 +1438,3 @@ TEST(gcPressureMapsSetsTuples) {  // DoD：GC 扩展 + 压力（墓碑/再哈希
 - Spec coverage vs task doc §2: map structure ✓(T2) set+ops ✓(T3/T5) 键规则/数值塔 ✓(T2) 错误 ✓(T5) tuple+FAM+hash 缓存 ✓(T1/T6) BUILD 族 ✓(T4) 方法族 ✓(T6) GC ✓(T1-T3/T8) globals map ✓(T7) 多返回值铺垫（return tuple→BUILD_TUPLE via AST_TUPLE in AST_RETURN, UNPACK 复用）✓(T4).
 - §5.1 C 单测表全覆盖（插入序/缺键/get 默认/数值塔/不可 hash/再哈希/set 运算/空 literal/tuple hash 缓存/tuple 相等）；§5.2 fixtures 五件齐。
 - Type consistency: MsMapOp/MsHashStatus shared by map+set APIs; method tables match vm.h decls; obj includes follow existing layers (obj → vm forward-decl only).
-
-
-
-

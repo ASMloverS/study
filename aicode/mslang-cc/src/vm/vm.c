@@ -570,7 +570,9 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
-      OPCODE(OP_DEF_GLOBAL) {  // peek TOS 定义/覆盖（STORE_GLOBAL 随后弹出落盘；21 §4 声明形态；put 同键原位换值 = 后定义覆盖）
+      // peek TOS 定义/覆盖（STORE_GLOBAL 随后弹出落盘；
+      // 21 §4 声明形态；put 同键原位换值 = 后定义覆盖）
+      OPCODE(OP_DEF_GLOBAL) {
         READ_OPERAND(k);
         const ConstEntry* name = &consts[k];
         // GC 纪律：peek 不弹——intern miss 与 put 再哈希的分配窗口内值均在栈 root
