@@ -404,9 +404,10 @@ TEST(mapGcKeepalive) {  // markChildren：map 根活 → list 值经 seq 链标�
   msVmFree(&vm);
 }
 
-TEST(mapRunSrcSmoke) {  // 编译面前态：AST_MAP 字面量暂不支持（Task 4 接通前文档化现状）
-  RunResult r = runSrc("var m = {\"a\": 1}\n");
-  EXPECT(ctx, !r.compileOk);
+TEST(mapRunSrcSmoke) {  // Task 4 起 map/set 字面量可执行：重键后者胜序保持首插位；{} 为空 map（02 §5.4）
+  RunResult r = runSrc("var m = {\"a\": 1, \"b\": 2}\nprint(m)\nprint({})\nprint({1: 10, 1.0: 20})\nprint({3, 1, 2})\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "{\"a\": 1, \"b\": 2}\n{}\n{1: 20}\n{3, 1, 2}\n") == 0);  // set()/type() 归 Task 6
   free(r.out);
 }
 

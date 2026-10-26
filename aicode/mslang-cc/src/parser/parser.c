@@ -1842,7 +1842,7 @@ static AstNode* parseForTriRest(Parser* p, AstNode* node, AstNode* init) {
   return node;
 }
 
-// for-in 目标：IDENT 或全 IDENT 的 TUPLE（04 §4）
+// for-in 目标：IDENT 或全 IDENT 的 TUPLE（04 §4；嵌套元组目标同 04 §2 解构递归合法）
 static bool isIdentListTarget(const AstNode* n) {
   if (n->kind == AST_IDENT) {
     return true;
@@ -1851,7 +1851,7 @@ static bool isIdentListTarget(const AstNode* n) {
     return false;
   }
   for (int32_t i = 0; i < n->as.tuple.count; i++) {
-    if (n->as.tuple.items[i]->kind != AST_IDENT) {
+    if (!isIdentListTarget(n->as.tuple.items[i])) {
       return false;
     }
   }

@@ -189,12 +189,62 @@ TEST(tupleGcKeepalive) {  // markChildren 递归链：list 仅经 tuple items �
   msVmFree(&vm);
 }
 
+// ---------- 执行面（Task 4：字面量 + 解构 for-in） ----------
+
+TEST(execBuildTupleUnpack) {  // 字面量构造 + 元组目标解构赋值（04 §2：无星号目标为赋值，须已声明绑定）
+  RunResult r = runSrc(
+      "var t = (1, \"a\")\n"
+      "print(t)\n"
+      "var x = 0\n"
+      "var y = 0\n"
+      "x, y = t\n"
+      "print(x)\n"
+      "print(y)\n"
+      "print((1,))\n"
+      "print(())\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "(1, \"a\")\n1\na\n(1,)\n()\n") == 0);  // print 走 str 形态：裸 string 无引号
+  free(r.out);
+}
+
+TEST(execForInMultiVar) {  // 多变量 for-in：逐项 UNPACK_SEQ 展开（04 §4 解构迭代）
+  RunResult r = runSrc("for k, v in [[1, 2], [3, 4]] {\n  print(k + v)\n}\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "3\n7\n") == 0);
+  free(r.out);
+}
+
+TEST(execForInNestedTupleTarget) {  // 嵌套元组目标：a, (b, c) 解构（逆序消费嵌套在先）
+  RunResult r = runSrc("for a, (b, c) in [(1, (2, 3))] {\n  print(a + b + c)\n}\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "6\n") == 0);
+  free(r.out);
+}
+
+TEST(execTupleLiteralErrors) {  // list 元素入 tuple 字面量本身合法（hash 门控 Task 5/6 触达）：仅验证无编译错
+  RunResult r = runSrc("var t = ([1], 2)\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  free(r.out);
+}
+
+TEST(execTupleEqualityExec) {  // 身份短路/空元组相等/计数不等（Task 1 遗留，quality review 补课）
+  RunResult r = runSrc("print((1, \"a\") == (1, \"a\"))\nprint(() == ())\nprint((1,) == (1, 2))\nprint([(2, 3)])\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "true\ntrue\nfalse\n[(2, 3)]\n") == 0);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   tupleAllocItemsNil(&ctx);
   tupleEqualRepr(&ctx);
   tupleReprEdgeForms(&ctx);
   tupleGcKeepalive(&ctx);
+  execBuildTupleUnpack(&ctx);
+  execForInMultiVar(&ctx);
+  execForInNestedTupleTarget(&ctx);
+  execTupleLiteralErrors(&ctx);
+  execTupleEqualityExec(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

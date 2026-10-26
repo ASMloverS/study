@@ -423,6 +423,9 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   SET_HANDLER(OP_GET_ITER);
   SET_HANDLER(OP_FOR_ITER);
   SET_HANDLER(OP_BUILD_LIST);
+  SET_HANDLER(OP_BUILD_MAP);
+  SET_HANDLER(OP_BUILD_TUPLE);
+  SET_HANDLER(OP_BUILD_SET);
   SET_HANDLER(OP_UNPACK_SEQ);
   SET_HANDLER(OP_UNPACK_STAR);
   SET_HANDLER(OP_FORMAT_STRING);
@@ -1042,10 +1045,88 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
-      OPCODE(OP_UNPACK_SEQ) {  // <u8 n>：TOS list → 弹源；不足 n 报 ValueError；按序压 items[0..n)（多余丢弃）
+      OPCODE(OP_BUILD_MAP) {  // <u8 2n>：k1 v1 … kn vn → map（重键后者胜，序保持首插位；21 §3.9）
+        int32_t n = code[ip++] / 2;
+        MsObjMap* map = msObjMapNew(vm);
+        if (map == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        msVmPush(vm, msValueObj(&map->head));  // map 落栈保活（源值在其下，均 root）
+        if (vm->hasError) {  // push 溢出：后续槽位腾挪（-1-2n 索引）会越界，须立即 unwind（同 OP_BUILD_LIST）
+          goto dispatchExit;
+        }
+        const MsValue* src = &vm->stack[vm->stackTop - 1 - 2 * n];  // 首键（map 之下）
+        for (int32_t i = 0; i < n; i++) {  // put 再哈希为 malloc 路径，无 GC 窗口
+          MsMapOp mop = msObjMapPut(vm, map, &src[2 * i], &src[2 * i + 1]);
+          if (mop == MS_MAP_UNHASHABLE) {
+            RUNTIME_ERROR("TypeError: unhashable type: '%s'", msValueTypeName(&src[2 * i]));
+          }
+          if (mop == MS_MAP_OOM) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+        }
+        vm->stack[vm->stackTop - 2 * n - 1] = vm->stack[vm->stackTop - 1];  // map 下移覆盖首源槽
+        vm->stackTop -= 2 * n;  // 弹出 2n 个源值，map 留栈顶（n=0 时为自赋值无害）
+        NEXT();
+      }
+
+      OPCODE(OP_BUILD_TUPLE) {  // <u8 n>：peek 直填（单块 FAM 分配，items 预 nil）后统一弹栈（D6）
+        int32_t n = code[ip++];
+        MsObjTuple* t = msObjTupleNew(vm, n);
+        if (t == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        msVmPush(vm, msValueObj(&t->head));  // tuple 落栈保活
+        if (vm->hasError) {
+          goto dispatchExit;  // push 溢出：裸槽位运算前必须 unwind（同 OP_BUILD_LIST）
+        }
+        const MsValue* src = &vm->stack[vm->stackTop - 1 - n];  // 首元素（tuple 之下）
+        memcpy(t->items, src, sizeof(MsValue) * (size_t)n);  // 纯值拷贝无分配窗口
+        vm->stack[vm->stackTop - n - 1] = vm->stack[vm->stackTop - 1];  // tuple 下移覆盖首源槽
+        vm->stackTop -= n;  // 弹出 n 个源值，tuple 留栈顶（n=0 时为自赋值无害）
+        NEXT();
+      }
+
+      OPCODE(OP_BUILD_SET) {  // <u8 n>：e1 … en → set（重复元素去重，插入序保持首入位）
+        int32_t n = code[ip++];
+        MsObjSet* set = msObjSetNew(vm);  // 构造器内部借栈自 root 双分配（D6）；返回至压栈间无分配点
+        if (set == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        msVmPush(vm, msValueObj(&set->head));  // set 落栈保活（源值在其下）
+        if (vm->hasError) {
+          goto dispatchExit;
+        }
+        const MsValue* src = &vm->stack[vm->stackTop - 1 - n];  // 首元素（set 之下）
+        for (int32_t i = 0; i < n; i++) {  // add 内层 put 再哈希为 malloc 路径，无 GC 窗口
+          MsMapOp mop = msObjSetAdd(vm, set, &src[i]);
+          if (mop == MS_MAP_UNHASHABLE) {
+            RUNTIME_ERROR("TypeError: unhashable type: '%s'", msValueTypeName(&src[i]));
+          }
+          if (mop == MS_MAP_OOM) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+        }
+        vm->stack[vm->stackTop - n - 1] = vm->stack[vm->stackTop - 1];  // set 下移覆盖首源槽
+        vm->stackTop -= n;  // 弹出 n 个源值，set 留栈顶（n=0 时为自赋值无害）
+        NEXT();
+      }
+
+      OPCODE(OP_UNPACK_SEQ) {  // <u8 n>：TOS list/tuple → 弹源；不足 n 报 ValueError；按序压 items[0..n)（多余丢弃）
         int32_t n = code[ip++];
         MsValue v = vm->stack[vm->stackTop - 1];
-        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {  // tuple/string 解构归 T015/T017
+        if (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_TUPLE) {  // tuple 同 list 语义（22 §4）
+          MsObjTuple* t = (MsObjTuple*)v.as.obj;
+          if (t->count < n) {
+            RUNTIME_ERROR("ValueError: not enough values to unpack (expected %d, got %d)", n, t->count);
+          }
+          vm->stackTop--;  // 弹源：后续纯值拷贝无分配窗口
+          for (int32_t i = 0; i < n; i++) {
+            msVmPush(vm, t->items[i]);
+          }
+          NEXT();
+        }
+        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {  // string 解构归 T017
           RUNTIME_ERROR("TypeError: cannot unpack '%s' value", msValueTypeName(&v));
         }
         MsObjList* list = (MsObjList*)v.as.obj;

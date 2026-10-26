@@ -353,6 +353,46 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       emitByte(fs, (ms_u8)n->as.list.count);
       break;
     }
+    case AST_MAP: {  // k1 v1 … kn vn 依序压栈（21 §3.9 BUILD_MAP 操作数 = 2×对数）
+      int32_t count = n->as.mapLit.count;
+      if (count > 127) {  // 2*count 截 u8：127 为上限（128×2 溢出）
+        compErr(fs, n, 1, "map literal has too many entries");
+        return;
+      }
+      for (int32_t i = 0; i < count; i++) {
+        compileExpr(fs, n->as.mapLit.keys[i]);
+        compileExpr(fs, n->as.mapLit.values[i]);
+      }
+      emitOp(fs, OP_BUILD_MAP, n->line);
+      emitByte(fs, (ms_u8)(count * 2));
+      break;
+    }
+    case AST_SET: {
+      int32_t count = n->as.list.count;
+      if (count > 255) {  // BUILD_SET u8 计数上限
+        compErr(fs, n, 1, "set literal has too many elements");
+        return;
+      }
+      for (int32_t i = 0; i < count; i++) {
+        compileExpr(fs, n->as.list.items[i]);
+      }
+      emitOp(fs, OP_BUILD_SET, n->line);
+      emitByte(fs, (ms_u8)count);
+      break;
+    }
+    case AST_TUPLE: {
+      int32_t count = n->as.tuple.count;
+      if (count > 255) {  // BUILD_TUPLE u8 计数上限
+        compErr(fs, n, 1, "tuple literal has too many elements");
+        return;
+      }
+      for (int32_t i = 0; i < count; i++) {
+        compileExpr(fs, n->as.tuple.items[i]);
+      }
+      emitOp(fs, OP_BUILD_TUPLE, n->line);
+      emitByte(fs, (ms_u8)count);
+      break;
+    }
     case AST_INDEX: {  // D6：obj, index → GET_INDEX（slice 形态经 BUILD_SLICE 归 Task 10）
       compileExpr(fs, n->as.indexExpr.obj);
       compileExpr(fs, n->as.indexExpr.index);
@@ -677,6 +717,36 @@ static void compileIf(FuncState* fs, AstNode* n) {
   }
 }
 
+// for-in 目标落盘（binder 已按 fresh 声明标注，同单变量路径 04 §4）：IDENT 直存；
+// TUPLE 先 UNPACK_SEQ 再逆序递归（栈顶为末元素；嵌套目标先于更早平铺目标消费）
+static void storeIterTarget(FuncState* fs, AstNode* t) {
+  if (t->kind == AST_TUPLE) {
+    if (t->as.tuple.count > 255) {  // UNPACK_SEQ u8 计数上限
+      compErr(fs, t, 1, "too many iteration targets");
+      return;
+    }
+    emitOp(fs, OP_UNPACK_SEQ, t->line);
+    emitByte(fs, (ms_u8)t->as.tuple.count);
+    for (int32_t i = t->as.tuple.count - 1; i >= 0; i--) {  // 逆序消费：UNPACK 后栈顶为末元素
+      storeIterTarget(fs, t->as.tuple.items[i]);
+    }
+    return;
+  }
+  if (t->kind != AST_IDENT) {  // BAD_TARGET 残留防御（诊断已发，编译整体中止）
+    compErr(fs, t, 1, "iteration target form is not supported yet");
+    emitOp(fs, OP_POP, t->line);
+    return;
+  }
+  if (t->bindKind == AST_BIND_LOCAL) {
+    emitOp(fs, OP_STORE_LOCAL, t->line);
+    emitByte(fs, (ms_u8)t->bindSlot);
+    return;
+  }
+  int32_t k = nameConst(fs, t->as.ident.name, t->as.ident.nameLen);
+  emitConstOp(fs, OP_DEF_GLOBAL, k, t->line);  // 模块层循环变量：声明式落盘（fresh 04 §4）
+  emitConstOp(fs, OP_STORE_GLOBAL, k, t->line);
+}
+
 static void compileFor(FuncState* fs, AstNode* n) {
   if (n->as.forStmt.form == AST_FOR_IN) {
     beginLoop(fs, true);
@@ -688,16 +758,8 @@ static void compileFor(FuncState* fs, AstNode* n) {
     AstNode* target = n->as.forStmt.target;
     if (target == NULL) {
       emitOp(fs, OP_POP, n->line);  // 无目标（BAD_TARGET 残留）：丢弃
-    } else if (target->kind == AST_IDENT && target->bindKind == AST_BIND_LOCAL) {
-      emitOp(fs, OP_STORE_LOCAL, target->line);
-      emitByte(fs, (ms_u8)target->bindSlot);
-    } else if (target->kind == AST_IDENT) {  // 模块层循环变量：声明式落盘（fresh 绑定 04 §4）
-      int32_t k = nameConst(fs, target->as.ident.name, target->as.ident.nameLen);
-      emitConstOp(fs, OP_DEF_GLOBAL, k, target->line);
-      emitConstOp(fs, OP_STORE_GLOBAL, k, target->line);
     } else {
-      compErr(fs, target, 1, "multi-variable iteration lands in T017");
-      emitOp(fs, OP_POP, n->line);
+      storeIterTarget(fs, target);  // IDENT 直存 / TUPLE 解构递归（多变量迭代 04 §4）
     }
     compileStmt(fs, n->as.forStmt.body);
     int32_t jBack = emitJump(fs, OP_JMP, n->line);
