@@ -5,7 +5,6 @@
 #include "obj/obj_set.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #include "gc/gc.h"
 #include "obj/obj_list.h"
@@ -73,14 +72,17 @@ MsObjList* msObjSetToList(MsVM* vm, const MsObjSet* st) {
   return list;
 }
 
-// 源元素必可 hash（入表即证）且 put 无失败面（OOM 外不可达）——断言程序性错误
+// 填充失败仅 OOM（UNHASHABLE 不可达：源键入表即证）→ 弹 root 返回 NULL（头契约）
 MsObjSet* msObjSetCopy(MsVM* vm, const MsObjSet* st) {
   MsObjSet* r = msObjSetNew(vm);
   if (r == NULL || !msVmPush(vm, msValueObj(&r->head))) {  // D6：结果 root
     return NULL;  // 孤儿 r 交 GC 回收
   }
   for (ms_i64 cur = msObjMapFirst(st->map); cur >= 0; cur = msObjMapNext(st->map, cur)) {
-    MS_ASSERT(msObjSetAdd(vm, r, msObjMapKeyAt(st->map, cur)) == MS_MAP_OK);
+    if (msObjSetAdd(vm, r, msObjMapKeyAt(st->map, cur)) != MS_MAP_OK) {  // OOM（UNHASHABLE 不可达：源键入表即证）
+      vm->stackTop--;  // 弹 root；孤儿 r 交 GC 回收
+      return NULL;
+    }
   }
   vm->stackTop--;  // 弹 root（此后无分配）
   return r;
@@ -93,7 +95,10 @@ MsObjSet* msObjSetUnion(MsVM* vm, const MsObjSet* a, const MsObjSet* b) {
     return NULL;  // 孤儿 r 交 GC 回收
   }
   for (ms_i64 cur = msObjMapFirst(b->map); cur >= 0; cur = msObjMapNext(b->map, cur)) {
-    MS_ASSERT(msObjSetAdd(vm, r, msObjMapKeyAt(b->map, cur)) == MS_MAP_OK);
+    if (msObjSetAdd(vm, r, msObjMapKeyAt(b->map, cur)) != MS_MAP_OK) {  // OOM（UNHASHABLE 不可达：源键入表即证）
+      vm->stackTop--;  // 弹 root；孤儿 r 交 GC 回收
+      return NULL;
+    }
   }
   vm->stackTop--;  // 弹 root（此后无分配）
   return r;
@@ -108,7 +113,10 @@ MsObjSet* msObjSetIntersect(MsVM* vm, const MsObjSet* a, const MsObjSet* b) {
   for (ms_i64 cur = msObjMapFirst(a->map); cur >= 0; cur = msObjMapNext(a->map, cur)) {
     const MsValue* k = msObjMapKeyAt(a->map, cur);
     if (msObjSetHas(b, k)) {
-      MS_ASSERT(msObjSetAdd(vm, r, k) == MS_MAP_OK);
+      if (msObjSetAdd(vm, r, k) != MS_MAP_OK) {  // OOM（UNHASHABLE 不可达：源键入表即证）
+        vm->stackTop--;  // 弹 root；孤儿 r 交 GC 回收
+        return NULL;
+      }
     }
   }
   vm->stackTop--;  // 弹 root（此后无分配）
@@ -124,7 +132,10 @@ MsObjSet* msObjSetDiff(MsVM* vm, const MsObjSet* a, const MsObjSet* b) {
   for (ms_i64 cur = msObjMapFirst(a->map); cur >= 0; cur = msObjMapNext(a->map, cur)) {
     const MsValue* k = msObjMapKeyAt(a->map, cur);
     if (!msObjSetHas(b, k)) {
-      MS_ASSERT(msObjSetAdd(vm, r, k) == MS_MAP_OK);
+      if (msObjSetAdd(vm, r, k) != MS_MAP_OK) {  // OOM（UNHASHABLE 不可达：源键入表即证）
+        vm->stackTop--;  // 弹 root；孤儿 r 交 GC 回收
+        return NULL;
+      }
     }
   }
   vm->stackTop--;  // 弹 root（此后无分配）
@@ -140,7 +151,10 @@ MsObjSet* msObjSetSymDiff(MsVM* vm, const MsObjSet* a, const MsObjSet* b) {
   for (ms_i64 cur = msObjMapFirst(b->map); cur >= 0; cur = msObjMapNext(b->map, cur)) {
     const MsValue* k = msObjMapKeyAt(b->map, cur);
     if (!msObjSetHas(a, k)) {
-      MS_ASSERT(msObjSetAdd(vm, r, k) == MS_MAP_OK);
+      if (msObjSetAdd(vm, r, k) != MS_MAP_OK) {  // OOM（UNHASHABLE 不可达：源键入表即证）
+        vm->stackTop--;  // 弹 root；孤儿 r 交 GC 回收
+        return NULL;
+      }
     }
   }
   vm->stackTop--;  // 弹 root（此后无分配）

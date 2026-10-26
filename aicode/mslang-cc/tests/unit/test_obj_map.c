@@ -517,6 +517,62 @@ TEST(setAlgebra) {  // | & - ^ 运算族（结果序：左序在前）+ copy 独
   EXPECT(ctx, msObjSetAdd(&vm, c, &k9) == MS_MAP_OK);
   EXPECT_EQ(ctx, 3, msObjSetCount(c));
   EXPECT_EQ(ctx, 2, msObjSetCount(a));  // 源不被改动
+  MsObjSet* ss = msObjSetSymDiff(&vm, a, a);  // 同对象双操作数 → 空集
+  EXPECT(ctx, ss != NULL);
+  msVmPush(&vm, msValueObj(&ss->head));
+  EXPECT_EQ(ctx, 0, msObjSetCount(ss));
+  msVmFree(&vm);
+}
+
+TEST(setTupleElementsAndHashCache) {  // 等值异对象 tuple 元素去重 + 惰性 hash 缓存 + 数值塔探测
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjSet* st = msObjSetNew(&vm);
+  EXPECT(ctx, st != NULL);
+  msVmPush(&vm, msValueObj(&st->head));
+  MsObjTuple* t1 = msObjTupleNew(&vm, 2);
+  EXPECT(ctx, t1 != NULL);
+  msVmPush(&vm, msValueObj(&t1->head));  // root：tuple 元素非永久，落栈防误收
+  t1->items[0] = msValueInt(1);
+  t1->items[1] = msValueInt(2);
+  MsValue v1 = msValueObj(&t1->head);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &v1) == MS_MAP_OK);
+  EXPECT(ctx, t1->hashValid);  // 首次入 set 即缓存（22 §4 惰性，同 map）
+  MsObjTuple* t2 = msObjTupleNew(&vm, 2);  // 等值异对象 → 同元素去重
+  EXPECT(ctx, t2 != NULL);
+  msVmPush(&vm, msValueObj(&t2->head));
+  t2->items[0] = msValueInt(1);
+  t2->items[1] = msValueInt(2);
+  MsValue v2 = msValueObj(&t2->head);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &v2) == MS_MAP_OK);
+  EXPECT_EQ(ctx, 1, msObjSetCount(st));
+  MsObjTuple* t3 = msObjTupleNew(&vm, 2);  // 第三等值 tuple：探测命中
+  EXPECT(ctx, t3 != NULL);
+  msVmPush(&vm, msValueObj(&t3->head));
+  t3->items[0] = msValueInt(1);
+  t3->items[1] = msValueInt(2);
+  MsValue v3 = msValueObj(&t3->head);
+  EXPECT(ctx, msObjSetHas(st, &v3));
+  MsValue ki = msValueInt(7);  // 数值塔：int 入表 float 探测命中（02 §7）
+  MsValue kf = msValueFloat(7.0);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &ki) == MS_MAP_OK);
+  EXPECT(ctx, msObjSetHas(st, &kf));
+  EXPECT_EQ(ctx, 2, msObjSetCount(st));
+  msVmFree(&vm);
+}
+
+TEST(setBoolIntDistinct) {  // add(true) 后 has(1) false（02 §2 bool≠int 经探测门控）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjSet* st = msObjSetNew(&vm);
+  EXPECT(ctx, st != NULL);
+  msVmPush(&vm, msValueObj(&st->head));
+  MsValue kt = msValueBool(true);
+  MsValue ki = msValueInt(1);
+  EXPECT(ctx, msObjSetAdd(&vm, st, &kt) == MS_MAP_OK);
+  EXPECT(ctx, msObjSetHas(st, &kt));
+  EXPECT(ctx, !msObjSetHas(st, &ki));
+  EXPECT_EQ(ctx, 1, msObjSetCount(st));
   msVmFree(&vm);
 }
 
@@ -581,6 +637,8 @@ int main(void) {
   mapRunSrcSmoke(&ctx);
   setBasicsAndOrder(&ctx);
   setAlgebra(&ctx);
+  setTupleElementsAndHashCache(&ctx);
+  setBoolIntDistinct(&ctx);
   setGcKeepalive(&ctx);
   setConstructorGcSafety(&ctx);
   if (ctx.failures > 0) {
