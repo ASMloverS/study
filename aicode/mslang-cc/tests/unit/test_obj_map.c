@@ -624,6 +624,94 @@ TEST(setConstructorGcSafety) {  // 构造器双分配窗口：小阈值批量构
 #endif
 }
 
+// ---------- 执行面（Task 5：索引 / in / 集合运算） ----------
+
+TEST(execMapIndexAndErrors) {  // 缺键 KeyError（02 §5.2）；不可 hash 键 TypeError；数值塔同键改值
+  RunResult r = runSrc("var m = {\"a\": 1}\nprint(m[\"x\"])\n");
+  EXPECT(ctx, r.compileOk && r.hasError);
+  EXPECT(ctx, strstr(r.err, "KeyError: key not found") != NULL);
+  free(r.out);
+  RunResult r2 = runSrc("var m = {}\nm[[1]] = 1\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "TypeError: unhashable type: 'list'") != NULL);
+  free(r2.out);
+  RunResult r3 = runSrc("var m = {}\nm[[1]]\n");  // GET_INDEX 侧同样拒绝不可 hash 键
+  EXPECT(ctx, r3.compileOk && r3.hasError);
+  EXPECT(ctx, strstr(r3.err, "TypeError: unhashable type: 'list'") != NULL);
+  free(r3.out);
+  RunResult r4 = runSrc("var m = {1: 9}\nm[1.0] = 8\nprint(m[1])\n");  // 1.0 与 1 同键改值（02 §7）
+  EXPECT(ctx, r4.compileOk && !r4.hasError && strcmp(r4.out, "8\n") == 0);
+  free(r4.out);
+}
+
+TEST(execTupleIndexErrors) {  // 负索引换算；越界/非 int 索引报错（02 §5.3）
+  RunResult r = runSrc("var t = (1, \"a\")\nprint(t[1])\nprint(t[-2])\n");
+  EXPECT(ctx, r.compileOk && !r.hasError && strcmp(r.out, "a\n1\n") == 0);
+  free(r.out);
+  RunResult r2 = runSrc("print((1, 2)[5])\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "IndexError: tuple index out of range") != NULL);
+  free(r2.out);
+  RunResult r3 = runSrc("print((1, 2)[\"x\"])\n");
+  EXPECT(ctx, r3.compileOk && r3.hasError);
+  EXPECT(ctx, strstr(r3.err, "TypeError: tuple indices must be int") != NULL);
+  free(r3.out);
+}
+
+TEST(execSetOperators) {  // | & - ^ 并交差对称差（02 §5.4；结果序左操作数在前）
+  RunResult r = runSrc(
+      "var a = {1, 2}\nvar b = {2, 3}\n"
+      "print(a | b)\nprint(a & b)\nprint(a - b)\nprint(a ^ b)\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "{1, 2, 3}\n{2}\n{1}\n{1, 3}\n") == 0);
+  free(r.out);
+}
+
+TEST(execSetOperatorMixedTypeError) {  // set 与非 set 混算走 arithBinary TypeError；set 不可索引（兜底）
+  RunResult r = runSrc("var a = {1}\nprint(a - 1)\n");
+  EXPECT(ctx, r.compileOk && r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError: unsupported operand types for '-'") != NULL);
+  free(r.out);
+  RunResult r2 = runSrc("print(1 - {1})\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "TypeError") != NULL);
+  free(r2.out);
+  RunResult r3 = runSrc("print({1}[1])\n");  // set 无索引语义：not indexable 兜底
+  EXPECT(ctx, r3.compileOk && r3.hasError);
+  EXPECT(ctx, strstr(r3.err, "TypeError: 'set' is not indexable") != NULL);
+  free(r3.out);
+}
+
+TEST(execInContainers) {  // in 全内置容器：string 子串/list/tuple/map 键/set 元素（03 §5）
+  RunResult r = runSrc(
+      "print(\"ell\" in \"hello\")\nprint(\"z\" in \"hello\")\nprint(\"\" in \"x\")\n"
+      "print(2 in [1, 2])\nprint(5 in [1, 2])\n"
+      "print(2 in (1, 2))\n"
+      "print(\"k\" in {\"k\": 1})\nprint(\"z\" in {\"k\": 1})\n"
+      "print(2 in {1, 2})\nprint(5 in {1, 2})\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "true\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\nfalse\ntrue\nfalse\n") == 0);
+  free(r.out);
+}
+
+TEST(execInUnhashableAndNonContainer) {  // map/set 探测不可 hash 报 TypeError；非容器拒绝（03 §5）
+  RunResult r = runSrc("print([1] in {1: 1})\n");
+  EXPECT(ctx, r.compileOk && r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError: unhashable type: 'list'") != NULL);
+  free(r.out);
+  RunResult r2 = runSrc("print(1 in 5)\n");
+  EXPECT(ctx, r2.compileOk && r2.hasError);
+  EXPECT(ctx, strstr(r2.err, "TypeError: 'in' not supported for 'int'") != NULL);
+  free(r2.out);
+}
+
+TEST(execLiteralDedup) {  // Task 4 review 补课：字面量重键后值胜/同位、set 重复元素去重
+  RunResult r = runSrc("print({\"a\": 1, \"b\": 2, \"a\": 3})\nprint({1, 1, 2})\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "{\"a\": 3, \"b\": 2}\n{1, 2}\n") == 0);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   mapInsertionOrder(&ctx);
@@ -642,6 +730,13 @@ int main(void) {
   setBoolIntDistinct(&ctx);
   setGcKeepalive(&ctx);
   setConstructorGcSafety(&ctx);
+  execMapIndexAndErrors(&ctx);
+  execTupleIndexErrors(&ctx);
+  execSetOperators(&ctx);
+  execSetOperatorMixedTypeError(&ctx);
+  execInContainers(&ctx);
+  execInUnhashableAndNonContainer(&ctx);
+  execLiteralDedup(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

@@ -234,6 +234,15 @@ TEST(execTupleEqualityExec) {  // 身份短路/空元组相等/计数不等（Ta
   free(r.out);
 }
 
+TEST(execForInMultiVarBreakCont) {  // 多变量 for-in 内 break/continue 控制流（Task 4 review 补课）
+  RunResult r = runSrc(
+      "for k, v in [[1, 2], [3, 4]] { if k == 3 { break } print(k + v) }\n"
+      "for k, v in [[1, 2], [3, 4]] { if k == 1 { continue } print(k + v) }\n");
+  EXPECT(ctx, r.compileOk && !r.hasError);
+  EXPECT(ctx, strcmp(r.out, "3\n7\n") == 0);
+  free(r.out);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   tupleAllocItemsNil(&ctx);
@@ -245,6 +254,7 @@ int main(void) {
   execForInNestedTupleTarget(&ctx);
   execTupleLiteralErrors(&ctx);
   execTupleEqualityExec(&ctx);
+  execForInMultiVarBreakCont(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

@@ -621,13 +621,106 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
-      BINARY_ARITH_CASE(OP_BINARY_SUB, BA_SUB)
+      OPCODE(OP_BINARY_SUB) {  // set-set 差集 peek（02 §5.4）：操作数留栈 root 过分配窗口；其余走 arithBinary
+        if (vm->stack[vm->stackTop - 1].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 1].as.obj->type == MS_OBJ_SET &&
+            vm->stack[vm->stackTop - 2].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 2].as.obj->type == MS_OBJ_SET) {
+          MsObjSet* r = msObjSetDiff(vm, (MsObjSet*)vm->stack[vm->stackTop - 2].as.obj,
+                                     (MsObjSet*)vm->stack[vm->stackTop - 1].as.obj);
+          if (r == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, msValueObj(&r->head));
+          NEXT();
+        }
+        MsValue b = pop(vm);
+        MsValue a = pop(vm);
+        MsValue r;
+        if (!arithBinary(vm, BA_SUB, a, b, &r)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
+        }
+        msVmPush(vm, r);
+        NEXT();
+      }
+
       BINARY_ARITH_CASE(OP_BINARY_DIV, BA_DIV)
       BINARY_ARITH_CASE(OP_BINARY_MOD, BA_MOD)
       BINARY_ARITH_CASE(OP_BINARY_POW, BA_POW)
-      BINARY_ARITH_CASE(OP_BINARY_AND, BA_BIT_AND)
-      BINARY_ARITH_CASE(OP_BINARY_OR, BA_BIT_OR)
-      BINARY_ARITH_CASE(OP_BINARY_XOR, BA_BIT_XOR)
+
+      OPCODE(OP_BINARY_AND) {  // set-set 交集 peek（02 §5.4）；其余走 arithBinary
+        if (vm->stack[vm->stackTop - 1].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 1].as.obj->type == MS_OBJ_SET &&
+            vm->stack[vm->stackTop - 2].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 2].as.obj->type == MS_OBJ_SET) {
+          MsObjSet* r = msObjSetIntersect(vm, (MsObjSet*)vm->stack[vm->stackTop - 2].as.obj,
+                                          (MsObjSet*)vm->stack[vm->stackTop - 1].as.obj);
+          if (r == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, msValueObj(&r->head));
+          NEXT();
+        }
+        MsValue b = pop(vm);
+        MsValue a = pop(vm);
+        MsValue r;
+        if (!arithBinary(vm, BA_BIT_AND, a, b, &r)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
+        }
+        msVmPush(vm, r);
+        NEXT();
+      }
+
+      OPCODE(OP_BINARY_OR) {  // set-set 并集 peek（02 §5.4）；其余走 arithBinary
+        if (vm->stack[vm->stackTop - 1].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 1].as.obj->type == MS_OBJ_SET &&
+            vm->stack[vm->stackTop - 2].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 2].as.obj->type == MS_OBJ_SET) {
+          MsObjSet* r = msObjSetUnion(vm, (MsObjSet*)vm->stack[vm->stackTop - 2].as.obj,
+                                      (MsObjSet*)vm->stack[vm->stackTop - 1].as.obj);
+          if (r == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, msValueObj(&r->head));
+          NEXT();
+        }
+        MsValue b = pop(vm);
+        MsValue a = pop(vm);
+        MsValue r;
+        if (!arithBinary(vm, BA_BIT_OR, a, b, &r)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
+        }
+        msVmPush(vm, r);
+        NEXT();
+      }
+
+      OPCODE(OP_BINARY_XOR) {  // set-set 对称差 peek（02 §5.4）；其余走 arithBinary
+        if (vm->stack[vm->stackTop - 1].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 1].as.obj->type == MS_OBJ_SET &&
+            vm->stack[vm->stackTop - 2].kind == MS_VAL_OBJ &&
+            vm->stack[vm->stackTop - 2].as.obj->type == MS_OBJ_SET) {
+          MsObjSet* r = msObjSetSymDiff(vm, (MsObjSet*)vm->stack[vm->stackTop - 2].as.obj,
+                                        (MsObjSet*)vm->stack[vm->stackTop - 1].as.obj);
+          if (r == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, msValueObj(&r->head));
+          NEXT();
+        }
+        MsValue b = pop(vm);
+        MsValue a = pop(vm);
+        MsValue r;
+        if (!arithBinary(vm, BA_BIT_XOR, a, b, &r)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
+        }
+        msVmPush(vm, r);
+        NEXT();
+      }
+
       BINARY_ARITH_CASE(OP_BINARY_SHL, BA_SHL)
       BINARY_ARITH_CASE(OP_BINARY_SHR, BA_SHR)
 
@@ -691,8 +784,44 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       ORDERED_COMPARE_CASE(OP_COMPARE_GT, ">", cmp > 0)
       ORDERED_COMPARE_CASE(OP_COMPARE_GE, ">=", cmp >= 0)
 
-      OPCODE(OP_IN)
-      RUNTIME_ERROR("RuntimeError: 'in' executes in T017");
+      OPCODE(OP_IN) {  // 03 §5：probe in container（__contains__ 协议 T021；此处内置容器路径）
+        MsValue b = pop(vm);  // 编译序 lhs=probe → rhs=container（21 §3）：先弹容器
+        MsValue a = pop(vm);
+        bool hit = false;
+        if (msIsString(&b)) {  // string 语义为子串包含；probe 须 string（03 §5）
+          if (!msIsString(&a)) {
+            RUNTIME_ERROR("TypeError: 'in' on string expects a string operand");
+          }
+          const MsObjString* h = (const MsObjString*)b.as.obj;
+          const MsObjString* n = (const MsObjString*)a.as.obj;
+          for (int32_t i = 0; !hit && (ms_i64)i + n->byteLen <= (ms_i64)h->byteLen; i++) {
+            // 字节子串扫描（Windows 无 memmem；空 probe 恒命中）
+            hit = n->byteLen == 0 ||
+                  (h->bytes[i] == n->bytes[0] && memcmp(h->bytes + i, n->bytes, n->byteLen) == 0);
+          }
+        } else if (b.kind == MS_VAL_OBJ && b.as.obj->type == MS_OBJ_LIST) {
+          hit = msObjListIndexOf((const MsObjList*)b.as.obj, &a) >= 0;
+        } else if (b.kind == MS_VAL_OBJ && b.as.obj->type == MS_OBJ_TUPLE) {  // 定长线性深探测
+          const MsObjTuple* t = (const MsObjTuple*)b.as.obj;
+          for (int32_t i = 0; !hit && i < t->count; i++) {
+            hit = msValueEqual(&t->items[i], &a);
+          }
+        } else if (b.kind == MS_VAL_OBJ &&
+                   (b.as.obj->type == MS_OBJ_MAP || b.as.obj->type == MS_OBJ_SET)) {
+          // map 键 / set 元素：set 直探内层 map——msObjSetHas 对不可 hash 恒 false，无法区分 TypeError
+          const MsObjMap* m = b.as.obj->type == MS_OBJ_MAP ? (const MsObjMap*)b.as.obj
+                                                           : ((const MsObjSet*)b.as.obj)->map;
+          MsMapOp mop = msObjMapGet(m, &a, NULL);  // 无分配路径：弹栈后局部引用安全
+          if (mop == MS_MAP_UNHASHABLE) {
+            RUNTIME_ERROR("TypeError: unhashable type: '%s'", msValueTypeName(&a));
+          }
+          hit = mop == MS_MAP_OK;
+        } else {
+          RUNTIME_ERROR("TypeError: 'in' not supported for '%s'", msValueTypeName(&b));
+        }
+        msVmPush(vm, msValueBool(hit));
+        NEXT();
+      }
 
       OPCODE(OP_GET_INDEX) {  // peek 求值完成后再弹栈（分配窗口内保 root；slice 分支同守 peek 纪律）
         MsValue idx = vm->stack[vm->stackTop - 1];
@@ -752,6 +881,32 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           msVmPush(vm, item);
           NEXT();
         }
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_MAP) {  // T015：任意 hashable 键（02 §5.2）
+          MsValue out = msValueNil();
+          MsMapOp mop = msObjMapGet((const MsObjMap*)obj.as.obj, &idx, &out);  // 无分配：peek 期无 GC 点
+          if (mop == MS_MAP_OK) {
+            vm->stackTop -= 2;
+            msVmPush(vm, out);
+            NEXT();
+          }
+          if (mop == MS_MAP_NOENT) {
+            RUNTIME_ERROR("KeyError: key not found");
+          }
+          RUNTIME_ERROR("TypeError: unhashable type: '%s'", msValueTypeName(&idx));
+        }
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_TUPLE) {  // T015：负索引换算；slice 暂不涉
+          if (idx.kind != MS_VAL_I64) {
+            RUNTIME_ERROR("TypeError: tuple indices must be int");
+          }
+          const MsValue* item = msObjTupleGet((const MsObjTuple*)obj.as.obj, idx.as.i);
+          if (item == NULL) {
+            RUNTIME_ERROR("IndexError: tuple index out of range");
+          }
+          vm->stackTop -= 2;
+          msVmPush(vm, *item);
+          NEXT();
+        }
+        // set 不支持索引：落入下方 not indexable 兜底（02 §5.4）
         RUNTIME_ERROR("TypeError: '%s' is not indexable", msValueTypeName(&obj));
       }
 
@@ -759,6 +914,17 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         MsValue val = pop(vm);
         MsValue idx = pop(vm);
         MsValue obj = pop(vm);
+        // T015：put 再哈希为 malloc 路径（无 GC 点）——弹栈后局部引用安全（02 §5.2）
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_MAP) {
+          MsMapOp mop = msObjMapPut(vm, (MsObjMap*)obj.as.obj, &idx, &val);
+          if (mop == MS_MAP_UNHASHABLE) {
+            RUNTIME_ERROR("TypeError: unhashable type: '%s'", msValueTypeName(&idx));
+          }
+          if (mop == MS_MAP_OOM) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          NEXT();
+        }
         if (msIsString(&obj)) {
           RUNTIME_ERROR("TypeError: 'string' does not support item assignment");
         }
