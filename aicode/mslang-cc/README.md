@@ -32,6 +32,8 @@ ctest --test-dir build -C Debug --output-on-failure
 
 Linux / macOS（或本地 Ninja+clang）：`cmake --preset debug`（或 `release` / `asan`）→ `cmake --build build` → `ctest --test-dir build`（无需 `-C`）。各预设共用 `build/`，切换生成器需先删 `build/`。
 
+全量重编（清产物后重建，任意生成器通用）：`cmake --build build --clean-first`。
+
 ## 仓库结构
 
 | 路径 | 内容 |
