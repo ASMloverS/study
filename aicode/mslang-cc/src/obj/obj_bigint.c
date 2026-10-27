@@ -66,6 +66,9 @@ MsBigErr msObjBigintParse(MsVM* vm, const char* text, int32_t len, int base, MsO
     sign = text[i] == '-' ? -1 : 1;
     i++;
   }
+  if (base != 0 && (base < 2 || base > 36)) {  // base 域外前置拒绝（Task 4 内置转换亦校验，入口须自洽）
+    return MS_BIG_PARSE;
+  }
   if (base == 0) {  // 前缀自动识别
     if (i + 1 < len && text[i] == '0') {
       uint8_t p = (uint8_t)text[i + 1];
@@ -315,7 +318,8 @@ static int magCmpF64(const MsObjBigInt* b, double f) {
     k++;
   }
   if (k < 0) {  // 非整（mant 已奇）：先比 floor，相等则 |b| < |f|
-    int c = magCmpU64(b, (uint64_t)(mant >> (-k)));
+    uint64_t fl = -k >= 64 ? 0u : (uint64_t)(mant >> -k);  // mant < 2^53 → -k ≥ 64 时 floor 恒 0（移位数 UB 钳制）
+    int c = magCmpU64(b, fl);
     return c != 0 ? c : -1;
   }
   int64_t bBits = msObjBigintBitLen(b);

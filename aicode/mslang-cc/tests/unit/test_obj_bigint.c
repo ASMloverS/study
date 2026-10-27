@@ -1,87 +1,17 @@
 // T016：bigint 数据面 + 数值塔单测（docs/tasks/T016 §5.1；VM 级用例随 Task 3+ 追加）
+#include <float.h>
 #include <math.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "binder/binder.h"
-#include "compiler/chunk.h"
-#include "compiler/compiler.h"
-#include "gc/gc.h"
 #include "obj/obj_bigint.h"
-#include "obj/obj_list.h"
-#include "obj/obj_map.h"
-#include "obj/obj_set.h"
 #include "obj/obj_string.h"
-#include "obj/obj_tuple.h"
-#include "parser/parser.h"
-#include "scanner/scanner.h"
 #include "test_harness.h"
 #include "vm/vm.h"
 
-// ---------- 执行面桥（Task 4+：全管线跑 .ms 源码） ----------
-
-typedef struct RunResult {
-  char* out;
-  bool compileOk;
-  bool hasError;
-  char err[240];
-  int32_t errLine;
-} RunResult;
-
-static char* slurpTmp(FILE* f) {
-  fflush(f);
-  long len = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  char* buf = malloc((size_t)len + 1);
-  size_t got = fread(buf, 1, (size_t)len, f);
-  buf[got] = '\0';
-  fclose(f);
-  return buf;
-}
-
-static RunResult runSrc(const char* src) {
-  RunResult r = {NULL, false, false, "", -1};
-  MsDiagSink diags = {0};
-  AstArena arena;
-  astArenaInit(&arena);
-  Parser p;
-  parserInit(&p, src, (int32_t)strlen(src), "t.ms", &arena, &diags);
-  AstNode* mod = parserParseModule(&p);
-  if (mod != NULL) {
-    Binder b;
-    binderInit(&b, &arena, "t.ms", &diags);
-    binderBind(&b, mod);
-    binderDestroy(&b);
-    Chunk c;
-    if (compilerCompile(mod, &c, "t.ms", &diags)) {
-      r.compileOk = true;
-      MsVM vm;
-      msVmInit(&vm);
-      FILE* f = tmpfile();
-      vm.out = f;
-      msVmRun(&vm, &c);
-      r.hasError = vm.hasError;
-      snprintf(r.err, sizeof(r.err), "%s", vm.errMsg);
-      r.errLine = vm.errLine;
-      r.out = slurpTmp(f);
-      msVmFree(&vm);
-      chunkFree(&c);
-    }
-  }
-  astArenaDestroy(&arena);
-  if (r.out == NULL) {
-    r.out = calloc(1, 1);
-  }
-  return r;
-}
-
 // ---------- 数据面（Task 1） ----------
-
-// map API 键值按指针传参：整值复合字面量取址便捷构造（块内生存期覆盖调用表达式）
-#define MV_INT(n) (&(MsValue){.kind = MS_VAL_I64, .as = {.i = (n)}})
 
 // 确定性 LCG（跨平台一致；不依赖 rand()）
 static ms_u32 rngState = 0x12345678u;
@@ -150,14 +80,16 @@ TEST(bigintParsePrintRoundtrip) {  // §5.1 解析/打印：往返一致
   s = bigDec(&vm, b);
   EXPECT_STREQ(ctx, "1000000", s);
   free(s);
-  // 非法：空串 / 坏字符 / 空前缀
+  // 非法：空串 / 坏字符 / 空前缀 / base 域外（M-4）
   EXPECT(ctx, msObjBigintParse(&vm, "", 0, 10, &b) == MS_BIG_PARSE);
   EXPECT(ctx, msObjBigintParse(&vm, "1e3", 3, 10, &b) == MS_BIG_PARSE);
   EXPECT(ctx, msObjBigintParse(&vm, "0x", 2, 0, &b) == MS_BIG_PARSE);
+  EXPECT(ctx, msObjBigintParse(&vm, "1", 1, 37, &b) == MS_BIG_PARSE);
+  EXPECT(ctx, msObjBigintParse(&vm, "0", 1, 1, &b) == MS_BIG_PARSE);
   msVmFree(&vm);
 }
 
-TEST(bigintToStringBase) {  // §5.1：255 → 2/8/16；负数；0；非法 base
+TEST(bigintToStringBase) {  // §5.1：255 → 2/8/16 + 显式 base 解析回读；非法 base
   MsVM vm;
   msVmInit(&vm);
   MsObjBigInt* b = NULL;
@@ -169,6 +101,11 @@ TEST(bigintToStringBase) {  // §5.1：255 → 2/8/16；负数；0；非法 base
     MsObjString* s = msObjBigintToString(&vm, b, bases[i]);
     EXPECT(ctx, s != NULL);
     EXPECT(ctx, s->byteLen == (int32_t)strlen(want[i]) && memcmp(s->bytes, want[i], s->byteLen) == 0);
+    msVmPush(&vm, msValueObj(&s->head));  // root：回读解析的分配窗口
+    MsObjBigInt* back = NULL;
+    EXPECT(ctx, msObjBigintParse(&vm, s->bytes, (int32_t)s->byteLen, bases[i], &back) == MS_BIG_OK);
+    rootBig(&vm, back);
+    EXPECT_EQ(ctx, 0, msObjBigintCompare(b, back));
   }
   EXPECT(ctx, msObjBigintToString(&vm, b, 3) == NULL);  // 非法 base
   msVmFree(&vm);
@@ -221,12 +158,70 @@ TEST(bigintCompare) {  // 符号域 + i64/f64 精确比较
   msVmFree(&vm);
 }
 
+TEST(bigintCmpF64Tiny) {  // review I-1：极小 double（-k ≥ 64，含亚正规）floor 移位钳制回归
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjBigInt* one = msObjBigintFromI64(&vm, 1);
+  rootBig(&vm, one);
+  MsObjBigInt* negOne = msObjBigintFromI64(&vm, -1);
+  rootBig(&vm, negOne);
+  EXPECT_EQ(ctx, 1, msObjBigintCmpF64(one, 1e-30));
+  EXPECT_EQ(ctx, 1, msObjBigintCmpF64(one, ldexp(3.0, -65)));  // -k 恰 65：x86 掩码移位曾误得 1
+  EXPECT_EQ(ctx, 1, msObjBigintCmpF64(one, DBL_TRUE_MIN));
+  EXPECT_EQ(ctx, -1, msObjBigintCmpF64(negOne, -1e-30));  // 负镜像
+  msVmFree(&vm);
+}
+
+TEST(bigintRandomRoundtrip) {  // review I-2：随机 parse/print 往返 + ToF64/FitsI64 边界四态
+  MsVM vm;
+  msVmInit(&vm);
+  for (int iter = 0; iter < 50; iter++) {
+    int32_t limbs = 2 + (int32_t)(rngNext() % 79);  // 2..80 limb
+    MsObjBigInt* b = randomBig(&vm, limbs);
+    EXPECT(ctx, b != NULL);
+    rootBig(&vm, b);
+    char* s = bigDec(&vm, b);
+    EXPECT(ctx, s != NULL);
+    MsObjBigInt* r = NULL;
+    EXPECT(ctx, msObjBigintParse(&vm, s, (int32_t)strlen(s), 10, &r) == MS_BIG_OK);
+    rootBig(&vm, r);
+    EXPECT_EQ(ctx, 0, msObjBigintCompare(b, r));
+    char* s2 = bigDec(&vm, r);
+    EXPECT(ctx, s2 != NULL && strcmp(s, s2) == 0);
+    free(s);
+    free(s2);
+  }
+  // ToF64 精确域：2^63 恰为可精确表示的幂二进制
+  MsObjBigInt* big = NULL;
+  EXPECT(ctx, msObjBigintParse(&vm, "9223372036854775808", 19, 10, &big) == MS_BIG_OK);
+  rootBig(&vm, big);
+  EXPECT(ctx, msObjBigintToF64(big) == 9223372036854775808.0);
+  // FitsI64 边界：上界内/上界外/下界外/恰 INT64_MIN
+  MsObjBigInt* imax = msObjBigintFromI64(&vm, INT64_MAX);
+  rootBig(&vm, imax);
+  ms_i64 iv = 0;
+  EXPECT(ctx, msObjBigintFitsI64(imax, &iv) && iv == INT64_MAX);
+  EXPECT(ctx, !msObjBigintFitsI64(big, &iv));
+  MsObjBigInt* below = NULL;
+  EXPECT(ctx, msObjBigintParse(&vm, "-9223372036854775809", 20, 10, &below) == MS_BIG_OK);
+  rootBig(&vm, below);
+  EXPECT(ctx, !msObjBigintFitsI64(below, &iv));
+  MsObjBigInt* imin = NULL;
+  EXPECT(ctx, msObjBigintParse(&vm, "-9223372036854775808", 20, 10, &imin) == MS_BIG_OK);
+  rootBig(&vm, imin);
+  EXPECT(ctx, msObjBigintFitsI64(imin, &iv));
+  EXPECT_EQ(ctx, INT64_MIN, iv);
+  msVmFree(&vm);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   bigintParsePrintRoundtrip(&ctx);
   bigintToStringBase(&ctx);
   bigintHashNumeric(&ctx);
   bigintCompare(&ctx);
+  bigintCmpF64Tiny(&ctx);
+  bigintRandomRoundtrip(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;
