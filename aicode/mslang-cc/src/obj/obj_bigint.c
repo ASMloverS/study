@@ -815,14 +815,15 @@ static int clz32(uint32_t x) {
   return n;
 }
 
-// 幅值除内核：u（就地改写为规格化余数）÷ v → q；ulen ≥ vlen ≥ 1，v 顶层非零
-static void magDivKernel(uint32_t* q, uint32_t* u, int32_t ulen, const uint32_t* v, int32_t vlen,
+// 幅值除内核：u（就地改写为规格化余数）÷ v → q；ulen ≥ vlen ≥ 1，v 顶层非零。
+// 返回 false 仅当内部暂存分配失败（OOM）
+static bool magDivKernel(uint32_t* q, uint32_t* u, int32_t ulen, const uint32_t* v, int32_t vlen,
                          int32_t* outULen) {
   int32_t n = vlen;
   int32_t m = ulen - vlen;
   if (m < 0) {  // 防御（调用方门控）
     *outULen = ulen;
-    return;
+    return true;
   }
   if (n == 1) {  // 单 limb 除数：估计式会读 vn[n-2]/un[j+n-2] 越界——逐位 64/32 精除（divmnu n==1 同型）
     uint64_t rem = 0;
@@ -833,11 +834,16 @@ static void magDivKernel(uint32_t* q, uint32_t* u, int32_t ulen, const uint32_t*
     }
     u[0] = (uint32_t)rem;
     *outULen = rem != 0 ? 1 : 0;
-    return;
+    return true;
   }
   int s = clz32(v[n - 1]);
   uint32_t* un = (uint32_t*)calloc((size_t)ulen + 1, sizeof(uint32_t));
-  uint32_t* vn = (uint32_t*)calloc((size_t)n, sizeof(uint32_t));
+  uint32_t* vn = un != NULL ? (uint32_t*)calloc((size_t)n, sizeof(uint32_t)) : NULL;
+  if (un == NULL || vn == NULL) {
+    free(un);
+    free(vn);
+    return false;
+  }
   if (s > 0) {  // 左移规格化：v 顶位置 1
     for (int32_t i = n - 1; i > 0; i--) {
       vn[i] = (v[i] << s) | (v[i - 1] >> (32 - s));
@@ -898,6 +904,7 @@ static void magDivKernel(uint32_t* q, uint32_t* u, int32_t ulen, const uint32_t*
   free(un);
   free(vn);
   *outULen = rlen;
+  return true;
 }
 
 // 幅值除/模完整包装：quot 非 NULL 时产商、rem 非 NULL 时产余（按需单次分配）
@@ -934,7 +941,11 @@ static MsBigErr magDivModFull(MsVM* vm, const MsBigView* a, const MsBigView* b, 
   }
   memcpy(u, a->limbs, (size_t)a->len * sizeof(uint32_t));
   int32_t ulen = a->len;
-  magDivKernel(q, u, ulen, b->limbs, b->len, &ulen);
+  if (!magDivKernel(q, u, ulen, b->limbs, b->len, &ulen)) {  // 内核 OOM 透传
+    free(q);
+    free(u);
+    return MS_BIG_OOM;
+  }
   MsBigErr e = MS_BIG_OK;
   if (quot != NULL) {
     e = bigFromMag(vm, q, qlen, qs, quot);  // 此后 a/b 视图弃用（文件头纪律）
@@ -1075,7 +1086,8 @@ MsBigErr msBigShl(MsVM* vm, const MsBigView* a, ms_i64 n, MsObjBigInt** out) {
   if (a->len == 0) {
     return bigFromMag(vm, NULL, 0, 0, out);
   }
-  if (bitLenView(a->limbs, a->len) + n > MS_BIGINT_MAX_BITS) {
+  if (n > MS_BIGINT_MAX_BITS ||  // 短路：n 近 INT64_MAX 时求和会带符号溢出（UB）绕过护栏
+      bitLenView(a->limbs, a->len) + n > MS_BIGINT_MAX_BITS) {
     return MS_BIG_RANGE;
   }
   int32_t limbOff = (int32_t)(n >> 5);
