@@ -214,6 +214,401 @@ TEST(bigintRandomRoundtrip) {  // review I-2：随机 parse/print 往返 + ToF64
   msVmFree(&vm);
 }
 
+// ---------- 十进制软参考（T016 §6：独立朴素实现防同源错误；仅 +、-、×、比较） ----------
+// 大端十进制数字数组（d[0] 最高位）；sign ∈ {-1,0,1}；容量 8200 覆盖 300 limb（9600 bit ≈ 2891 位）
+// 乘积上限（≤ 5782 位）+ 进位裕量（计划勘误：原 4600 不足，统一提到 8200）
+
+typedef struct DecNum {
+  int sign;
+  int len;       // 有效位数（0 ⇔ 值 0）
+  char d[8200];
+} DecNum;
+
+static void decNorm(DecNum* n) {
+  int32_t i = 0;
+  while (i < n->len && n->d[i] == 0) {
+    i++;
+  }
+  memmove(n->d, n->d + i, (size_t)(n->len - i));
+  n->len -= i;
+  if (n->len == 0) {
+    n->sign = 0;
+  }
+}
+
+static void decFromString(DecNum* out, const char* s) {
+  out->sign = s[0] == '-' ? -1 : 1;
+  const char* p = s[0] == '-' || s[0] == '+' ? s + 1 : s;
+  out->len = (int32_t)strlen(p);
+  memcpy(out->d, p, (size_t)out->len);
+  for (int32_t i = 0; i < out->len; i++) {
+    out->d[i] = (char)(out->d[i] - '0');
+  }
+  decNorm(out);
+}
+
+static void decToChars(const DecNum* n, char* buf, size_t cap) {
+  if (n->len == 0) {
+    snprintf(buf, cap, "0");
+    return;
+  }
+  int32_t o = 0;
+  if (n->sign < 0) {
+    buf[o++] = '-';
+  }
+  for (int32_t i = 0; i < n->len; i++) {
+    buf[o + i] = (char)('0' + n->d[i]);
+  }
+  buf[o + n->len] = '\0';
+}
+
+// |a| + |b|（大端）
+static void decMagAdd(DecNum* a, const DecNum* b) {
+  char r[8200];
+  int32_t al = a->len, bl = b->len;
+  int32_t rl = al > bl ? al : bl;
+  int carry = 0;
+  for (int32_t i = 0; i < rl; i++) {
+    int da = al - 1 - i >= 0 ? a->d[al - 1 - i] : 0;
+    int db = bl - 1 - i >= 0 ? b->d[bl - 1 - i] : 0;
+    int t = da + db + carry;
+    r[rl - 1 - i] = (char)(t % 10);
+    carry = t / 10;
+  }
+  if (carry != 0) {
+    memmove(r + 1, r, (size_t)rl);
+    r[0] = (char)carry;
+    rl++;
+  }
+  memcpy(a->d, r, (size_t)rl);
+  a->len = rl;
+}
+
+// |a| - |b|（|a| ≥ |b|）
+static void decMagSub(DecNum* a, const DecNum* b) {
+  int32_t al = a->len, bl = b->len;
+  int borrow = 0;
+  for (int32_t i = 0; i < al; i++) {
+    int da = a->d[al - 1 - i];
+    int db = bl - 1 - i >= 0 ? b->d[bl - 1 - i] : 0;
+    int t = da - db - borrow;
+    if (t < 0) {
+      t += 10;
+      borrow = 1;
+    } else {
+      borrow = 0;
+    }
+    a->d[al - 1 - i] = (char)t;
+  }
+  decNorm(a);
+}
+
+static int decCmpAbs(const DecNum* a, const DecNum* b) {
+  if (a->len != b->len) {
+    return a->len < b->len ? -1 : 1;
+  }
+  for (int32_t i = 0; i < a->len; i++) {
+    if (a->d[i] != b->d[i]) {
+      return a->d[i] < b->d[i] ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+// 有符号 a ± b
+static void decAdd(DecNum* a, const DecNum* b, bool sub) {
+  int bs = sub ? -b->sign : b->sign;
+  if (a->sign == 0) {
+    *a = *b;
+    a->sign = bs;
+    return;
+  }
+  if (bs == 0) {
+    return;
+  }
+  if (a->sign == bs) {
+    decMagAdd(a, b);
+  } else {
+    int c = decCmpAbs(a, b);
+    if (c == 0) {
+      a->len = 0;
+      a->sign = 0;
+    } else if (c > 0) {
+      decMagSub(a, b);
+    } else {
+      DecNum t = *b;
+      decMagSub(&t, a);
+      *a = t;
+      a->sign = bs;
+    }
+  }
+}
+
+// |a|·|b|（大端卷积）
+static void decMul(DecNum* out, const DecNum* a, const DecNum* b) {
+  char r[8200] = {0};
+  int32_t rl = a->len + b->len;
+  for (int32_t i = 0; i < a->len; i++) {
+    int carry = 0;
+    for (int32_t j = 0; j < b->len; j++) {
+      int t = r[rl - 1 - (i + j)] + a->d[a->len - 1 - i] * b->d[b->len - 1 - j] + carry;
+      r[rl - 1 - (i + j)] = (char)(t % 10);
+      carry = t / 10;
+    }
+    int32_t k = i + b->len;
+    while (carry != 0) {
+      int t = r[rl - 1 - k] + carry;
+      r[rl - 1 - k] = (char)(t % 10);
+      carry = t / 10;
+      k++;
+    }
+  }
+  memcpy(out->d, r, (size_t)rl);
+  out->len = rl;
+  out->sign = a->sign * b->sign;
+  decNorm(out);
+}
+
+// 运算包装：两 bigint 运算并以十进制比对（oracle 由 dec* 提供）
+static void checkBinOp(TestCtx* ctx, MsVM* vm, const char* op, const MsObjBigInt* a, const MsObjBigInt* b,
+                       const DecNum* want) {
+  rootBig(vm, a);
+  rootBig(vm, b);
+  MsBigView va, vb;
+  msBigViewOf(&va, a);
+  msBigViewOf(&vb, b);
+  MsObjBigInt* r = NULL;
+  MsBigErr e = MS_BIG_OK;
+  if (strcmp(op, "+") == 0) {
+    e = msBigAdd(vm, &va, &vb, &r);
+  } else if (strcmp(op, "-") == 0) {
+    e = msBigSub(vm, &va, &vb, &r);
+  } else if (strcmp(op, "*") == 0) {
+    e = msBigMul(vm, &va, &vb, &r);
+  } else {
+    e = msBigDiv(vm, &va, &vb, &r);
+  }
+  EXPECT(ctx, e == MS_BIG_OK);
+  if (e != MS_BIG_OK) {
+    return;
+  }
+  rootBig(vm, r);
+  char* got = bigDec(vm, r);
+  char wantChars[8200];
+  decToChars(want, wantChars, sizeof(wantChars));
+  EXPECT_STREQ(ctx, wantChars, got);
+  free(got);
+}
+
+TEST(bigintAddSubOracle) {  // §5.1：随机 2048 位 ± 与十进制参考一致
+  MsVM vm;
+  msVmInit(&vm);
+  for (int iter = 0; iter < 100; iter++) {
+    int32_t la = 1 + (int32_t)(rngNext() % 64);  // ≤ 2048 bit
+    int32_t lb = 1 + (int32_t)(rngNext() % 64);
+    MsObjBigInt* a = randomBig(&vm, la);
+    MsObjBigInt* b = randomBig(&vm, lb);
+    char* as = bigDec(&vm, a);
+    char* bs = bigDec(&vm, b);
+    DecNum da, db, want;
+    decFromString(&da, as);
+    decFromString(&db, bs);
+    want = da;
+    decAdd(&want, &db, false);
+    checkBinOp(ctx, &vm, "+", a, b, &want);
+    want = da;
+    decAdd(&want, &db, true);
+    checkBinOp(ctx, &vm, "-", a, b, &want);
+    free(as);
+    free(bs);
+  }
+  msVmFree(&vm);
+}
+
+TEST(bigintMulOracle) {  // §5.1/DoD：阈值两侧 200 组随机（含 Karatsuba 路径）
+  MsVM vm;
+  msVmInit(&vm);
+  for (int iter = 0; iter < 200; iter++) {
+    // 100..300 limb（3200..9600 bit）跨 4096 bit 阈值；DecNum 容量按 300 limb 乘积上限
+    int32_t la = 100 + (int32_t)(rngNext() % 201);
+    int32_t lb = 100 + (int32_t)(rngNext() % 201);
+    MsObjBigInt* a = randomBig(&vm, la);
+    MsObjBigInt* b = randomBig(&vm, lb);
+    char* as = bigDec(&vm, a);
+    char* bs = bigDec(&vm, b);
+    DecNum da, db, want;
+    decFromString(&da, as);
+    decFromString(&db, bs);
+    decMul(&want, &da, &db);
+    checkBinOp(ctx, &vm, "*", a, b, &want);
+    free(as);
+    free(bs);
+  }
+  msVmFree(&vm);
+}
+
+TEST(bigintMulKaratsubaZeroLow) {  // 回归：低半窗全零（a0len+b0len < zLen）时 z0 槽尾未清零
+  MsVM vm;
+  msVmInit(&vm);
+  // a = 2^8192（257 limb，低 128 limb 全零，alen 奇 → a1len = m+1 兼查 sa 槽位溢出路径）；
+  // b = 3·2^5000（157 limb，低 128 limb 全零）→ m = 128，Karatsuba 分支，z0 = 0·0 = 0
+  MsObjBigInt* one = msObjBigintFromI64(&vm, 1);
+  rootBig(&vm, one);
+  MsObjBigInt* three = msObjBigintFromI64(&vm, 3);
+  rootBig(&vm, three);
+  MsBigView v1, v3;
+  msBigViewOf(&v1, one);
+  msBigViewOf(&v3, three);
+  MsObjBigInt* a = NULL;
+  MsObjBigInt* b = NULL;
+  EXPECT(ctx, msBigShl(&vm, &v1, 8192, &a) == MS_BIG_OK);
+  rootBig(&vm, a);
+  EXPECT(ctx, msBigShl(&vm, &v3, 5000, &b) == MS_BIG_OK);
+  rootBig(&vm, b);
+  char* as = bigDec(&vm, a);
+  char* bs = bigDec(&vm, b);
+  DecNum da, db, want;
+  decFromString(&da, as);
+  decFromString(&db, bs);
+  decMul(&want, &da, &db);
+  checkBinOp(ctx, &vm, "*", a, b, &want);  // want = 3·2^13192
+  free(as);
+  free(bs);
+  msVmFree(&vm);
+}
+
+TEST(bigintDivModSemantics) {  // §5.1：除/模符号 + 恒等式性质
+  MsVM vm;
+  msVmInit(&vm);
+  // 固定符号用例（02 §3.5 Go 语义）；末两组为单 limb 除数（Knuth D n==1 内核，含 rhat==0 最坏型）。
+  // 注意：计划原稿 4 组表配 i<8 越界——此处按实际行数 6 遍历（计划勘误）
+  const char* triples[] = {
+      "-7", "2", "-3", "-1", "7", "-2", "-3", "1", "5", "2", "2", "1", "0", "5", "0", "0",
+      "6", "2", "3", "0", "1000000000000000000000007", "3", "333333333333333333333335", "2",
+  };
+  for (int i = 0; i < 6; i++) {
+    MsObjBigInt* a = NULL;
+    MsObjBigInt* b = NULL;
+    EXPECT(ctx, msObjBigintParse(&vm, triples[4 * i], (int32_t)strlen(triples[4 * i]), 10, &a) == MS_BIG_OK);
+    rootBig(&vm, a);
+    EXPECT(ctx, msObjBigintParse(&vm, triples[4 * i + 1], (int32_t)strlen(triples[4 * i + 1]), 10, &b) == MS_BIG_OK);
+    rootBig(&vm, b);
+    MsBigView va, vb;
+    msBigViewOf(&va, a);
+    msBigViewOf(&vb, b);
+    MsObjBigInt* q = NULL;
+    MsObjBigInt* r = NULL;
+    EXPECT(ctx, msBigDiv(&vm, &va, &vb, &q) == MS_BIG_OK);
+    rootBig(&vm, q);
+    EXPECT(ctx, msBigMod(&vm, &va, &vb, &r) == MS_BIG_OK);
+    rootBig(&vm, r);
+    char* qs = bigDec(&vm, q);
+    char* rs = bigDec(&vm, r);
+    EXPECT_STREQ(ctx, triples[4 * i + 2], qs);
+    EXPECT_STREQ(ctx, triples[4 * i + 3], rs);
+    free(qs);
+    free(rs);
+  }
+  // 除零
+  MsObjBigInt* zero = msObjBigintFromI64(&vm, 0);
+  rootBig(&vm, zero);
+  MsBigView va2;
+  msBigViewOf(&va2, zero);
+  MsObjBigInt* r2 = NULL;
+  EXPECT(ctx, msBigMod(&vm, &va2, &va2, &r2) == MS_BIG_DIVZERO);
+  // 随机大数恒等式：a == q·b + r ∧ |r| < |b| ∧ (r == 0 ∨ sign(r) == sign(a))
+  for (int iter = 0; iter < 50; iter++) {
+    MsObjBigInt* a = randomBig(&vm, 2 + (int32_t)(rngNext() % 80));
+    MsObjBigInt* b = randomBig(&vm, 1 + (int32_t)(rngNext() % 40));
+    rootBig(&vm, a);
+    rootBig(&vm, b);
+    MsBigView vwa, vwb;
+    msBigViewOf(&vwa, a);
+    msBigViewOf(&vwb, b);
+    MsObjBigInt* q = NULL;
+    MsObjBigInt* r = NULL;
+    EXPECT(ctx, msBigDiv(&vm, &vwa, &vwb, &q) == MS_BIG_OK);
+    rootBig(&vm, q);
+    EXPECT(ctx, msBigMod(&vm, &vwa, &vwb, &r) == MS_BIG_OK);
+    rootBig(&vm, r);
+    // q·b + r == a
+    MsBigView vq, vr;
+    msBigViewOf(&vq, q);
+    msBigViewOf(&vwb, b);
+    msBigViewOf(&vr, r);
+    MsObjBigInt* qb = NULL;
+    MsObjBigInt* sum = NULL;
+    EXPECT(ctx, msBigMul(&vm, &vq, &vwb, &qb) == MS_BIG_OK);
+    rootBig(&vm, qb);
+    msBigViewOf(&vq, qb);
+    EXPECT(ctx, msBigAdd(&vm, &vq, &vr, &sum) == MS_BIG_OK);
+    rootBig(&vm, sum);
+    EXPECT(ctx, msObjBigintCompare(sum, a) == 0);
+    EXPECT(ctx, r->len == 0 || r->sign == a->sign);  // 余符号随被除数
+  }
+  msVmFree(&vm);
+}
+
+TEST(bigintBitwiseVsI64) {  // §5.1：小数值域以 i64 位运算为模型（含负数补码语义）
+  MsVM vm;
+  msVmInit(&vm);
+  for (int iter = 0; iter < 200; iter++) {
+    ms_i64 x = (ms_i64)((rngNext() % 2001) - 1000);
+    ms_i64 y = (ms_i64)((rngNext() % 2001) - 1000);
+    MsObjBigInt* a = msObjBigintFromI64(&vm, x);
+    MsObjBigInt* b = msObjBigintFromI64(&vm, y);
+    rootBig(&vm, a);
+    rootBig(&vm, b);
+    MsBigView va, vb;
+    msBigViewOf(&va, a);
+    msBigViewOf(&vb, b);
+    MsObjBigInt* r = NULL;
+    EXPECT(ctx, msBigBitOp(&vm, MS_BIG_BIT_AND, &va, &vb, &r) == MS_BIG_OK);
+    rootBig(&vm, r);
+    EXPECT_EQ(ctx, 0, msObjBigintCmpI64(r, x & y));
+    msBigViewOf(&va, a);
+    msBigViewOf(&vb, b);
+    EXPECT(ctx, msBigBitOp(&vm, MS_BIG_BIT_OR, &va, &vb, &r) == MS_BIG_OK);
+    rootBig(&vm, r);
+    EXPECT_EQ(ctx, 0, msObjBigintCmpI64(r, x | y));
+    msBigViewOf(&va, a);
+    msBigViewOf(&vb, b);
+    EXPECT(ctx, msBigBitOp(&vm, MS_BIG_BIT_XOR, &va, &vb, &r) == MS_BIG_OK);
+    rootBig(&vm, r);
+    EXPECT_EQ(ctx, 0, msObjBigintCmpI64(r, x ^ y));
+  }
+  // 移位/幂/~ 语义锚点
+  MsObjBigInt* m3 = msObjBigintFromI64(&vm, -3);
+  rootBig(&vm, m3);
+  MsBigView v3;
+  msBigViewOf(&v3, m3);
+  MsObjBigInt* r = NULL;
+  EXPECT(ctx, msBigShr(&vm, &v3, 1, &r) == MS_BIG_OK);  // floor(-3/2) = -2
+  rootBig(&vm, r);
+  EXPECT_EQ(ctx, 0, msObjBigintCmpI64(r, -2));
+  msBigViewOf(&v3, m3);
+  EXPECT(ctx, msBigNot(&vm, &v3, &r) == MS_BIG_OK);  // ~(-3) = 2
+  rootBig(&vm, r);
+  EXPECT_EQ(ctx, 0, msObjBigintCmpI64(r, 2));
+  MsObjBigInt* m1 = msObjBigintFromI64(&vm, -1);
+  rootBig(&vm, m1);
+  MsBigView v1;
+  msBigViewOf(&v1, m1);
+  EXPECT(ctx, msBigShr(&vm, &v1, 1000, &r) == MS_BIG_OK);  // -1 >> 大数 = -1
+  rootBig(&vm, r);
+  EXPECT_EQ(ctx, 0, msObjBigintCmpI64(r, -1));
+  MsObjBigInt* two = msObjBigintFromI64(&vm, 2);
+  rootBig(&vm, two);
+  MsBigView v2;
+  msBigViewOf(&v2, two);
+  EXPECT(ctx, msBigPow(&vm, &v2, 100, &r) == MS_BIG_OK);
+  rootBig(&vm, r);
+  char* s = bigDec(&vm, r);
+  EXPECT_STREQ(ctx, "1267650600228229401496703205376", s);  // 2^100
+  free(s);
+  msVmFree(&vm);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   bigintParsePrintRoundtrip(&ctx);
@@ -222,6 +617,11 @@ int main(void) {
   bigintCompare(&ctx);
   bigintCmpF64Tiny(&ctx);
   bigintRandomRoundtrip(&ctx);
+  bigintAddSubOracle(&ctx);
+  bigintMulOracle(&ctx);
+  bigintMulKaratsubaZeroLow(&ctx);
+  bigintDivModSemantics(&ctx);
+  bigintBitwiseVsI64(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

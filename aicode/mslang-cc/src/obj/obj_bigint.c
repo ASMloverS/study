@@ -492,3 +492,659 @@ ms_u64 msHashNumericF64(double f) {
   }
   return hashSigned(modMulP(rm, modPow2(k)), sign);
 }
+
+// ---- 运算（T016，22 §5）：malloc 临时区计算 → 末端单次分配（文件头 GC 纪律） ----
+
+static MsBigErr bigFromMag(MsVM* vm, const uint32_t* limbs, int32_t len, int sign, MsObjBigInt** out) {
+  MsObjBigInt* b = msObjBigintNew(vm, limbs, len, sign);  // limbs 为 malloc/栈缓冲（非 GC 域）
+  if (b == NULL) {
+    return MS_BIG_OOM;
+  }
+  *out = b;
+  return MS_BIG_OK;
+}
+
+// 视图整体拷入 malloc（对象内部 limbs 先离 GC 域再入分配窗口）
+static MsBigErr bigFromViewCopy(MsVM* vm, const MsBigView* v, MsObjBigInt** out) {
+  if (v->len == 0) {
+    return bigFromMag(vm, NULL, 0, 0, out);
+  }
+  uint32_t* tmp = (uint32_t*)malloc((size_t)v->len * sizeof(uint32_t));
+  if (tmp == NULL) {
+    return MS_BIG_OOM;
+  }
+  memcpy(tmp, v->limbs, (size_t)v->len * sizeof(uint32_t));
+  MsBigErr e = bigFromMag(vm, tmp, v->len, v->sign, out);
+  free(tmp);
+  return e;
+}
+
+// 幅值加：r = a + b（alen ≥ blen；r 容量 alen+1；*outLen 规范前长度）
+static void magAdd(uint32_t* r, const uint32_t* a, int32_t alen, const uint32_t* b, int32_t blen,
+                   int32_t* outLen) {
+  uint64_t carry = 0;
+  int32_t i = 0;
+  for (; i < blen; i++) {
+    uint64_t t = (uint64_t)a[i] + b[i] + carry;
+    r[i] = (uint32_t)t;
+    carry = t >> 32;
+  }
+  for (; i < alen; i++) {
+    uint64_t t = (uint64_t)a[i] + carry;
+    r[i] = (uint32_t)t;
+    carry = t >> 32;
+  }
+  r[i] = (uint32_t)carry;
+  *outLen = carry != 0 ? i + 1 : i;
+}
+
+// 幅值减：r = a - b（a ≥ b；rlen = alen，调用方规范化）
+static void magSub(uint32_t* r, const uint32_t* a, int32_t alen, const uint32_t* b, int32_t blen) {
+  uint64_t borrow = 0;
+  for (int32_t i = 0; i < alen; i++) {
+    uint64_t bi = i < blen ? b[i] : 0;
+    uint64_t cur = (uint64_t)a[i] - bi - borrow;  // u64 下溢回绕即借位
+    r[i] = (uint32_t)cur;
+    borrow = (cur >> 32) != 0 ? 1 : 0;
+  }
+}
+
+static void magAddAny(uint32_t* r, const uint32_t* a, int32_t alen, const uint32_t* b, int32_t blen,
+                      int32_t* outLen) {  // 任意长度序
+  if (alen >= blen) {
+    magAdd(r, a, alen, b, blen, outLen);
+  } else {
+    magAdd(r, b, blen, a, alen, outLen);
+  }
+}
+
+// 有符号加减统一：同号幅值加、异号大幅减小幅（符号随大者）
+static MsBigErr bigSignedAdd(MsVM* vm, const MsBigView* a, const MsBigView* b, bool sub, MsObjBigInt** out) {
+  int8_t bs = sub ? (int8_t)-b->sign : b->sign;
+  if (a->len == 0) {
+    MsBigView v = {b->limbs, b->len, bs};
+    return bigFromViewCopy(vm, &v, out);
+  }
+  if (b->len == 0) {
+    return bigFromViewCopy(vm, a, out);
+  }
+  int32_t maxLen = a->len > b->len ? a->len : b->len;
+  uint32_t* r = (uint32_t*)malloc((size_t)(maxLen + 1) * sizeof(uint32_t));
+  if (r == NULL) {
+    return MS_BIG_OOM;
+  }
+  int sign;
+  int32_t rlen = 0;
+  if (a->sign == bs) {
+    magAddAny(r, a->limbs, a->len, b->limbs, b->len, &rlen);
+    sign = a->sign;
+  } else {
+    int c = magCmp(a->limbs, a->len, b->limbs, b->len);
+    if (c == 0) {
+      free(r);
+      return bigFromMag(vm, NULL, 0, 0, out);
+    }
+    if (c > 0) {
+      magSub(r, a->limbs, a->len, b->limbs, b->len);
+      rlen = a->len;
+      sign = a->sign;
+    } else {
+      magSub(r, b->limbs, b->len, a->limbs, a->len);
+      rlen = b->len;
+      sign = bs;
+    }
+  }
+  MsBigErr e = bigFromMag(vm, r, rlen, sign, out);
+  free(r);
+  return e;
+}
+
+MsBigErr msBigAdd(MsVM* vm, const MsBigView* a, const MsBigView* b, MsObjBigInt** out) {
+  return bigSignedAdd(vm, a, b, false, out);
+}
+
+MsBigErr msBigSub(MsVM* vm, const MsBigView* a, const MsBigView* b, MsObjBigInt** out) {
+  return bigSignedAdd(vm, a, b, true, out);
+}
+
+MsBigErr msBigNeg(MsVM* vm, const MsBigView* a, MsObjBigInt** out) {
+  MsBigView v = *a;
+  v.sign = (int8_t)-a->sign;
+  return bigFromViewCopy(vm, &v, out);
+}
+
+// ~a = -(a+1)：正 → 幅值+1 取负；负 → 幅值-1 取正
+MsBigErr msBigNot(MsVM* vm, const MsBigView* a, MsObjBigInt** out) {
+  if (a->len == 0) {  // ~0 = -1
+    uint32_t one = 1;
+    return bigFromMag(vm, &one, 1, -1, out);
+  }
+  uint32_t* tmp = (uint32_t*)malloc((size_t)(a->len + 1) * sizeof(uint32_t));
+  if (tmp == NULL) {
+    return MS_BIG_OOM;
+  }
+  memcpy(tmp, a->limbs, (size_t)a->len * sizeof(uint32_t));
+  int32_t len = a->len;
+  int sign;
+  if (a->sign > 0) {
+    uint64_t carry = 1;
+    for (int32_t i = 0; i < len && carry != 0; i++) {
+      uint64_t t = (uint64_t)tmp[i] + carry;
+      tmp[i] = (uint32_t)t;
+      carry = t >> 32;
+    }
+    if (carry != 0) {
+      tmp[len++] = (uint32_t)carry;
+    }
+    sign = -1;
+  } else {
+    int32_t i = 0;  // 幅值-1（幅值 ≥ 1 → 无跨位借穿）
+    while (i < len && tmp[i] == 0) {
+      tmp[i] = 0xFFFFFFFFu;
+      i++;
+    }
+    tmp[i] -= 1;
+    sign = 1;
+  }
+  MsBigErr e = bigFromMag(vm, tmp, len, sign, out);
+  free(tmp);
+  return e;
+}
+
+// —— 乘法：朴素 O(n·m) + Karatsuba（位宽 > 4096 bit = 128 limb，22 §5） ——
+
+#define MS_BIG_KARATSUBA_LIMBS 128
+
+// 朴素：r 容量 alen+blen，先清零
+static void magMulNaive(uint32_t* r, const uint32_t* a, int32_t alen, const uint32_t* b, int32_t blen) {
+  memset(r, 0, (size_t)(alen + blen) * sizeof(uint32_t));
+  for (int32_t i = 0; i < alen; i++) {
+    uint64_t carry = 0;
+    uint64_t ai = a[i];
+    for (int32_t j = 0; j < blen; j++) {
+      uint64_t t = ai * b[j] + r[i + j] + carry;  // ≤ (2^32-1)² + 2(2^32-1) < 2^64
+      r[i + j] = (uint32_t)t;
+      carry = t >> 32;
+    }
+    int32_t k = i + blen;
+    while (carry != 0) {
+      uint64_t t = (uint64_t)r[k] + carry;
+      r[k] = (uint32_t)t;
+      carry = t >> 32;
+      k++;
+    }
+  }
+}
+
+static int64_t bitLenView(const uint32_t* limbs, int32_t len) {
+  len = normLen(limbs, len);
+  if (len == 0) {
+    return 0;
+  }
+  uint32_t top = limbs[len - 1];
+  int64_t bits = (int64_t)(len - 1) * 32;
+  while (top != 0) {
+    top >>= 1;
+    bits++;
+  }
+  return bits;
+}
+
+// Karatsuba（幅值；r 容量 alen+blen）：仅两侧均 ≥ 阈值且大致均衡时递归（a 长 b 短落朴素——
+// 正确性优先，非均衡优化归 T044）。scratch 供本层 sa/sb/z0/z2/z1 + 子递归复用
+static bool magMulRec(uint32_t* r, const uint32_t* a, int32_t alen, const uint32_t* b, int32_t blen,
+                      uint32_t* scratch, int32_t scratchCap) {
+  if (alen < blen) {
+    const uint32_t* tp = a;
+    a = b;
+    b = tp;
+    int32_t tl = alen;
+    alen = blen;
+    blen = tl;
+  }
+  int32_t m = alen / 2;
+  if (blen <= m || blen < MS_BIG_KARATSUBA_LIMBS) {  // 短侧无有效高位半段或阈下 → 朴素
+    magMulNaive(r, a, alen, b, blen);
+    return true;
+  }
+  const uint32_t* a0 = a;
+  int32_t a0len = normLen(a0, m);
+  const uint32_t* a1 = a + m;
+  int32_t a1len = normLen(a1, alen - m);
+  const uint32_t* b0 = b;
+  int32_t b0len = normLen(b0, blen < m ? blen : m);
+  const uint32_t* b1 = b + (blen < m ? blen : m);
+  int32_t b1len = blen - (blen < m ? blen : m);
+  // 槽位按精确上界分配（计划勘误）：固定 zLen/2m+2 槽宽在 alen 奇或 blen 近 alen 时不足——
+  // z2 乘积（a1len+b1len 可达 2m+2）溢出位落入 z1 槽，被后算的 z1 乘积覆盖，后续
+  // normLen/magSub 即读回脏值；z1 槽（saLen+sbLen 可达 2m+4）同理压 subScratch
+  int32_t zLen = 2 * m;
+  int32_t saCap = (a0len > a1len ? a0len : a1len) + 1;
+  int32_t sbCap = (b0len > b1len ? b0len : b1len) + 1;
+  int32_t z2Len = a1len + b1len;
+  int32_t z1Cap = saCap + sbCap;
+  int32_t need = saCap + sbCap + zLen + z2Len + z1Cap;
+  if (scratchCap < need) {
+    return false;
+  }
+  uint32_t* sa = scratch;
+  uint32_t* sb = scratch + saCap;
+  uint32_t* z0 = sb + sbCap;
+  uint32_t* z2 = z0 + zLen;
+  uint32_t* z1 = z2 + z2Len;
+  uint32_t* subScratch = z1 + z1Cap;
+  int32_t subCap = scratchCap - (int32_t)(subScratch - scratch);
+  int32_t saLen = 0;
+  int32_t sbLen = 0;
+  int32_t z0Len = 0;
+  int32_t z1Len = 0;
+  magAddAny(sa, a0, a0len, a1, a1len, &saLen);
+  magAddAny(sb, b0, b0len, b1, b1len, &sbLen);
+  // z0 槽全零化：a0len+b0len < zLen（低半窗含零 limb）时子递归只写前缀——不清零则
+  // memcpy(z0, zLen) 会把未初始化 scratch 带进结果（计划勘误）
+  memset(z0, 0, (size_t)zLen * sizeof(uint32_t));
+  if (!magMulRec(z0, a0, a0len, b0, b0len, subScratch, subCap) ||
+      !magMulRec(z2, a1, a1len, b1, b1len, subScratch, subCap) ||
+      !magMulRec(z1, sa, saLen, sb, sbLen, subScratch, subCap)) {
+    return false;
+  }
+  z0Len = a0len + b0len;  // 调用方依赖 normLen 收敛；乘积长上界即两因子长和
+  z1Len = saLen + sbLen;
+  // z1 = sa·sb - z0 - z2（sa·sb ≥ z0 + z2 恒成立，顺序借位安全）
+  magSub(z1, z1, z1Len, z0, normLen(z0, z0Len));
+  magSub(z1, z1, z1Len, z2, normLen(z2, z2Len));
+  // r = z2·B^2m + z1·B^m + z0
+  memcpy(r, z0, (size_t)zLen * sizeof(uint32_t));
+  int32_t rlen = alen + blen;
+  memset(r + zLen, 0, (size_t)(rlen - zLen) * sizeof(uint32_t));
+  int32_t z2n = normLen(z2, z2Len);
+  memcpy(r + 2 * m, z2, (size_t)z2n * sizeof(uint32_t));
+  int32_t z1n = normLen(z1, z1Len);
+  uint64_t carry = 0;
+  int32_t i = 0;
+  for (; i < z1n; i++) {  // 叠加 z1·B^m（重叠带进位加）
+    uint64_t t = (uint64_t)r[m + i] + z1[i] + carry;
+    r[m + i] = (uint32_t)t;
+    carry = t >> 32;
+  }
+  for (int32_t k = m + z1n; carry != 0 && k < rlen; k++) {
+    uint64_t t = (uint64_t)r[k] + carry;
+    r[k] = (uint32_t)t;
+    carry = t >> 32;
+  }
+  return true;
+}
+
+MsBigErr msBigMul(MsVM* vm, const MsBigView* a, const MsBigView* b, MsObjBigInt** out) {
+  if (a->len == 0 || b->len == 0) {
+    return bigFromMag(vm, NULL, 0, 0, out);
+  }
+  if ((bitLenView(a->limbs, a->len) + bitLenView(b->limbs, b->len)) > MS_BIGINT_MAX_BITS) {
+    return MS_BIG_RANGE;
+  }
+  int32_t rlen = a->len + b->len;
+  uint32_t* r = (uint32_t*)calloc((size_t)rlen, sizeof(uint32_t));
+  int32_t maxLen = a->len > b->len ? a->len : b->len;
+  int32_t scratchCap = 8 * (maxLen + 4);  // 各层几何递减（m/2 链），8× 顶层层长充足
+  uint32_t* scratch = (uint32_t*)malloc((size_t)scratchCap * sizeof(uint32_t));
+  if (r == NULL || scratch == NULL) {
+    free(r);
+    free(scratch);
+    return MS_BIG_OOM;
+  }
+  if (!magMulRec(r, a->limbs, a->len, b->limbs, b->len, scratch, scratchCap)) {
+    free(r);
+    free(scratch);
+    return MS_BIG_OOM;
+  }
+  free(scratch);
+  MsBigErr e = bigFromMag(vm, r, rlen, a->sign * b->sign, out);
+  free(r);
+  return e;
+}
+
+// —— 除法/取模：Knuth 算法 D（Hacker's Delight divmnu64 同型，32 位 limb；02 §3.5 截断语义） ——
+
+static int clz32(uint32_t x) {
+  int n = 0;
+  if (x <= 0x0000FFFFu) { n += 16; x <<= 16; }
+  if (x <= 0x00FFFFFFu) { n += 8; x <<= 8; }
+  if (x <= 0x0FFFFFFFu) { n += 4; x <<= 4; }
+  if (x <= 0x3FFFFFFFu) { n += 2; x <<= 2; }
+  if (x <= 0x7FFFFFFFu) { n += 1; }
+  return n;
+}
+
+// 幅值除内核：u（就地改写为规格化余数）÷ v → q；ulen ≥ vlen ≥ 1，v 顶层非零
+static void magDivKernel(uint32_t* q, uint32_t* u, int32_t ulen, const uint32_t* v, int32_t vlen,
+                         int32_t* outULen) {
+  int32_t n = vlen;
+  int32_t m = ulen - vlen;
+  if (m < 0) {  // 防御（调用方门控）
+    *outULen = ulen;
+    return;
+  }
+  if (n == 1) {  // 单 limb 除数：估计式会读 vn[n-2]/un[j+n-2] 越界——逐位 64/32 精除（divmnu n==1 同型）
+    uint64_t rem = 0;
+    for (int32_t j = ulen - 1; j >= 0; j--) {
+      uint64_t cur = (rem << 32) | u[j];
+      q[j] = (uint32_t)(cur / v[0]);
+      rem = cur % v[0];
+    }
+    u[0] = (uint32_t)rem;
+    *outULen = rem != 0 ? 1 : 0;
+    return;
+  }
+  int s = clz32(v[n - 1]);
+  uint32_t* un = (uint32_t*)calloc((size_t)ulen + 1, sizeof(uint32_t));
+  uint32_t* vn = (uint32_t*)calloc((size_t)n, sizeof(uint32_t));
+  if (s > 0) {  // 左移规格化：v 顶位置 1
+    for (int32_t i = n - 1; i > 0; i--) {
+      vn[i] = (v[i] << s) | (v[i - 1] >> (32 - s));
+    }
+    vn[0] = v[0] << s;
+    un[ulen] = u[ulen - 1] >> (32 - s);
+    for (int32_t i = ulen - 1; i > 0; i--) {
+      un[i] = (u[i] << s) | (u[i - 1] >> (32 - s));
+    }
+    un[0] = u[0] << s;
+  } else {
+    memcpy(vn, v, (size_t)n * sizeof(uint32_t));
+    memcpy(un, u, (size_t)ulen * sizeof(uint32_t));
+  }
+  for (int32_t j = m; j >= 0; j--) {
+    uint64_t num = ((uint64_t)un[j + n] << 32) | un[j + n - 1];
+    uint64_t qhat = num / vn[n - 1];
+    uint64_t rhat = num % vn[n - 1];
+    while (qhat >= (1ULL << 32) ||
+           qhat * vn[n - 2] > ((rhat << 32) | un[j + n - 2])) {  // 短路先判 qhat 域再乘（无溢出）
+      qhat--;
+      rhat += vn[n - 1];
+      if (rhat >= (1ULL << 32)) {
+        break;
+      }
+    }
+    int64_t borrow = 0;  // 乘减
+    uint64_t carry = 0;
+    for (int32_t i = 0; i < n; i++) {
+      uint64_t p = qhat * vn[i] + carry;
+      carry = p >> 32;
+      int64_t t = (int64_t)un[i + j] - (int64_t)(uint32_t)p - borrow;
+      un[i + j] = (uint32_t)t;
+      borrow = t < 0 ? 1 : 0;
+    }
+    int64_t t = (int64_t)un[j + n] - (int64_t)carry - borrow;
+    un[j + n] = (uint32_t)t;
+    if (t < 0) {  // qhat 过估：回加一个 v
+      qhat--;
+      uint64_t c = 0;
+      for (int32_t i = 0; i < n; i++) {
+        uint64_t tt = (uint64_t)un[i + j] + vn[i] + c;
+        un[i + j] = (uint32_t)tt;
+        c = tt >> 32;
+      }
+      un[j + n] = (uint32_t)((uint64_t)un[j + n] + c);
+    }
+    q[j] = (uint32_t)qhat;
+  }
+  int32_t rlen = ulen;  // 余数去规格化（右移 s 回写 u）
+  if (s > 0) {
+    for (int32_t i = 0; i < ulen; i++) {
+      u[i] = (un[i] >> s) | (un[i + 1] << (32 - s));
+    }
+  } else {
+    memcpy(u, un, (size_t)ulen * sizeof(uint32_t));
+  }
+  free(un);
+  free(vn);
+  *outULen = rlen;
+}
+
+// 幅值除/模完整包装：quot 非 NULL 时产商、rem 非 NULL 时产余（按需单次分配）
+static MsBigErr magDivModFull(MsVM* vm, const MsBigView* a, const MsBigView* b, MsObjBigInt** quot,
+                              MsObjBigInt** rem) {
+  int qs = a->len == 0 ? 0 : a->sign * b->sign;  // 截断商符号
+  int rs = a->sign;                              // 余符号随被除数（02 §3.5）
+  if (a->len == 0) {  // 0 / x = 0，0 % x = 0
+    MsBigErr e = MS_BIG_OK;
+    if (quot != NULL) {
+      e = bigFromMag(vm, NULL, 0, 0, quot);
+    }
+    if (rem != NULL && e == MS_BIG_OK) {
+      e = bigFromMag(vm, NULL, 0, 0, rem);
+    }
+    return e;
+  }
+  if (magCmp(a->limbs, a->len, b->limbs, b->len) < 0) {  // |a| < |b|：商 0、余 a
+    if (quot != NULL) {
+      MsBigErr e = bigFromMag(vm, NULL, 0, 0, quot);
+      if (e != MS_BIG_OK) {
+        return e;
+      }
+    }
+    return rem != NULL ? bigFromViewCopy(vm, a, rem) : MS_BIG_OK;  // rem 重新签名 rs（= a->sign，同源）
+  }
+  int32_t qlen = a->len - b->len + 1;
+  uint32_t* q = (uint32_t*)calloc((size_t)qlen, sizeof(uint32_t));
+  uint32_t* u = (uint32_t*)malloc((size_t)a->len * sizeof(uint32_t));
+  if (q == NULL || u == NULL) {
+    free(q);
+    free(u);
+    return MS_BIG_OOM;
+  }
+  memcpy(u, a->limbs, (size_t)a->len * sizeof(uint32_t));
+  int32_t ulen = a->len;
+  magDivKernel(q, u, ulen, b->limbs, b->len, &ulen);
+  MsBigErr e = MS_BIG_OK;
+  if (quot != NULL) {
+    e = bigFromMag(vm, q, qlen, qs, quot);  // 此后 a/b 视图弃用（文件头纪律）
+  }
+  if (e == MS_BIG_OK && rem != NULL) {
+    e = bigFromMag(vm, u, ulen, rs, rem);
+  }
+  free(q);
+  free(u);
+  return e;
+}
+
+MsBigErr msBigDiv(MsVM* vm, const MsBigView* a, const MsBigView* b, MsObjBigInt** out) {
+  if (b->len == 0) {
+    return MS_BIG_DIVZERO;
+  }
+  return magDivModFull(vm, a, b, out, NULL);
+}
+
+MsBigErr msBigMod(MsVM* vm, const MsBigView* a, const MsBigView* b, MsObjBigInt** out) {
+  if (b->len == 0) {
+    return MS_BIG_DIVZERO;
+  }
+  return magDivModFull(vm, a, b, NULL, out);
+}
+
+// —— 幂（平方乘；结果位长护栏前置判定） ——
+
+static MsBigErr mulObjects(MsVM* vm, const MsObjBigInt* a, const MsObjBigInt* b, MsObjBigInt** out) {
+  MsBigView va, vb;
+  msBigViewOf(&va, a);
+  msBigViewOf(&vb, b);
+  return msBigMul(vm, &va, &vb, out);
+}
+
+// exp ≥ 0；负指数由调用方转浮点幂（vm.c，与 int 路径一致）
+MsBigErr msBigPow(MsVM* vm, const MsBigView* a, ms_i64 exp, MsObjBigInt** out) {
+  if (exp < 0) {
+    return MS_BIG_RANGE;  // 防御（调用方门控）
+  }
+  int64_t aBits = bitLenView(a->limbs, a->len);
+  if (aBits > 1 && exp > (MS_BIGINT_MAX_BITS - 1) / (aBits - 1)) {  // 位长 ≈ exp·(aBits-1)+1
+    return MS_BIG_RANGE;
+  }
+  int32_t mark = vm->stackTop;  // 中间对象经 VM 栈 root（D6 纪律；弹净自压部分）
+  MsObjBigInt* r = msObjBigintFromI64(vm, 1);
+  if (r == NULL) {
+    return MS_BIG_OOM;
+  }
+  if (!msVmPush(vm, msValueObj(&r->head))) {
+    vm->stackTop = mark;
+    return MS_BIG_OOM;  // StackOverflow 槽已置（vm.c bigErrSet 不覆盖）
+  }
+  MsObjBigInt* base = NULL;
+  MsBigErr e = bigFromViewCopy(vm, a, &base);  // base 先离源（a 视图分配窗口即弃）
+  if (e != MS_BIG_OK) {
+    vm->stackTop = mark;
+    return e;
+  }
+  if (!msVmPush(vm, msValueObj(&base->head))) {
+    vm->stackTop = mark;
+    return MS_BIG_OOM;
+  }
+  ms_i64 k = exp;
+  while (k > 0 && e == MS_BIG_OK) {
+    if ((k & 1) != 0) {
+      e = mulObjects(vm, r, base, &r);
+      if (e == MS_BIG_OK) {
+        vm->stack[mark] = msValueObj(&r->head);
+      }
+    }
+    k >>= 1;
+    if (k > 0 && e == MS_BIG_OK) {
+      e = mulObjects(vm, base, base, &base);
+      if (e == MS_BIG_OK) {
+        vm->stack[mark + 1] = msValueObj(&base->head);
+      }
+    }
+  }
+  vm->stackTop = mark;
+  if (e != MS_BIG_OK) {
+    return e;
+  }
+  *out = r;
+  return MS_BIG_OK;
+}
+
+// —— 位运算：无限符号扩展补码（Python 语义；extLen = max+1 冗余位规范化剥除） ——
+
+static void twosNegate(uint32_t* x, int32_t n) {  // x = 2^(32n) - x（补码取负）
+  uint64_t carry = 1;
+  for (int32_t i = 0; i < n; i++) {
+    uint64_t t = (uint64_t)(uint32_t)~x[i] + carry;
+    x[i] = (uint32_t)t;
+    carry = t >> 32;
+  }
+}
+
+MsBigErr msBigBitOp(MsVM* vm, MsBigBitOp op, const MsBigView* a, const MsBigView* b, MsObjBigInt** out) {
+  int32_t n = (a->len > b->len ? a->len : b->len) + 1;
+  uint32_t* ta = (uint32_t*)calloc((size_t)n, sizeof(uint32_t));
+  uint32_t* tb = (uint32_t*)calloc((size_t)n, sizeof(uint32_t));
+  uint32_t* tr = (uint32_t*)malloc((size_t)n * sizeof(uint32_t));
+  if (ta == NULL || tb == NULL || tr == NULL) {
+    free(ta);
+    free(tb);
+    free(tr);
+    return MS_BIG_OOM;
+  }
+  memcpy(ta, a->limbs, (size_t)a->len * sizeof(uint32_t));
+  memcpy(tb, b->limbs, (size_t)b->len * sizeof(uint32_t));
+  if (a->sign < 0) {
+    twosNegate(ta, n);
+  }
+  if (b->sign < 0) {
+    twosNegate(tb, n);
+  }
+  for (int32_t i = 0; i < n; i++) {
+    tr[i] = op == MS_BIG_BIT_AND ? (ta[i] & tb[i]) : (op == MS_BIG_BIT_OR ? (ta[i] | tb[i]) : (ta[i] ^ tb[i]));
+  }
+  int sign = ((tr[n - 1] >> 31) & 1) != 0 ? -1 : 1;
+  if (sign < 0) {
+    twosNegate(tr, n);  // 幅值还原
+  }
+  MsBigErr e = bigFromMag(vm, tr, n, sign, out);
+  free(ta);
+  free(tb);
+  free(tr);
+  return e;
+}
+
+// —— 移位：SHL 符号保持；SHR 负数向下取整（floor(-x/2^n) = -((x+2^n-1)>>n)） ——
+
+MsBigErr msBigShl(MsVM* vm, const MsBigView* a, ms_i64 n, MsObjBigInt** out) {
+  if (n < 0) {
+    return MS_BIG_RANGE;  // 防御（调用方门控 ValueError）
+  }
+  if (a->len == 0) {
+    return bigFromMag(vm, NULL, 0, 0, out);
+  }
+  if (bitLenView(a->limbs, a->len) + n > MS_BIGINT_MAX_BITS) {
+    return MS_BIG_RANGE;
+  }
+  int32_t limbOff = (int32_t)(n >> 5);
+  int32_t bitOff = (int32_t)(n & 31);
+  int32_t len = a->len + limbOff + 1;
+  uint32_t* r = (uint32_t*)calloc((size_t)len, sizeof(uint32_t));
+  if (r == NULL) {
+    return MS_BIG_OOM;
+  }
+  for (int32_t i = 0; i < a->len; i++) {
+    uint64_t v = (uint64_t)a->limbs[i] << bitOff;
+    r[i + limbOff] |= (uint32_t)v;
+    r[i + limbOff + 1] |= (uint32_t)(v >> 32);
+  }
+  MsBigErr e = bigFromMag(vm, r, len, a->sign, out);
+  free(r);
+  return e;
+}
+
+// 输入幅值低 n 位是否非零（floor 修正判定）
+static bool viewLowBitsNonzero(const MsBigView* a, int64_t n) {
+  int64_t full = n >> 5;
+  for (int64_t i = 0; i < full && i < a->len; i++) {
+    if (a->limbs[i] != 0) {
+      return true;
+    }
+  }
+  int32_t rem = (int32_t)(n & 31);
+  return rem > 0 && full < a->len && (a->limbs[full] & ((1u << rem) - 1)) != 0;
+}
+
+MsBigErr msBigShr(MsVM* vm, const MsBigView* a, ms_i64 n, MsObjBigInt** out) {
+  if (n < 0) {
+    return MS_BIG_RANGE;
+  }
+  if (a->len == 0) {
+    return bigFromMag(vm, NULL, 0, 0, out);
+  }
+  int64_t limbOff = n >> 5;
+  if (limbOff >= a->len) {  // 全移出：正 → 0；负 → -1（floor 语义）
+    if (a->sign < 0) {
+      uint32_t one = 1;
+      return bigFromMag(vm, &one, 1, -1, out);
+    }
+    return bigFromMag(vm, NULL, 0, 0, out);
+  }
+  int32_t bitOff = (int32_t)(n & 31);
+  int32_t len = a->len - (int32_t)limbOff;
+  uint32_t* r = (uint32_t*)calloc((size_t)len, sizeof(uint32_t));
+  if (r == NULL) {
+    return MS_BIG_OOM;
+  }
+  for (int32_t i = 0; i < len; i++) {  // 幅值右移
+    uint32_t lo = a->limbs[i + (int32_t)limbOff] >> bitOff;
+    uint32_t hi = bitOff != 0 && i + (int32_t)limbOff + 1 < a->len ? a->limbs[i + (int32_t)limbOff + 1]
+                                                                    << (32 - bitOff)
+                                                                    : 0;
+    r[i] = lo | hi;
+  }
+  int sign = a->sign;
+  if (sign < 0 && viewLowBitsNonzero(a, n)) {  // 负数 floor 修正：低 n 位非零则幅值 +1
+    uint64_t carry = 1;
+    for (int32_t i = 0; i < len && carry != 0; i++) {
+      uint64_t t = (uint64_t)r[i] + carry;
+      r[i] = (uint32_t)t;
+      carry = t >> 32;
+    }
+  }
+  MsBigErr e = bigFromMag(vm, r, len, sign, out);
+  free(r);
+  return e;
+}
