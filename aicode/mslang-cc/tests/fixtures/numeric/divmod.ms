@@ -1,0 +1,13 @@
+// T016 Go 截断除法/模符号（02 §3.5）：int 与 bigint 一致
+print(-7 / 2)
+print(-7 % 2)
+print(7 / -2)
+print(7 % -2)
+print(-7n / 2n)
+print(-7n % 2n)
+print(7n / -2n)
+print(7n % -2n)
+print(5n / 2n)
+print(5n % 2n)
+print(9223372036854775807 / -1)
+print(-9223372036854775807 % 9223372036854775807)

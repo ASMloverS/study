@@ -1,0 +1,13 @@
+// T016 位运算域（02 §3.1）：int/bigint；超宽左移精确提升
+print(255 & 15)
+print(255n & 15n)
+print(255n | 15n)
+print(255n ^ 15n)
+print(~5)
+print(~5n)
+print(-1n >> 10)
+print(1 << 4)
+print(1n << 100)
+print(1 << 100)
+print(-3n >> 1)
+print(3n.toString(2))

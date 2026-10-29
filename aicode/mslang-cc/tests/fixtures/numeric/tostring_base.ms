@@ -1,0 +1,11 @@
+// T016 toString base 2/8/10/16 与回解析（10 §4，DoD）
+print(255n.toString(2))
+print(255n.toString(8))
+print(255n.toString(16))
+print(255n.toString())
+print(255.toString(16))
+print((-255n).toString(16))
+print(int(255n.toString(2), 2))
+print(int(255n.toString(8), 8))
+print(int(255n.toString(16), 16))
+print(int((-255n).toString(16), 16))
