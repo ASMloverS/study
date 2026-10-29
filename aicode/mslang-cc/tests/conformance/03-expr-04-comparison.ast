@@ -1,6 +1,6 @@
 (module
   (var a [global]
-    (bool true))
+    (binary == (int 1) (float 1.0)))
   (var b [global]
     (binary == (string
 (lit "a")) (string

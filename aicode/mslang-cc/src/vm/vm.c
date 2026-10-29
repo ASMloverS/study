@@ -328,7 +328,10 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
         if (b.as.i >= 64) {
           return bigArith(vm, k, a, b, out);  // 超宽移位精确升 bigint（T016，替代 Go-0）
         }
-        r = a.as.i << b.as.i;
+        r = (ms_i64)((ms_u64)a.as.i << b.as.i);  // 无符号左移良定义；溢出检测用回移比对
+        if ((r >> b.as.i) != a.as.i) {
+          return bigArith(vm, k, a, b, out);  // 结果超 i64 → 精确升 bigint（与 binder 折叠/数值塔一致）
+        }
         break;
       case BA_SHR:
         if (b.as.i < 0) goto negShift;
@@ -382,6 +385,7 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
       default:
         break;  // 位运算已在上方拒绝（防御）
     }
+    snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: unreachable float arith path");
     return false;
   }
   if (k == BA_ADD && a.kind == MS_VAL_OBJ && b.kind == MS_VAL_OBJ &&

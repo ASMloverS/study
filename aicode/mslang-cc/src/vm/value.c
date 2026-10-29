@@ -66,7 +66,7 @@ static int cmpI64F64(ms_i64 i, double f) {
   if (i != ti) {
     return i < ti ? -1 : 1;
   }
-  return f == trunc(f) ? 0 : (f > ti ? 1 : -1);  // i == floor(f)：分数为正 → i < f
+  return f == trunc(f) ? 0 : (f > ti ? -1 : 1);  // i == trunc(f)：分数存在时 f 越过 ti（正域 f>ti → i<f；负域 trunc 向零 → f<ti → i>f）
 }
 
 // 数值塔全序比较（02 §6）：NaN 无序 → false（相等门控同走 false → 不等）

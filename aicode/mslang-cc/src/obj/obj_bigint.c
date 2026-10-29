@@ -341,6 +341,9 @@ int msObjBigintCmpF64(const MsObjBigInt* b, double v) {
   if (isnan(v)) {
     return 2;  // 无序哨兵（调用方判 2 → 不可比较/不等）
   }
+  if (isinf(v)) {  // ±inf：任何有限 bigint 恒小/大于 inf（frexp(inf) UB，须先行短路）
+    return v > 0 ? -1 : 1;
+  }
   if (v == 0.0) {
     return b->sign;
   }

@@ -769,7 +769,8 @@ TEST(vmMixedArithTable) {  // 02 §3.4 混算表（含 a 侧 int 零快速路径
 }
 
 TEST(vmDivModGoSemantics) {  // 02 §3.5
-  RunResult r = runSrc("print(-7n / 2n)\nprint(-7n % 2n)\nprint(7n / -2n)\nprint(7n % -2n)\nprint(5n / 2n)\nprint(5n % 2n)");
+  RunResult r =
+      runSrc("print(-7n / 2n)\nprint(-7n % 2n)\nprint(7n / -2n)\nprint(7n % -2n)\nprint(5n / 2n)\nprint(5n % 2n)");
   EXPECT(ctx, !r.hasError);
   EXPECT_STREQ(ctx, "-3\n-1\n-3\n1\n2\n1\n", r.out);
   freeRunResult(&r);
@@ -787,6 +788,64 @@ TEST(vmBitopDomain) {  // 02 §3.1：float 拒绝；bigint 域与超宽左移
   r = runSrc("print(-3n >> 1)\nprint(~5n)");
   EXPECT(ctx, !r.hasError);
   EXPECT_STREQ(ctx, "-2\n-6\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmCmpI64F64Exact) {  // review C-1：int vs float 精确比较（变量路径，防 binder 常量折叠）
+  RunResult r = runSrc("var i = 5\nvar f = 5.5\nprint(i < f)\nprint(f < i)\nprint(i < 6)\nprint(6 < f)\nprint(f < 6)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\nfalse\ntrue\nfalse\ntrue\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("var n = -5\nvar g = -5.5\nprint(n > g)\nprint(g > n)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\nfalse\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmBigintCmpInf) {  // review C-2：bigint vs ±inf 不挂起（frexp(inf) UB 短路）；有限 bigint 恒小/大于 inf
+  RunResult r = runSrc(
+      "var big = 4n\nvar inf = 1e308 * 10.0\nprint(big < inf)\nprint(big > inf)\nprint(-big < inf)\nprint(big < "
+      "-inf)\nprint(-big > -inf)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\nfalse\ntrue\nfalse\ntrue\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmFoldCmpRuntimeConsistency) {  // review M-1：混合 int/float 比较折叠停用；字面量/变量两路一致（精确语义）
+  RunResult r = runSrc("print(9007199254740993 == 9007199254740992.0)\nprint(9007199254740993 != 9007199254740992.0)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "false\ntrue\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("var i = 9007199254740993\nvar f = 9007199254740992.0\nprint(i == f)\nprint(i > f)\nprint(i < f)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "false\ntrue\nfalse\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmShlOverflowPromotes) {  // review M-2：左移结果溢出精确升 bigint；折叠/运行时两路一致
+  RunResult r = runSrc("var a = 1\nvar b = 63\nprint(a << b)\nprint(type(a << b))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "9223372036854775808\nbigint\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("var a = 1\nvar b = 63\nprint((1 << 63) == (a << b))\nprint((1 << 62) == (a << 62))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\ntrue\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("var x = -3\nvar y = 1\nprint(x << y)\nprint((x << y) == (-3 << 1))\nprint(type(x << y))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "-6\ntrue\nint\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("var x = -4611686018427387904\nprint(x << 1)\nprint((x << 1) == (-4611686018427387904 << 1))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "-9223372036854775808\ntrue\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("var x = 4\nprint(x << 62)\nprint((x << 62) == (4 << 62))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "18446744073709551616\ntrue\n", r.out);
   freeRunResult(&r);
 }
 
@@ -808,6 +867,10 @@ int main(void) {
   vmMixedArithTable(&ctx);
   vmDivModGoSemantics(&ctx);
   vmBitopDomain(&ctx);
+  vmCmpI64F64Exact(&ctx);
+  vmBigintCmpInf(&ctx);
+  vmFoldCmpRuntimeConsistency(&ctx);
+  vmShlOverflowPromotes(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

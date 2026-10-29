@@ -779,12 +779,15 @@ static void tryFoldBinary(Binder* b, AstNode* n) {
           return;
         }
         ms_u64 w = (ms_u64)a << c;
-        if (w > (ms_u64)INT64_MAX) {
-          setBigintU64(n, b->arena, false, w);
-        } else {
-          setIntLit(n, (ms_i64)w);
+        r = (ms_i64)w;
+        if ((r >> c) == a) {  // 位级回移校验：结果恰在 i64 域（含负 a 补码域）
+          setIntLit(n, r);
+          return;
         }
-        return;
+        if (a >= 0 && w >> c == (ms_u64)a) {  // 正溢出且无高位丢失：幅值即 w
+          setBigintU64(n, b->arena, false, w);
+        }
+        return;  // 负 a 溢出 / u64 环绕丢失：留运行时 bigArith shl 精确（幅值可超 u64 域）
       }
       case AST_OP_SHR:
         if (c < 0 || c > 63 || a < 0) {
@@ -815,6 +818,11 @@ static void tryFoldBinary(Binder* b, AstNode* n) {
     }
   }
   if (lhsNum && rhsNum && (lhs->kind == AST_FLOAT || rhs->kind == AST_FLOAT) && op != AST_OP_POW) {
+    if (lhs->kind != rhs->kind &&  // int/float 混合比较不折叠（M-1）：运行时 cmpI64F64 精确，
+        (op == AST_OP_EQ || op == AST_OP_NE || op == AST_OP_LT || op == AST_OP_LE || op == AST_OP_GT ||
+         op == AST_OP_GE)) {
+      return;  // double 折叠在 ≥2^53 域失真（9007199254740993 == 9007199254740992.0 误 true）
+    }
     double a = lhs->kind == AST_FLOAT ? lhs->as.floatLit.v : (double)lhs->as.intLit.v;
     double c = rhs->kind == AST_FLOAT ? rhs->as.floatLit.v : (double)rhs->as.intLit.v;
     if ((op == AST_OP_DIV || op == AST_OP_MOD) && c == 0.0) {
