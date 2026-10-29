@@ -34,7 +34,7 @@
 | T013 | string 对象 | [T013](T013-string-object.md) | P4 | T012 | L | ✅ |
 | T014 | list 与解构赋值 | [T014](T014-list-destructuring.md) | P4 | T013 | M | ✅ |
 | T015 | map / set / tuple | [T015](T015-map-set-tuple.md) | P4 | T013 | L | ✅ |
-| T016 | bigint 与数值塔 | [T016](T016-bigint-numerics.md) | P4 | T012 | L | ⬜ |
+| T016 | bigint 与数值塔 | [T016](T016-bigint-numerics.md) | P4 | T012 | L | ✅ |
 | T017 | Tier0 内置与迭代 | [T017](T017-tier0-builtins-iteration.md) | P4 | T013-T016 | L | ⬜ |
 | T018 | 函数与闭包 | [T018](T018-functions-closures.md) | P5 | T017 | L | ⬜ |
 | T019 | 生成器 | [T019](T019-generators.md) | P5 | T018 | M | ⬜ |
