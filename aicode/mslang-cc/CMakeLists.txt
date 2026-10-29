@@ -99,7 +99,8 @@ target_sources(ms_vm PRIVATE src/vm/list_methods.c)
 target_sources(ms_vm PRIVATE src/vm/map_methods.c)
 target_sources(ms_vm PRIVATE src/vm/set_methods.c)
 target_sources(ms_vm PRIVATE src/vm/tuple_methods.c)
-target_sources(ms_vm PRIVATE src/vm/num_methods.c)  # T016：int/bigint 方法表
+# T016：int/bigint 实例方法表（10 §4）
+target_sources(ms_vm PRIVATE src/vm/num_methods.c)
 
 # T006：parser 逐 token 拉取，依赖 scanner
 target_link_libraries(ms_parser PUBLIC ms_scanner)

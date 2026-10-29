@@ -92,23 +92,7 @@ static MsValue numChar(MsVM* vm, int32_t argc, const MsValue* args) {
     return msValueNil();
   }
   char buf[4];
-  int32_t n = 0;
-  ms_u32 c = (ms_u32)cp;
-  if (c < 0x80) {
-    buf[n++] = (char)c;
-  } else if (c < 0x800) {
-    buf[n++] = (char)(0xC0 | (c >> 6));
-    buf[n++] = (char)(0x80 | (c & 0x3F));
-  } else if (c < 0x10000) {
-    buf[n++] = (char)(0xE0 | (c >> 12));
-    buf[n++] = (char)(0x80 | ((c >> 6) & 0x3F));
-    buf[n++] = (char)(0x80 | (c & 0x3F));
-  } else {
-    buf[n++] = (char)(0xF0 | (c >> 18));
-    buf[n++] = (char)(0x80 | ((c >> 12) & 0x3F));
-    buf[n++] = (char)(0x80 | ((c >> 6) & 0x3F));
-    buf[n++] = (char)(0x80 | (c & 0x3F));
-  }
+  int32_t n = msUtf8Encode((ms_u32)cp, buf);  // 共享编码器（str_methods 同源；码点已前置校验）
   MsObjString* s = msObjStringNew(vm, buf, n);
   if (s == NULL) {
     methodError(vm, "RuntimeError: out of memory");

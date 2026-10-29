@@ -888,9 +888,33 @@ TEST(vmNumericMethods) {  // 10 §4：toString([base]) / char / pow / hash
   EXPECT(ctx, !r.hasError);
   EXPECT_STREQ(ctx, "true\ntrue\n", r.out);
   freeRunResult(&r);
+  // char 编码黄金字节：U+00E4 = C3 A4；U+4E2D = E4 B8 AD；U+1F600 = F0 9F 98 80（2/3/4 字节）
+  r = runSrc("print(0xE4.char())\nprint(0x4E2D.char())\nprint(0x1F600.char())");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "\xC3\xA4\n\xE4\xB8\xAD\n\xF0\x9F\x98\x80\n", r.out);
+  freeRunResult(&r);
   r = runSrc("print(255n.toString(3))");
   EXPECT(ctx, r.hasError);
   EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  freeRunResult(&r);
+}
+
+TEST(vmNumericMinorAnchors) {  // 评审收尾：abs INT64_MIN 升格 / 负指数浮点幂 / 负数非十进制 toString / int base 0 前缀识别
+  RunResult r = runSrc("print(abs(-9223372036854775807 - 1))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "9223372036854775808\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(2n.pow(-2))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "0.25\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print((-255).toString(16))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "-ff\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(int(\"0x1f\", 0))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "31\n", r.out);
   freeRunResult(&r);
 }
 
@@ -918,6 +942,7 @@ int main(void) {
   vmShlOverflowPromotes(&ctx);
   vmConversions(&ctx);
   vmNumericMethods(&ctx);
+  vmNumericMinorAnchors(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

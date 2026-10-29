@@ -221,8 +221,8 @@ static MsValue nativeInt(MsVM* vm, int32_t argc, const MsValue* args) {
       uint32_t buf[2];
       msBigViewI64(&v, buf, t < 0 ? -mant : mant);
       MsObjBigInt* b = NULL;
-      if (k < 0 || msBigShl(vm, &v, k, &b) != MS_BIG_OK) {  // t 已截断必整：k < 0 不可达防御
-        bridgeErr(vm, "OverflowError: cannot convert float to integer");
+      if (k < 0 || msBigShl(vm, &v, k, &b) != MS_BIG_OK) {  // t 已截断必整：k < 0 不可达防御；shl 失败仅 OOM 可达（结果 ≤ ~1024 bit，远低护栏）
+        bridgeErr(vm, "RuntimeError: out of memory");
         return msValueNil();
       }
       return msValueObj(&b->head);
