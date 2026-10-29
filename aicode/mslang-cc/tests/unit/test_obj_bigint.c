@@ -849,6 +849,51 @@ TEST(vmShlOverflowPromotes) {  // review M-2：左移结果溢出精确升 bigin
   freeRunResult(&r);
 }
 
+// ---------- 内置与方法（Task 4，10 §1/§4） ----------
+
+TEST(vmConversions) {
+  RunResult r = runSrc("print(int(\"ff\", 16))\nprint(int(1.9))\nprint(int(-1.9))\nprint(int(2n))\nprint(float(\"1.5\"))\nprint(bigint(\"123\") * 2)\nprint(bigint(1e3) + 1n)\nprint(abs(-2n))\nprint(abs(-5))\nprint(int(1e19))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "255\n1\n-1\n2\n1.5\n246\n1001\n2\n5\n10000000000000000000\n", r.out);
+  freeRunResult(&r);
+  // 策略锚定：float(bigint) 精度损失静默、含溢出 ±inf（02 §3.3；msFormatFloat 保留 .0 形态）
+  r = runSrc("print(float(3n))\nprint(float(10n ** 400) > 1e308)\nprint(float(-(10n ** 400)) < -1e308)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "3.0\ntrue\ntrue\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(int(\"1e3\"))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  freeRunResult(&r);
+  r = runSrc("print(bigint(\"1e3\"))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  freeRunResult(&r);
+  r = runSrc("print(bigint(1.5))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  freeRunResult(&r);
+  r = runSrc("print(float(\"x\"))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  freeRunResult(&r);
+}
+
+TEST(vmNumericMethods) {  // 10 §4：toString([base]) / char / pow / hash
+  RunResult r = runSrc("print(255n.toString(16))\nprint(255.toString(16))\nprint(255n.toString(2))\nprint(int(255n.toString(8), 8))\nprint(2n.pow(10))\nprint(2.pow(10))\nprint(65.char())");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "ff\nff\n11111111\n255\n1024\n1024\nA\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(hash(1) == hash(1n))\nprint(hash(1n) == hash(1.0))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\ntrue\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(255n.toString(3))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  freeRunResult(&r);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   bigintParsePrintRoundtrip(&ctx);
@@ -871,6 +916,8 @@ int main(void) {
   vmBigintCmpInf(&ctx);
   vmFoldCmpRuntimeConsistency(&ctx);
   vmShlOverflowPromotes(&ctx);
+  vmConversions(&ctx);
+  vmNumericMethods(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

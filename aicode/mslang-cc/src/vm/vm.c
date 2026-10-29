@@ -52,6 +52,9 @@ static int methodRefLookup(const MsValue* recv, const char* name, int32_t len, M
   if (msIsTuple(recv)) {
     return msTupleMethodLookup(name, len, out) ? 0 : -1;
   }
+  if (recv->kind == MS_VAL_I64 || (recv->kind == MS_VAL_OBJ && recv->as.obj->type == MS_OBJ_BIGINT)) {
+    return msNumMethodLookup(name, len, out) ? 0 : -1;
+  }
   return -1;
 }
 

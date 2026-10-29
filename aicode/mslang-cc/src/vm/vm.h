@@ -108,6 +108,8 @@ bool msListMethodLookup(const char* name, int32_t len, MsMethodRef* out);  // �
 bool msMapMethodLookup(const char* name, int32_t len, MsMethodRef* out);
 bool msSetMethodLookup(const char* name, int32_t len, MsMethodRef* out);
 bool msTupleMethodLookup(const char* name, int32_t len, MsMethodRef* out);
+// num_methods.c：int/bigint 实例方法表（T016，10 §4）
+bool msNumMethodLookup(const char* name, int32_t len, MsMethodRef* out);
 // value.c：栈顶 n 个已 root 值 → list（BUILD_LIST 同款；split/map 共用面；错误路径不恢复 stackTop）
 MsValue msVmCollectStackToList(MsVM* vm, int32_t n);
 
