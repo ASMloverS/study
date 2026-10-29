@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "obj/obj_bigint.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
 #include "obj/obj_set.h"
@@ -42,7 +43,83 @@ MsValue msValueObj(MsObj* obj) {
   return v;
 }
 
-static bool isNumeric(const MsValue* v) { return v->kind == MS_VAL_I64 || v->kind == MS_VAL_F64; }
+// 数值域（T016 精确化）：int/float/bigint（bool 排除）
+static bool isNumeric(const MsValue* v) {
+  if (v->kind == MS_VAL_I64 || v->kind == MS_VAL_F64) {
+    return true;
+  }
+  return v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_BIGINT;
+}
+
+// int vs float 精确比较（不经 double 舍入：≥2^53 域 i64 不失真）；NaN → 2 无序哨兵
+static int cmpI64F64(ms_i64 i, double f) {
+  if (isnan(f)) {
+    return 2;
+  }
+  if (f >= 9223372036854775808.0) {  // f ≥ 2^63 > 任何 i64
+    return -1;
+  }
+  if (f < -9223372036854775808.0) {  // f < -2^63 < 任何 i64
+    return 1;
+  }
+  ms_i64 ti = (ms_i64)trunc(f);  // |trunc(f)| ≤ 2^63 可表示（-2^63 恰为 INT64_MIN）
+  if (i != ti) {
+    return i < ti ? -1 : 1;
+  }
+  return f == trunc(f) ? 0 : (f > ti ? 1 : -1);  // i == floor(f)：分数为正 → i < f
+}
+
+// 数值塔全序比较（02 §6）：NaN 无序 → false（相等门控同走 false → 不等）
+static bool numericCmp(const MsValue* a, const MsValue* b, int32_t* outCmp) {
+  bool aBig = a->kind == MS_VAL_OBJ;  // isNumeric 已保证 obj ⇒ bigint
+  bool bBig = b->kind == MS_VAL_OBJ;
+  int c = 0;
+  if (!aBig && !bBig) {
+    if (a->kind == MS_VAL_I64 && b->kind == MS_VAL_I64) {
+      c = a->as.i < b->as.i ? -1 : (a->as.i > b->as.i ? 1 : 0);
+    } else if (a->kind == MS_VAL_F64 && b->kind == MS_VAL_F64) {
+      if (isnan(a->as.f) || isnan(b->as.f)) {
+        return false;
+      }
+      c = a->as.f < b->as.f ? -1 : (a->as.f > b->as.f ? 1 : 0);
+    } else if (a->kind == MS_VAL_I64) {
+      c = cmpI64F64(a->as.i, b->as.f);
+      if (c == 2) {
+        return false;
+      }
+    } else {
+      c = cmpI64F64(b->as.i, a->as.f);
+      if (c == 2) {
+        return false;
+      }
+      c = -c;
+    }
+  } else if (aBig && bBig) {
+    c = msObjBigintCompare((const MsObjBigInt*)a->as.obj, (const MsObjBigInt*)b->as.obj);
+  } else if (aBig) {
+    if (b->kind == MS_VAL_I64) {
+      c = msObjBigintCmpI64((const MsObjBigInt*)a->as.obj, b->as.i);
+    } else {
+      c = msObjBigintCmpF64((const MsObjBigInt*)a->as.obj, b->as.f);
+      if (c == 2) {
+        return false;
+      }
+    }
+  } else {
+    if (a->kind == MS_VAL_I64) {
+      c = msObjBigintCmpI64((const MsObjBigInt*)b->as.obj, a->as.i);
+      c = -c;
+    } else {
+      c = msObjBigintCmpF64((const MsObjBigInt*)b->as.obj, a->as.f);
+      if (c == 2) {
+        return false;
+      }
+      c = -c;
+    }
+  }
+  *outCmp = c;
+  return true;
+}
 
 // 容器深相等递归（T015 list/tuple 共用；深度限幅 T014 review：互引环超限判 false 不爆栈；环检测归 T021 __eq__ 协议）
 #define MS_EQ_MAX_DEPTH 100
@@ -146,13 +223,9 @@ bool msValueIsTruthy(const MsValue* v) {
 }
 
 static bool valueEqualDepth(const MsValue* a, const MsValue* b, int32_t depth) {
-  if (isNumeric(a) && isNumeric(b)) {  // 数值塔：int/float 数值互比；bool 不参与
-    if (a->kind == MS_VAL_I64 && b->kind == MS_VAL_I64) {
-      return a->as.i == b->as.i;
-    }
-    double da = a->kind == MS_VAL_I64 ? (double)a->as.i : a->as.f;
-    double db = b->kind == MS_VAL_I64 ? (double)b->as.i : b->as.f;
-    return da == db;
+  if (isNumeric(a) && isNumeric(b)) {  // 数值塔：int/float/bigint 数值互比（02 §6）；bool 不参与
+    int32_t cmp = 0;
+    return numericCmp(a, b, &cmp) && cmp == 0;  // NaN 无序 → 不等
   }
   switch (a->kind) {
     case MS_VAL_NIL:
@@ -194,22 +267,15 @@ bool msValueEqual(const MsValue* a, const MsValue* b) {
 }
 
 bool msValueOrder(const MsValue* a, const MsValue* b, int32_t* outCmp) {
-  if (!(isNumeric(a) && isNumeric(b))) {
-    if (a->kind == MS_VAL_OBJ && b->kind == MS_VAL_OBJ && a->as.obj->type == MS_OBJ_STRING &&
-        b->as.obj->type == MS_OBJ_STRING) {  // string 字典序（22 §3）
-      *outCmp = msObjStringCompare((const MsObjString*)a->as.obj, (const MsObjString*)b->as.obj);
-      return true;
-    }
-    return false;  // 其余组合不可比较
+  if (isNumeric(a) && isNumeric(b)) {
+    return numericCmp(a, b, outCmp);  // NaN → 不可比较（调用方 TypeError）
   }
-  if (a->kind == MS_VAL_I64 && b->kind == MS_VAL_I64) {
-    *outCmp = a->as.i < b->as.i ? -1 : (a->as.i > b->as.i ? 1 : 0);
+  if (a->kind == MS_VAL_OBJ && b->kind == MS_VAL_OBJ && a->as.obj->type == MS_OBJ_STRING &&
+      b->as.obj->type == MS_OBJ_STRING) {  // string 字典序（22 §3）
+    *outCmp = msObjStringCompare((const MsObjString*)a->as.obj, (const MsObjString*)b->as.obj);
     return true;
   }
-  double da = a->kind == MS_VAL_I64 ? (double)a->as.i : a->as.f;
-  double db = b->kind == MS_VAL_I64 ? (double)b->as.i : b->as.f;
-  *outCmp = da < db ? -1 : (da > db ? 1 : 0);
-  return true;
+  return false;  // 其余组合不可比较
 }
 
 const char* msValueTypeName(const MsValue* v) {
@@ -229,6 +295,8 @@ const char* msValueTypeName(const MsValue* v) {
       switch (v->as.obj->type) {
         case MS_OBJ_STRING:
           return "string";
+        case MS_OBJ_BIGINT:  // T016
+          return "bigint";
         case MS_OBJ_LIST:  // T013 D6 最小桥；其余容器类型名随各容器任务接入
           return "list";
         case MS_OBJ_TUPLE:
@@ -530,6 +598,9 @@ static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     if (v->as.obj->type == MS_OBJ_STRING) {
       return (MsObjString*)v->as.obj;  // string 自身（调用方持有处已 root）
     }
+    if (v->as.obj->type == MS_OBJ_BIGINT) {  // T016：v 由调用方持有处 root；toString 内部末端才分配
+      return msObjBigintToString(vm, (const MsObjBigInt*)v->as.obj, 10);
+    }
     if (v->as.obj->type == MS_OBJ_LIST) {
       return listForm(vm, v, depth);
     }
@@ -560,6 +631,9 @@ static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
       MsObjString* r = ok ? msObjStringNew(vm, b.data, b.len) : NULL;  // s 由调用方持有处 root
       free(b.data);
       return r;
+    }
+    if (v->as.obj->type == MS_OBJ_BIGINT) {  // T016：v 由调用方持有处 root；toString 内部末端才分配
+      return msObjBigintToString(vm, (const MsObjBigInt*)v->as.obj, 10);
     }
     if (v->as.obj->type == MS_OBJ_LIST) {
       return listForm(vm, v, depth);
@@ -651,9 +725,14 @@ MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut) {
       v.as.func = e->as.proto;
       return v;
     }
-    case CONST_BIGINT:
-      *okOut = false;  // bigint 执行归 T016（占位错误由 VM 报）
-      return msValueNil();
+    case CONST_BIGINT: {
+      MsObjBigInt* b = NULL;
+      if (msObjBigintParse(vm, e->as.text.start, e->as.text.len, 0, &b) != MS_BIG_OK) {
+        *okOut = false;  // 字面量已过扫描器与 parser 剥缀，理论不可达；防御路径
+        return msValueNil();
+      }
+      return msValueObj(&b->head);  // 每次 LOAD_CONST 现解析（常量池 root 化归后续任务，门 T044）
+    }
     case CONST_INTERP:
       *okOut = false;  // 插值执行归 Task 11（FORMAT_STRING 消费）
       return msValueNil();

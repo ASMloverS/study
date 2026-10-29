@@ -206,10 +206,10 @@ TEST(runModuloByZero) {
   free(r.out);
 }
 
-TEST(runIntOverflowPlaceholder) {  // 已知临时语义（T016 前）；字面量折叠走 bigint，变量路径才达运行时
+TEST(runIntOverflowPromotes) {  // T016：int 快路径溢出升 bigint（02 §3.1）；变量路径运行时提升
   RunResult r = runSrc("var a = 9223372036854775807\nvar b = 1\nprint(a + b)");
-  EXPECT(ctx, r.hasError);
-  EXPECT(ctx, strstr(r.err, "OverflowError") != NULL);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "9223372036854775808\n", r.out);
   free(r.out);
 }
 
@@ -717,7 +717,7 @@ int main(int argc, char** argv) {
       runFloatDivision,
       runDivisionByZero,
       runModuloByZero,
-      runIntOverflowPlaceholder,
+      runIntOverflowPromotes,
       runShortCircuitValues,
       runGlobalsReadWrite,
       runBoolIntNotConvertible,

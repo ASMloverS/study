@@ -4,17 +4,17 @@
 // map 仅持 C 局部亦安全
 #include "obj/obj_map.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_bigint.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 
 #define MS_MAP_INIT_CAP 8
 
-static ms_u64 mix64(ms_u64 x) {  // splitmix64 finalizer：int/float 域充分散列
+static ms_u64 mix64(ms_u64 x) {  // splitmix64 finalizer：nil/bool 域散列
   x ^= x >> 33;
   x *= 0xff51afd7ed558ccdULL;
   x ^= x >> 33;
@@ -23,19 +23,6 @@ static ms_u64 mix64(ms_u64 x) {  // splitmix64 finalizer：int/float 域充分�
   return x;
 }
 
-// 数值塔归一（02 §6/§7）：[-2^63, 2^63) 整值与同值 int 同域（含 -2^63 ↔ INT64_MIN、-0.0 ↔ 0）；
-// NaN/inf/±2^63 及以上走位型（不等于任何 i64，仅自一致；相等门控在 msValueEqual）
-static ms_u64 hashNumeric(double f) {
-  if (f >= -9223372036854775808.0 && f < 9223372036854775808.0 && f == floor(f)) {
-    return mix64((ms_u64)(ms_i64)f);
-  }
-  ms_u64 bits;
-  memcpy(&bits, &f, sizeof(bits));
-  return mix64(bits);
-}
-
-// 精度注记：≥2^53 域 i64→double 相等判定存在舍入（既有 value.c 数值塔语义），极端相等键可能
-// 异 hash 共存——数值塔精确化归 T016（docs/language/02-types.md §3.4）
 MsHashStatus msValueHash(const MsValue* v, ms_u64* out) {
   switch (v->kind) {
     case MS_VAL_NIL:
@@ -45,13 +32,16 @@ MsHashStatus msValueHash(const MsValue* v, ms_u64* out) {
       *out = mix64(v->as.b ? 0x2 : 0x1);  // 与 int 域分离不必要，但相等门控 bool≠int（02 §2）
       return MS_HASH_OK;
     case MS_VAL_I64:
-      *out = mix64((ms_u64)v->as.i);
+      *out = msHashNumericI64(v->as.i);  // 数值塔归一（T016，02 §7：hash(1) == hash(1n) == hash(1.0)）
       return MS_HASH_OK;
     case MS_VAL_F64:
-      *out = hashNumeric(v->as.f);
+      *out = msHashNumericF64(v->as.f);
       return MS_HASH_OK;
     case MS_VAL_OBJ:
       switch (v->as.obj->type) {
+        case MS_OBJ_BIGINT:  // T016：数值塔可 hash 键
+          *out = msHashNumericBigint((const MsObjBigInt*)v->as.obj);
+          return MS_HASH_OK;
         case MS_OBJ_STRING:
           *out = ((const MsObjString*)v->as.obj)->hash64;  // FNV-1a-64 创建即定
           return MS_HASH_OK;
@@ -75,7 +65,7 @@ MsHashStatus msValueHash(const MsValue* v, ms_u64* out) {
           return MS_HASH_OK;
         }
         default:
-          return MS_HASH_UNHASHABLE;  // list/map/set/实例（bigint T016、function T018+）
+          return MS_HASH_UNHASHABLE;  // list/map/set/实例（function T018+）
       }
     default:
       return MS_HASH_UNHASHABLE;

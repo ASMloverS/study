@@ -1,13 +1,20 @@
 // T016：bigint 数据面 + 数值塔单测（docs/tasks/T016 §5.1；VM 级用例随 Task 3+ 追加）
 #include <float.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "binder/binder.h"
+#include "compiler/chunk.h"
+#include "compiler/compiler.h"
+#include "gc/gc.h"
 #include "obj/obj_bigint.h"
 #include "obj/obj_string.h"
+#include "parser/parser.h"
+#include "scanner/scanner.h"
 #include "test_harness.h"
 #include "vm/vm.h"
 
@@ -667,6 +674,122 @@ TEST(bigintMiscAnchors) {  // review M-1：Neg 符号翻转 + 零快速路径（
   msVmFree(&vm);
 }
 
+// ---------- VM 级（Task 3）：混算表 / TypeError / 提升 / 词法衔接 ----------
+
+// 执行面桥（test_obj_map.c 同型）：全管线跑 .ms 源码
+
+typedef struct RunResult {
+  char* out;
+  bool compileOk;
+  bool hasError;
+  char err[240];
+  int32_t errLine;
+} RunResult;
+
+static char* slurpTmp(FILE* f) {
+  fflush(f);
+  long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char* buf = malloc((size_t)len + 1);
+  size_t got = fread(buf, 1, (size_t)len, f);
+  buf[got] = '\0';
+  fclose(f);
+  return buf;
+}
+
+static RunResult runSrc(const char* src) {
+  RunResult r = {NULL, false, false, "", -1};
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Parser p;
+  parserInit(&p, src, (int32_t)strlen(src), "t.ms", &arena, &diags);
+  AstNode* mod = parserParseModule(&p);
+  if (mod != NULL) {
+    Binder b;
+    binderInit(&b, &arena, "t.ms", &diags);
+    binderBind(&b, mod);
+    binderDestroy(&b);
+    Chunk c;
+    if (compilerCompile(mod, &c, "t.ms", &diags)) {
+      r.compileOk = true;
+      MsVM vm;
+      msVmInit(&vm);
+      FILE* f = tmpfile();
+      vm.out = f;
+      msVmRun(&vm, &c);
+      r.hasError = vm.hasError;
+      snprintf(r.err, sizeof(r.err), "%s", vm.errMsg);
+      r.errLine = vm.errLine;
+      r.out = slurpTmp(f);
+      msVmFree(&vm);
+      chunkFree(&c);
+    }
+  }
+  astArenaDestroy(&arena);
+  if (r.out == NULL) {
+    r.out = calloc(1, 1);
+  }
+  return r;
+}
+
+static void freeRunResult(RunResult* r) { free(r->out); }
+
+// 整值复合字面量取址便捷构造（块内生存期覆盖调用表达式；test_obj_map 同型）
+#define MV_INT(n) (&(MsValue){.kind = MS_VAL_I64, .as = {.i = (n)}})
+
+TEST(vmOverflowPromote) {  // DoD：max + 1 → bigint；字面量静默升格
+  RunResult r = runSrc("var a = 9223372036854775807\nvar b = 1\nprint(a + b)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "9223372036854775808\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(9223372036854775808)");  // 无 n 后缀：静默升 bigint（不再 MSE_INT_OVERFLOW）
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "9223372036854775808\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(type(9223372036854775807 * 2))");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "bigint\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmMixedArithTable) {  // 02 §3.4 混算表（含 a 侧 int 零快速路径）
+  RunResult r = runSrc(
+      "print(1 + 1n)\nprint(type(1 + 1n))\nprint(1n + 0.5)\nprint(1 == 1n)\nprint(1n == 1.0)\nprint(0 + "
+      "5n)\nprint(0 - 5n)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "2\nbigint\n1.5\ntrue\ntrue\n5\n-5\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(2 ** 64 == 1n << 64)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmDivModGoSemantics) {  // 02 §3.5
+  RunResult r = runSrc("print(-7n / 2n)\nprint(-7n % 2n)\nprint(7n / -2n)\nprint(7n % -2n)\nprint(5n / 2n)\nprint(5n % 2n)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "-3\n-1\n-3\n1\n2\n1\n", r.out);
+  freeRunResult(&r);
+}
+
+TEST(vmBitopDomain) {  // 02 §3.1：float 拒绝；bigint 域与超宽左移
+  RunResult r = runSrc("print(1.5 & 1)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  freeRunResult(&r);
+  r = runSrc("print(1 << 100)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1267650600228229401496703205376\n", r.out);
+  freeRunResult(&r);
+  r = runSrc("print(-3n >> 1)\nprint(~5n)");
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "-2\n-6\n", r.out);
+  freeRunResult(&r);
+}
+
 int main(void) {
   TestCtx ctx = {0};
   bigintParsePrintRoundtrip(&ctx);
@@ -681,6 +804,10 @@ int main(void) {
   bigintDivModSemantics(&ctx);
   bigintBitwiseVsI64(&ctx);
   bigintMiscAnchors(&ctx);
+  vmOverflowPromote(&ctx);
+  vmMixedArithTable(&ctx);
+  vmDivModGoSemantics(&ctx);
+  vmBitopDomain(&ctx);
   if (ctx.failures > 0) {
     fprintf(stderr, "%d test(s) failed\n", ctx.failures);
     return 1;

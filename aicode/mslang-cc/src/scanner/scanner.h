@@ -12,7 +12,7 @@
 typedef enum MseLexCode {
   MSE_INT_TRAILING = 1,          // 数字后紧跟标识符字符（123abc / 0x1Fg）
   MSE_FLOAT_EXPONENT = 2,        // 指数缺数字（1e / 1e+）
-  MSE_INT_OVERFLOW = 3,          // 整数超 int64，升 BIGINT 占位（T016 精确解析）
+  MSE_INT_OVERFLOW = 3,          // retired in T016：字面量超 int64 静默升 bigint（枚举位保留防码漂移）
   MSE_UNDERSCORE = 4,            // 下划线分组错位（1_ / 1__0）
   MSE_FLOAT_TRAILING_DOT = 5,    // 5. 缺小数位（. 后非数字且非成员访问）
   MSE_FLOAT_LEADING_DOT = 6,     // .5 缺整数部

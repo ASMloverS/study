@@ -8,11 +8,13 @@
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_bigint.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
 #include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
+#include "plat/plat_math.h"
 
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
@@ -121,40 +123,7 @@ static MsObjString* globalKey(MsVM* vm, const char* name, int32_t len) {
   return msInternBytes(vm, name, len);
 }
 
-// ---- 溢出检查助手（int/int 快路径；溢出为占位错误，bigint 升级归 T016） ----
-
-static bool addOv(ms_i64 a, ms_i64 b, ms_i64* r) {
-  if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b)) {
-    return false;
-  }
-  *r = a + b;
-  return true;
-}
-
-static bool subOv(ms_i64 a, ms_i64 b, ms_i64* r) {
-  if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b)) {
-    return false;
-  }
-  *r = a - b;
-  return true;
-}
-
-static ms_u64 absI64(ms_i64 v) { return v < 0 ? (ms_u64)(-(v + 1)) + 1 : (ms_u64)v; }
-
-static bool mulOv(ms_i64 a, ms_i64 b, ms_i64* r) {
-  if (a == 0 || b == 0) {
-    *r = 0;
-    return true;
-  }
-  ms_u64 ua = absI64(a);
-  ms_u64 ub = absI64(b);
-  if (ua > (ms_u64)INT64_MAX / ub) {
-    return false;
-  }
-  ms_u64 um = ua * ub;  // |积| ≤ INT64_MAX，正负号均可表示
-  *r = (a < 0) != (b < 0) ? -(ms_i64)um : (ms_i64)um;
-  return true;
-}
+// ---- 数值塔（T016，02 §3）：int/int 快路径（plat_math 溢出三件套）+ bigint 域 + float 域 ----
 
 static bool intPow(ms_i64 base, ms_i64 e, ms_i64* r) {
   if (base >= -1 && base <= 1) {  // |base| ≤ 1：任意非负 e 结果在 {-1,0,1}
@@ -166,7 +135,7 @@ static bool intPow(ms_i64 base, ms_i64 e, ms_i64* r) {
   }
   ms_i64 acc = 1;
   for (ms_i64 i = 0; i < e; i++) {
-    if (!mulOv(acc, base, &acc)) {
+    if (msMulOverflowI64(acc, base, &acc)) {
       return false;
     }
   }
@@ -190,25 +159,155 @@ typedef enum BinArith {
 
 static const char* kBinArithNames[] = {"+", "-", "*", "/", "%", "**", "&", "|", "^", "<<", ">>"};
 
-// 二元算术（21 §3.2 快路径）：int/int 与 float/float；混算升 float；失败 → false + errMsg
+static bool isNumVal(const MsValue* v) {  // 数值域（02 §3.4）：int/float/bigint（bool 排除）
+  if (v->kind == MS_VAL_I64 || v->kind == MS_VAL_F64) {
+    return true;
+  }
+  return v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_BIGINT;
+}
+
+static double numToF64(const MsValue* v) {
+  return v->kind == MS_VAL_I64 ? (double)v->as.i
+                               : (v->kind == MS_VAL_F64 ? v->as.f
+                                                        : msObjBigintToF64((const MsObjBigInt*)v->as.obj));
+}
+
+// bigErr → 错误槽（已置槽错误如 StackOverflow 不覆盖）
+static bool bigErrSet(MsVM* vm, MsBigErr e) {
+  if (vm->hasError) {
+    return false;
+  }
+  switch (e) {
+    case MS_BIG_OOM:
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: out of memory");
+      break;
+    case MS_BIG_PARSE:
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: invalid bigint literal");
+      break;
+    case MS_BIG_DIVZERO:
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "ArithmeticError: division by zero");
+      break;
+    case MS_BIG_RANGE:
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "OverflowError: bigint result too large");
+      break;
+    case MS_BIG_OK:
+      break;
+  }
+  return false;
+}
+
+// int⊗bigint / bigint⊗{int,bigint} 全域（02 §3.4 表）。操作数为 C 局部（弹栈）：
+// obj_bigint 层约定分配窗口后不再读输入 limbs → 安全（21 §3.2，同 string concat 契约）
+static bool bigArith(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out) {
+  MsBigView va, vb;
+  uint32_t ba[2], bb[2];
+  if (a.kind == MS_VAL_I64) {
+    msBigViewI64(&va, ba, a.as.i);
+  } else {
+    msBigViewOf(&va, (const MsObjBigInt*)a.as.obj);
+  }
+  if (b.kind == MS_VAL_I64) {
+    msBigViewI64(&vb, bb, b.as.i);
+  } else {
+    msBigViewOf(&vb, (const MsObjBigInt*)b.as.obj);
+  }
+  MsObjBigInt* r = NULL;
+  MsBigErr e = MS_BIG_OK;
+  if ((k == BA_DIV || k == BA_MOD) && vb.len == 0) {
+    snprintf(vm->errMsg, sizeof(vm->errMsg),
+             k == BA_DIV ? "ArithmeticError: division by zero" : "ArithmeticError: modulo by zero");
+    return false;
+  }
+  switch (k) {
+    case BA_ADD:
+      e = msBigAdd(vm, &va, &vb, &r);
+      break;
+    case BA_SUB:
+      e = msBigSub(vm, &va, &vb, &r);
+      break;
+    case BA_MUL:
+      e = msBigMul(vm, &va, &vb, &r);
+      break;
+    case BA_DIV:
+      e = msBigDiv(vm, &va, &vb, &r);
+      break;
+    case BA_MOD:
+      e = msBigMod(vm, &va, &vb, &r);
+      break;
+    case BA_POW: {
+      ms_i64 ev = 0;
+      if (b.kind != MS_VAL_I64) {  // bigint 指数：可容 i64 且非负才可用
+        if (!msObjBigintFitsI64((const MsObjBigInt*)b.as.obj, &ev) || ev < 0) {
+          snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: pow exponent must be a non-negative int");
+          return false;
+        }
+        e = msBigPow(vm, &va, ev, &r);
+        break;
+      }
+      if (b.as.i < 0) {  // 负指数浮点幂（与 int 路径一致，02 §3）
+        *out = msValueFloat(pow(numToF64(&a), (double)b.as.i));
+        return true;
+      }
+      e = msBigPow(vm, &va, b.as.i, &r);
+      break;
+    }
+    case BA_BIT_AND:
+      e = msBigBitOp(vm, MS_BIG_BIT_AND, &va, &vb, &r);
+      break;
+    case BA_BIT_OR:
+      e = msBigBitOp(vm, MS_BIG_BIT_OR, &va, &vb, &r);
+      break;
+    case BA_BIT_XOR:
+      e = msBigBitOp(vm, MS_BIG_BIT_XOR, &va, &vb, &r);
+      break;
+    case BA_SHL:
+    case BA_SHR: {
+      if (b.kind != MS_VAL_I64) {
+        snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: shift count must be int");
+        return false;
+      }
+      if (b.as.i < 0) {
+        snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: negative shift count");
+        return false;
+      }
+      e = k == BA_SHL ? msBigShl(vm, &va, b.as.i, &r) : msBigShr(vm, &va, b.as.i, &r);
+      break;
+    }
+  }
+  if (e != MS_BIG_OK) {
+    return bigErrSet(vm, e);
+  }
+  *out = msValueObj(&r->head);
+  return true;
+}
+
+// 二元算术（T016 数值塔，02 §3.4）：int/int 快路径 + bigint 域 + float 域；失败 → false + errMsg
 static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out) {
-  bool aNum = a.kind == MS_VAL_I64 || a.kind == MS_VAL_F64;
-  bool bNum = b.kind == MS_VAL_I64 || b.kind == MS_VAL_F64;
-  if (aNum && bNum && a.kind == MS_VAL_I64 && b.kind == MS_VAL_I64) {
+  bool aNum = isNumVal(&a);
+  bool bNum = isNumVal(&b);
+  if (aNum && bNum && a.kind == MS_VAL_I64 && b.kind == MS_VAL_I64) {  // int/int 快路径
     ms_i64 r = 0;
     switch (k) {
       case BA_ADD:
-        if (!addOv(a.as.i, b.as.i, &r)) goto overflow;
+        if (msAddOverflowI64(a.as.i, b.as.i, &r)) {
+          return bigArith(vm, k, a, b, out);  // 溢出升 bigint（02 §3.1）
+        }
         break;
       case BA_SUB:
-        if (!subOv(a.as.i, b.as.i, &r)) goto overflow;
+        if (msSubOverflowI64(a.as.i, b.as.i, &r)) {
+          return bigArith(vm, k, a, b, out);
+        }
         break;
       case BA_MUL:
-        if (!mulOv(a.as.i, b.as.i, &r)) goto overflow;
+        if (msMulOverflowI64(a.as.i, b.as.i, &r)) {
+          return bigArith(vm, k, a, b, out);
+        }
         break;
       case BA_DIV:
         if (b.as.i == 0) goto divZero;
-        if (a.as.i == INT64_MIN && b.as.i == -1) goto overflow;
+        if (a.as.i == INT64_MIN && b.as.i == -1) {
+          return bigArith(vm, k, a, b, out);  // 2^63 超 int64 → bigint
+        }
         r = a.as.i / b.as.i;  // C 截断除法 == Go 语义（-7/2 == -3）
         break;
       case BA_MOD:
@@ -220,15 +319,20 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
           *out = msValueFloat(pow((double)a.as.i, (double)b.as.i));
           return true;
         }
-        if (!intPow(a.as.i, b.as.i, &r)) goto overflow;
+        if (!intPow(a.as.i, b.as.i, &r)) {
+          return bigArith(vm, k, a, b, out);  // 溢出升 bigint
+        }
         break;
       case BA_SHL:
         if (b.as.i < 0) goto negShift;
-        r = b.as.i >= 64 ? 0 : a.as.i << b.as.i;  // Go 语义：超宽移位为 0
+        if (b.as.i >= 64) {
+          return bigArith(vm, k, a, b, out);  // 超宽移位精确升 bigint（T016，替代 Go-0）
+        }
+        r = a.as.i << b.as.i;
         break;
       case BA_SHR:
         if (b.as.i < 0) goto negShift;
-        r = b.as.i >= 64 ? (a.as.i < 0 ? -1 : 0) : a.as.i >> b.as.i;  // 算术右移补符号
+        r = b.as.i >= 64 ? (a.as.i < 0 ? -1 : 0) : a.as.i >> b.as.i;  // 算术右移 = floor
         break;
       case BA_BIT_AND:
         r = a.as.i & b.as.i;
@@ -243,9 +347,17 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
     *out = msValueInt(r);
     return true;
   }
-  if (aNum && bNum) {  // 含 float：升 double（02 §3.4 混算表）
-    double da = a.kind == MS_VAL_I64 ? (double)a.as.i : a.as.f;
-    double db = b.kind == MS_VAL_I64 ? (double)b.as.i : b.as.f;
+  if (aNum && bNum) {
+    if (a.kind != MS_VAL_F64 && b.kind != MS_VAL_F64) {
+      return bigArith(vm, k, a, b, out);  // bigint 域（02 §3.4 表）
+    }
+    if (k >= BA_BIT_AND) {  // 位运算拒绝 float（02 §3.1）
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: bit operation '%s' requires int or bigint operands",
+               kBinArithNames[k]);
+      return false;
+    }
+    double da = numToF64(&a);  // 含 float：升 double（bigint 转 double 允许精度损失，02 §3.3）
+    double db = numToF64(&b);
     switch (k) {
       case BA_ADD:
         *out = msValueFloat(da + db);
@@ -267,11 +379,10 @@ static bool arithBinary(MsVM* vm, BinArith k, MsValue a, MsValue b, MsValue* out
       case BA_POW:
         *out = msValueFloat(pow(da, db));
         return true;
-      default:  // 位运算拒绝 float（02 §3.1）
-        snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: bit operation '%s' requires int operands",
-                 kBinArithNames[k]);
-        return false;
+      default:
+        break;  // 位运算已在上方拒绝（防御）
     }
+    return false;
   }
   if (k == BA_ADD && a.kind == MS_VAL_OBJ && b.kind == MS_VAL_OBJ &&
       a.as.obj->type == MS_OBJ_STRING && b.as.obj->type == MS_OBJ_STRING) {
@@ -303,9 +414,6 @@ divZero:
   return false;
 modZero:
   snprintf(vm->errMsg, sizeof(vm->errMsg), "ArithmeticError: modulo by zero");
-  return false;
-overflow:
-  snprintf(vm->errMsg, sizeof(vm->errMsg), "OverflowError: int overflow (bigint promotion lands in T016)");
   return false;
 negShift:
   snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: negative shift count");
@@ -509,7 +617,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         bool ok = false;
         MsValue v = msValueFromConst(vm, &consts[k], &ok);
         if (!ok) {
-          RUNTIME_ERROR("RuntimeError: bigint executes in T016 (placeholder)");
+          RUNTIME_ERROR("RuntimeError: invalid constant (interp strings land in Task 11)");
         }
         msVmPush(vm, v);
         NEXT();
@@ -755,12 +863,26 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       OPCODE(OP_UNARY_NEG) {
         MsValue a = pop(vm);
         if (a.kind == MS_VAL_I64) {
-          if (a.as.i == INT64_MIN) {
-            RUNTIME_ERROR("OverflowError: int overflow (bigint promotion lands in T016)");
+          if (a.as.i == INT64_MIN) {  // 溢出升 bigint：-INT64_MIN = 2^63（02 §3.1）
+            uint32_t limbs[2] = {0, 0x80000000u};
+            MsObjBigInt* r = msObjBigintNew(vm, limbs, 2, 1);
+            if (r == NULL) {
+              RUNTIME_ERROR("RuntimeError: out of memory");
+            }
+            msVmPush(vm, msValueObj(&r->head));
+            NEXT();
           }
           msVmPush(vm, msValueInt(-a.as.i));
         } else if (a.kind == MS_VAL_F64) {
           msVmPush(vm, msValueFloat(-a.as.f));
+        } else if (a.kind == MS_VAL_OBJ && a.as.obj->type == MS_OBJ_BIGINT) {  // T016 bigint 取负
+          MsBigView v;
+          msBigViewOf(&v, (const MsObjBigInt*)a.as.obj);
+          MsObjBigInt* r = NULL;
+          if (msBigNeg(vm, &v, &r) != MS_BIG_OK) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          msVmPush(vm, msValueObj(&r->head));
         } else {
           RUNTIME_ERROR("TypeError: unary '-' requires a numeric operand, got '%s'", msValueTypeName(&a));
         }
@@ -775,10 +897,19 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
 
       OPCODE(OP_UNARY_INVERT) {
         MsValue a = pop(vm);
-        if (a.kind != MS_VAL_I64) {
-          RUNTIME_ERROR("TypeError: '~' requires int operand, got '%s'", msValueTypeName(&a));
+        if (a.kind == MS_VAL_I64) {
+          msVmPush(vm, msValueInt(~a.as.i));
+        } else if (a.kind == MS_VAL_OBJ && a.as.obj->type == MS_OBJ_BIGINT) {  // ~a = -(a+1)
+          MsBigView v;
+          msBigViewOf(&v, (const MsObjBigInt*)a.as.obj);
+          MsObjBigInt* r = NULL;
+          if (msBigNot(vm, &v, &r) != MS_BIG_OK) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          msVmPush(vm, msValueObj(&r->head));
+        } else {
+          RUNTIME_ERROR("TypeError: '~' requires int or bigint operand, got '%s'", msValueTypeName(&a));
         }
-        msVmPush(vm, msValueInt(~a.as.i));
         NEXT();
       }
 

@@ -99,7 +99,7 @@ static int digitOfBase(uint8_t c, int base) {
 }
 
 // 连续消费 base 进制数字与下划线分组（错位下划线报 MSE_UNDERSCORE 后继续恢复）；
-// 溢出 uint64 时置 *overflow 并保持近似值（BIGINT 占位语义，T016 接管精确值）
+// 溢出 uint64 时置 *overflow 并保持近似值（值不落 token——BIGINT 文本在 T016 const 装载精确解析）
 static uint64_t scanDigits(Scanner* s, int base, bool* overflow) {
   uint64_t value = 0;
   bool sawDigit = false;
@@ -183,7 +183,7 @@ static void scanIdentifier(Scanner* s, MsToken* out) {
 }
 
 // 数字字面量：十/十六(0x 0X)/八(0o 0O)/二(0b)进制、下划线分组、n 后缀、浮点（. 与 e/E）
-// 恢复策略：诊断后仍产出 token（01 §3/§9；溢出升 BIGINT 由 T016 接管精确值）
+// 恢复策略：诊断后仍产出 token（01 §3/§9；溢出升 BIGINT（T016：const 装载精确解析））
 static void scanNumber(Scanner* s, MsToken* out) {
   int32_t start = s->pos, line = s->line, col = s->col;
   int base = 10;
@@ -257,11 +257,7 @@ static void scanNumber(Scanner* s, MsToken* out) {
   if (isFloat) {
     makeToken(s, out, TK_FLOAT, start, line, col);
   } else if (isBig || overflow || value > (uint64_t)INT64_MAX) {
-    if (!isBig) {
-      addDiag(s, MSE_INT_OVERFLOW, line, col, s->pos - start,
-              "integer literal exceeds int64 range; promoted to bigint");
-    }
-    makeToken(s, out, TK_BIGINT, start, line, col);
+    makeToken(s, out, TK_BIGINT, start, line, col);  // 超 int64 静默升 bigint（T016 精确解析在 const 装载）
   } else {
     makeToken(s, out, TK_INT, start, line, col);
   }

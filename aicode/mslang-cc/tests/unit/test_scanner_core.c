@@ -159,14 +159,13 @@ TEST(scanFloatForms) {
   EXPECT_EQ(ctx, 0, diags.count);
 }
 
-TEST(scanIntOverflowToBigint) {
+TEST(scanIntOverflowToBigint) {  // 超 int64 静默升 bigint（T016：精确解析在 const 装载；零诊断）
   MsDiagSink diags = {0};
   TokList toks;
   scanAll("9223372036854775808", &toks, &diags);
   EXPECT(ctx, tokIs(&toks.items[0], TK_BIGINT, "9223372036854775808"));
   EXPECT_EQ(ctx, 2, toks.count);
-  EXPECT_EQ(ctx, 1, diags.count);
-  EXPECT_EQ(ctx, MSE_INT_OVERFLOW, (int)diags.items[0].code);
+  EXPECT_EQ(ctx, 0, diags.count);
 }
 
 TEST(scanNumericErrors) {
