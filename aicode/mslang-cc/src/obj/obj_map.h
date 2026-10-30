@@ -40,7 +40,7 @@ typedef enum MsMapOp {
 
 typedef enum MsHashStatus {
   MS_HASH_OK = 0,
-  MS_HASH_UNHASHABLE,  // list/map/set/实例等（02 §7；bigint 键 T016、__hash__ T021）
+  MS_HASH_UNHASHABLE,  // list/map/set/实例等（02 §7；__hash__ T021）
 } MsHashStatus;
 
 // 值 hash（nil/bool/int/float/string/tuple；tuple 首次计算后写缓存）

@@ -112,7 +112,7 @@ static MsValue numPow(MsVM* vm, int32_t argc, const MsValue* args) {
   ms_i64 ev = 0;
   if (e->kind == MS_VAL_I64) {
     ev = e->as.i;
-  } else if (e->kind == MS_VAL_OBJ && e->as.obj->type == MS_OBJ_BIGINT) {
+  } else if (msIsBigint(e)) {
     if (!msObjBigintFitsI64((const MsObjBigInt*)e->as.obj, &ev)) {
       methodError(vm, "ValueError: pow exponent must be a non-negative int");
       return msValueNil();

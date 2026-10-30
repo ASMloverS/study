@@ -52,7 +52,7 @@ static int methodRefLookup(const MsValue* recv, const char* name, int32_t len, M
   if (msIsTuple(recv)) {
     return msTupleMethodLookup(name, len, out) ? 0 : -1;
   }
-  if (recv->kind == MS_VAL_I64 || (recv->kind == MS_VAL_OBJ && recv->as.obj->type == MS_OBJ_BIGINT)) {
+  if (recv->kind == MS_VAL_I64 || msIsBigint(recv)) {
     return msNumMethodLookup(name, len, out) ? 0 : -1;
   }
   return -1;
@@ -166,7 +166,7 @@ static bool isNumVal(const MsValue* v) {  // 数值域（02 §3.4）：int/float
   if (v->kind == MS_VAL_I64 || v->kind == MS_VAL_F64) {
     return true;
   }
-  return v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_BIGINT;
+  return msIsBigint(v);
 }
 
 static double numToF64(const MsValue* v) {
@@ -882,7 +882,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           msVmPush(vm, msValueInt(-a.as.i));
         } else if (a.kind == MS_VAL_F64) {
           msVmPush(vm, msValueFloat(-a.as.f));
-        } else if (a.kind == MS_VAL_OBJ && a.as.obj->type == MS_OBJ_BIGINT) {  // T016 bigint 取负
+        } else if (msIsBigint(&a)) {  // T016 bigint 取负
           MsBigView v;
           msBigViewOf(&v, (const MsObjBigInt*)a.as.obj);
           MsObjBigInt* r = NULL;
@@ -906,7 +906,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         MsValue a = pop(vm);
         if (a.kind == MS_VAL_I64) {
           msVmPush(vm, msValueInt(~a.as.i));
-        } else if (a.kind == MS_VAL_OBJ && a.as.obj->type == MS_OBJ_BIGINT) {  // ~a = -(a+1)
+        } else if (msIsBigint(&a)) {  // ~a = -(a+1)
           MsBigView v;
           msBigViewOf(&v, (const MsObjBigInt*)a.as.obj);
           MsObjBigInt* r = NULL;

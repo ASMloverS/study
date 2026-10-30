@@ -670,7 +670,7 @@ static void foldBigintMul(AstNode* n, AstArena* arena, ms_i64 a, ms_i64 b) {
 // int 幂：先走 i64 受检快路径，溢出再十进制连乘（e ∈ [0,1024] 且位数 ≤ 256 才折叠）
 static void foldIntPow(AstNode* n, AstArena* arena, ms_i64 base, ms_i64 e) {
   if (e < 0 || e > 1024) {
-    return;  // 负指数/巨幂留给运行时（float pow / bigint 精确运算 T016）
+    return;  // 负指数/巨幂留给运行时（float pow / bigint 精确运算已就绪，T016）
   }
   ms_i64 r = 1;
   ms_i64 b = base;

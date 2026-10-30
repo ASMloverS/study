@@ -428,7 +428,7 @@ static MsValue nativeAbs(MsVM* vm, int32_t argc, const MsValue* args) {  // 保�
   if (x->kind == MS_VAL_F64) {
     return msValueFloat(fabs(x->as.f));
   }
-  if (x->kind == MS_VAL_OBJ && x->as.obj->type == MS_OBJ_BIGINT) {  // 实参栈 root：New 跨分配安全
+  if (msIsBigint(x)) {  // 实参栈 root：New 跨分配安全
     const MsObjBigInt* b = (const MsObjBigInt*)x->as.obj;
     MsObjBigInt* r = msObjBigintNew(vm, b->limbs, b->len, 1);
     if (r == NULL) {

@@ -18,7 +18,7 @@ typedef enum ConstKind {
   CONST_INT,
   CONST_FLOAT,
   CONST_RUNE,
-  CONST_BIGINT,     // 借用源文本（n 后缀已剥离，精确解析归 T016）
+  CONST_BIGINT,     // 借用源文本（n 后缀已剥离，LOAD_CONST 时精确解析，T016）
   CONST_STRING,     // 借用源文本段（转义原文，LOAD_CONST 时解码+intern）
   CONST_RAWSTRING,  // 原始串：内容不解码，反引号字面量
   CONST_INTERP,     // 插值段描述，Task 11 FORMAT_STRING 消费
