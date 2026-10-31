@@ -34,12 +34,13 @@ typedef struct FuncState {
 } FuncState;
 
 static void compErr(FuncState* fs, const AstNode* n, int32_t len, const char* msg) {
-  if (n == NULL) {  // 无节点语境（localOp 槽域校验）：占位行号入 sink 维持统一诊断面
-    MsDiagnostic diag = {MS_DIAG_ERROR, MSE_COMPILE_UNSUPPORTED, fs->file, 0, 0, 1, msg};
-    msDiagAdd(fs->diags, &diag);
-    return;
-  }
   MsDiagnostic diag = {MS_DIAG_ERROR, MSE_COMPILE_UNSUPPORTED, fs->file, n->line, n->col, len, msg};
+  msDiagAdd(fs->diags, &diag);
+}
+
+// 无节点语境诊断（localOp 槽域校验）：行号由调用方给定，列/长度占位 1
+static void compErrAt(FuncState* fs, int32_t line, const char* msg) {
+  MsDiagnostic diag = {MS_DIAG_ERROR, MSE_COMPILE_UNSUPPORTED, fs->file, line, 1, 1, msg};
   msDiagAdd(fs->diags, &diag);
 }
 
@@ -81,7 +82,7 @@ static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].targe
 // 局部槽访问统一入口：槽位域校验（u8 操作数）+ localCount 跟踪 + 发射
 static void localOp(FuncState* fs, ms_u8 op, int32_t slot, int32_t line) {
   if (slot > 255) {
-    compErr(fs, NULL, 1, "too many local variables");
+    compErrAt(fs, line, "too many local variables");
     slot = 0;  // 占位维持发射面（诊断已发，编译整体中止）
   }
   if (slot + 1 > fs->localCount) {
@@ -850,6 +851,7 @@ static void compileAssign(FuncState* fs, AstNode* n) {
 
 // 通用 AST 遍历：收集 BIND_LOCAL bindSlot 最大值（含推导式目标/嵌套函数——安全超估），
 // 供推导式临时槽基线（nextTemp 起点高于全部真实局部槽，杜绝冲突）
+// 维护不变量：后续新增含子节点的 AstKind 必须同步加入本遍历（静默低估 → 函数帧临时/局部槽冲突）
 static void scanMaxLocalSlot(const AstNode* n, int32_t* maxSlot) {
   if (n == NULL) {
     return;
