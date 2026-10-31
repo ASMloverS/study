@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "obj/obj_bigint.h"
+#include "obj/obj_iter.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
 #include "obj/obj_set.h"
@@ -145,7 +146,7 @@ static MsValue nativeRepr(MsVM* vm, int32_t argc, const MsValue* args) {
   return msValueObj(&s->head);
 }
 
-// range([start,] stop[, step])：惰性 int 迭代器
+// range([start,] stop[, step])：惰性 int 迭代器（T017 起装箱 MsObjIter；实参在 OP_CALL 栈 root）
 static MsValue nativeRange(MsVM* vm, int32_t argc, const MsValue* args) {
   ms_i64 start = 0;
   ms_i64 stop = 0;
@@ -165,11 +166,12 @@ static MsValue nativeRange(MsVM* vm, int32_t argc, const MsValue* args) {
     bridgeErr(vm, "ValueError: range step must not be zero");
     return msValueNil();
   }
-  MsValue v = {MS_VAL_RANGE_ITER, {0}};
-  v.as.range.cur = start;
-  v.as.range.stop = stop;
-  v.as.range.step = step;
-  return v;
+  MsObjIter* it = msObjIterRangeNew(vm, start, stop, step);
+  if (it == NULL) {
+    bridgeErr(vm, "RuntimeError: out of memory");
+    return msValueNil();
+  }
+  return msValueObj(&it->head);
 }
 
 // —— 数值转换族（T016，10 §1）：int/float/bigint/bool/hash/abs ——
@@ -441,7 +443,8 @@ static MsValue nativeAbs(MsVM* vm, int32_t argc, const MsValue* args) {  // 保�
   return msValueNil();
 }
 
-bool msBuiltinLookup(const char* name, int32_t len, MsValue* out) {
+bool msBuiltinLookup(MsVM* vm, const char* name, int32_t len, MsValue* out) {
+  (void)vm;  // T017 签名预留（Tier0 迭代族内建随 Task 2 使用）；当前查表零分配
   if (len == 5 && memcmp(name, "print", 5) == 0) {
     out->kind = MS_VAL_NATIVE;
     out->as.native = nativePrint;

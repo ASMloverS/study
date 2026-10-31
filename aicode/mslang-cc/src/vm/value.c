@@ -305,11 +305,11 @@ const char* msValueTypeName(const MsValue* v) {
           return "map";
         case MS_OBJ_SET:
           return "set";
+        case MS_OBJ_ITERATOR:  // T017：泛化迭代器（str/list 壳同 tag）
+          return "iterator";
         default:
           return "object";
       }
-    case MS_VAL_RANGE_ITER:
-      return "iterator";
     case MS_VAL_SLICE:
       return "slice";
   }
@@ -381,12 +381,11 @@ void msValueToStr(const MsValue* v, char* buf, size_t cap) {
     case MS_VAL_OBJ:  // string/list 由 StrForm/ReprForm 分派（Task 11）；此处仅其余对象兜底
       if (v->as.obj->type == MS_OBJ_BOUND_METHOD) {
         snprintf(buf, cap, "<bound method>");
+      } else if (v->as.obj->type == MS_OBJ_ITERATOR) {  // T017：泛化迭代器壳
+        snprintf(buf, cap, "<iterator>");
       } else {
         snprintf(buf, cap, "<object>");
       }
-      break;
-    case MS_VAL_RANGE_ITER:
-      snprintf(buf, cap, "<range-iter>");
       break;
     case MS_VAL_SLICE:
       snprintf(buf, cap, "<slice>");

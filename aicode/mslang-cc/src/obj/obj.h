@@ -62,10 +62,22 @@ typedef struct MsObjBoundMethod {
 MsObjNative* msObjNativeNew(MsVM* vm, MsNativeFn fn, const char* name, int32_t nameLen);
 MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsObjNative* method);
 
-// 迭代器壳种类（T014，22 §4）：str/list 等共享 MS_OBJ_ITERATOR tag，首载荷 kind 判别（T017 泛化）
+// 迭代器壳种类（T014/T017，22 §4）：共享 MS_OBJ_ITERATOR tag，首载荷 kind 判别；
+// str/list 沿用各自壳结构，其余种类统一 MsObjIter（obj_iter.h）
 typedef enum MsIterKind {
   MS_ITER_STR = 1,
   MS_ITER_LIST,
+  MS_ITER_RANGE,     // 惰性 int 序列（cur/stop/step）
+  MS_ITER_MAP,       // map 键游标（插入序快照语义：10 §4 无版本号）
+  MS_ITER_SET,       // set 内层 map 键游标
+  MS_ITER_TUPLE,     // tuple 下标游标
+  MS_ITER_REVERSE,   // list/string/tuple 反向游标
+  MS_ITER_ENUMERATE, // (i, v) 适配器
+  MS_ITER_ZIP,       // 双源配对适配器（strict 见 flags）
+  MS_ITER_MAPFN,     // it.map(f) 惰性映射
+  MS_ITER_FILTER,    // it.filter(f) 惰性过滤
+  MS_ITER_TAKE,      // it.take(n)
+  MS_ITER_DROP,      // it.drop(n)
 } MsIterKind;
 
 // 迭代器对象公共前缀：kind 紧随 head（MsObjStrIter / MsObjListIter 均以本布局起头）

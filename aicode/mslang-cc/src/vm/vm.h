@@ -12,17 +12,16 @@
 typedef struct MsObj MsObj;           // 对象头（obj/obj.h，T012）
 typedef struct MsObjString MsObjString;  // 字符串对象（obj/obj_string.h；StrForm 返回型，按指针避免头环）
 
-// 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013 已完成、FUNCTION/NATIVE→T018、RANGE_ITER→T017）
+// 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013 已完成、FUNCTION/NATIVE→T018）
 typedef enum MsValueKind {
   MS_VAL_NIL,
   MS_VAL_BOOL,
   MS_VAL_I64,
   MS_VAL_F64,
-  MS_VAL_OBJ,         // 堆对象指针（T012；string 即 MS_OBJ_STRING）
-  MS_VAL_FUNCTION,    // 过渡：函数 chunk 引用（MsObjFunction 归 T018）
-  MS_VAL_NATIVE,      // 过渡：C 内置函数（MsObjNative 归 T018）
-  MS_VAL_RANGE_ITER,  // 过渡：range 惰性迭代器（MsObjIter 归 T017）
-  MS_VAL_SLICE,       // 过渡：切片描述（BUILD_SLICE → GET_INDEX 栈上瞬态；T014/T015 复用）
+  MS_VAL_OBJ,      // 堆对象指针（T012；string 即 MS_OBJ_STRING）
+  MS_VAL_FUNCTION, // 过渡：函数 chunk 引用（MsObjFunction 归 T018）
+  MS_VAL_NATIVE,   // 过渡：C 内置函数（MsObjNative 归 T018）
+  MS_VAL_SLICE,    // 过渡：切片描述（BUILD_SLICE → GET_INDEX 栈上瞬态；T014/T015 复用）
 } MsValueKind;
 
 typedef struct MsVM MsVM;
@@ -38,9 +37,6 @@ typedef struct MsValue {
     MsObj* obj;
     const Chunk* func;
     MsNativeFn native;
-    struct {
-      ms_i64 cur, stop, step;
-    } range;
     struct {
       ms_i64 start, end, step;
       ms_u8 mask;  // bit0/1/2：start/end/step 显式给出
@@ -92,8 +88,8 @@ void msVmRun(MsVM* vm, const Chunk* chunk);
 // str_methods.c 等方法实现借 VM 栈 root 中间对象（D6 纪律），须在返回前弹净自压部分（pop 保持 VM 内部）
 bool msVmPush(MsVM* vm, MsValue v);
 
-// builtins_bridge.c：LOAD_GLOBAL 未命中用户全局时的内置回查
-bool msBuiltinLookup(const char* name, int32_t len, MsValue* out);
+// builtins_bridge.c：LOAD_GLOBAL 未命中用户全局时的内置回查（T017 起 vm 首参——Tier0 内建迭代族需分配）
+bool msBuiltinLookup(MsVM* vm, const char* name, int32_t len, MsValue* out);
 
 // str_methods.c：string 实例方法表（T013，10 §2；机制 D5 供容器复用）
 typedef struct MsMethodRef {
@@ -122,6 +118,8 @@ MsValue msValueObj(MsObj* obj);
 bool msValueIsTruthy(const MsValue* v);  // 仅 false/nil 为假（02 §2）
 bool msValueEqual(const MsValue* a, const MsValue* b);  // == 语义（int/float 数值互比）
 bool msValueOrder(const MsValue* a, const MsValue* b, int32_t* outCmp);  // false = 不可比较
+// 通用 '+' 语义（数值塔 + string/list 拼接；sum 等 Tier0 内置共用）；失败置错误槽返回 false
+bool msValueAdd(MsVM* vm, const MsValue* a, const MsValue* b, MsValue* out);
 const char* msValueTypeName(const MsValue* v);
 // print str 形态（nil/bool/int/float；string 由 print 直写不经此函数）
 void msValueToStr(const MsValue* v, char* buf, size_t cap);

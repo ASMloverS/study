@@ -9,6 +9,7 @@
 
 #include "gc/gc.h"
 #include "obj/obj_bigint.h"
+#include "obj/obj_iter.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
 #include "obj/obj_set.h"
@@ -26,13 +27,19 @@ static void boundMark(MsVM* vm, MsObj* obj) {
   gcMarkValue(vm, msValueObj(&bm->method->head));
 }
 
-// 迭代器 children 标记（T013 D8 / T014）：str/list 共享 MS_OBJ_ITERATOR tag，按首载荷 kind 分派
+// 迭代器 children 标记（T013 D8 / T014 / T017 泛化）：共享 MS_OBJ_ITERATOR tag，按首载荷 kind 分派；
+// str/list 壳走各自源指针，其余种类统一 MsObjIter（src/src2/fn）
 static void iterMark(MsVM* vm, MsObj* obj) {
-  if (((MsObjIterShell*)obj)->kind == MS_ITER_LIST) {
+  ms_u8 kind = ((MsObjIterShell*)obj)->kind;
+  if (kind == MS_ITER_LIST) {
     gcMarkValue(vm, msValueObj(&((MsObjListIter*)obj)->list->head));
     return;
   }
-  gcMarkValue(vm, msValueObj(&((MsObjStrIter*)obj)->str->head));
+  if (kind == MS_ITER_STR) {
+    gcMarkValue(vm, msValueObj(&((MsObjStrIter*)obj)->str->head));
+    return;
+  }
+  msObjIterMarkChildren(vm, obj);
 }
 
 // 方法查找公共面（T013 string / T014 list / T015 map,set,tuple）：命中 0；未命中 -1
@@ -427,6 +434,11 @@ negShift:
   return false;
 }
 
+// 通用 '+' 语义（数值塔 + string/list 拼接；sum 等 Tier0 内置共用）：失败置错误槽返回 false
+bool msValueAdd(MsVM* vm, const MsValue* a, const MsValue* b, MsValue* out) {
+  return arithBinary(vm, BA_ADD, *a, *b, out);
+}
+
 // ---- dispatch 双路径框架（20 §7：GCC/Clang computed goto；MSVC switch） ----
 // 单一指令处理体：OPCODE(op) 起标签/case，NEXT() 取下一条；PRE_DISPATCH 含错误检查与 trace
 
@@ -656,7 +668,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           NEXT();
         }
         MsValue builtin = msValueNil();
-        if (msBuiltinLookup(name->as.text.start, name->as.text.len, &builtin)) {
+        if (msBuiltinLookup(vm, name->as.text.start, name->as.text.len, &builtin)) {
           msVmPush(vm, builtin);
           NEXT();
         }
@@ -1282,75 +1294,31 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
-      OPCODE(OP_GET_ITER) {  // 迭代器直通（range/对象）；string → 新 rune 迭代器（D8；协议 T017 泛化）
-        MsValue v = vm->stack[vm->stackTop - 1];  // peek：迭代器分配期间接收者在栈保 root
-        if (v.kind == MS_VAL_RANGE_ITER ||
-            (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_ITERATOR)) {
-          NEXT();
+      OPCODE(OP_GET_ITER) {  // 值 → 迭代器（05 §4 协议；分配期源在栈 root）
+        MsValue it;
+        if (!msIterFromValue(vm, vm->stack[vm->stackTop - 1], &it)) {
+          RUNTIME_ERROR("%s", vm->errMsg);
         }
-        if (msIsString(&v)) {
-          MsObjStrIter* it = msObjStrIterNew(vm, (MsObjString*)v.as.obj, false);
-          if (it == NULL) {
-            RUNTIME_ERROR("RuntimeError: out of memory");
-          }
-          vm->stack[vm->stackTop - 1] = msValueObj(&it->head);  // 覆盖接收者槽：迭代器持 str
-          NEXT();
-        }
-        if (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_LIST) {
-          MsObjListIter* it = msObjListIterNew(vm, (MsObjList*)v.as.obj);  // peek：分配期间源在栈
-          if (it == NULL) {
-            RUNTIME_ERROR("RuntimeError: out of memory");
-          }
-          vm->stack[vm->stackTop - 1] = msValueObj(&it->head);  // 覆盖接收者槽：迭代器持 list
-          NEXT();
-        }
-        RUNTIME_ERROR("TypeError: '%s' is not iterable", msValueTypeName(&v));
+        vm->stack[vm->stackTop - 1] = it;
+        NEXT();
       }
 
-      OPCODE(OP_FOR_ITER) {  // <t exit>：有值压值；耗尽弹迭代器并跳出
+      OPCODE(OP_FOR_ITER) {  // <t exit>：有值压值；耗尽弹迭代器并跳出（协议语义等价 nil 哨兵）
         READ_OPERAND(t);
-        MsValue* it = &vm->stack[vm->stackTop - 1];
-        if (it->kind == MS_VAL_OBJ && it->as.obj->type == MS_OBJ_ITERATOR) {
-          ms_u8 ik = ((const MsObjIterShell*)it->as.obj)->kind;  // str/list 首载荷判别（T014）
-          MsValue item;
-          bool modified = false;
-          bool done;
-          if (ik == MS_ITER_LIST) {  // 22 §4：版本号防并发修改
-            done = !msListIterNext((MsObjListIter*)it->as.obj, &item, &modified);
-          } else {
-            done = !msStrIterNext(vm, (MsObjStrIter*)it->as.obj, &item);  // D8
-          }
-          if (done) {
-            if (modified) {
-              RUNTIME_ERROR("IteratorError: list modified during iteration");
-            }
-            (void)pop(vm);  // 耗尽弹迭代器（再迭代须重新 GET_ITER）
-            ip = t;
-            NEXT();
-          }
-          msVmPush(vm, item);  // 两迭代器 next 均无分配：it 槽位此后不再经缓存指针访问
-          NEXT();
+        MsValue it = vm->stack[vm->stackTop - 1];
+        if (!msIsIterator(&it)) {
+          RUNTIME_ERROR("TypeError: FOR_ITER over non-iterator '%s'", msValueTypeName(&it));
         }
-        if (it->kind != MS_VAL_RANGE_ITER) {
-          RUNTIME_ERROR("TypeError: FOR_ITER over non-iterator '%s'", msValueTypeName(it));
-        }
-        ms_i64 cur = it->as.range.cur;
-        ms_i64 stop = it->as.range.stop;
-        ms_i64 step = it->as.range.step;
-        bool has = step > 0 ? cur < stop : cur > stop;
-        if (!has) {
-          (void)pop(vm);
+        MsValue item;
+        if (!msIterNext(vm, it, &item)) {
+          if (vm->hasError) {
+            RUNTIME_ERROR("%s", vm->errMsg);
+          }
+          (void)pop(vm);  // 耗尽弹迭代器（再迭代须重新 GET_ITER）
           ip = t;
           NEXT();
         }
-        msVmPush(vm, msValueInt(cur));
-        it = &vm->stack[vm->stackTop - 2];  // push 可能扩容：重取迭代器槽位（-1 为新压入值）
-        // 推进（饱和到 stop 防 INT64 边界回绕）
-        if (step > 0 ? cur > INT64_MAX - step : cur < INT64_MIN - step) {
-          it->as.range.cur = stop;
-        } else {
-          it->as.range.cur = cur + step;
-        }
+        msVmPush(vm, item);
         NEXT();
       }
 
@@ -1458,7 +1426,26 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           }
           NEXT();
         }
-        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {  // string 解构归 T017
+        if (msIsString(&v)) {  // T017：string 按 rune 码点解构（产出 int 序）
+          MsObjString* s = (MsObjString*)v.as.obj;
+          if (s->charLen < (ms_u32)n) {
+            RUNTIME_ERROR("ValueError: not enough values to unpack (expected %d, got %d)", n,
+                          (int)s->charLen);
+          }
+          ms_u32 cps[255];  // n ≤ u8 上限（编译侧 UNPACK_SEQ 计数同限）
+          for (int32_t i = 0; i < n; i++) {
+            // runeIndex 惰性建为分配点：源仍在栈 root（弹出前完成全部读取）
+            if (!msObjStringRuneAt(vm, s, i, &cps[i])) {
+              RUNTIME_ERROR("IndexError: string index out of range");
+            }
+          }
+          vm->stackTop--;  // 弹源：码点已拷出，后续纯压栈
+          for (int32_t i = 0; i < n; i++) {
+            msVmPush(vm, msValueInt((ms_i64)cps[i]));
+          }
+          NEXT();
+        }
+        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {
           RUNTIME_ERROR("TypeError: cannot unpack '%s' value", msValueTypeName(&v));
         }
         MsObjList* list = (MsObjList*)v.as.obj;
