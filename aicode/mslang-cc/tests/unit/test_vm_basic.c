@@ -657,6 +657,13 @@ TEST(compTwoFors) {  // 多 for 嵌套：右子句快于左子句推进
   free(r.out);
 }
 
+TEST(condBeforeFor) {  // 03 §2：中位 if 与全部 if 同为最内层域合取，不构成求值屏障
+  RunResult r = runSrc("print([x for a in [1, 2] if a > 1 for x in [a * 10]])");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[20]\n", r.out);
+  free(r.out);
+}
+
 TEST(compNoLeakPos) {  // 迭代变量不泄漏（03 §2）：推导式内消费
   RunResult r = runSrc("var xs = [1, 2]\nvar ys = [x for x in xs]\nprint(ys[1])");
   EXPECT_STREQ(ctx, "2\n", r.out);
@@ -870,6 +877,7 @@ int main(int argc, char** argv) {
       listCompBasic,
       listCompIf,
       compTwoFors,
+      condBeforeFor,
       compNoLeakPos,
       compNoLeakNeg,
       mapComp,
