@@ -170,8 +170,10 @@ static void iterErr(MsVM* vm, const char* msg) {
   vm->hasError = true;
 }
 
+// 错误契约（非对称，调用方须知）：不可迭代 TypeError → 仅写 errMsg 不置 hasError
+// （OP_GET_ITER 等调用方经 RUNTIME_ERROR 翻译并补行号）；构造 OOM → hasError 一并置（iterErr），
+// 调用方见 false + hasError 直接止步。v 由调用方 root（OP_GET_ITER peek）：各构造分配窗口内源均存活
 bool msIterFromValue(MsVM* vm, MsValue v, MsValue* out) {
-  // v 由调用方 root（OP_GET_ITER peek）：各构造分配窗口内源均存活
   if (v.kind != MS_VAL_OBJ) {
     snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: '%s' is not iterable", msValueTypeName(&v));
     return false;  // errMsg 已置不置 hasError：调用方翻译
@@ -256,6 +258,84 @@ static bool callIterFn(MsVM* vm, MsValue fn, MsValue v, MsValue* out) {
   return true;
 }
 
+// ENUMERATE 推进（msIterNext 分支体）：产出 (cur++, v) 二元组；v 先压栈 root 再进 tuple 分配
+static bool advEnumerate(MsVM* vm, MsObjIter* p, MsValue* out) {
+  MsValue v;
+  if (!msIterNext(vm, p->src, &v)) {
+    return false;  // 内层耗尽/错误直通
+  }
+  if (!msVmPush(vm, v)) {
+    return false;  // StackOverflow 槽已置
+  }
+  MsObjTuple* t = msObjTupleNew(vm, 2);  // 分配点：v 已压栈 root
+  if (t == NULL) {
+    iterErr(vm, "RuntimeError: out of memory");
+    vm->stackTop--;
+    return false;
+  }
+  t->items[0] = msValueInt(p->cur++);
+  t->items[1] = vm->stack[vm->stackTop - 1];  // 重读（值语义无碍，防御栈搬移）
+  vm->stackTop--;
+  *out = msValueObj(&t->head);
+  return true;
+}
+
+// ZIP 推进（msIterNext 分支体）：strict 失配（单侧产出）报 ValueError；双侧同尽干净收尾；
+// 非 strict 首 source 尽即止——不探 src2（CPython 语义：长侧保留余量不消费）
+static bool advZip(MsVM* vm, MsObjIter* p, MsValue* out) {
+  MsValue a;
+  bool hasA = msIterNext(vm, p->src, &a);
+  if (vm->hasError) {
+    return false;
+  }
+  if (!hasA) {
+    if ((p->flags & 1) == 0) {
+      return false;  // 非 strict：src 尽即耗尽（src2 不消费，余量保留）
+    }
+    MsValue probe;
+    bool hasB = msIterNext(vm, p->src2, &probe);  // strict：探 src2 判等长
+    if (vm->hasError) {
+      return false;
+    }
+    if (hasB) {
+      iterErr(vm, "ValueError: zip() strict: iterables have unequal lengths");
+      return false;
+    }
+    return false;  // 双侧同尽：等长干净收尾
+  }
+  if (!msVmPush(vm, a)) {
+    return false;  // StackOverflow 槽已置
+  }
+  MsValue b;
+  bool hasB = msIterNext(vm, p->src2, &b);
+  if (vm->hasError || !hasB) {
+    vm->stackTop--;
+    if (vm->hasError) {
+      return false;  // 内层错误直通
+    }
+    if ((p->flags & 1) != 0) {  // strict：src2 先尽而 src 仍有产出（a 已消费弃置，同 CPython）
+      iterErr(vm, "ValueError: zip() strict: iterables have unequal lengths");
+      return false;
+    }
+    return false;  // 耗尽
+  }
+  if (!msVmPush(vm, b)) {
+    vm->stackTop--;
+    return false;
+  }
+  MsObjTuple* t = msObjTupleNew(vm, 2);  // 分配点：a/b 均已压栈 root
+  if (t == NULL) {
+    iterErr(vm, "RuntimeError: out of memory");
+    vm->stackTop -= 2;
+    return false;
+  }
+  t->items[0] = vm->stack[vm->stackTop - 2];
+  t->items[1] = vm->stack[vm->stackTop - 1];
+  vm->stackTop -= 2;
+  *out = msValueObj(&t->head);
+  return true;
+}
+
 bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
   MsObjIterShell* shell = (MsObjIterShell*)it.as.obj;
   switch (shell->kind) {
@@ -288,13 +368,22 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
       return true;
     }
     case MS_ITER_MAP:
-    case MS_ITER_SET: {  // 键游标：插入序 seq 链（10 §4 无版本号语义）
+    case MS_ITER_SET: {  // 活插入序 seq 链游走（无版本号）：结构性修改后游标失真 → 槽态校验翻译 IteratorError
       MsObjIter* p = (MsObjIter*)shell;
       const MsObjMap* m = p->kind == MS_ITER_SET ? ((const MsObjSet*)p->src.as.obj)->map
                                                   : (const MsObjMap*)p->src.as.obj;
+      // 游标硬化：上轮产出槽此后须仍 active（再哈希搬移/删除转墓碑/clear 即失配）
+      if (p->i >= m->cap || (p->i >= 0 && m->slots[p->i].state != MS_MSS_ACTIVE)) {
+        iterErr(vm, "IteratorError: map modified during iteration");
+        return false;
+      }
       ms_i64 slot = p->i < 0 ? msObjMapFirst(m) : msObjMapNext(m, p->i);
       if (slot < 0) {
         return false;  // 耗尽
+      }
+      if (slot >= m->cap || m->slots[slot].state != MS_MSS_ACTIVE) {  // 后继槽防御（再哈希残留游标）
+        iterErr(vm, "IteratorError: map modified during iteration");
+        return false;
       }
       p->i = slot;
       *out = *msObjMapKeyAt(m, slot);
@@ -348,76 +437,10 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
       iterErr(vm, "RuntimeError: unknown iterator kind");
       return false;  // 构造器已拒其余类型：防御
     }
-    case MS_ITER_ENUMERATE: {
-      MsObjIter* p = (MsObjIter*)shell;
-      MsValue v;
-      if (!msIterNext(vm, p->src, &v)) {
-        return false;  // 内层耗尽/错误直通
-      }
-      if (!msVmPush(vm, v)) {
-        return false;  // StackOverflow 槽已置
-      }
-      MsObjTuple* t = msObjTupleNew(vm, 2);  // 分配点：v 已压栈 root
-      if (t == NULL) {
-        iterErr(vm, "RuntimeError: out of memory");
-        vm->stackTop--;
-        return false;
-      }
-      t->items[0] = msValueInt(p->cur++);
-      t->items[1] = vm->stack[vm->stackTop - 1];  // 重读（值语义无碍，防御栈搬移）
-      vm->stackTop--;
-      *out = msValueObj(&t->head);
-      return true;
-    }
-    case MS_ITER_ZIP: {
-      MsObjIter* p = (MsObjIter*)shell;
-      MsValue a;
-      bool hasA = msIterNext(vm, p->src, &a);
-      if (vm->hasError) {
-        return false;
-      }
-      if (hasA && !msVmPush(vm, a)) {
-        return false;  // StackOverflow 槽已置
-      }
-      MsValue b;
-      bool hasB = msIterNext(vm, p->src2, &b);
-      if (vm->hasError || !hasB) {
-        if (hasA) {
-          vm->stackTop--;
-        }
-        if (vm->hasError) {
-          return false;  // 内层错误直通
-        }
-        // strict 仅单侧产出（hasA != hasB）失配；双侧同尽 = 等长干净收尾
-        if (hasA && (p->flags & 1) != 0) {
-          iterErr(vm, "ValueError: zip() strict: iterables have unequal lengths");
-          return false;
-        }
-        return false;  // 耗尽
-      }
-      if (!hasA) {
-        if ((p->flags & 1) != 0) {
-          iterErr(vm, "ValueError: zip() strict: iterables have unequal lengths");
-          return false;
-        }
-        return false;  // 耗尽
-      }
-      if (!msVmPush(vm, b)) {
-        vm->stackTop--;
-        return false;
-      }
-      MsObjTuple* t = msObjTupleNew(vm, 2);  // 分配点：a/b 均已压栈 root
-      if (t == NULL) {
-        iterErr(vm, "RuntimeError: out of memory");
-        vm->stackTop -= 2;
-        return false;
-      }
-      t->items[0] = vm->stack[vm->stackTop - 2];
-      t->items[1] = vm->stack[vm->stackTop - 1];
-      vm->stackTop -= 2;
-      *out = msValueObj(&t->head);
-      return true;
-    }
+    case MS_ITER_ENUMERATE:
+      return advEnumerate(vm, (MsObjIter*)shell, out);
+    case MS_ITER_ZIP:
+      return advZip(vm, (MsObjIter*)shell, out);
     case MS_ITER_MAPFN: {
       MsObjIter* p = (MsObjIter*)shell;
       MsValue v;

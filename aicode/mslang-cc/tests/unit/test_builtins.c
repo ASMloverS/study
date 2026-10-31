@@ -9,6 +9,7 @@
 #include "compiler/chunk.h"
 #include "compiler/compiler.h"
 #include "obj/obj_iter.h"
+#include "obj/obj_map.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 #include "parser/parser.h"
@@ -166,6 +167,58 @@ TEST(zipStrictCLevel) {  // strict：等长同尽干净收尾；仅单侧产出�
   msVmFree(&vm);
 }
 
+TEST(zipNonStrictRemainderCLevel) {  // 非 strict：短侧尽即止，长侧余量保留可续推（CPython 语义）
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjIter* a = msObjIterRangeNew(&vm, 0, 2, 1);
+  EXPECT(ctx, a != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&a->head)));  // 源落栈 root 跨后续分配
+  MsObjIter* b = msObjIterRangeNew(&vm, 0, 3, 1);
+  EXPECT(ctx, b != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&b->head)));
+  MsValue av = vm.stack[vm.stackTop - 2];
+  MsValue bv = vm.stack[vm.stackTop - 1];  // zip 尽后续推长侧用（值拷贝，对象不移动）
+  MsObjIter* z = msObjIterZipNew(&vm, av, bv, false);
+  EXPECT(ctx, z != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&z->head)));  // zip 落栈 root（推进内 tuple 分配窗口）
+  int32_t got = 0;
+  MsValue item;
+  while (msIterNext(&vm, vm.stack[vm.stackTop - 1], &item)) {
+    got++;
+  }
+  EXPECT(ctx, !vm.hasError);
+  EXPECT_EQ(ctx, 2, got);
+  EXPECT(ctx, msIterNext(&vm, bv, &item));  // 长侧第 3 元素未被 zip 消费
+  EXPECT_EQ(ctx, 2, item.as.i);
+  EXPECT(ctx, !msIterNext(&vm, bv, &item));  // 此后才尽
+  msVmFree(&vm);
+}
+
+TEST(mapIterModifiedCLevel) {  // MAP 游标硬化：迭代中结构性修改（删除转墓碑）→ IteratorError
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjMap* m = msObjMapNew(&vm);
+  EXPECT(ctx, m != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&m->head)));  // map 落栈 root（迭代期间 put/remove 触达）
+  for (int32_t i = 0; i < 4; i++) {
+    MsValue k = msValueInt(i);
+    EXPECT(ctx, msObjMapPut(&vm, m, &k, &k) == MS_MAP_OK);
+  }
+  MsObjIter* it = msObjIterMapNew(&vm, m);
+  EXPECT(ctx, it != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&it->head)));  // 迭代器落栈 root
+  MsValue item;
+  EXPECT(ctx, msIterNext(&vm, vm.stack[vm.stackTop - 1], &item));  // 首键 0（插入序）
+  EXPECT_EQ(ctx, 0, item.as.i);
+  EXPECT(ctx, !vm.hasError);
+  MsValue k0 = msValueInt(0);
+  EXPECT(ctx, msObjMapRemove(m, &k0, NULL) == MS_MAP_OK);  // 游标槽转墓碑（seq 链同时摘除）
+  EXPECT(ctx, !msIterNext(&vm, vm.stack[vm.stackTop - 1], &item));
+  EXPECT(ctx, vm.hasError);
+  EXPECT(ctx, strstr(vm.errMsg, "IteratorError: map modified during iteration") != NULL);
+  msVmFree(&vm);
+}
+
 // TODO(T017 Task2): iterNextExhaustNil（iter/next 内置随 Task 2 落地）
 
 int main(int argc, char** argv) {
@@ -179,6 +232,8 @@ int main(int argc, char** argv) {
       unpackString,
       forSumAccum,
       zipStrictCLevel,
+      zipNonStrictRemainderCLevel,
+      mapIterModifiedCLevel,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

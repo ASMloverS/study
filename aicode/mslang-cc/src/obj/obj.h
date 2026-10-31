@@ -68,8 +68,8 @@ typedef enum MsIterKind {
   MS_ITER_STR = 1,
   MS_ITER_LIST,
   MS_ITER_RANGE,     // 惰性 int 序列（cur/stop/step）
-  MS_ITER_MAP,       // map 键游标（插入序快照语义：10 §4 无版本号）
-  MS_ITER_SET,       // set 内层 map 键游标
+  MS_ITER_MAP,       // map 活插入序键游走（迭代中结构性修改 → IteratorError）
+  MS_ITER_SET,       // set 内层 map 活插入序键游走（同 MAP）
   MS_ITER_TUPLE,     // tuple 下标游标
   MS_ITER_REVERSE,   // list/string/tuple 反向游标
   MS_ITER_ENUMERATE, // (i, v) 适配器
