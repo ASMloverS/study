@@ -611,6 +611,22 @@ TEST(mapScriptFnError) {  // 脚本函数值实参 → T018 占位（func 值为
   free(r.out);
 }
 
+TEST(iterDeepChain) {  // 4 层适配器链：连续 CALL_METHOD 窗口间构造 rooting
+  RunResult r = runSrc("print(range(100).drop(1).take(5).map(abs).filter(bool).toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[1, 2, 3, 4, 5]\n", r.out);
+  free(r.out);
+}
+
+TEST(iterEmptySource) {  // 空源惰性：排干即空 list
+  RunResult r = runSrc("print(iter([]).map(abs).toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[]\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -668,6 +684,8 @@ int main(int argc, char** argv) {
       nextMethodForm,
       takeDropErrors,
       mapScriptFnError,
+      iterDeepChain,
+      iterEmptySource,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
