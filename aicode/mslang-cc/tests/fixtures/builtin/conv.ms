@@ -1,0 +1,6 @@
+print(int("42"), int("2a", 16), int(3.9), int(-3.9))
+print(float("2.5"), float(2))
+print(bool(0), bool(""), bool(nil), bool(1))
+print(str(12), str([1, "a"]), repr("a\"b"))
+print(bigint("123456789012345678901234567890") + 1)
+print(type(1), type(1.0), type(""), type([]), type({}), type(()), type(range(1)))
