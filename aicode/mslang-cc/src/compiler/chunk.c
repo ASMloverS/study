@@ -205,6 +205,7 @@ void chunkInit(Chunk* c, const char* name, int32_t nameLen) {
   c->linesLen = c->linesCap = 0;
   c->nUpvalues = 0;
   c->nIcSlots = 0;
+  c->localCount = 0;
   c->name = name;
   c->nameLen = nameLen;
 }

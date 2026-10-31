@@ -636,6 +636,113 @@ TEST(runSwitchTypeMulti) {  // case int, bigint: 多类型名
   free(r.out);
 }
 
+// ---------- 推导式 / 生成器表达式（T017 Task 4） ----------
+
+TEST(listCompBasic) {
+  RunResult r = runSrc("print([x * x for x in [1, 2, 3]])");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[1, 4, 9]\n", r.out);
+  free(r.out);
+}
+
+TEST(listCompIf) {  // 多 if 合取：假 → 内层循环头
+  RunResult r = runSrc("print([x for x in range(6) if x % 2 == 0 if x > 0])");
+  EXPECT_STREQ(ctx, "[2, 4]\n", r.out);
+  free(r.out);
+}
+
+TEST(compTwoFors) {  // 多 for 嵌套：右子句快于左子句推进
+  RunResult r = runSrc("print([x + y for x in [1, 2] for y in [10, 20]])");
+  EXPECT_STREQ(ctx, "[11, 21, 12, 22]\n", r.out);
+  free(r.out);
+}
+
+TEST(compNoLeakPos) {  // 迭代变量不泄漏（03 §2）：推导式内消费
+  RunResult r = runSrc("var xs = [1, 2]\nvar ys = [x for x in xs]\nprint(ys[1])");
+  EXPECT_STREQ(ctx, "2\n", r.out);
+  free(r.out);
+}
+
+TEST(compNoLeakNeg) {  // 推导式后引用目标名 → 未定义（伪帧槽不出推导式）
+  RunResult r = runSrc("var ys = [x for x in [1]]\nprint(x)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "undefined name 'x'") != NULL);
+  free(r.out);
+}
+
+TEST(mapComp) {
+  RunResult r = runSrc("print({k: len(v) for k, v in {\"a\": [1], \"b\": [2, 3]}.items()})");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "{\"a\": 1, \"b\": 2}\n", r.out);
+  free(r.out);
+}
+
+TEST(setComp) {  // set 打印为插入序（首入位）
+  RunResult r = runSrc("print({x % 3 for x in [1, 2, 3, 4, 5, 6]})");
+  EXPECT_STREQ(ctx, "{1, 2, 0}\n", r.out);
+  free(r.out);
+}
+
+TEST(nestedComp) {  // 嵌套推导式：内层帧栈递归 + 外层目标捕获
+  RunResult r = runSrc("print([[y * 2 for y in row] for row in [[1], [2, 3]]])");
+  EXPECT_STREQ(ctx, "[[2], [4, 6]]\n", r.out);
+  free(r.out);
+}
+
+TEST(genExprSum) {  // 裸 genexp 作唯一调用实参：物化 list + GET_ITER
+  RunResult r = runSrc("print(sum(x * x for x in range(5)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "30\n", r.out);
+  free(r.out);
+}
+
+TEST(genExprAssign) {  // genexp 赋值右值：迭代器经 for-in 消费
+  RunResult r = runSrc("var it = (x + 1 for x in [1, 2])\nfor v in it { print(v) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "2\n3\n", r.out);
+  free(r.out);
+}
+
+TEST(compCaptureOuter) {  // 模块层捕获：外层变量为 global
+  RunResult r = runSrc("var n = 3\nprint([x * n for x in [1, 2]])");
+  EXPECT_STREQ(ctx, "[3, 6]\n", r.out);
+  free(r.out);
+}
+
+TEST(comprShadowOuter) {  // 目标遮蔽外层同名 global，推导式外不受扰
+  RunResult r = runSrc("var x = 9\nvar ys = [x for x in [1]]\nprint(ys[0], x)");
+  EXPECT_STREQ(ctx, "1 9\n", r.out);
+  free(r.out);
+}
+
+TEST(compNestedCapture) {  // 内层迭代源引用外层目标：BIND_LOCAL 经帧映射重映射
+  RunResult r = runSrc("print([x + y for x in [1, 2] for y in [x * 10, x * 20]])");
+  EXPECT_STREQ(ctx, "[11, 21, 22, 42]\n", r.out);
+  free(r.out);
+}
+
+TEST(compInInterp) {  // 插值段内的推导式
+  RunResult r = runSrc("print(\"sum=${sum([x for x in range(3)])}\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "sum=3\n", r.out);
+  free(r.out);
+}
+
+TEST(comprFuncProtoCompile) {  // 函数原型内推导式：临时槽基线不与局部/参数冲突（执行归 T018）
+  RunResult r = runSrc("func f(a) { var q = [x for x in [a, 1]] }\nprint(\"ok\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "ok\n", r.out);
+  free(r.out);
+}
+
+TEST(comprManyTemps) {  // 同帧多个串行推导式：临时槽互不串扰
+  RunResult r = runSrc("print([a for a in [1]])\nprint([b for b in [2]])\nprint([c for c in [3]])");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[1]\n[2]\n[3]\n", r.out);
+  free(r.out);
+}
+
 // ---------- --trace 与 dump 一致性（DoD：指令序列与 ms dump 一致） ----------
 
 static int32_t decodeOne(const Chunk* c, int32_t off, ms_u8* opOut) {
@@ -760,6 +867,22 @@ int main(int argc, char** argv) {
       runSwitchTypeInt,
       runSwitchTypeAsString,
       runSwitchTypeMulti,
+      listCompBasic,
+      listCompIf,
+      compTwoFors,
+      compNoLeakPos,
+      compNoLeakNeg,
+      mapComp,
+      setComp,
+      nestedComp,
+      genExprSum,
+      genExprAssign,
+      compCaptureOuter,
+      comprShadowOuter,
+      compNestedCapture,
+      compInInterp,
+      comprFuncProtoCompile,
+      comprManyTemps,
       traceMatchesInstructionStream,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));

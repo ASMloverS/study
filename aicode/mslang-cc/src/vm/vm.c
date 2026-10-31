@@ -482,6 +482,12 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
   }
   MsFrame initFrame = {chunk, 0, 0};  // 本任务单模块帧（T018 起函数帧切换）
   MS_ARRAY_PUSH(vm->frames, vm->frameCount, vm->frameCap, initFrame);
+  for (int32_t i = 0; i < chunk->localCount; i++) {  // 帧局部区（推导式临时槽/参数区）：入帧即 GC root
+    if (!msVmPush(vm, msValueNil())) {
+      vm->frameCount--;
+      return;  // StackOverflow 槽已置；栈由 unwind 废弃（不恢复 stackTop）
+    }
+  }
   const ms_u8* code = chunk->code;
   const ConstEntry* consts = chunk->consts;
   int32_t ip = 0;
@@ -1223,7 +1229,8 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       }
 
       OPCODE(OP_RETURN)
-      (void)pop(vm);  // 模块帧返回值丢弃；帧切换 T018
+      (void)pop(vm);  // 返回值（模块帧丢弃；帧切换 T018）
+      vm->stackTop = vm->frames[vm->frameCount - 1].base;  // 归位：连局部区一并退栈
       vm->frameCount--;
       goto dispatchExit;
 

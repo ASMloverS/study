@@ -13,6 +13,12 @@ typedef struct LoopCtx {
   bool isIter;         // for-in：break 需先弹迭代器
 } LoopCtx;
 
+// 推导式内联编译帧（T017 Task 4）：binder COMPR 伪帧槽位 → 真实帧槽位映射（按需物化）
+typedef struct ComprFrame {
+  int32_t* map;
+  int32_t mapLen, mapCap;
+} ComprFrame;
+
 typedef struct FuncState {
   Chunk* chunk;
   ChunkJump* jumps;
@@ -21,9 +27,18 @@ typedef struct FuncState {
   int32_t loopCount, loopCap;
   MsDiagSink* diags;
   const char* file;
+  int32_t localCount;  // 本帧最大槽位号 + 1（收尾写 chunk->localCount）
+  int32_t nextTemp;    // 下一临时槽（推导式累加器/目标）
+  ComprFrame* comprStack;
+  int32_t comprDepth, comprCap;
 } FuncState;
 
 static void compErr(FuncState* fs, const AstNode* n, int32_t len, const char* msg) {
+  if (n == NULL) {  // 无节点语境（localOp 槽域校验）：占位行号入 sink 维持统一诊断面
+    MsDiagnostic diag = {MS_DIAG_ERROR, MSE_COMPILE_UNSUPPORTED, fs->file, 0, 0, 1, msg};
+    msDiagAdd(fs->diags, &diag);
+    return;
+  }
   MsDiagnostic diag = {MS_DIAG_ERROR, MSE_COMPILE_UNSUPPORTED, fs->file, n->line, n->col, len, msg};
   msDiagAdd(fs->diags, &diag);
 }
@@ -62,6 +77,19 @@ static int32_t emitJump(FuncState* fs, ms_u8 op, int32_t line) {
 }
 
 static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].target = fs->chunk->codeLen; }
+
+// 局部槽访问统一入口：槽位域校验（u8 操作数）+ localCount 跟踪 + 发射
+static void localOp(FuncState* fs, ms_u8 op, int32_t slot, int32_t line) {
+  if (slot > 255) {
+    compErr(fs, NULL, 1, "too many local variables");
+    slot = 0;  // 占位维持发射面（诊断已发，编译整体中止）
+  }
+  if (slot + 1 > fs->localCount) {
+    fs->localCount = slot + 1;
+  }
+  emitOp(fs, op, line);
+  emitByte(fs, (ms_u8)slot);
+}
 
 // ---- 循环上下文（break/continue 跳转收集，循环收尾统一回填） ----
 
@@ -198,29 +226,178 @@ static int32_t nameConst(FuncState* fs, const char* name, int32_t len) {
 
 static void compileExpr(FuncState* fs, const AstNode* n);
 
+// 推导式帧栈内解析槽位（T017 Task 4）：BIND_LOCAL → 内层伪帧 map；
+// BIND_UPVALUE(depth) → depth 层外伪帧 map，或 depth == comprDepth 时直通真实外层函数槽
+// 返回 -1 = 不可解析（槽位未声明 / 跨真实函数边界，upvalue 归 T018）
+static int32_t comprResolveSlot(const FuncState* fs, int32_t slot, int32_t hops) {
+  if (fs->comprDepth == 0) {
+    return slot;  // 帧局部直通（非推导式语境）
+  }
+  const ComprFrame* inner = &fs->comprStack[fs->comprDepth - 1];
+  if (hops < 0) {  // BIND_LOCAL：推导式内声明（目标）只可能在内层伪帧
+    return slot < inner->mapLen ? inner->map[slot] : -1;
+  }
+  if (hops == fs->comprDepth) {
+    return slot;  // 定义于真实外层函数：bindSlot 即本帧槽
+  }
+  if (hops > fs->comprDepth) {
+    return -1;  // 跨真实函数边界：upvalue 捕获归 T018
+  }
+  const ComprFrame* def = &fs->comprStack[fs->comprDepth - 1 - hops];
+  return slot < def->mapLen ? def->map[slot] : -1;
+}
+
 static void loadIdent(FuncState* fs, const AstNode* n) {
   if (n->bindKind == AST_BIND_LOCAL) {
-    emitOp(fs, OP_LOAD_LOCAL, n->line);
-    emitByte(fs, (ms_u8)n->bindSlot);
-  } else if (n->bindKind == AST_BIND_GLOBAL) {
+    int32_t slot = comprResolveSlot(fs, n->bindSlot, -1);
+    if (slot < 0) {
+      compErr(fs, n, n->as.ident.nameLen, "comprehension variable used before declaration");
+      emitOp(fs, OP_LOAD_NIL, n->line);  // 保持栈平衡的占位值
+      return;
+    }
+    localOp(fs, OP_LOAD_LOCAL, slot, n->line);
+    return;
+  }
+  if (n->bindKind == AST_BIND_GLOBAL) {
     int32_t k = nameConst(fs, n->as.ident.name, n->as.ident.nameLen);
     emitConstOp(fs, OP_LOAD_GLOBAL, k, n->line);
-  } else {
-    compErr(fs, n, n->as.ident.nameLen, "upvalue capture is not supported yet");
-    emitOp(fs, OP_LOAD_NIL, n->line);  // 保持栈平衡的占位值
+    return;
   }
+  if (fs->comprDepth > 0 && n->bindUpvalDepth <= fs->comprDepth) {  // 推导式捕获：同帧消解
+    int32_t slot = comprResolveSlot(fs, n->bindSlot, n->bindUpvalDepth);
+    if (slot >= 0) {
+      localOp(fs, OP_LOAD_LOCAL, slot, n->line);
+      return;
+    }
+  }
+  compErr(fs, n, n->as.ident.nameLen, "upvalue capture is not supported yet");
+  emitOp(fs, OP_LOAD_NIL, n->line);  // 保持栈平衡的占位值
 }
 
 static void storeIdent(FuncState* fs, const AstNode* n) {
   if (n->bindKind == AST_BIND_LOCAL) {
-    emitOp(fs, OP_STORE_LOCAL, n->line);
-    emitByte(fs, (ms_u8)n->bindSlot);
-  } else if (n->bindKind == AST_BIND_GLOBAL) {
+    int32_t slot = comprResolveSlot(fs, n->bindSlot, -1);
+    if (slot < 0) {  // 防御：赋值语句不出现于推导式表达式内（语句/表达式分离）
+      compErr(fs, n, n->as.ident.nameLen, "comprehension variable used before declaration");
+      emitOp(fs, OP_POP, n->line);  // 弹出待存值，维持栈平衡
+      return;
+    }
+    localOp(fs, OP_STORE_LOCAL, slot, n->line);
+    return;
+  }
+  if (n->bindKind == AST_BIND_GLOBAL) {
     int32_t k = nameConst(fs, n->as.ident.name, n->as.ident.nameLen);
     emitConstOp(fs, OP_STORE_GLOBAL, k, n->line);
-  } else {
-    compErr(fs, n, n->as.ident.nameLen, "upvalue store is not supported yet");
-    emitOp(fs, OP_POP, n->line);  // 弹出待存值，维持栈平衡
+    return;
+  }
+  compErr(fs, n, n->as.ident.nameLen, "upvalue store is not supported yet");
+  emitOp(fs, OP_POP, n->line);  // 弹出待存值，维持栈平衡
+}
+
+// ---- 推导式 / 生成器表达式（03 §1-§2：内联脱糖 + 帧槽重映射） ----
+
+static void comprPush(FuncState* fs) {
+  if (fs->comprDepth == fs->comprCap) {
+    fs->comprCap = fs->comprCap == 0 ? 4 : fs->comprCap * 2;
+    fs->comprStack = realloc(fs->comprStack, sizeof(ComprFrame) * (size_t)fs->comprCap);
+    MS_ASSERT(fs->comprStack != NULL);
+  }
+  ComprFrame* f = &fs->comprStack[fs->comprDepth++];
+  f->map = NULL;
+  f->mapLen = f->mapCap = 0;
+}
+
+static void comprPop(FuncState* fs) {
+  ComprFrame* f = &fs->comprStack[--fs->comprDepth];
+  free(f->map);
+  f->map = NULL;
+}
+
+// binder COMPR 伪帧槽 → 真实帧槽（按需物化；映射表随声明顺序增长）
+static int32_t comprSlot(FuncState* fs, int32_t slot) {
+  ComprFrame* f = &fs->comprStack[fs->comprDepth - 1];
+  while (f->mapLen <= slot) {  // 稀疏防御：中间槽顺序占位（binder 槽位致密，正常不触发）
+    int32_t tmp = fs->nextTemp++;
+    MS_ARRAY_PUSH(f->map, f->mapLen, f->mapCap, tmp);
+  }
+  return f->map[slot];
+}
+
+// 推导式目标落盘（remap 版 storeIterTarget）：IDENT 经 comprSlot；TUPLE → UNPACK_SEQ 逆序递归
+static void storeComprTarget(FuncState* fs, AstNode* t) {
+  if (t->kind == AST_TUPLE) {
+    if (t->as.tuple.count > 255) {  // UNPACK_SEQ u8 计数上限
+      compErr(fs, t, 1, "too many iteration targets");
+      return;
+    }
+    emitOp(fs, OP_UNPACK_SEQ, t->line);
+    emitByte(fs, (ms_u8)t->as.tuple.count);
+    for (int32_t i = t->as.tuple.count - 1; i >= 0; i--) {  // 逆序消费：UNPACK 后栈顶为末元素
+      storeComprTarget(fs, t->as.tuple.items[i]);
+    }
+    return;
+  }
+  if (t->kind != AST_IDENT) {  // BAD_TARGET 残留防御（诊断已发，编译整体中止）
+    compErr(fs, t, 1, "iteration target form is not supported yet");
+    emitOp(fs, OP_POP, t->line);
+    return;
+  }
+  localOp(fs, OP_STORE_LOCAL, comprSlot(fs, t->bindSlot), t->line);
+}
+
+// 脱糖主体：嵌套 GET_ITER/FOR_ITER 循环 + 条件 + 元素追加（03 §2；无 LoopCtx——不可 break/continue）
+// 累加器驻帧槽 acc；list/set 经 CALL_METHOD append/add，map 经 SET_INDEX（弹三无产出，栈平衡）
+static void compileComprBody(FuncState* fs, const AstNode* n, int32_t acc, int32_t forIdx, int32_t lTopInner) {
+  if (forIdx == n->as.compr.forCount) {
+    for (int32_t i = 0; i < n->as.compr.condCount; i++) {  // 多 if 合取：假 → 内层循环头
+      compileExpr(fs, n->as.compr.conds[i]);
+      int32_t j = emitJump(fs, OP_JMP_IF_FALSE, n->as.compr.conds[i]->line);
+      fs->jumps[j].target = lTopInner;
+    }
+    if (n->as.compr.compKind == AST_COMP_MAP) {
+      localOp(fs, OP_LOAD_LOCAL, acc, n->line);
+      compileExpr(fs, n->as.compr.key);
+      compileExpr(fs, n->as.compr.value);
+      emitOp(fs, OP_SET_INDEX, n->line);
+      return;
+    }
+    localOp(fs, OP_LOAD_LOCAL, acc, n->line);
+    compileExpr(fs, n->as.compr.value);
+    const char* mname = n->as.compr.compKind == AST_COMP_SET ? "add" : "append";
+    int32_t k = nameConst(fs, mname, (int32_t)strlen(mname));
+    emitConstOp(fs, OP_CALL_METHOD, k, n->line);
+    emitByte(fs, 0);  // icSlot（T022 内联缓存）
+    emitByte(fs, 1);  // argc = 1（接收者之外仅元素）
+    emitOp(fs, OP_POP, n->line);  // append/add 返回 nil 弹净
+    return;
+  }
+  compileExpr(fs, n->as.compr.fors[forIdx].iter);  // 迭代源在第 i 层子句域求值（03 §2）
+  emitOp(fs, OP_GET_ITER, n->line);
+  int32_t lTop = fs->chunk->codeLen;
+  int32_t jExit = emitJump(fs, OP_FOR_ITER, n->line);
+  storeComprTarget(fs, n->as.compr.fors[forIdx].target);
+  compileComprBody(fs, n, acc, forIdx + 1, forIdx == n->as.compr.forCount - 1 ? lTop : lTopInner);
+  int32_t jBack = emitJump(fs, OP_JMP, n->line);
+  fs->jumps[jBack].target = lTop;
+  fs->jumps[jExit].target = fs->chunk->codeLen;
+}
+
+// AST_COMPREHENSION / AST_GEN_EXPR 共用（03 §1-§2）：genexp = 物化 list + GET_ITER（T019 替换为惰性管道）
+// 累加器与目标全部落帧临时槽（VM 入帧保留 nil 区即 GC root，不与表达式栈冲突）
+static void compileCompr(FuncState* fs, const AstNode* n) {
+  comprPush(fs);
+  int32_t acc = fs->nextTemp++;  // 累加器临时槽（帧局部区 root）
+  ms_u8 build = n->as.compr.compKind == AST_COMP_MAP ? OP_BUILD_MAP
+                : n->as.compr.compKind == AST_COMP_SET ? OP_BUILD_SET
+                                                       : OP_BUILD_LIST;
+  emitOp(fs, build, n->line);
+  emitByte(fs, 0);
+  localOp(fs, OP_STORE_LOCAL, acc, n->line);
+  compileComprBody(fs, n, acc, 0, 0);
+  comprPop(fs);
+  localOp(fs, OP_LOAD_LOCAL, acc, n->line);
+  if (n->kind == AST_GEN_EXPR) {
+    emitOp(fs, OP_GET_ITER, n->line);
   }
 }
 
@@ -487,6 +664,10 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       emitOp(fs, OP_GET_INDEX, n->line);
       break;
     }
+    case AST_COMPREHENSION:
+    case AST_GEN_EXPR:
+      compileCompr(fs, n);
+      break;
     default:
       compErr(fs, n, 1, "expression form is not supported yet");
       emitOp(fs, OP_LOAD_NIL, n->line);
@@ -525,8 +706,7 @@ static void compileStmt(FuncState* fs, AstNode* n);
 // 值已在栈上：按声明处绑定类别落盘（global：DEF+STORE；local：STORE_LOCAL）
 static void finishDeclStore(FuncState* fs, const AstNode* decl) {
   if (decl->bindKind == AST_BIND_LOCAL) {
-    emitOp(fs, OP_STORE_LOCAL, decl->line);
-    emitByte(fs, (ms_u8)decl->bindSlot);
+    localOp(fs, OP_STORE_LOCAL, decl->bindSlot, decl->line);
   } else {
     int32_t k = nameConst(fs, decl->as.varDecl.name, decl->as.varDecl.nameLen);
     emitConstOp(fs, OP_DEF_GLOBAL, k, decl->line);
@@ -547,8 +727,7 @@ static void compileVarDecl(FuncState* fs, AstNode* n) {
 // （同 finishDeclStore 语义，载荷取 as.ident）
 static void storeDeclIdent(FuncState* fs, const AstNode* t) {
   if (t->bindKind == AST_BIND_LOCAL) {
-    emitOp(fs, OP_STORE_LOCAL, t->line);
-    emitByte(fs, (ms_u8)t->bindSlot);
+    localOp(fs, OP_STORE_LOCAL, t->bindSlot, t->line);
   } else {
     int32_t k = nameConst(fs, t->as.ident.name, t->as.ident.nameLen);
     emitConstOp(fs, OP_DEF_GLOBAL, k, t->line);
@@ -669,13 +848,203 @@ static void compileAssign(FuncState* fs, AstNode* n) {
   storeIdent(fs, target);
 }
 
+// 通用 AST 遍历：收集 BIND_LOCAL bindSlot 最大值（含推导式目标/嵌套函数——安全超估），
+// 供推导式临时槽基线（nextTemp 起点高于全部真实局部槽，杜绝冲突）
+static void scanMaxLocalSlot(const AstNode* n, int32_t* maxSlot) {
+  if (n == NULL) {
+    return;
+  }
+  if (n->bindKind == AST_BIND_LOCAL && n->bindSlot > *maxSlot) {
+    *maxSlot = n->bindSlot;
+  }
+  switch (n->kind) {
+    case AST_MODULE:
+    case AST_BLOCK:
+    case AST_LIST:
+    case AST_SET:
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        scanMaxLocalSlot(n->as.list.items[i], maxSlot);
+      }
+      break;
+    case AST_VAR_DECL:
+      scanMaxLocalSlot(n->as.varDecl.init, maxSlot);
+      break;
+    case AST_ASSIGN:
+      scanMaxLocalSlot(n->as.assign.target, maxSlot);
+      scanMaxLocalSlot(n->as.assign.value, maxSlot);
+      break;
+    case AST_DESTRUCTURE:
+      for (int32_t i = 0; i < n->as.destructure.count; i++) {
+        scanMaxLocalSlot(n->as.destructure.targets[i], maxSlot);
+      }
+      scanMaxLocalSlot(n->as.destructure.value, maxSlot);
+      break;
+    case AST_EXPR_STMT:
+    case AST_RETURN:
+    case AST_THROW:
+    case AST_YIELD:
+    case AST_DEFER:
+      scanMaxLocalSlot(n->as.exprStmt.expr, maxSlot);
+      break;
+    case AST_IF:
+      scanMaxLocalSlot(n->as.ifStmt.cond, maxSlot);
+      scanMaxLocalSlot(n->as.ifStmt.thenBlock, maxSlot);
+      scanMaxLocalSlot(n->as.ifStmt.elseNode, maxSlot);
+      break;
+    case AST_FOR:
+      scanMaxLocalSlot(n->as.forStmt.init, maxSlot);
+      scanMaxLocalSlot(n->as.forStmt.cond, maxSlot);
+      scanMaxLocalSlot(n->as.forStmt.post, maxSlot);
+      scanMaxLocalSlot(n->as.forStmt.target, maxSlot);
+      scanMaxLocalSlot(n->as.forStmt.iter, maxSlot);
+      scanMaxLocalSlot(n->as.forStmt.body, maxSlot);
+      break;
+    case AST_WHILE:
+      scanMaxLocalSlot(n->as.whileStmt.cond, maxSlot);
+      scanMaxLocalSlot(n->as.whileStmt.body, maxSlot);
+      break;
+    case AST_SWITCH:
+      scanMaxLocalSlot(n->as.switchStmt.subject, maxSlot);
+      for (int32_t i = 0; i < n->as.switchStmt.count; i++) {
+        scanMaxLocalSlot(n->as.switchStmt.cases[i], maxSlot);
+      }
+      break;
+    case AST_SWITCH_CASE:
+      for (int32_t i = 0; i < n->as.switchCase.valueCount; i++) {
+        scanMaxLocalSlot(n->as.switchCase.values[i], maxSlot);
+      }
+      scanMaxLocalSlot(n->as.switchCase.body, maxSlot);
+      break;
+    case AST_SEND:
+      scanMaxLocalSlot(n->as.sendStmt.chan, maxSlot);
+      scanMaxLocalSlot(n->as.sendStmt.value, maxSlot);
+      break;
+    case AST_SELECT:
+      for (int32_t i = 0; i < n->as.selectStmt.count; i++) {
+        scanMaxLocalSlot(n->as.selectStmt.cases[i], maxSlot);
+      }
+      break;
+    case AST_SELECT_CASE:
+      scanMaxLocalSlot(n->as.selectCase.target, maxSlot);
+      scanMaxLocalSlot(n->as.selectCase.chan, maxSlot);
+      scanMaxLocalSlot(n->as.selectCase.value, maxSlot);
+      scanMaxLocalSlot(n->as.selectCase.body, maxSlot);
+      break;
+    case AST_FUNC_DECL:
+      for (int32_t i = 0; i < n->as.funcDecl.paramCount; i++) {
+        scanMaxLocalSlot(n->as.funcDecl.params[i].defaultExpr, maxSlot);
+      }
+      scanMaxLocalSlot(n->as.funcDecl.body, maxSlot);
+      scanMaxLocalSlot(n->as.funcDecl.exprBody, maxSlot);
+      break;
+    case AST_CLASS_DECL:
+      for (int32_t i = 0; i < n->as.classDecl.baseCount; i++) {
+        scanMaxLocalSlot(n->as.classDecl.bases[i], maxSlot);
+      }
+      for (int32_t i = 0; i < n->as.classDecl.memberCount; i++) {
+        scanMaxLocalSlot(n->as.classDecl.members[i], maxSlot);
+      }
+      break;
+    case AST_TRY:
+      scanMaxLocalSlot(n->as.tryStmt.tryBlock, maxSlot);
+      for (int32_t i = 0; i < n->as.tryStmt.catchCount; i++) {
+        const AstCatchClause* c = &n->as.tryStmt.catches[i];
+        for (int32_t t = 0; t < c->typeCount; t++) {
+          scanMaxLocalSlot(c->types[t], maxSlot);
+        }
+        scanMaxLocalSlot(c->block, maxSlot);
+      }
+      scanMaxLocalSlot(n->as.tryStmt.finallyBlock, maxSlot);
+      break;
+    case AST_STRING:
+      for (int32_t i = 0; i < n->as.strLit.count; i++) {
+        scanMaxLocalSlot(n->as.strLit.segs[i].expr, maxSlot);
+      }
+      break;
+    case AST_TUPLE:
+      for (int32_t i = 0; i < n->as.tuple.count; i++) {
+        scanMaxLocalSlot(n->as.tuple.items[i], maxSlot);
+      }
+      break;
+    case AST_MAP:
+      for (int32_t i = 0; i < n->as.mapLit.count; i++) {
+        scanMaxLocalSlot(n->as.mapLit.keys[i], maxSlot);
+        scanMaxLocalSlot(n->as.mapLit.values[i], maxSlot);
+      }
+      break;
+    case AST_BINARY:
+    case AST_LOGIC:
+      scanMaxLocalSlot(n->as.binary.lhs, maxSlot);
+      scanMaxLocalSlot(n->as.binary.rhs, maxSlot);
+      break;
+    case AST_UNARY:
+    case AST_RECV:
+    case AST_GO:
+    case AST_AWAIT:
+      scanMaxLocalSlot(n->as.unary.operand, maxSlot);
+      break;
+    case AST_TERNARY:
+      scanMaxLocalSlot(n->as.ternary.cond, maxSlot);
+      scanMaxLocalSlot(n->as.ternary.thenExpr, maxSlot);
+      scanMaxLocalSlot(n->as.ternary.elseExpr, maxSlot);
+      break;
+    case AST_CALL:
+      scanMaxLocalSlot(n->as.call.callee, maxSlot);
+      for (int32_t i = 0; i < n->as.call.count; i++) {
+        scanMaxLocalSlot(n->as.call.args[i], maxSlot);
+      }
+      break;
+    case AST_INDEX:
+      scanMaxLocalSlot(n->as.indexExpr.obj, maxSlot);
+      scanMaxLocalSlot(n->as.indexExpr.index, maxSlot);
+      break;
+    case AST_MEMBER:
+      scanMaxLocalSlot(n->as.memberExpr.obj, maxSlot);
+      break;
+    case AST_SLICE:
+      scanMaxLocalSlot(n->as.slice.obj, maxSlot);
+      scanMaxLocalSlot(n->as.slice.start, maxSlot);
+      scanMaxLocalSlot(n->as.slice.end, maxSlot);
+      scanMaxLocalSlot(n->as.slice.step, maxSlot);
+      break;
+    case AST_COMPREHENSION:
+    case AST_GEN_EXPR:
+      scanMaxLocalSlot(n->as.compr.key, maxSlot);
+      scanMaxLocalSlot(n->as.compr.value, maxSlot);
+      for (int32_t i = 0; i < n->as.compr.forCount; i++) {
+        scanMaxLocalSlot(n->as.compr.fors[i].target, maxSlot);
+        scanMaxLocalSlot(n->as.compr.fors[i].iter, maxSlot);
+      }
+      for (int32_t i = 0; i < n->as.compr.condCount; i++) {
+        scanMaxLocalSlot(n->as.compr.conds[i], maxSlot);
+      }
+      break;
+    case AST_FUNC_EXPR:
+      for (int32_t i = 0; i < n->as.funcExpr.paramCount; i++) {
+        scanMaxLocalSlot(n->as.funcExpr.params[i].defaultExpr, maxSlot);
+      }
+      scanMaxLocalSlot(n->as.funcExpr.body, maxSlot);
+      scanMaxLocalSlot(n->as.funcExpr.exprBody, maxSlot);
+      break;
+    default:
+      break;
+  }
+}
+
 // 函数原型：体编译为独立 chunk（RETURN/局部槽位来自 Binder 标注），挂入常量池
 static void compileFuncProto(FuncState* fs, AstNode* n, Chunk** protoOut) {
   Chunk* proto = malloc(sizeof(Chunk));
   MS_ASSERT(proto != NULL);
   chunkInit(proto, n->as.funcDecl.name, n->as.funcDecl.nameLen);
-  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file};
+  // 临时槽基线：高于全部真实局部槽（预扫描安全超估）且不低于参数槽数
   AstNode* body = n->as.funcDecl.body;
+  int32_t scan = -1;
+  scanMaxLocalSlot(body, &scan);
+  int32_t base = n->as.funcDecl.paramCount;
+  if (scan + 1 > base) {
+    base = scan + 1;
+  }
+  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0};
   for (int32_t i = 0; i < body->as.list.count; i++) {
     compileStmt(&inner, body->as.list.items[i]);
   }
@@ -686,8 +1055,11 @@ static void compileFuncProto(FuncState* fs, AstNode* n, Chunk** protoOut) {
     emitOp(&inner, OP_RETURN, line);
   }
   finishChunk(&inner);
+  // localCount 含参数槽（未引用参数亦占位）与推导式临时槽：T018 帧入参区依赖
+  proto->localCount = inner.localCount > n->as.funcDecl.paramCount ? inner.localCount : n->as.funcDecl.paramCount;
   free(inner.jumps);
   free(inner.loops);
+  free(inner.comprStack);
   *protoOut = proto;
 }
 
@@ -738,8 +1110,7 @@ static void storeIterTarget(FuncState* fs, AstNode* t) {
     return;
   }
   if (t->bindKind == AST_BIND_LOCAL) {
-    emitOp(fs, OP_STORE_LOCAL, t->line);
-    emitByte(fs, (ms_u8)t->bindSlot);
+    localOp(fs, OP_STORE_LOCAL, t->bindSlot, t->line);
     return;
   }
   int32_t k = nameConst(fs, t->as.ident.name, t->as.ident.nameLen);
@@ -812,8 +1183,7 @@ static void compileWhile(FuncState* fs, AstNode* n) {
 // 类型式 as 绑定落盘（判别值已在栈顶；binder 标注见 binder.c AST_SWITCH）
 static void storeCaseBinding(FuncState* fs, const AstNode* c) {
   if (c->bindKind == AST_BIND_LOCAL) {
-    emitOp(fs, OP_STORE_LOCAL, c->line);
-    emitByte(fs, (ms_u8)c->bindSlot);
+    localOp(fs, OP_STORE_LOCAL, c->bindSlot, c->line);
   } else {
     int32_t k = nameConst(fs, c->as.switchCase.bindName, c->as.switchCase.bindLen);
     emitConstOp(fs, OP_DEF_GLOBAL, k, c->line);
@@ -950,7 +1320,10 @@ static void compileStmt(FuncState* fs, AstNode* n) {
 
 bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* diags) {
   chunkInit(out, "main", 4);
-  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file};
+  // 临时槽基线：模块层无自有 local，预扫描（含推导式目标/嵌套函数，安全超估）后从其上起步
+  int32_t scan = -1;
+  scanMaxLocalSlot(module, &scan);
+  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0};
   for (int32_t i = 0; i < module->as.list.count; i++) {
     compileStmt(&fs, module->as.list.items[i]);
   }
@@ -958,8 +1331,10 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   emitOp(&fs, OP_LOAD_NIL, lastLine);  // 模块恒以 nil 返回收尾（21 §4 main 形态）
   emitOp(&fs, OP_RETURN, lastLine);
   finishChunk(&fs);
+  out->localCount = fs.localCount;
   free(fs.jumps);
   free(fs.loops);
+  free(fs.comprStack);
   for (int32_t i = 0; i < diags->count; i++) {
     if (diags->items[i].level == MS_DIAG_ERROR) {
       return false;

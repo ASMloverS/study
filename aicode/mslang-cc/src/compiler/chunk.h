@@ -70,6 +70,7 @@ struct Chunk {
   int32_t linesLen, linesCap;
   int32_t nUpvalues;  // 闭包捕获描述（T018 填充）
   uint16_t nIcSlots;  // 内联缓存槽（T022 分配）
+  int32_t localCount;  // 帧局部槽位数（含参数与推导式临时槽；VM 入帧保留 nil 区，GC root）
   const char* name;   // 函数名 / "main"（借用源文本，不保证 NUL 终止）
   int32_t nameLen;
 };

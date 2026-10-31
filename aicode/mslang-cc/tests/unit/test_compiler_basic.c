@@ -629,6 +629,82 @@ TEST(nestedTernaryFold) {
   chunkFree(&c);
 }
 
+// ---------- 推导式 / 生成器表达式（T017 Task 4：内联脱糖形状） ----------
+
+TEST(listCompCompiles) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var ys = [x * x for x in xs]", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  ms_u8 ops[64];
+  int32_t operands[64];
+  int32_t n = decodeAll(&c, ops, operands, 64);
+  bool hasGetIter = false, hasForIter = false, hasCallMethod = false;
+  for (int32_t i = 0; i < n; i++) {
+    hasGetIter = hasGetIter || ops[i] == OP_GET_ITER;
+    hasForIter = hasForIter || ops[i] == OP_FOR_ITER;
+    hasCallMethod = hasCallMethod || ops[i] == OP_CALL_METHOD;
+  }
+  EXPECT(ctx, hasGetIter);
+  EXPECT(ctx, hasForIter);
+  EXPECT(ctx, hasCallMethod);  // 元素追加走 append 方法调用
+  chunkFree(&c);
+}
+
+TEST(genExprCompiles) {  // genexp = 物化 list + GET_ITER：末次 GET_ITER 在循环之后
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var it = (x for x in xs)", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  ms_u8 ops[64];
+  int32_t operands[64];
+  int32_t n = decodeAll(&c, ops, operands, 64);
+  int32_t lastGetIter = -1, lastForIter = -1;
+  for (int32_t i = 0; i < n; i++) {
+    if (ops[i] == OP_GET_ITER) {
+      lastGetIter = i;
+    }
+    if (ops[i] == OP_FOR_ITER) {
+      lastForIter = i;
+    }
+  }
+  EXPECT(ctx, lastForIter >= 0);
+  EXPECT(ctx, lastGetIter > lastForIter);
+  EXPECT_EQ(ctx, OP_RETURN, ops[n - 1]);
+  chunkFree(&c);
+}
+
+TEST(mapCompCompiles) {
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var m2 = {k: v for k, v in m.items()}", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  ms_u8 ops[64];
+  int32_t operands[64];
+  int32_t n = decodeAll(&c, ops, operands, 64);
+  bool hasSetIndex = false, hasUnpack = false;
+  for (int32_t i = 0; i < n; i++) {
+    hasSetIndex = hasSetIndex || ops[i] == OP_SET_INDEX;
+    hasUnpack = hasUnpack || ops[i] == OP_UNPACK_SEQ;  // (k, v) 元组目标解构
+  }
+  EXPECT(ctx, hasSetIndex);
+  EXPECT(ctx, hasUnpack);
+  chunkFree(&c);
+}
+
+TEST(localCountReserved) {  // 帧局部槽数：推导式累加器 + 目标驻局部区；无推导式恒 0
+  MsDiagSink diags = {0};
+  Chunk c;
+  EXPECT(ctx, compileSrc("var ys = [x + y for x in [1] for y in [2]]", &c, &diags));
+  EXPECT(ctx, c.localCount >= 3);  // acc + 两个 for 目标
+  chunkFree(&c);
+  diags = (MsDiagSink){0};
+  Chunk c2;
+  EXPECT(ctx, compileSrc("var a = 1", &c2, &diags));
+  EXPECT_EQ(ctx, 0, c2.localCount);  // 模块层无 local 槽（模块声明均 global）
+  chunkFree(&c2);
+}
+
 // ---------- 反汇编 ----------
 
 // chunk 树 → 文本（临时文件回读，避开平台 fmemopen 差异）
@@ -769,6 +845,10 @@ int main(int argc, char** argv) {
       peepholeJumpChainFold,
       peepholeMutualJumpsTerminate,
       nestedTernaryFold,
+      listCompCompiles,
+      genExprCompiles,
+      mapCompCompiles,
+      localCountReserved,
       disasmBasicFormat,
       disasmFuncProtoSections,
       disasmJumpAnnotation,
