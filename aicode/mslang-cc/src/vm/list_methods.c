@@ -1,7 +1,7 @@
 // list 方法族（T014，10 §3）：args[0] 恒为接收者（D5 机制复用）
 // 错误约定：置 vm->hasError + errMsg 后返回 nil（OP_CALL_METHOD 检槽统一 unwind）
 // GC 纪律：接收者与实参由 CALL_METHOD peek 保栈 root；map/filter 结果逐个落栈后
-// msVmCollectStackToList 收集（D10）；callNative 调用窗口实参在栈
+// msVmCollectStackToList 收集（D10）；msVmCallNative 调用窗口实参在栈
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,22 +52,6 @@ static bool checkFnArg(MsVM* vm, const MsValue* f, const char* mname) {
   }
   methodError(vm, "TypeError: %s expects a function argument", mname);
   return false;
-}
-
-// 原生函数调用：argv 值拷贝逐个压栈（调用窗口 GC root）后调用并弹净实参
-static bool callNative(MsVM* vm, const MsValue* f, const MsValue* argv, int32_t argc, MsValue* out) {
-  for (int32_t i = 0; i < argc; i++) {
-    if (!msVmPush(vm, argv[i])) {
-      return false;  // StackOverflow 槽已置
-    }
-  }
-  MsValue r = f->as.native(vm, argc, &vm->stack[vm->stackTop - argc]);
-  vm->stackTop -= argc;
-  if (vm->hasError) {
-    return false;  // 错误槽已置（整栈由 unwind 废弃）
-  }
-  *out = r;
-  return true;
 }
 
 // ---- 变更族 ----
@@ -285,7 +269,7 @@ static MsValue lstMap(MsVM* vm, int32_t argc, const MsValue* args) {
   MsObjList* list = recvList(args);
   for (int32_t i = 0; i < list->count; i++) {
     MsValue r = msValueNil();
-    if (!callNative(vm, &f, &list->items[i], 1, &r)) {
+    if (!msVmCallNative(vm, &f, &list->items[i], 1, &r)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }
@@ -311,7 +295,7 @@ static MsValue lstFilter(MsVM* vm, int32_t argc, const MsValue* args) {
   int32_t kept = 0;
   for (int32_t i = 0; i < list->count; i++) {
     MsValue r = msValueNil();
-    if (!callNative(vm, &f, &list->items[i], 1, &r)) {
+    if (!msVmCallNative(vm, &f, &list->items[i], 1, &r)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }
@@ -351,7 +335,7 @@ static MsValue lstReduce(MsVM* vm, int32_t argc, const MsValue* args) {
   }
   for (; i < list->count; i++) {
     MsValue argv[2] = {acc, list->items[i]};
-    if (!callNative(vm, &f, argv, 2, &acc)) {
+    if (!msVmCallNative(vm, &f, argv, 2, &acc)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }
@@ -374,7 +358,7 @@ static MsValue lstEach(MsVM* vm, int32_t argc, const MsValue* args) {
   for (int32_t i = 0; i < list->count; i++) {
     MsValue argv[2] = {list->items[i], msValueInt(i)};  // 10 §3：f(v, i)
     MsValue r = msValueNil();
-    if (!callNative(vm, &f, argv, 2, &r)) {
+    if (!msVmCallNative(vm, &f, argv, 2, &r)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }

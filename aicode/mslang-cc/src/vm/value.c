@@ -683,6 +683,24 @@ MsValue msVmCollectStackToList(MsVM* vm, int32_t n) {
   return r;
 }
 
+// 原生函数调用公共面（list_methods/obj_iter/iter_methods/builtins 共用）：
+// argv 值拷贝逐个压栈（调用窗口 GC root；首压前无分配窗口，C 局部实参安全）后调用并弹净实参；
+// 错误槽已置返回 false
+bool msVmCallNative(MsVM* vm, const MsValue* f, const MsValue* argv, int32_t argc, MsValue* out) {
+  for (int32_t i = 0; i < argc; i++) {
+    if (!msVmPush(vm, argv[i])) {
+      return false;  // StackOverflow 槽已置
+    }
+  }
+  MsValue r = f->as.native(vm, argc, &vm->stack[vm->stackTop - argc]);
+  vm->stackTop -= argc;
+  if (vm->hasError) {
+    return false;  // 错误槽已置（整栈由 unwind 废弃）
+  }
+  *out = r;
+  return true;
+}
+
 MsValue msValueFromConst(MsVM* vm, const ConstEntry* e, bool* okOut) {
   *okOut = true;
   switch (e->kind) {

@@ -618,21 +618,6 @@ static MsValue nativeSum(MsVM* vm, int32_t argc, const MsValue* args) {
   return r;
 }
 
-// key 函数调用（sorted 专设，镜像 list_methods.c callNative；共享面 msVmCallNative 归 T018）：
-// v 压栈 root（调用窗口 GC 纪律）后调用并弹净实参
-static bool callKey(MsVM* vm, const MsValue* f, const MsValue* v, MsValue* out) {
-  if (!msVmPush(vm, *v)) {
-    return false;  // StackOverflow 槽已置
-  }
-  MsValue r = f->as.native(vm, 1, &vm->stack[vm->stackTop - 1]);
-  vm->stackTop--;
-  if (vm->hasError) {
-    return false;  // 错误槽已置
-  }
-  *out = r;  // 寄存器值：返回至调用方立即消费/上压，窗口内无分配
-  return true;
-}
-
 // 索引稳定归并排序（sorted 专设）：keys 视图上比较 idx 序；reverse 取反（平键保持原序，Python 语义）
 typedef struct SortCtx {
   MsVM* vm;
@@ -689,7 +674,7 @@ static bool sortedCollectKeys(MsVM* vm, const MsValue* keyFn, int32_t base, int3
   MsObjList* L = (MsObjList*)vm->stack[base].as.obj;
   for (int32_t i = 0; i < n; i++) {
     MsValue k;
-    if (!callKey(vm, keyFn, &L->items[i], &k)) {
+    if (!msVmCallNative(vm, keyFn, &L->items[i], 1, &k)) {  // 实参首压即 root（value.c 公共面）
       if (!vm->hasError) {
         bErr(vm, "RuntimeError: out of memory");
       }

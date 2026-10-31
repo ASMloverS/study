@@ -1,6 +1,6 @@
 // MsObjIter 实现（T017，22 §4）：构造族 + 统一推进 + 值→迭代器/收集公共面
 // GC 纪律（D6）：本文件所有分配点的存活引用均经调用方 root（迭代器自身在栈/寄存器调用窗口）；
-// 推进途中产出的中间值先压 VM 栈再进后续分配（callIterFn/ENUMERATE/ZIP 同 seqForm 纪律）
+// 推进途中产出的中间值先压 VM 栈再进后续分配（msVmCallNative/ENUMERATE/ZIP 同 seqForm 纪律）
 #include "obj/obj_iter.h"
 
 #include <stdio.h>
@@ -243,21 +243,6 @@ static bool checkIterFn(MsVM* vm, const MsValue* fn) {
   return true;
 }
 
-// 原生 fn 调用（MAPFN/FILTER 共用）：v 压栈 root、args 指向栈槽（OP_CALL peek 纪律）、
-// 调毕弹出；fn 内部分配触发 GC 时 v 在栈存活；失败 false（错误槽已置）
-static bool callIterFn(MsVM* vm, MsValue fn, MsValue v, MsValue* out) {
-  if (!msVmPush(vm, v)) {
-    return false;  // StackOverflow 槽已置
-  }
-  MsValue r = fn.as.native(vm, 1, &vm->stack[vm->stackTop - 1]);
-  vm->stackTop--;  // 弹实参
-  if (vm->hasError) {
-    return false;
-  }
-  *out = r;  // 寄存器值：返回至调用方立即消费/上压，窗口内无分配
-  return true;
-}
-
 // ENUMERATE 推进（msIterNext 分支体）：产出 (cur++, v) 二元组；v 先压栈 root 再进 tuple 分配
 static bool advEnumerate(MsVM* vm, MsObjIter* p, MsValue* out) {
   MsValue v;
@@ -443,14 +428,15 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
       return advZip(vm, (MsObjIter*)shell, out);
     case MS_ITER_MAPFN: {
       MsObjIter* p = (MsObjIter*)shell;
-      MsValue v;
-      if (!msIterNext(vm, p->src, &v)) {
-        return false;
-      }
       if (!checkIterFn(vm, &p->fn)) {
         return false;
       }
-      return callIterFn(vm, p->fn, v, out);
+      MsValue v;
+      if (!msIterNext(vm, p->src, &v)) {
+        return false;  // 内层耗尽/错误直通
+      }
+      // v C 局部安全：msVmCallNative 首压即 root（压前无分配窗口）
+      return msVmCallNative(vm, &p->fn, &v, 1, out);
     }
     case MS_ITER_FILTER: {
       MsObjIter* p = (MsObjIter*)shell;
@@ -463,8 +449,8 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
           return false;  // 内层耗尽/错误直通
         }
         MsValue keep;
-        if (!callIterFn(vm, p->fn, v, &keep)) {
-          return false;
+        if (!msVmCallNative(vm, &p->fn, &v, 1, &keep)) {
+          return false;  // v C 局部安全：首压即 root
         }
         if (msValueIsTruthy(&keep)) {
           *out = v;  // keep 消费后窗口内无分配：v 寄存器值安全

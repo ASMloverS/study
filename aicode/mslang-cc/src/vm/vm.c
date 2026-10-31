@@ -42,7 +42,7 @@ static void iterMark(MsVM* vm, MsObj* obj) {
   msObjIterMarkChildren(vm, obj);
 }
 
-// 方法查找公共面（T013 string / T014 list / T015 map,set,tuple）：命中 0；未命中 -1
+// 方法查找公共面（T013 string / T014 list / T015 map,set,tuple / T017 iterator）：命中 0；未命中 -1
 static int methodRefLookup(const MsValue* recv, const char* name, int32_t len, MsMethodRef* out) {
   if (msIsString(recv)) {
     return msStringMethodLookup(name, len, out) ? 0 : -1;
@@ -58,6 +58,9 @@ static int methodRefLookup(const MsValue* recv, const char* name, int32_t len, M
   }
   if (msIsTuple(recv)) {
     return msTupleMethodLookup(name, len, out) ? 0 : -1;
+  }
+  if (msIsIterator(recv)) {
+    return msIterMethodLookup(name, len, out) ? 0 : -1;
   }
   if (recv->kind == MS_VAL_I64 || msIsBigint(recv)) {
     return msNumMethodLookup(name, len, out) ? 0 : -1;

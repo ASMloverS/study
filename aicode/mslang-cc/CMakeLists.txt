@@ -96,6 +96,7 @@ target_sources(ms_obj PRIVATE src/obj/obj_bigint.c)  # T016：bigint 对象（FA
 # T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
 target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 target_sources(ms_vm PRIVATE src/vm/list_methods.c)
+target_sources(ms_vm PRIVATE src/vm/iter_methods.c)  # T017：iterator 实例方法表（10 §4）
 # T015：map/set/tuple 实例方法表（10 §4）
 target_sources(ms_vm PRIVATE src/vm/map_methods.c)
 target_sources(ms_vm PRIVATE src/vm/set_methods.c)

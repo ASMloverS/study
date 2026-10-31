@@ -530,6 +530,87 @@ TEST(enumerateTupleForm) {  // enumerate 产出 (i, v) 二元组（起始值生�
   free(r.out);
 }
 
+// ---------- iterator 方法族（Task 3：10 §4 惰性链接） ----------
+
+TEST(iterChainTakeDrop) {  // take/drop 惰性链接：终结于 toList
+  RunResult r = runSrc("print(range(10).take(7).drop(2).toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[2, 3, 4, 5, 6]\n", r.out);
+  free(r.out);
+}
+
+TEST(iterChainMapFilter) {  // map/filter 原生函数实参（脚本函数值 T018）；bool 过滤：仅 nil/false 为假
+  RunResult r = runSrc("print(iter([-2, 3, -4]).map(abs).toList())\n"
+                       "print(iter([\"a\", \"bbb\"]).map(len).toList())\n"
+                       "print(iter([0, 1, nil, false, 2]).filter(bool).toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[2, 3, 4]\n[1, 3]\n[0, 1, 2]\n", r.out);
+  free(r.out);
+}
+
+TEST(iterEachPrint) {  // each 终结：f(v) 单参（ratified；list.each 为 f(v, i)）弃置结果
+  RunResult r = runSrc("iter([-1, -2]).map(abs).each(print)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1\n2\n", r.out);
+  free(r.out);
+}
+
+TEST(eachDiscardsResult) {  // each 直接形态：print 返回值被弃置
+  RunResult r = runSrc("iter([1, 2]).each(print)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1\n2\n", r.out);
+  free(r.out);
+}
+
+TEST(rangeToListSorted) {  // toList 与 sorted 组合（DoD 串接）
+  RunResult r = runSrc("print(sorted(range(5).toList(), nil, true))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[4, 3, 2, 1, 0]\n", r.out);
+  free(r.out);
+}
+
+TEST(iterLazyNoOvershoot) {  // take 精确消费源：next(it) 续取 2（不得过度推进）
+  RunResult r = runSrc("var it = range(100)\nvar head = it.take(2).toList()\nprint(head)\nprint(next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[0, 1]\n2\n", r.out);
+  free(r.out);
+}
+
+TEST(nextMethodForm) {  // it.next() 同 next(it)：耗尽 nil（string rune 码点）
+  RunResult r = runSrc("var it = iter(\"ab\")\nprint(it.next())\nprint(it.next())\nprint(it.next())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "97\n98\nnil\n", r.out);
+  free(r.out);
+}
+
+TEST(takeDropErrors) {  // take 负数 ValueError / drop 非 int TypeError
+  RunResult r = runSrc("range(3).take(-1)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError") != NULL);
+  free(r.out);
+  r = runSrc("range(3).drop(\"x\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(mapScriptFnError) {  // 脚本函数值实参 → T018 占位（func 值为 MS_VAL_FUNCTION）
+  RunResult r = runSrc("func f(x) { return x }\nrange(3).map(f).toList()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "script function values execute in T018") != NULL);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -578,6 +659,15 @@ int main(int argc, char** argv) {
       reversedIter,
       reversedString,
       enumerateTupleForm,
+      iterChainTakeDrop,
+      iterChainMapFilter,
+      iterEachPrint,
+      eachDiscardsResult,
+      rangeToListSorted,
+      iterLazyNoOvershoot,
+      nextMethodForm,
+      takeDropErrors,
+      mapScriptFnError,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
