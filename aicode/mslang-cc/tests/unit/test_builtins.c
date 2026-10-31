@@ -219,7 +219,245 @@ TEST(mapIterModifiedCLevel) {  // MAP 游标硬化：迭代中结构性修改（
   msVmFree(&vm);
 }
 
-// TODO(T017 Task2): iterNextExhaustNil（iter/next 内置随 Task 2 落地）
+// ---------- Tier0 内置函数全集（Task 2） ----------
+
+TEST(iterNextExhaustNil) {  // iter/next：耗尽返回 nil（05 §4）
+  RunResult r = runSrc("var it = iter([1, 2])\nprint(next(it))\nprint(next(it))\nprint(next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1\n2\nnil\n", r.out);
+  free(r.out);
+}
+
+TEST(lenAllTypes) {  // len：string 字节数 + list/map/set/tuple 元素数（10 §1）
+  RunResult r = runSrc("print(len(\"中a\"), len([1, 2]), len({\"a\": 1}), len({1, 2}), len((1, 2, 3)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "4 2 1 2 3\n", r.out);  // "中" 3 UTF-8 字节 + 'a'
+  free(r.out);
+}
+
+TEST(typeAllTypes) {  // type：全类别类型名（10 §1；range 装箱为 iterator）
+  RunResult r = runSrc("print(type(nil), type(true), type(1), type(1.5), type(\"\"), type([]), type(()), "
+                       "type({}), type({1}), type(range(1)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "nil bool int float string list tuple map set iterator\n", r.out);
+  free(r.out);
+}
+
+TEST(rangeNegStepSum) {  // sum 消费负步进 range：10+8+6+4+2
+  RunResult r = runSrc("print(sum(range(10, 0, -2)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "30\n", r.out);
+  free(r.out);
+}
+
+TEST(enumerateStart) {  // enumerate 起始值 + tuple 目标解构（04 §4）
+  RunResult r = runSrc("for i, v in enumerate([\"a\", \"b\"], 1) { print(i, v) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1 a\n2 b\n", r.out);
+  free(r.out);
+}
+
+TEST(zipStrictError) {  // zip strict 长度失配 → ValueError（错误槽文案）
+  RunResult r = runSrc("for p in zip([1], [1, 2], true) { print(p) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ValueError: zip() strict") != NULL);
+  free(r.out);
+}
+
+TEST(zipSecondNotIterable) {  // zip 第二参不可迭代：TypeError 必须真抛错（FromValue errMsg 翻译）
+  RunResult r = runSrc("print(zip([], 2))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "'int' is not iterable") != NULL);
+  EXPECT_STREQ(ctx, "", r.out);
+  free(r.out);
+}
+
+TEST(zipShortest) {  // zip 非 strict 短板对齐：单对后短侧尽即止（元素 repr 带 quote）
+  RunResult r = runSrc("for p in zip([1, 2, 3], [\"a\"]) { print(p) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "(1, \"a\")\n", r.out);
+  free(r.out);
+}
+
+TEST(sortedKeyStable) {  // sorted + len 键：按键值升序（1 < 2 = 2）
+  RunResult r = runSrc("print(sorted([\"bb\", \"a\", \"cc\"], len))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[\"a\", \"bb\", \"cc\"]\n", r.out);
+  free(r.out);
+}
+
+TEST(sortedReverse) {  // sorted reverse=true：降序
+  RunResult r = runSrc("print(sorted([3, 1, 2], nil, true))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[3, 2, 1]\n", r.out);
+  free(r.out);
+}
+
+TEST(sortedStableTies) {  // 稳定性：键相等保持原序（a/c 与 bb/dd 两组平键）
+  RunResult r = runSrc("print(sorted([\"bb\", \"a\", \"dd\", \"c\"], len))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[\"a\", \"c\", \"bb\", \"dd\"]\n", r.out);
+  free(r.out);
+}
+
+TEST(minMaxContainer) {  // min/max 单容器参数：容器内最值
+  RunResult r = runSrc("print(min([3, 1, 2]), max([3, 1, 2]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1 3\n", r.out);
+  free(r.out);
+}
+
+TEST(minMaxVariadic) {  // min/max 多参数形态
+  RunResult r = runSrc("print(min(4, 2, 9), max(4, 2, 9))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "2 9\n", r.out);
+  free(r.out);
+}
+
+TEST(sumForms) {  // sum 数值 init / 字符串拼接 init / 裸 range（init 起算：10+1+2=13）
+  RunResult r = runSrc("print(sum([1, 2], 10))\nprint(sum([\"a\", \"b\"], \"\"))\nprint(sum(range(5)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "13\nab\n10\n", r.out);  // 计划书 golden "12" 为笔误（10+3=13）
+  free(r.out);
+}
+
+TEST(sumTypeMismatch) {  // sum 类型失配必须真抛错（arithBinary 只写 errMsg，内置须补置 hasError）
+  RunResult r = runSrc("print(sum([1], \"x\"))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "unsupported operand types for '+'") != NULL);
+  EXPECT_STREQ(ctx, "", r.out);  // 错误后不得继续执行（栈已弃）
+  free(r.out);
+}
+
+TEST(hashNumericTower) {  // hash 数值塔归一：hash(1) == hash(1.0)（02 §7）
+  RunResult r = runSrc("print(hash(1) == hash(1.0))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true\n", r.out);
+  free(r.out);
+}
+
+TEST(assertFail) {  // assert 假条件 + 字符串消息 → AssertionError
+  RunResult r = runSrc("assert(false, \"m\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "AssertionError: m") != NULL);
+  free(r.out);
+}
+
+TEST(assertPass) {  // assert 真条件：无输出无错误
+  RunResult r = runSrc("assert(1 == 1)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "", r.out);
+  free(r.out);
+}
+
+TEST(isinstanceForms) {  // isinstance 字符串与 list 集合两种形态；非类型实参报 TypeError
+  RunResult r = runSrc("print(isinstance([], \"list\"), isinstance(1, [\"string\", \"int\"]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true true\n", r.out);
+  free(r.out);
+  r = runSrc("isinstance(1, 2)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "expects a type name") != NULL);
+  free(r.out);
+}
+
+TEST(callableKinds) {  // callable：原生函数真 / int 假 / bound 方法真
+  RunResult r = runSrc("print(callable(print), callable(1), callable(\"x\".toUpper))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true false true\n", r.out);
+  free(r.out);
+}
+
+TEST(builtinVars) {  // __name__/__version__ 内置变量（10 §5）
+  RunResult r = runSrc("print(__name__ == \"__main__\", __version__ != \"\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true true\n", r.out);
+  free(r.out);
+}
+
+TEST(placeholders) {  // 占位内置：各自报 RuntimeError 并指明目标任务
+  const char* srcs[] = {"make(nil)", "cap(nil)", "race(nil)", "WeakRef(nil)", "input()"};
+  const char* lands[] = {"T030", "T030", "T031", "T027", "T035"};
+  for (int i = 0; i < 5; i++) {
+    RunResult r = runSrc(srcs[i]);
+    EXPECT(ctx, r.compileOk);
+    EXPECT(ctx, r.hasError);
+    EXPECT(ctx, strstr(r.err, "RuntimeError") != NULL);
+    EXPECT(ctx, strstr(r.err, "lands in T0") != NULL);
+    EXPECT(ctx, strstr(r.err, lands[i]) != NULL);
+    free(r.out);
+  }
+}
+
+TEST(idStable) {  // id：同一对象稳定相等，不同对象相异（活跃期唯一）
+  RunResult r = runSrc("var a = []\nvar b = []\nprint(id(a) == id(a), id(a) == id(b))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true false\n", r.out);
+  free(r.out);
+}
+
+TEST(allSeq) {  // all：全真 / 含假 / 空集（真值规则 02 §2：仅 nil/false 为假）
+  RunResult r = runSrc("print(all([1, true, \"x\"]), all([1, false]), all([]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true false true\n", r.out);
+  free(r.out);
+}
+
+TEST(setFromIterable) {  // set(iterable)：去重构造
+  RunResult r = runSrc("print(len(set([1, 1, 2])))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "2\n", r.out);
+  free(r.out);
+}
+
+TEST(reversedIter) {  // reversed(list)：反向迭代
+  RunResult r = runSrc("for x in reversed([1, 2, 3]) { print(x) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "3\n2\n1\n", r.out);
+  free(r.out);
+}
+
+TEST(reversedString) {  // reversed(string)：反向 rune 码点（'b'=98 'a'=97）
+  RunResult r = runSrc("for c in reversed(\"ab\") { print(c) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "98\n97\n", r.out);
+  free(r.out);
+}
+
+TEST(enumerateTupleForm) {  // enumerate 产出 (i, v) 二元组（起始值生效；元素 repr 带 quote）
+  RunResult r = runSrc("var it = enumerate([\"a\"], 5)\nvar p = next(it)\nprint(p)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "(5, \"a\")\n", r.out);
+  free(r.out);
+}
 
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
@@ -234,6 +472,34 @@ int main(int argc, char** argv) {
       zipStrictCLevel,
       zipNonStrictRemainderCLevel,
       mapIterModifiedCLevel,
+      iterNextExhaustNil,
+      lenAllTypes,
+      typeAllTypes,
+      rangeNegStepSum,
+      enumerateStart,
+      zipStrictError,
+      zipSecondNotIterable,
+      zipShortest,
+      sortedKeyStable,
+      sortedReverse,
+      sortedStableTies,
+      minMaxContainer,
+      minMaxVariadic,
+      sumForms,
+      sumTypeMismatch,
+      hashNumericTower,
+      assertFail,
+      assertPass,
+      isinstanceForms,
+      callableKinds,
+      builtinVars,
+      placeholders,
+      idStable,
+      allSeq,
+      setFromIterable,
+      reversedIter,
+      reversedString,
+      enumerateTupleForm,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

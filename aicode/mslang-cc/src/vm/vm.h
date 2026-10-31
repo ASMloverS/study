@@ -88,7 +88,8 @@ void msVmRun(MsVM* vm, const Chunk* chunk);
 // str_methods.c 等方法实现借 VM 栈 root 中间对象（D6 纪律），须在返回前弹净自压部分（pop 保持 VM 内部）
 bool msVmPush(MsVM* vm, MsValue v);
 
-// builtins_bridge.c：LOAD_GLOBAL 未命中用户全局时的内置回查（T017 起 vm 首参——Tier0 内建迭代族需分配）
+// builtins.c：LOAD_GLOBAL 未命中用户全局时的内置回查（函数表 + __name__/__version__ 内置变量；
+// 表命中零分配，变量首查 intern 一次后属永久代）
 bool msBuiltinLookup(MsVM* vm, const char* name, int32_t len, MsValue* out);
 
 // str_methods.c：string 实例方法表（T013，10 §2；机制 D5 供容器复用）

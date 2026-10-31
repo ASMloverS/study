@@ -69,8 +69,8 @@ target_link_libraries(ms_binder PUBLIC ms_parser)
 target_sources(ms_compiler PRIVATE src/compiler/chunk.c src/compiler/compiler.c src/compiler/disasm.c)
 target_link_libraries(ms_compiler PUBLIC ms_parser)
 
-# T011：VM 值/内置桥；vm 消费 chunk（chunk.h/行号表/指令元数据）
-target_sources(ms_vm PRIVATE src/vm/value.c src/vm/builtins_bridge.c)
+# T011/T017：VM 值助手/Tier0 内置全集；vm 消费 chunk（chunk.h/行号表/指令元数据）
+target_sources(ms_vm PRIVATE src/vm/value.c src/vm/builtins.c)
 target_link_libraries(ms_vm PUBLIC ms_compiler)
 
 # T012：对象头/分配器 + 过渡 GC；obj 分配经 guard（gc）、vm 持有 heap 生命周期
