@@ -3,7 +3,7 @@
 - 阶段: P4 对象系统（roadmap 期 4）
 - 依赖: T013、T014、T015、T016
 - 规模: L
-- 状态: 未开始
+- 状态: 已完成（2026-11-01）
 - 设计文档: `docs/language/10-builtins.md` 全文、`03-expressions.md` §2（推导式）、`05-functions.md` §4（迭代协议语义）
 
 ## 1. 目标与范围
@@ -31,12 +31,12 @@
 
 ## 4. 验收标准（DoD）
 
-- [ ] 10 §1 表可现函数全过（占位项报错信息明确）
-- [ ] `for x in <list/string/map/tuple/set/range>` 六源全过
-- [ ] 推导式三式 + 多 for/if 与嵌套推导式输出正确，变量不泄漏
-- [ ] `sorted(range(5).toList(), reverse=true)`、zip strict、sum init 等组合正确
-- [ ] `next` 耗尽 nil、for 停止；it.take/drop/map/filter 惰性链正确
-- [ ] 00-overview §3 示例片段 `[x * x for x in range(1, 6)]` → `[1, 4, 9, 16, 25]`
+- [x] 10 §1 表可现函数全过（占位项报错信息明确）
+- [x] `for x in <list/string/map/tuple/set/range>` 六源全过
+- [x] 推导式三式 + 多 for/if 与嵌套推导式输出正确，变量不泄漏
+- [x] `sorted(range(5).toList(), reverse=true)`、zip strict、sum init 等组合正确
+- [x] `next` 耗尽 nil、for 停止；it.take/drop/map/filter 惰性链正确
+- [x] 00-overview §3 示例片段 `[x * x for x in range(1, 6)]` → `[1, 4, 9, 16, 25]`
 
 ## 5. 测试计划
 
@@ -77,3 +77,4 @@ print(flat)                                   // [11, 21, 12, 22]
 
 - map 迭代 = 键迭代、items() 返回快照 list（10 §4）；快照在迭代中修改原 map 不受版本号影响——与 list 迭代器差异需用例分别锁定。
 - `all(xs)` 本任务为"迭代器全真"义；`all(futures)` 并发义在 T031 重载启用——重载依据参数为 Future 列表。
+- 备注（已批准偏差，2026-11-01）：sorted/zip 的 key/reverse/strict 为位置实参（语言尚未支持关键字实参，DoD 中 `reverse=true` 以 `sorted(xs, nil, true)` 等价验证）；set 推导式打印按插入序（`{1, 2, 0}`）；生成器表达式为物化 list 包迭代器实现，待 T019 替换为真实惰性管道。
