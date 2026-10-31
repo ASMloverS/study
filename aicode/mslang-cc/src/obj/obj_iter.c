@@ -388,7 +388,8 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
         if (vm->hasError) {
           return false;  // 内层错误直通
         }
-        if ((p->flags & 1) != 0) {  // strict：单侧先尽即失配
+        // strict 仅单侧产出（hasA != hasB）失配；双侧同尽 = 等长干净收尾
+        if (hasA && (p->flags & 1) != 0) {
           iterErr(vm, "ValueError: zip() strict: iterables have unequal lengths");
           return false;
         }

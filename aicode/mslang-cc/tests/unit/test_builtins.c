@@ -8,7 +8,9 @@
 #include "binder/binder.h"
 #include "compiler/chunk.h"
 #include "compiler/compiler.h"
+#include "obj/obj_iter.h"
 #include "obj/obj_string.h"
+#include "obj/obj_tuple.h"
 #include "parser/parser.h"
 #include "scanner/scanner.h"
 #include "test_harness.h"
@@ -118,6 +120,52 @@ TEST(forSumAccum) {  // list 迭代经统一入口（版本号语义保持）
   free(r.out);
 }
 
+// ---------- advZip C 层（zip 内建随 Task 2 落地，先经 API 直测） ----------
+
+TEST(zipStrictCLevel) {  // strict：等长同尽干净收尾；仅单侧产出（hasA != hasB）才 ValueError
+  MsVM vm;
+  msVmInit(&vm);
+  // 等长 strict：产出 2 对后同尽，不得报错（回归：曾对同尽误报 ValueError）
+  MsObjIter* a1 = msObjIterRangeNew(&vm, 0, 2, 1);
+  EXPECT(ctx, a1 != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&a1->head)));  // 源落栈 root 跨后续分配
+  MsObjIter* b1 = msObjIterRangeNew(&vm, 0, 2, 1);
+  EXPECT(ctx, b1 != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&b1->head)));
+  MsObjIter* z1 = msObjIterZipNew(&vm, vm.stack[vm.stackTop - 2], vm.stack[vm.stackTop - 1], true);
+  EXPECT(ctx, z1 != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&z1->head)));  // zip 落栈 root（推进内 tuple 分配窗口）
+  int32_t got = 0;
+  MsValue item;
+  while (msIterNext(&vm, vm.stack[vm.stackTop - 1], &item)) {
+    EXPECT(ctx, msIsTuple(&item));
+    got++;
+  }
+  EXPECT(ctx, !vm.hasError);
+  EXPECT_EQ(ctx, 2, got);
+  vm.stackTop -= 3;  // 弹 zip 与两源（源由 zip 持有，栈槽可弃）
+  vm.hasError = false;  // 独立化下半场：上半场失败时错误槽不外溢
+  vm.errMsg[0] = '\0';
+  // 失配 strict：短侧先尽 → ValueError（hasA false / hasB true 路径）
+  MsObjIter* a2 = msObjIterRangeNew(&vm, 0, 2, 1);
+  EXPECT(ctx, a2 != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&a2->head)));
+  MsObjIter* b2 = msObjIterRangeNew(&vm, 0, 3, 1);
+  EXPECT(ctx, b2 != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&b2->head)));
+  MsObjIter* z2 = msObjIterZipNew(&vm, vm.stack[vm.stackTop - 2], vm.stack[vm.stackTop - 1], true);
+  EXPECT(ctx, z2 != NULL);
+  EXPECT(ctx, msVmPush(&vm, msValueObj(&z2->head)));
+  got = 0;
+  while (msIterNext(&vm, vm.stack[vm.stackTop - 1], &item)) {
+    got++;
+  }
+  EXPECT_EQ(ctx, 2, got);
+  EXPECT(ctx, vm.hasError);
+  EXPECT(ctx, strstr(vm.errMsg, "ValueError: zip() strict: iterables have unequal lengths") != NULL);
+  msVmFree(&vm);
+}
+
 // TODO(T017 Task2): iterNextExhaustNil（iter/next 内置随 Task 2 落地）
 
 int main(int argc, char** argv) {
@@ -130,6 +178,7 @@ int main(int argc, char** argv) {
       rangeBoxedIdentity,
       unpackString,
       forSumAccum,
+      zipStrictCLevel,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
