@@ -434,8 +434,27 @@ negShift:
   return false;
 }
 
-// 通用 '+' 语义（数值塔 + string/list 拼接；sum 等 Tier0 内置共用）：失败置错误槽返回 false
+// 通用 '+' 语义（数值塔 + string/list 拼接；sum 等 Tier0 内置共用）
+// list+list：OP_BINARY_ADD 为 peek 栈 root 专用路径，此处为 C 实参形态——先双压栈 root 再进
+// concat 分配窗口（msObjListConcat 先 New 后 memcpy 源元素，非"先拷源后分配"安全序，与 string
+// concat 契约相反，见 obj_list.c）；失败仅写 errMsg 不置 hasError（同 arithBinary 契约，
+// OP_BINARY_*/nativeSum 等调用方翻译置位；StackOverflow 例外：msVmPush 已置）
 bool msValueAdd(MsVM* vm, const MsValue* a, const MsValue* b, MsValue* out) {
+  if (a->kind == MS_VAL_OBJ && b->kind == MS_VAL_OBJ && a->as.obj->type == MS_OBJ_LIST &&
+      b->as.obj->type == MS_OBJ_LIST) {
+    if (!msVmPush(vm, *a) || !msVmPush(vm, *b)) {
+      return false;  // StackOverflow 槽已置；栈由 unwind 废弃（不恢复 stackTop）
+    }
+    MsObjList* r = msObjListConcat(vm, (const MsObjList*)vm->stack[vm->stackTop - 2].as.obj,
+                                   (const MsObjList*)vm->stack[vm->stackTop - 1].as.obj);
+    vm->stackTop -= 2;  // 弹两操作数（干净恢复：成败均不再触分配；结果寄存器值安全）
+    if (r == NULL) {
+      snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: out of memory");
+      return false;
+    }
+    *out = msValueObj(&r->head);
+    return true;
+  }
   return arithBinary(vm, BA_ADD, *a, *b, out);
 }
 

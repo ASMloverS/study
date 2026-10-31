@@ -5,6 +5,7 @@
 #include "vm/vm.h"
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,9 +18,12 @@
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 
-static void bErr(MsVM* vm, const char* msg) {
+static void bErr(MsVM* vm, const char* fmt, ...) {  // 同 list_methods.c methodError 形态
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(vm->errMsg, sizeof(vm->errMsg), fmt, ap);
+  va_end(ap);
   vm->hasError = true;
-  snprintf(vm->errMsg, sizeof(vm->errMsg), "%s", msg);
 }
 
 static bool needInt(MsVM* vm, const MsValue* v, ms_i64* out) {
@@ -42,9 +46,7 @@ static MsValue iterArgErr(MsVM* vm) {
 
 // 比较失败统一翻译（02 §6）
 static void typeOrderErr(MsVM* vm, const MsValue* a, const MsValue* b) {
-  snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: '<' not supported between '%s' and '%s'",
-           msValueTypeName(a), msValueTypeName(b));
-  vm->hasError = true;
+  bErr(vm, "TypeError: '<' not supported between '%s' and '%s'", msValueTypeName(a), msValueTypeName(b));
 }
 
 // print(...xs)：空格连接 + 换行（Python 语义）；string 直写解码后字节（T013 堆对象）
@@ -142,9 +144,7 @@ static MsValue nativeSet(MsVM* vm, int32_t argc, const MsValue* args) {
     }
     MsMapOp op = msObjSetAdd(vm, (MsObjSet*)vm->stack[vm->stackTop - 2].as.obj, &vm->stack[vm->stackTop - 1]);
     if (op == MS_MAP_UNHASHABLE) {
-      snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: unhashable type: '%s'",
-               msValueTypeName(&vm->stack[vm->stackTop - 1]));
-      vm->hasError = true;
+      bErr(vm, "TypeError: unhashable type: '%s'", msValueTypeName(&vm->stack[vm->stackTop - 1]));
       return msValueNil();
     }
     vm->stackTop--;  // 弹 item（add 内层 put 为 malloc 路径，无 GC 窗口）
@@ -237,6 +237,29 @@ static MsValue nativeRange(MsVM* vm, int32_t argc, const MsValue* args) {
 }
 
 // —— 数值转换族（T016，10 §1）：int/float/bigint/bool/hash/abs ——
+
+// float 精确分解 mant·2^k 升 bigint（nativeInt/nativeBigint 共用）：frexp 取 53 位尾数，
+// 压缩移位量（mant·2^k 不变量：右移须 k++）；输入须有限且已截断/验整——k < 0 不可达防御；
+// 失败仅 OOM 可达（结果 ≤ ~1024 bit，远低护栏），调用方统一报错
+static MsObjBigInt* bigFromF64(MsVM* vm, double t) {
+  int e2 = 0;
+  double frac = frexp(fabs(t), &e2);
+  ms_i64 mant = (ms_i64)(frac * 9007199254740992.0);
+  int64_t k = (int64_t)e2 - 53;
+  while (k > 0 && (mant & 1) == 0) {
+    mant >>= 1;
+    k++;
+  }
+  MsBigView v;
+  uint32_t buf[2];
+  msBigViewI64(&v, buf, t < 0 ? -mant : mant);
+  MsObjBigInt* b = NULL;
+  if (k < 0 || msBigShl(vm, &v, k, &b) != MS_BIG_OK) {
+    return NULL;
+  }
+  return b;
+}
+
 // int()：float 截断 / string 按 base（失败 ValueError）/ bigint 可容则降、不容保持 bigint
 // （int 域闭合于 i64，超界升格与字面量同策略，02 §3.1）
 static MsValue nativeInt(MsVM* vm, int32_t argc, const MsValue* args) {
@@ -273,19 +296,8 @@ static MsValue nativeInt(MsVM* vm, int32_t argc, const MsValue* args) {
       if (t >= -9223372036854775808.0 && t < 9223372036854775808.0) {
         return msValueInt((ms_i64)t);
       }
-      int e2 = 0;  // 超界：frexp 精确分解 mant·2^k 升 bigint
-      double frac = frexp(fabs(t), &e2);
-      ms_i64 mant = (ms_i64)(frac * 9007199254740992.0);
-      int64_t k = (int64_t)e2 - 53;
-      while (k > 0 && (mant & 1) == 0) {  // 压缩移位量（mant·2^k 不变量：右移须 k++）
-        mant >>= 1;
-        k++;
-      }
-      MsBigView v;
-      uint32_t buf[2];
-      msBigViewI64(&v, buf, t < 0 ? -mant : mant);
-      MsObjBigInt* b = NULL;
-      if (k < 0 || msBigShl(vm, &v, k, &b) != MS_BIG_OK) {  // t 已截断必整：k < 0 不可达防御；shl 失败仅 OOM 可达（结果 ≤ ~1024 bit，远低护栏）
+      MsObjBigInt* b = bigFromF64(vm, t);  // 超界：精确分解升 bigint（共用助手）
+      if (b == NULL) {
         bErr(vm, "RuntimeError: out of memory");
         return msValueNil();
       }
@@ -304,9 +316,8 @@ static MsValue nativeInt(MsVM* vm, int32_t argc, const MsValue* args) {
         MsObjBigInt* b = NULL;
         MsBigErr e = msObjBigintParse(vm, s->bytes, (int32_t)s->byteLen, (int)base, &b);
         if (e == MS_BIG_PARSE) {
-          snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: invalid literal for int with base %lld: '%.*s'",
-                   (long long)base, (int)s->byteLen, s->bytes);
-          vm->hasError = true;
+          bErr(vm, "ValueError: invalid literal for int with base %lld: '%.*s'", (long long)base,
+               (int)s->byteLen, s->bytes);
           return msValueNil();
         }
         if (e != MS_BIG_OK) {
@@ -357,9 +368,7 @@ static MsValue nativeFloat(MsVM* vm, int32_t argc, const MsValue* args) {
         bool ok = end != tmp && *end == '\0';
         free(tmp);
         if (!ok) {
-          snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: invalid literal for float: '%.*s'",
-                   (int)s->byteLen, s->bytes);
-          vm->hasError = true;
+          bErr(vm, "ValueError: invalid literal for float: '%.*s'", (int)s->byteLen, s->bytes);
           return msValueNil();
         }
         return msValueFloat(d);
@@ -391,8 +400,7 @@ static MsValue nativeBigint(MsVM* vm, int32_t argc, const MsValue* args) {
       if (isnan(f) || isinf(f) || f != floor(f)) {  // 须整（10 §1）
         char buf[64];
         msValueToStr(&args[0], buf, sizeof(buf));
-        snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: cannot convert float %s to bigint", buf);
-        vm->hasError = true;
+        bErr(vm, "ValueError: cannot convert float %s to bigint", buf);
         return msValueNil();
       }
       if (f >= -9223372036854775808.0 && f < 9223372036854775808.0) {
@@ -403,19 +411,8 @@ static MsValue nativeBigint(MsVM* vm, int32_t argc, const MsValue* args) {
         }
         return msValueObj(&b->head);
       }
-      int e2 = 0;  // 大值精确分解（同 nativeInt）
-      double frac = frexp(fabs(f), &e2);
-      ms_i64 mant = (ms_i64)(frac * 9007199254740992.0);
-      int64_t k = (int64_t)e2 - 53;
-      while (k > 0 && (mant & 1) == 0) {  // 压缩移位量（mant·2^k 不变量：右移须 k++）
-        mant >>= 1;
-        k++;
-      }
-      MsBigView v;
-      uint32_t buf[2];
-      msBigViewI64(&v, buf, f < 0 ? -mant : mant);
-      MsObjBigInt* b = NULL;
-      if (k < 0 || msBigShl(vm, &v, k, &b) != MS_BIG_OK) {
+      MsObjBigInt* b = bigFromF64(vm, f);  // 大值精确分解（共用助手；f 已验整）
+      if (b == NULL) {
         bErr(vm, "RuntimeError: out of memory");
         return msValueNil();
       }
@@ -430,9 +427,7 @@ static MsValue nativeBigint(MsVM* vm, int32_t argc, const MsValue* args) {
         MsObjBigInt* b = NULL;
         MsBigErr e = msObjBigintParse(vm, s->bytes, (int32_t)s->byteLen, 10, &b);
         if (e == MS_BIG_PARSE) {
-          snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: invalid literal for bigint: '%.*s'",
-                   (int)s->byteLen, s->bytes);
-          vm->hasError = true;
+          bErr(vm, "ValueError: invalid literal for bigint: '%.*s'", (int)s->byteLen, s->bytes);
           return msValueNil();
         }
         if (e != MS_BIG_OK) {
@@ -464,8 +459,7 @@ static MsValue nativeHash(MsVM* vm, int32_t argc, const MsValue* args) {  // 数
   }
   ms_u64 h = 0;
   if (msValueHash(&args[0], &h) != MS_HASH_OK) {
-    snprintf(vm->errMsg, sizeof(vm->errMsg), "TypeError: unhashable type: '%s'", msValueTypeName(&args[0]));
-    vm->hasError = true;
+    bErr(vm, "TypeError: unhashable type: '%s'", msValueTypeName(&args[0]));
     return msValueNil();
   }
   return msValueInt((ms_i64)h);
@@ -513,8 +507,7 @@ static MsValue nativeAbs(MsVM* vm, int32_t argc, const MsValue* args) {  // 保�
 static MsValue minMaxImpl(MsVM* vm, int32_t argc, const MsValue* args, bool isMax) {
   const char* nm = isMax ? "max" : "min";
   if (argc == 0) {
-    snprintf(vm->errMsg, sizeof(vm->errMsg), "ArgumentError: %s expects at least 1 argument", nm);
-    vm->hasError = true;
+    bErr(vm, "ArgumentError: %s expects at least 1 argument", nm);
     return msValueNil();
   }
   if (argc == 1) {
@@ -554,8 +547,7 @@ static MsValue minMaxImpl(MsVM* vm, int32_t argc, const MsValue* args, bool isMa
     }
     if (!hasBest) {
       vm->stackTop--;
-      snprintf(vm->errMsg, sizeof(vm->errMsg), "ValueError: %s() arg is an empty sequence", nm);
-      vm->hasError = true;
+      bErr(vm, "ValueError: %s() arg is an empty sequence", nm);
       return msValueNil();
     }
     MsValue best = vm->stack[base + 1];
@@ -652,9 +644,8 @@ typedef struct SortCtx {
 static bool sortKeyCmp(SortCtx* c, int32_t a, int32_t b, int32_t* out) {
   int32_t raw = 0;
   if (!msValueOrder(&c->keys[a], &c->keys[b], &raw)) {
-    snprintf(c->vm->errMsg, sizeof(c->vm->errMsg), "TypeError: '<' not supported between '%s' and '%s'",
-             msValueTypeName(&c->keys[a]), msValueTypeName(&c->keys[b]));
-    c->vm->hasError = true;
+    bErr(c->vm, "TypeError: '<' not supported between '%s' and '%s'", msValueTypeName(&c->keys[a]),
+         msValueTypeName(&c->keys[b]));
     c->failed = true;
     return false;
   }
@@ -690,6 +681,29 @@ static void sortRec(SortCtx* c, int32_t* idx, int32_t* tmp, int32_t lo, int32_t 
     tmp[k++] = idx[j++];
   }
   memcpy(idx + lo, tmp + lo, sizeof(int32_t) * (size_t)(hi - lo));
+}
+
+// sorted 键物化（专设）：L（栈 base 槽 root）逐元素调 key 压栈 → CollectStackToList → keys list 压栈；
+// 返回 false 时错误槽已置（key 调用/栈溢出/OOM），错误路径 stackTop 不恢复
+static bool sortedCollectKeys(MsVM* vm, const MsValue* keyFn, int32_t base, int32_t n) {
+  MsObjList* L = (MsObjList*)vm->stack[base].as.obj;
+  for (int32_t i = 0; i < n; i++) {
+    MsValue k;
+    if (!callKey(vm, keyFn, &L->items[i], &k)) {
+      if (!vm->hasError) {
+        bErr(vm, "RuntimeError: out of memory");
+      }
+      return false;
+    }
+    if (!msVmPush(vm, k)) {
+      return false;  // StackOverflow 槽已置
+    }
+  }
+  MsValue kv = msVmCollectStackToList(vm, n);  // 栈顶 n 个键 → keys list
+  if (vm->hasError) {
+    return false;
+  }
+  return msVmPush(vm, kv);
 }
 
 // sorted(xs[, key[, reverse]])：新排序 list（10 §1； ratified 位置参形态——key 缺省 nil、reverse 缺省 false）
@@ -740,23 +754,7 @@ static MsValue nativeSorted(MsVM* vm, int32_t argc, const MsValue* args) {
   int32_t n = L->count;
   const MsValue* keys = L->items;  // key 缺省：元素自身即键
   if (keyFn.kind == MS_VAL_NATIVE && n > 0) {
-    for (int32_t i = 0; i < n; i++) {
-      MsValue k;
-      if (!callKey(vm, &keyFn, &L->items[i], &k)) {
-        if (!vm->hasError) {
-          bErr(vm, "RuntimeError: out of memory");
-        }
-        return msValueNil();
-      }
-      if (!msVmPush(vm, k)) {
-        return msValueNil();
-      }
-    }
-    MsValue kv = msVmCollectStackToList(vm, n);  // 栈顶 n 个键 → keys list
-    if (vm->hasError) {
-      return msValueNil();
-    }
-    if (!msVmPush(vm, kv)) {
+    if (!sortedCollectKeys(vm, &keyFn, base, n)) {
       return msValueNil();
     }
     keys = ((const MsObjList*)vm->stack[vm->stackTop - 1].as.obj)->items;
@@ -986,6 +984,8 @@ static MsValue nativeId(MsVM* vm, int32_t argc, const MsValue* args) {
   } else if (v->kind == MS_VAL_F64) {
     memcpy(&raw, &v->as.f, sizeof(raw));
   }
+  // 注意：kind 高位 ^ 载荷位仅为立即值的尽力区分——i64/f64 载荷自身可占高位，跨 kind 理论可碰撞
+  // （如 id(1) == id(某位型恰差 1<<56 的 float)）；唯一性仅对堆对象保证（10 §1 活跃期唯一）
   return msValueInt(((ms_i64)v->kind << 56) ^ (ms_i64)raw);
 }
 

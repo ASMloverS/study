@@ -344,6 +344,77 @@ TEST(sumTypeMismatch) {  // sum 类型失配必须真抛错（arithBinary 只写
   free(r.out);
 }
 
+TEST(sumListInit) {  // sum 泛化 '+' 的 list 拼接 init（msValueAdd list+list 分支）
+  RunResult r = runSrc("print(sum([[1], [2]], []))\nprint(sum([], []))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[1, 2]\n[]\n", r.out);
+  free(r.out);
+}
+
+TEST(sumListNoInitTypeError) {  // 缺省 init 为 int 0：0+[1] 不可加 → TypeError（语义钉住）
+  RunResult r = runSrc("print(sum([[1], [2]]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "unsupported operand types for '+'") != NULL);
+  free(r.out);
+}
+
+TEST(gcPressureBuiltins) {  // 小堆重复回收窗口下聚合族正确性（env 同款见 test_obj_map.c）
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=4096");
+#else
+  setenv("MS_GC_HEAP_MAX", "4096", 1);
+#endif
+  RunResult r = runSrc("print(sum(range(200)))\nprint(len(set(range(50))))\n"
+                       "var xs = [9, 1, 8, 2, 7, 3, 6, 4, 5, 0]\n"
+                       "print(sorted(xs, nil, false))\nprint(sorted(xs, nil, true))\n"
+                       "print(sum([[1], [2], [3]], []))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "19900\n50\n[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]\n[9, 8, 7, 6, 5, 4, 3, 2, 1, 0]\n"
+                    "[1, 2, 3]\n",
+               r.out);
+  free(r.out);
+#ifdef _MSC_VER
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
+}
+
+TEST(sortedTypeError) {  // sorted 混型比较中止
+  RunResult r = runSrc("print(sorted([1, \"a\"]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "'<' not supported") != NULL);
+  free(r.out);
+}
+
+TEST(minMixedTypeError) {  // min 容器形混型比较中止
+  RunResult r = runSrc("print(min([1, \"a\"]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "'<' not supported") != NULL);
+  free(r.out);
+}
+
+TEST(minStringCodepoint) {  // string 迭代产 rune 码点 int（05 §4）：min("bca") = 97（'a'）
+  RunResult r = runSrc("print(min(\"bca\"))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "97\n", r.out);
+  free(r.out);
+}
+
+TEST(minEmptyError) {  // 空容器最值 → ValueError
+  RunResult r = runSrc("print(min([]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "empty sequence") != NULL);
+  free(r.out);
+}
+
 TEST(hashNumericTower) {  // hash 数值塔归一：hash(1) == hash(1.0)（02 §7）
   RunResult r = runSrc("print(hash(1) == hash(1.0))");
   EXPECT(ctx, r.compileOk);
@@ -487,6 +558,13 @@ int main(int argc, char** argv) {
       minMaxVariadic,
       sumForms,
       sumTypeMismatch,
+      sumListInit,
+      sumListNoInitTypeError,
+      gcPressureBuiltins,
+      sortedTypeError,
+      minMixedTypeError,
+      minStringCodepoint,
+      minEmptyError,
       hashNumericTower,
       assertFail,
       assertPass,

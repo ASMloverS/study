@@ -119,7 +119,8 @@ MsValue msValueObj(MsObj* obj);
 bool msValueIsTruthy(const MsValue* v);  // 仅 false/nil 为假（02 §2）
 bool msValueEqual(const MsValue* a, const MsValue* b);  // == 语义（int/float 数值互比）
 bool msValueOrder(const MsValue* a, const MsValue* b, int32_t* outCmp);  // false = 不可比较
-// 通用 '+' 语义（数值塔 + string/list 拼接；sum 等 Tier0 内置共用）；失败置错误槽返回 false
+// 通用 '+' 语义（数值塔 + string/list 拼接；sum 等 Tier0 内置共用）；list+list 分支自带双压栈
+// root（concat 先分配后拷源）；失败仅写 errMsg 不置 hasError（调用方翻译置位）
 bool msValueAdd(MsVM* vm, const MsValue* a, const MsValue* b, MsValue* out);
 const char* msValueTypeName(const MsValue* v);
 // print str 形态（nil/bool/int/float；string 由 print 直写不经此函数）
