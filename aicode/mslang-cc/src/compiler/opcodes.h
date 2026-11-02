@@ -57,6 +57,7 @@ typedef enum MsOpcode {
   // 函数与调用（21 §3.3）：原型经 LOAD_CONST 压栈后由 MAKE_FUNCTION 消费（21 §4 示例形态）
   OP_MAKE_FUNCTION,  // <u8 flags>（低 7 位默认参个数 | bit7 rest；默认值先于本指令压栈）
   OP_CLOSURE,        // <const proto>（捕获描述表在 proto）
+  OP_CLOSE_UPVAL,    // <u8 slot>：闭合 >= 帧基+slot 的开放 upvalue（循环每轮新绑定 04 §4）
   OP_CALL,           // <u8 argc> <u8 flags>（bit0 = 末位实参为 * 展开 list；高位保留）
   OP_CALL_METHOD,    // <const name> <u8 icSlot> <u8 argc> <u8 flags>（bit0 同 CALL）
   OP_RETURN,

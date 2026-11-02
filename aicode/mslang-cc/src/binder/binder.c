@@ -56,9 +56,9 @@ static Scope* pushScope(Binder* b, ScopeKind kind) {
   s->funcNode = NULL;
   s->isAsync = false;
   s->loopDepth = b->top != NULL ? b->top->loopDepth : 0;
+  s->nextSlot = 0;
   if (kind == SCOPE_FUNC || kind == SCOPE_COMPR) {
     s->owner = s;
-    s->nextSlot = 0;
     s->loopDepth = 0;  // 函数边界：循环深度重新起算
   } else if (b->top != NULL) {
     s->owner = b->top->owner;  // BLOCK/CLASS 借用外层函数分配器
@@ -93,6 +93,8 @@ static Sym* declareChecked(Binder* b, const char* name, int32_t len, bool fresh,
   Sym sym = {name, len, -1, fresh, soft};
   if (s->owner->kind == SCOPE_FUNC || s->owner->kind == SCOPE_COMPR) {
     sym.slot = s->owner->nextSlot++;  // 函数/推导式帧内分配槽位；模块层（含其块/循环域）→ global 无槽
+  } else if (fresh && s->owner->kind == SCOPE_MODULE) {
+    sym.slot = s->owner->nextSlot++;  // T018：模块层 fresh 循环目标入模块帧局部（每轮新绑定可捕获 04 §4）
   }
   MS_ARRAY_PUSH(s->syms, s->count, s->cap, sym);
   return &s->syms[s->count - 1];
@@ -139,8 +141,8 @@ static Resolved resolveName(Binder* b, const char* name, int32_t len) {
 
 // 声明类节点标注（VAR_DECL/FUNC_DECL/CLASS_DECL 的名字；须在 declare 成功后调用）
 static void annotateDeclNode(AstNode* n, const Scope* scope, const Sym* sym, bool fresh) {
-  if (scope->owner->kind == SCOPE_FUNC || scope->owner->kind == SCOPE_COMPR) {
-    n->bindKind = AST_BIND_LOCAL;
+  if (scope->owner->kind == SCOPE_FUNC || scope->owner->kind == SCOPE_COMPR || sym->slot >= 0) {
+    n->bindKind = AST_BIND_LOCAL;  // T018：模块层 fresh 循环目标（slot >= 0）亦入帧局部
     n->bindSlot = sym->slot;
   } else {
     n->bindKind = AST_BIND_GLOBAL;  // 模块层（含顶层块/循环域内声明）
@@ -171,7 +173,7 @@ static void recordCapture(Binder* b, const Resolved* r) {
       }
     }
     if (!dup) {
-      BinderCapture cap = {s->funcNode, r->sym->name, r->sym->len, r->sym->slot, depth};
+      BinderCapture cap = {s->funcNode, r->sym->name, r->sym->len, r->sym->slot, depth, r->sym->fresh};
       MS_ARRAY_PUSH(b->captures, b->captureCount, b->captureCap, cap);
     }
     index++;
@@ -181,8 +183,8 @@ static void recordCapture(Binder* b, const Resolved* r) {
 // 标识符引用解析与标注（模块层/未解析 → global；跨函数边界 → upvalue）
 static void bindIdent(Binder* b, AstNode* n) {
   Resolved r = resolveName(b, n->as.ident.name, n->as.ident.nameLen);
-  if (!r.found || r.def->owner->kind == SCOPE_MODULE) {
-    n->bindKind = AST_BIND_GLOBAL;  // 未解析或定义于模块层（含顶层块）→ 动态全局
+  if (!r.found || (r.def->owner->kind == SCOPE_MODULE && r.sym->slot < 0)) {
+    n->bindKind = AST_BIND_GLOBAL;  // 未解析或定义于模块层（无帧槽）→ 动态全局；fresh 目标例外（T018）
     return;
   }
   if (r.hops == 0) {
@@ -1050,5 +1052,44 @@ bool binderBind(Binder* b, AstNode* module) {
     return true;
   }
   bindStmt(b, module);
+  // T018：捕获记录按函数节点聚合附着（arena 两趟：计数+回填；COMPR 伪帧记录跳过——推导式内联消解）
+  for (int32_t i = 0; i < b->captureCount; i++) {
+    AstNode* fn = b->captures[i].func;
+    if (fn->kind != AST_FUNC_DECL && fn->kind != AST_FUNC_EXPR) {
+      continue;
+    }
+    bool first = true;
+    for (int32_t j = 0; j < i; j++) {
+      if (b->captures[j].func == fn) {
+        first = false;
+        break;
+      }
+    }
+    if (!first) {
+      continue;
+    }
+    int32_t n = 0;
+    for (int32_t j = i; j < b->captureCount; j++) {
+      if (b->captures[j].func == fn) {
+        n++;
+      }
+    }
+    AstUpvalRef* arr = astArenaAlloc(b->arena, sizeof(AstUpvalRef) * (size_t)n);
+    int32_t idx = 0;
+    for (int32_t j = i; j < b->captureCount; j++) {
+      if (b->captures[j].func != fn) {
+        continue;
+      }
+      arr[idx++] = (AstUpvalRef){b->captures[j].name, b->captures[j].nameLen, b->captures[j].slot,
+                                 b->captures[j].depth, b->captures[j].fresh};
+    }
+    if (fn->kind == AST_FUNC_DECL) {
+      fn->as.funcDecl.upvals = arr;
+      fn->as.funcDecl.upvalCount = n;
+    } else {
+      fn->as.funcExpr.upvals = arr;
+      fn->as.funcExpr.upvalCount = n;
+    }
+  }
   return b->diags == NULL || b->diags->count == 0;
 }

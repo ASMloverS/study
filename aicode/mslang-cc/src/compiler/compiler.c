@@ -19,6 +19,20 @@ typedef struct ComprFrame {
   int32_t mapLen, mapCap;
 } ComprFrame;
 
+// 函数 upvalue 表条目（T018）：isLocal = 直接捕获定义函数帧槽 index；否则经宿主闭包 upvalues[index] 透传
+typedef struct UpvalEntry {
+  const char* name;  // 借用源文本
+  int32_t nameLen;
+  int32_t index;
+  bool isLocal;
+} UpvalEntry;
+
+// 循环子树直接捕获槽收集（CLOSE_UPVAL 发射判定，04 §4）
+typedef struct SlotSet {
+  int32_t* items;
+  int32_t count, cap;
+} SlotSet;
+
 typedef struct FuncState {
   Chunk* chunk;
   ChunkJump* jumps;
@@ -31,6 +45,9 @@ typedef struct FuncState {
   int32_t nextTemp;    // 下一临时槽（推导式累加器/目标）
   ComprFrame* comprStack;
   int32_t comprDepth, comprCap;
+  UpvalEntry* upvals;      // 本函数 upvalue 表（T018：proto 编译起始自 binder 附着表构建）
+  int32_t upvalCount, upvalCap;
+  int32_t aliasFrom, aliasTo;  // tri 循环 fresh 目标槽位重映射 V→W（-1 = 关闭；T018 04 §4）
 } FuncState;
 
 static void compErr(FuncState* fs, const AstNode* n, int32_t len, const char* msg) {
@@ -80,7 +97,11 @@ static int32_t emitJump(FuncState* fs, ms_u8 op, int32_t line) {
 static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].target = fs->chunk->codeLen; }
 
 // 局部槽访问统一入口：槽位域校验（u8 操作数）+ localCount 跟踪 + 发射
+// tri 循环 fresh 目标编译期重映射 V→W（cond/body/post 期间生效，T018 04 §4）
 static void localOp(FuncState* fs, ms_u8 op, int32_t slot, int32_t line) {
+  if (fs->aliasFrom >= 0 && slot == fs->aliasFrom) {
+    slot = fs->aliasTo;
+  }
   if (slot > 255) {
     compErrAt(fs, line, "too many local variables");
     slot = 0;  // 占位维持发射面（诊断已发，编译整体中止）
@@ -250,6 +271,237 @@ static int32_t comprResolveSlot(const FuncState* fs, int32_t slot, int32_t hops)
   return slot < def->mapLen ? def->map[slot] : -1;
 }
 
+// ---- upvalue 表（T018）：本函数按名查捕获索引；未命中 -1 ----
+
+static int32_t findUpvalByName(const FuncState* fs, const char* name, int32_t len) {
+  for (int32_t i = 0; i < fs->upvalCount; i++) {
+    if (fs->upvals[i].nameLen == len && memcmp(fs->upvals[i].name, name, (size_t)len) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// upvalue 操作数发射（u8 域校验；超限诊断后占位维持发射面）
+static void upvalOp(FuncState* fs, ms_u8 op, int32_t idx, int32_t line) {
+  if (idx > 255) {
+    compErrAt(fs, line, "too many upvalues");
+    idx = 0;
+  }
+  emitOp(fs, op, line);
+  emitByte(fs, (ms_u8)idx);
+}
+
+// ---- 循环子树捕获槽收集（T018 04 §4：CLOSE_UPVAL 仅对被闭包直接捕获的 fresh 目标发射） ----
+// 以真实帧 F（或推导式伪帧，comprDepth 相对起算）为根收集子树内函数直接捕获该帧槽位的槽号。
+// 判定与 compileFuncProto 的 isLocal 规则一致：realDepth==0 且 entry.depth-1==comprDepth
+// （depth-1<comprDepth 为更内层伪帧目标，归推导式路径；realDepth>0 已隔真实函数边界，归透传）。
+// 维护不变量：与 scanMaxLocalSlot 同——新增含子节点的 AstKind 必须同步本遍历（静默漏扫 → 漏发 CLOSE）。
+static void slotSetAdd(SlotSet* s, int32_t slot) {
+  for (int32_t i = 0; i < s->count; i++) {
+    if (s->items[i] == slot) {
+      return;
+    }
+  }
+  MS_ARRAY_PUSH(s->items, s->count, s->cap, slot);
+}
+
+static bool slotSetHas(const SlotSet* s, int32_t slot) {
+  for (int32_t i = 0; i < s->count; i++) {
+    if (s->items[i] == slot) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void scanDirectCaptures(const AstNode* n, int32_t realDepth, int32_t comprDepth, SlotSet* out) {
+  if (n == NULL) {
+    return;
+  }
+  switch (n->kind) {
+    case AST_MODULE:
+    case AST_BLOCK:
+    case AST_LIST:
+    case AST_SET:
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        scanDirectCaptures(n->as.list.items[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_VAR_DECL:
+      scanDirectCaptures(n->as.varDecl.init, realDepth, comprDepth, out);
+      break;
+    case AST_ASSIGN:
+      scanDirectCaptures(n->as.assign.target, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.assign.value, realDepth, comprDepth, out);
+      break;
+    case AST_DESTRUCTURE:
+      for (int32_t i = 0; i < n->as.destructure.count; i++) {
+        scanDirectCaptures(n->as.destructure.targets[i], realDepth, comprDepth, out);
+      }
+      scanDirectCaptures(n->as.destructure.value, realDepth, comprDepth, out);
+      break;
+    case AST_EXPR_STMT:
+    case AST_RETURN:
+    case AST_THROW:
+    case AST_YIELD:
+    case AST_DEFER:
+      scanDirectCaptures(n->as.exprStmt.expr, realDepth, comprDepth, out);
+      break;
+    case AST_IF:
+      scanDirectCaptures(n->as.ifStmt.cond, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.ifStmt.thenBlock, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.ifStmt.elseNode, realDepth, comprDepth, out);
+      break;
+    case AST_FOR:
+      scanDirectCaptures(n->as.forStmt.init, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.forStmt.cond, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.forStmt.post, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.forStmt.target, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.forStmt.iter, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.forStmt.body, realDepth, comprDepth, out);
+      break;
+    case AST_WHILE:
+      scanDirectCaptures(n->as.whileStmt.cond, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.whileStmt.body, realDepth, comprDepth, out);
+      break;
+    case AST_SWITCH:
+      scanDirectCaptures(n->as.switchStmt.subject, realDepth, comprDepth, out);
+      for (int32_t i = 0; i < n->as.switchStmt.count; i++) {
+        scanDirectCaptures(n->as.switchStmt.cases[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_SWITCH_CASE:
+      for (int32_t i = 0; i < n->as.switchCase.valueCount; i++) {
+        scanDirectCaptures(n->as.switchCase.values[i], realDepth, comprDepth, out);
+      }
+      scanDirectCaptures(n->as.switchCase.body, realDepth, comprDepth, out);
+      break;
+    case AST_SEND:
+      scanDirectCaptures(n->as.sendStmt.chan, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.sendStmt.value, realDepth, comprDepth, out);
+      break;
+    case AST_SELECT:
+      for (int32_t i = 0; i < n->as.selectStmt.count; i++) {
+        scanDirectCaptures(n->as.selectStmt.cases[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_SELECT_CASE:
+      scanDirectCaptures(n->as.selectCase.target, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.selectCase.chan, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.selectCase.value, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.selectCase.body, realDepth, comprDepth, out);
+      break;
+    case AST_FUNC_DECL:
+    case AST_FUNC_EXPR: {
+      const AstUpvalRef* upvals =
+          n->kind == AST_FUNC_DECL ? n->as.funcDecl.upvals : n->as.funcExpr.upvals;
+      int32_t upvalCount = n->kind == AST_FUNC_DECL ? n->as.funcDecl.upvalCount : n->as.funcExpr.upvalCount;
+      const AstParam* params = n->kind == AST_FUNC_DECL ? n->as.funcDecl.params : n->as.funcExpr.params;
+      int32_t paramCount = n->kind == AST_FUNC_DECL ? n->as.funcDecl.paramCount : n->as.funcExpr.paramCount;
+      if (realDepth == 0) {  // 与根帧之间无真实函数边界：直接捕获根帧槽的条目在此判定
+        for (int32_t i = 0; i < upvalCount; i++) {
+          if (upvals[i].depth - 1 == comprDepth) {
+            slotSetAdd(out, upvals[i].slot);
+          }
+        }
+      }
+      for (int32_t i = 0; i < paramCount; i++) {  // 默认值在外层域求值（05 §1）：不越函数边界
+        scanDirectCaptures(params[i].defaultExpr, realDepth, comprDepth, out);
+      }
+      scanDirectCaptures(n->kind == AST_FUNC_DECL ? n->as.funcDecl.body : n->as.funcExpr.body, realDepth + 1,
+                         comprDepth, out);
+      scanDirectCaptures(n->kind == AST_FUNC_DECL ? n->as.funcDecl.exprBody : n->as.funcExpr.exprBody,
+                         realDepth + 1, comprDepth, out);
+      break;
+    }
+    case AST_CLASS_DECL:
+      for (int32_t i = 0; i < n->as.classDecl.baseCount; i++) {
+        scanDirectCaptures(n->as.classDecl.bases[i], realDepth, comprDepth, out);
+      }
+      for (int32_t i = 0; i < n->as.classDecl.memberCount; i++) {
+        scanDirectCaptures(n->as.classDecl.members[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_TRY:
+      scanDirectCaptures(n->as.tryStmt.tryBlock, realDepth, comprDepth, out);
+      for (int32_t i = 0; i < n->as.tryStmt.catchCount; i++) {
+        const AstCatchClause* c = &n->as.tryStmt.catches[i];
+        for (int32_t t = 0; t < c->typeCount; t++) {
+          scanDirectCaptures(c->types[t], realDepth, comprDepth, out);
+        }
+        scanDirectCaptures(c->block, realDepth, comprDepth, out);
+      }
+      scanDirectCaptures(n->as.tryStmt.finallyBlock, realDepth, comprDepth, out);
+      break;
+    case AST_STRING:
+      for (int32_t i = 0; i < n->as.strLit.count; i++) {
+        scanDirectCaptures(n->as.strLit.segs[i].expr, realDepth, comprDepth, out);
+      }
+      break;
+    case AST_TUPLE:
+      for (int32_t i = 0; i < n->as.tuple.count; i++) {
+        scanDirectCaptures(n->as.tuple.items[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_MAP:
+      for (int32_t i = 0; i < n->as.mapLit.count; i++) {
+        scanDirectCaptures(n->as.mapLit.keys[i], realDepth, comprDepth, out);
+        scanDirectCaptures(n->as.mapLit.values[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_BINARY:
+    case AST_LOGIC:
+      scanDirectCaptures(n->as.binary.lhs, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.binary.rhs, realDepth, comprDepth, out);
+      break;
+    case AST_UNARY:
+    case AST_RECV:
+    case AST_GO:
+    case AST_AWAIT:
+      scanDirectCaptures(n->as.unary.operand, realDepth, comprDepth, out);
+      break;
+    case AST_TERNARY:
+      scanDirectCaptures(n->as.ternary.cond, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.ternary.thenExpr, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.ternary.elseExpr, realDepth, comprDepth, out);
+      break;
+    case AST_CALL:
+      scanDirectCaptures(n->as.call.callee, realDepth, comprDepth, out);
+      for (int32_t i = 0; i < n->as.call.count; i++) {
+        scanDirectCaptures(n->as.call.args[i], realDepth, comprDepth, out);
+      }
+      break;
+    case AST_INDEX:
+      scanDirectCaptures(n->as.indexExpr.obj, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.indexExpr.index, realDepth, comprDepth, out);
+      break;
+    case AST_MEMBER:
+      scanDirectCaptures(n->as.memberExpr.obj, realDepth, comprDepth, out);
+      break;
+    case AST_SLICE:
+      scanDirectCaptures(n->as.slice.obj, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.slice.start, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.slice.end, realDepth, comprDepth, out);
+      scanDirectCaptures(n->as.slice.step, realDepth, comprDepth, out);
+      break;
+    case AST_COMPREHENSION:
+    case AST_GEN_EXPR:  // 推导式为编译期伪帧边界（内联消解）：子树按 comprDepth+1 续扫
+      scanDirectCaptures(n->as.compr.key, realDepth, comprDepth + 1, out);
+      scanDirectCaptures(n->as.compr.value, realDepth, comprDepth + 1, out);
+      for (int32_t i = 0; i < n->as.compr.forCount; i++) {
+        scanDirectCaptures(n->as.compr.fors[i].target, realDepth, comprDepth + 1, out);
+        scanDirectCaptures(n->as.compr.fors[i].iter, realDepth, comprDepth + 1, out);
+      }
+      for (int32_t i = 0; i < n->as.compr.condCount; i++) {
+        scanDirectCaptures(n->as.compr.conds[i], realDepth, comprDepth + 1, out);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
 static void loadIdent(FuncState* fs, const AstNode* n) {
   if (n->bindKind == AST_BIND_LOCAL) {
     int32_t slot = comprResolveSlot(fs, n->bindSlot, -1);
@@ -273,8 +525,13 @@ static void loadIdent(FuncState* fs, const AstNode* n) {
       return;
     }
   }
-  compErr(fs, n, n->as.ident.nameLen, "upvalue capture is not supported yet");
-  emitOp(fs, OP_LOAD_NIL, n->line);  // 保持栈平衡的占位值
+  int32_t idx = findUpvalByName(fs, n->as.ident.name, n->as.ident.nameLen);  // T018：宿主闭包装载
+  if (idx < 0) {
+    compErr(fs, n, n->as.ident.nameLen, "upvalue capture is not registered");
+    emitOp(fs, OP_LOAD_NIL, n->line);  // 保持栈平衡的占位值
+    return;
+  }
+  upvalOp(fs, OP_LOAD_UPVAL, idx, n->line);
 }
 
 static void storeIdent(FuncState* fs, const AstNode* n) {
@@ -293,8 +550,13 @@ static void storeIdent(FuncState* fs, const AstNode* n) {
     emitConstOp(fs, OP_STORE_GLOBAL, k, n->line);
     return;
   }
-  compErr(fs, n, n->as.ident.nameLen, "upvalue store is not supported yet");
-  emitOp(fs, OP_POP, n->line);  // 弹出待存值，维持栈平衡
+  int32_t idx = findUpvalByName(fs, n->as.ident.name, n->as.ident.nameLen);  // T018：宿主闭包落盘
+  if (idx < 0) {
+    compErr(fs, n, n->as.ident.nameLen, "upvalue capture is not registered");
+    emitOp(fs, OP_POP, n->line);  // 弹出待存值，维持栈平衡
+    return;
+  }
+  upvalOp(fs, OP_STORE_UPVAL, idx, n->line);
 }
 
 // ---- 推导式 / 生成器表达式（03 §1-§2：内联脱糖 + 帧槽重映射） ----
@@ -379,6 +641,31 @@ static void compileComprBody(FuncState* fs, const AstNode* n, int32_t acc, int32
   emitOp(fs, OP_GET_ITER, n->line);
   int32_t lTop = fs->chunk->codeLen;
   int32_t jExit = emitJump(fs, OP_FOR_ITER, n->line);
+  // T018：本子句 fresh 目标被后续子树闭包捕获（04 §4）——产出后、落盘前闭合上一轮开放 upvalue
+  //（捕获槽以本推导式伪帧为根收集，与 compileFuncProto 的 isLocal 判定同基准）
+  SlotSet caps = {NULL, 0, 0};
+  for (int32_t i = forIdx + 1; i < n->as.compr.forCount; i++) {
+    scanDirectCaptures(n->as.compr.fors[i].iter, 0, 0, &caps);
+  }
+  for (int32_t i = 0; i < n->as.compr.condCount; i++) {
+    scanDirectCaptures(n->as.compr.conds[i], 0, 0, &caps);
+  }
+  scanDirectCaptures(n->as.compr.key, 0, 0, &caps);
+  scanDirectCaptures(n->as.compr.value, 0, 0, &caps);
+  AstNode* ct = n->as.compr.fors[forIdx].target;
+  if (ct != NULL) {
+    if (ct->kind == AST_TUPLE) {
+      for (int32_t i = 0; i < ct->as.tuple.count; i++) {
+        AstNode* ti = ct->as.tuple.items[i];
+        if (ti->kind == AST_IDENT && slotSetHas(&caps, ti->bindSlot)) {
+          localOp(fs, OP_CLOSE_UPVAL, comprSlot(fs, ti->bindSlot), ti->line);  // 物化并闭合重映射槽
+        }
+      }
+    } else if (ct->kind == AST_IDENT && slotSetHas(&caps, ct->bindSlot)) {
+      localOp(fs, OP_CLOSE_UPVAL, comprSlot(fs, ct->bindSlot), ct->line);
+    }
+  }
+  free(caps.items);
   storeComprTarget(fs, n->as.compr.fors[forIdx].target);
   compileComprBody(fs, n, acc, forIdx + 1, forIdx == n->as.compr.forCount - 1 ? lTop : lTopInner);
   int32_t jBack = emitJump(fs, OP_JMP, n->line);
@@ -649,12 +936,7 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
         emitByte(fs, (ms_u8)(spreadLast ? 1 : 0));  // flags：末位展开位
         break;
       }
-      if (n->as.call.callee->kind != AST_IDENT) {
-        compErr(fs, n->as.call.callee, 1, "callable expression form is not supported yet");
-        emitOp(fs, OP_LOAD_NIL, n->line);
-      } else {
-        compileExpr(fs, n->as.call.callee);
-      }
+      compileExpr(fs, n->as.call.callee);  // 任意可调用表达式（IDENT/INDEX/调用链等）求值入栈（T018 泛化）
       for (int32_t i = 0; i < n->as.call.count; i++) {
         compileExpr(fs, n->as.call.args[i]);
       }
@@ -1098,7 +1380,47 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   if (scan + 1 > base) {
     base = scan + 1;
   }
-  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0};
+  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0, NULL, 0, 0, -1, -1};
+  // T018：宿主捕获表（binder 附着清单 → 本函数 upvalue 表，先于体编译）：
+  // isLocal = 直接捕获本帧槽（depth-1 ≤ 定义处推导式深度；伪帧槽经 comprResolveSlot 重映射，
+  // tri fresh 目标经 alias 重映射到每轮新鲜槽 W）；间接条目按名取宿主表（binder 透传链保证存在）
+  const AstUpvalRef* upvals = isExpr ? n->as.funcExpr.upvals : n->as.funcDecl.upvals;
+  int32_t upvalCount = isExpr ? n->as.funcExpr.upvalCount : n->as.funcDecl.upvalCount;
+  for (int32_t i = 0; i < upvalCount; i++) {
+    const AstUpvalRef* c = &upvals[i];
+    bool isLocal = c->depth - 1 <= fs->comprDepth;
+    int32_t index = 0;
+    if (isLocal) {
+      index = fs->comprDepth > 0 ? comprResolveSlot(fs, c->slot, c->depth - 1) : c->slot;
+      if (fs->aliasFrom >= 0 && index == fs->aliasFrom) {
+        index = fs->aliasTo;
+      }
+      if (index < 0) {
+        compErr(fs, n, 1, "comprehension variable used before declaration");
+        index = 0;
+      }
+    } else {
+      index = findUpvalByName(fs, c->name, c->nameLen);
+      if (index < 0) {
+        compErr(fs, n, c->nameLen, "broken upvalue capture chain");
+        index = 0;
+      }
+    }
+    UpvalEntry e = {c->name, c->nameLen, index, isLocal};
+    MS_ARRAY_PUSH(inner.upvals, inner.upvalCount, inner.upvalCap, e);
+  }
+  if (inner.upvalCount > 255) {  // LOAD/STORE_UPVAL 与描述表 index 均为 u8
+    compErr(fs, n, 1, "too many upvalues");
+  }
+  proto->nUpvalues = inner.upvalCount;
+  if (inner.upvalCount > 0) {
+    proto->upvalDescs = malloc(sizeof(MsUpvalDesc) * (size_t)inner.upvalCount);
+    MS_ASSERT(proto->upvalDescs != NULL);
+    for (int32_t i = 0; i < inner.upvalCount; i++) {
+      proto->upvalDescs[i].isLocal = inner.upvals[i].isLocal ? 1 : 0;
+      proto->upvalDescs[i].index = (ms_u8)inner.upvals[i].index;
+    }
+  }
   if (body != NULL) {
     for (int32_t i = 0; i < body->as.list.count; i++) {
       compileStmt(&inner, body->as.list.items[i]);
@@ -1122,11 +1444,13 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   free(inner.jumps);
   free(inner.loops);
   free(inner.comprStack);
+  free(inner.upvals);
   *protoOut = proto;
 }
 
-// 函数值物化（声明/表达式共用，21 §3.3/§4）：proto 编译入池 → LOAD_CONST + 默认参依序压栈 + MAKE_FUNCTION
-// 默认参定义处求值（05 §1：默认值绑定于定义作用域，Python 语义）；CLOSURE 形态归 Task 4
+// 函数值物化（声明/表达式共用，21 §3.3/§4）：proto 编译入池 → 默认参依序压栈 → MAKE_FUNCTION/CLOSURE
+// 默认参定义处求值（05 §1：默认值绑定于定义作用域，Python 语义）；
+// 捕获函数（proto->nUpvalues > 0）走 CLOSURE（无 LOAD_CONST/MAKE_FUNCTION，T018）
 static void compileFunctionValue(FuncState* fs, const AstNode* n) {
   bool isExpr = n->kind == AST_FUNC_EXPR;
   const AstParam* params = isExpr ? n->as.funcExpr.params : n->as.funcDecl.params;
@@ -1134,7 +1458,7 @@ static void compileFunctionValue(FuncState* fs, const AstNode* n) {
   Chunk* proto = NULL;
   compileFuncProto(fs, n, &proto);
   int32_t k = chunkAddConstProto(fs->chunk, proto);
-  bool hasCaptures = false;  // Task 4：proto->nUpvalues > 0 时改走 CLOSURE
+  bool hasCaptures = proto->nUpvalues > 0;
   if (!hasCaptures) {
     emitConstOp(fs, OP_LOAD_CONST, k, n->line);
   }
@@ -1146,6 +1470,8 @@ static void compileFunctionValue(FuncState* fs, const AstNode* n) {
   if (!hasCaptures) {
     emitOp(fs, OP_MAKE_FUNCTION, n->line);
     emitByte(fs, (ms_u8)(proto->defaultParamCount | (proto->hasRest ? 0x80 : 0)));
+  } else {  // 栈形 [d1..dn, CLOSURE]：fn 依 proto 元数据就地物化后闭包覆盖栈顶（T018）
+    emitConstOp(fs, OP_CLOSURE, k, n->line);
   }
 }
 
@@ -1199,7 +1525,26 @@ static void storeIterTarget(FuncState* fs, AstNode* t) {
   emitConstOp(fs, OP_STORE_GLOBAL, k, t->line);
 }
 
+// T018：for-in fresh 目标被捕获（04 §4）——FOR_ITER 产出后、落盘前闭合上一轮开放 upvalue
+static void emitIterTargetClose(FuncState* fs, AstNode* t, const SlotSet* caps) {
+  if (t == NULL) {
+    return;
+  }
+  if (t->kind == AST_TUPLE) {
+    for (int32_t i = 0; i < t->as.tuple.count; i++) {
+      emitIterTargetClose(fs, t->as.tuple.items[i], caps);
+    }
+    return;
+  }
+  if (t->kind == AST_IDENT && t->bindKind == AST_BIND_LOCAL && (t->bindFlags & AST_BIND_FRESH) != 0 &&
+      slotSetHas(caps, t->bindSlot)) {
+    localOp(fs, OP_CLOSE_UPVAL, t->bindSlot, t->line);
+  }
+}
+
 static void compileFor(FuncState* fs, AstNode* n) {
+  SlotSet caps = {NULL, 0, 0};
+  scanDirectCaptures(n, 0, 0, &caps);  // T018：循环子树闭包直接捕获的本帧槽（CLOSE 判定，04 §4）
   if (n->as.forStmt.form == AST_FOR_IN) {
     beginLoop(fs, true);
     compileExpr(fs, n->as.forStmt.iter);
@@ -1211,6 +1556,7 @@ static void compileFor(FuncState* fs, AstNode* n) {
     if (target == NULL) {
       emitOp(fs, OP_POP, n->line);  // 无目标（BAD_TARGET 残留）：丢弃
     } else {
+      emitIterTargetClose(fs, target, &caps);  // 捕获的 fresh 目标每轮闭合（快照）
       storeIterTarget(fs, target);  // IDENT 直存 / TUPLE 解构递归（多变量迭代 04 §4）
     }
     compileStmt(fs, n->as.forStmt.body);
@@ -1218,15 +1564,41 @@ static void compileFor(FuncState* fs, AstNode* n) {
     fs->jumps[jBack].target = lTop;
     fs->jumps[jExit].target = fs->chunk->codeLen;
     endLoop(fs);
+    free(caps.items);
     return;
   }
+  // T018 tri fresh 捕获（04 §4）：隐藏 carry 槽 V 供循环机构，每轮新鲜槽 W 供闭包捕获；
+  // cond/body/post 内 V 引用经 FuncState.alias 重映射到 W（localOp），携带拷贝绕开重映射
+  AstNode* init = n->as.forStmt.init;
+  bool freshCarry = n->as.forStmt.form == AST_FOR_TRI && init != NULL && init->kind == AST_VAR_DECL &&
+                    init->bindKind == AST_BIND_LOCAL && (init->bindFlags & AST_BIND_FRESH) != 0 &&
+                    slotSetHas(&caps, init->bindSlot);
+  int32_t carry = -1;
+  int32_t fresh = -1;
   beginLoop(fs, false);
-  if (n->as.forStmt.init != NULL) {
-    compileStmt(fs, n->as.forStmt.init);  // TRI：简单语句（可省略）
+  if (freshCarry) {
+    carry = init->bindSlot;
+    fresh = fs->nextTemp++;
+    fs->aliasFrom = carry;
+    fs->aliasTo = fresh;
+    compileStmt(fs, init);  // 初值声明经 alias 落 W
+    fs->aliasFrom = -1;
+    localOp(fs, OP_LOAD_LOCAL, fresh, n->line);
+    localOp(fs, OP_STORE_LOCAL, carry, n->line);  // 播种：V = W
+  } else if (init != NULL) {
+    compileStmt(fs, init);  // TRI：简单语句（可省略）
   }
   int32_t lTop = fs->chunk->codeLen;
+  if (freshCarry) {
+    localOp(fs, OP_LOAD_LOCAL, carry, n->line);
+    localOp(fs, OP_STORE_LOCAL, fresh, n->line);  // W_k = carry（Go 1.22：每轮新鲜变量自携带拷贝）
+  }
   if (n->as.forStmt.form != AST_FOR_TRI) {
     currentLoop(fs)->contTarget = lTop;  // COND/INF：continue 回条件/体首
+  }
+  if (freshCarry) {
+    fs->aliasFrom = carry;  // cond/body/post 编译期：V 引用统一到 W
+    fs->aliasTo = fresh;
   }
   int32_t jExit = -1;
   if (n->as.forStmt.cond != NULL) {
@@ -1234,11 +1606,19 @@ static void compileFor(FuncState* fs, AstNode* n) {
     jExit = emitJump(fs, OP_JMP_IF_FALSE, n->line);
   }
   compileStmt(fs, n->as.forStmt.body);
-  if (n->as.forStmt.form == AST_FOR_TRI) {
+  if (freshCarry) {
+    currentLoop(fs)->contTarget = fs->chunk->codeLen;  // continue 落点：先闭合再执行 post
+    localOp(fs, OP_CLOSE_UPVAL, fresh, n->line);  // 体末闭合（快照体终值；post 写 W 前定格，Go 1.22）
+  } else if (n->as.forStmt.form == AST_FOR_TRI) {
     currentLoop(fs)->contTarget = fs->chunk->codeLen;  // continue 先执行 post
   }
   if (n->as.forStmt.post != NULL) {
     compileStmt(fs, n->as.forStmt.post);
+  }
+  if (freshCarry) {
+    fs->aliasFrom = -1;  // carry 拷贝不经 alias（LOAD W → STORE V 原槽）
+    localOp(fs, OP_LOAD_LOCAL, fresh, n->line);
+    localOp(fs, OP_STORE_LOCAL, carry, n->line);  // carry 更新：V = W
   }
   int32_t jBack = emitJump(fs, OP_JMP, n->line);
   fs->jumps[jBack].target = lTop;
@@ -1246,6 +1626,7 @@ static void compileFor(FuncState* fs, AstNode* n) {
     fs->jumps[jExit].target = fs->chunk->codeLen;
   }
   endLoop(fs);
+  free(caps.items);
 }
 
 static void compileWhile(FuncState* fs, AstNode* n) {
@@ -1404,7 +1785,7 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   // 临时槽基线：模块层无自有 local，预扫描（含推导式目标/嵌套函数，安全超估）后从其上起步
   int32_t scan = -1;
   scanMaxLocalSlot(module, &scan);
-  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0};
+  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0, NULL, 0, 0, -1, -1};
   for (int32_t i = 0; i < module->as.list.count; i++) {
     compileStmt(&fs, module->as.list.items[i]);
   }

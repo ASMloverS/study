@@ -64,6 +64,7 @@ MAKE_FUNCTION <proto> <flags>   （默认参数个数、rest 标志在 flags）
 CLOSURE <proto>                 （捕获 upvalue 描述表在 proto）
 CALL <argc>    CALL_METHOD <nameIdx> <icSlot> <argc>
 RETURN
+CLOSE_UPVAL <slot>              （循环每轮新绑定：闭合 ≥ 帧基+slot 的开放 upvalue）
 ```
 
 ### 3.4 类

@@ -1,7 +1,7 @@
 (module
   (var fs [global]
     (list))
-  (for-in i [global fresh]
+  (for-in i [local:0 fresh]
     (block
       (expr
         (call
@@ -10,4 +10,4 @@
             (params)
             (block
               (return
-                (ident i [global])))))))))
+                (ident i [upvalue:1.0])))))))))

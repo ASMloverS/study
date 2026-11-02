@@ -1,7 +1,7 @@
 (module
-  (for-in (k [global fresh] v [global fresh])
+  (for-in (k [local:0 fresh] v [local:1 fresh])
     (block
       (expr
         (call
           (ident print [global])
-                    (ident k [global]))))))
+                    (ident k [local:0]))))))

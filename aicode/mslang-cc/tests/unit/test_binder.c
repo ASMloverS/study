@@ -143,10 +143,12 @@ TEST(forInTargetIsFreshAtModuleLevel) {
   AstNode* mod = bindSrc("for x in xs { x }", &arena, &diags, &binder);
   AstNode* loop = stmt0(mod);
   AstNode* x = loop->as.forStmt.target;
-  EXPECT_EQ(ctx, AST_BIND_GLOBAL, x->bindKind);  // 模块层（含循环域）→ global 无槽
+  EXPECT_EQ(ctx, AST_BIND_LOCAL, x->bindKind);  // T018：模块层 fresh 循环目标入模块帧局部（可捕获 04 §4）
+  EXPECT_EQ(ctx, 0, x->bindSlot);
   EXPECT_EQ(ctx, (long long)AST_BIND_FRESH, (long long)(x->bindFlags & AST_BIND_FRESH));
   AstNode* bodyX = loop->as.forStmt.body->as.list.items[0]->as.exprStmt.expr;
-  EXPECT_EQ(ctx, AST_BIND_GLOBAL, bodyX->bindKind);
+  EXPECT_EQ(ctx, AST_BIND_LOCAL, bodyX->bindKind);
+  EXPECT_EQ(ctx, 0, bodyX->bindSlot);
   binderDestroy(&binder);
   astArenaDestroy(&arena);
 }

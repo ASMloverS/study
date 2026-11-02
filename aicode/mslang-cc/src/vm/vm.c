@@ -127,7 +127,27 @@ bool msVmPush(MsVM* vm, MsValue v) {
     vm->errLine = -1;
     return false;
   }
-  MS_ARRAY_PUSH(vm->stack, vm->stackTop, vm->stackCap, v);
+  if (vm->stackTop == vm->stackCap) {  // T018：扩容可搬移缓冲——开放 upvalue 的 location 须按槽位重定基
+    // 跨缓冲指针相减为 UB（搬移增量不必为元素大小倍数）：先记录同数组槽位下标，扩容后按下标还原
+    int32_t n = 0;
+    for (MsObjUpvalue* u = vm->openUpvalues; u != NULL; u = u->next) {
+      n++;
+    }
+    int32_t* idx = malloc(sizeof(int32_t) * (size_t)(n > 0 ? n : 1));
+    MS_ASSERT(idx != NULL);
+    int32_t i = 0;
+    for (MsObjUpvalue* u = vm->openUpvalues; u != NULL; u = u->next) {
+      idx[i++] = (int32_t)(u->location - vm->stack);
+    }
+    MS_ARRAY_PUSH(vm->stack, vm->stackTop, vm->stackCap, v);
+    i = 0;
+    for (MsObjUpvalue* u = vm->openUpvalues; u != NULL; u = u->next) {
+      u->location = vm->stack + idx[i++];
+    }
+    free(idx);
+    return true;
+  }
+  vm->stack[vm->stackTop++] = v;
   return true;
 }
 
@@ -553,6 +573,8 @@ void msVmRunFrames(MsVM* vm) {
   SET_HANDLER(OP_LOAD_CONST);
   SET_HANDLER(OP_LOAD_LOCAL);
   SET_HANDLER(OP_STORE_LOCAL);
+  SET_HANDLER(OP_LOAD_UPVAL);
+  SET_HANDLER(OP_STORE_UPVAL);
   SET_HANDLER(OP_LOAD_GLOBAL);
   SET_HANDLER(OP_STORE_GLOBAL);
   SET_HANDLER(OP_DEF_GLOBAL);
@@ -582,6 +604,8 @@ void msVmRunFrames(MsVM* vm) {
   SET_HANDLER(OP_SET_INDEX);
   SET_HANDLER(OP_BUILD_SLICE);
   SET_HANDLER(OP_MAKE_FUNCTION);
+  SET_HANDLER(OP_CLOSURE);
+  SET_HANDLER(OP_CLOSE_UPVAL);
   SET_HANDLER(OP_CALL);
   SET_HANDLER(OP_CALL_METHOD);
   SET_HANDLER(OP_RETURN);
@@ -693,6 +717,26 @@ void msVmRunFrames(MsVM* vm) {
       OPCODE(OP_STORE_LOCAL) {
         int32_t slot = code[ip++];
         vm->stack[vm->frames[vm->frameCount - 1].base + slot] = pop(vm);
+        NEXT();
+      }
+
+      OPCODE(OP_LOAD_UPVAL) {  // <u8 idx>：经执行中闭包装载捕获值（开放=栈槽，闭合=对象内快照）
+        int32_t idx = code[ip++];
+        MsObjClosure* cl = vm->frames[vm->frameCount - 1].closure;
+        if (cl == NULL || idx >= cl->fn->chunk->nUpvalues) {  // 防御：普通函数帧无捕获
+          RUNTIME_ERROR("RuntimeError: upvalue access outside closure");
+        }
+        msVmPush(vm, *cl->upvalues[idx]->location);
+        NEXT();
+      }
+
+      OPCODE(OP_STORE_UPVAL) {  // <u8 idx>：对称落盘（开放槽写入即对全部捕获者可见）
+        int32_t idx = code[ip++];
+        MsObjClosure* cl = vm->frames[vm->frameCount - 1].closure;
+        if (cl == NULL || idx >= cl->fn->chunk->nUpvalues) {
+          RUNTIME_ERROR("RuntimeError: upvalue access outside closure");
+        }
+        *cl->upvalues[idx]->location = pop(vm);
         NEXT();
       }
 
@@ -1191,6 +1235,50 @@ void msVmRunFrames(MsVM* vm) {
         }
         vm->stack[vm->stackTop - nDef - 1] = msValueObj(&fn->head);  // fn 覆盖 proto 槽（即刻 root）
         vm->stackTop -= nDef;  // 弹默认值源（fn 已拷贝）
+        NEXT();
+      }
+
+      OPCODE(OP_CLOSURE) {  // <const proto>（T018）：栈形 [d1..dn] → 闭包；fn/closure 依次落栈 root
+        READ_OPERAND(k);
+        const Chunk* proto = consts[k].as.proto;
+        int32_t nDef = proto->defaultParamCount;  // 默认参元数据在 proto（编译器填充）
+        MsObjFunction* fn =
+            msObjFunctionNew(vm, proto, nDef, nDef > 0 ? &vm->stack[vm->stackTop - nDef] : NULL);
+        if (fn == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        vm->stackTop -= nDef;  // 默认值源已拷贝（fn 尚未 root：拷贝后至压栈间无分配点）
+        if (!msVmPush(vm, msValueObj(&fn->head))) {
+          goto dispatchExit;  // StackOverflow 槽已置
+        }
+        MsObjClosure* cl = msObjClosureNew(vm, fn);  // 分配点：fn 在栈 root
+        if (cl == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        if (!msVmPush(vm, msValueObj(&cl->head))) {
+          goto dispatchExit;
+        }
+        for (int32_t i = 0; i < proto->nUpvalues; i++) {  // 捕获装配（每项可为分配点：fn/cl/帧槽均 root）
+          const MsUpvalDesc* d = &proto->upvalDescs[i];
+          if (d->isLocal != 0) {  // 直接捕获定义帧（=当前执行帧）栈槽
+            cl->upvalues[i] = msVmCaptureUpvalue(vm, &vm->stack[frame->base + d->index]);
+            if (cl->upvalues[i] == NULL) {
+              RUNTIME_ERROR("RuntimeError: out of memory");
+            }
+          } else if (frame->closure == NULL) {  // 间接透传：取宿主闭包对应项（防御：模块帧）
+            RUNTIME_ERROR("RuntimeError: closure capture outside enclosing closure");
+          } else {
+            cl->upvalues[i] = frame->closure->upvalues[d->index];
+          }
+        }
+        vm->stack[vm->stackTop - 2] = vm->stack[vm->stackTop - 1];  // closure 覆盖 fn 槽
+        vm->stackTop--;
+        NEXT();
+      }
+
+      OPCODE(OP_CLOSE_UPVAL) {  // <u8 slot>（T018）：闭合 ≥ 帧基+slot 的开放 upvalue（循环每轮新绑定 04 §4）
+        int32_t slot = code[ip++];
+        msVmCloseUpvalues(vm, &vm->stack[vm->frames[vm->frameCount - 1].base + slot]);
         NEXT();
       }
 

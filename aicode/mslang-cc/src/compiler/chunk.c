@@ -51,6 +51,7 @@ const char* const msOpNames[OP__COUNT] = {
     "BUILD_SLICE",
     "MAKE_FUNCTION",
     "CLOSURE",
+    "CLOSE_UPVAL",
     "CALL",
     "CALL_METHOD",
     "RETURN",
@@ -147,6 +148,7 @@ const MsOpndLayout msOpLayouts[OP__COUNT] = {
     OPL_U8,           // BUILD_SLICE
     OPL_U8,           // MAKE_FUNCTION
     OPL_CONST,           // CLOSURE
+    OPL_U8,              // CLOSE_UPVAL（循环每轮新绑定 04 §4）
     OPL_U8_U8,           // CALL（argc + spread flags，T018）
     OPL_CONST_U8_U8_U8,  // CALL_METHOD（name + icSlot + argc + spread flags，T018）
     OPL_NONE,         // RETURN

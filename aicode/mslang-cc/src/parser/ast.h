@@ -146,6 +146,15 @@ enum {
   AST_COMP_SET = 3,
 };
 
+// 函数 upvalue 捕获需求（T018：binder 按函数节点聚合附着，编译器建表消费）
+typedef struct AstUpvalRef {
+  const char* name;  // 借用源文本
+  int32_t nameLen;
+  int32_t slot;  // depth==1：定义函数帧槽位（推导式伪帧槽经编译器重映射）
+  int32_t depth;  // 引用跨函数边界数（1 = 直接捕获外层局部）
+  bool fresh;     // 目标为循环 fresh 绑定（CLOSE_UPVAL 迭代闭合标记）
+} AstUpvalRef;
+
 // for 形态（forStmt.form，04 §4）
 enum {
   AST_FOR_TRI = 1,   // for init; cond; post（段均可省略）
@@ -372,6 +381,8 @@ struct AstNode {
       int32_t paramCount;
       AstNode* body;      // AST_BLOCK；表达式体 NULL
       AstNode* exprBody;  // -> expr（05 §1）
+      AstUpvalRef* upvals;  // 捕获需求（binder 附着；无捕获 NULL）
+      int32_t upvalCount;
     } funcExpr;
     struct {
       const char* name;
@@ -381,6 +392,8 @@ struct AstNode {
       int32_t paramCount;
       AstNode* body;      // AST_BLOCK；表达式体 NULL
       AstNode* exprBody;  // -> expr
+      AstUpvalRef* upvals;  // 捕获需求（binder 附着；无捕获 NULL）
+      int32_t upvalCount;
     } funcDecl;           // AST_FUNC_DECL
   } as;
 };

@@ -1,13 +1,13 @@
 (module
-  (for-in x [global fresh]
+  (for-in x [local:0 fresh]
     (block
       (expr
         (call
           (ident print [global])
-                    (ident x [global])))))
-  (for-in x [global fresh]
+                    (ident x [local:0])))))
+  (for-in x [local:1 fresh]
     (block
       (expr
         (call
           (ident print [global])
-                    (ident x [global]))))))
+                    (ident x [local:1]))))))
