@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "gc/gc.h"
+#include "obj/obj_func.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
 #include "obj/obj_set.h"
@@ -232,7 +233,7 @@ bool msIterFromValue(MsVM* vm, MsValue v, MsValue* out) {
 
 // fn 参数种类校验（MAPFN/FILTER 共用）：脚本函数归 T018；非函数 → TypeError；失败置错误槽
 static bool checkIterFn(MsVM* vm, const MsValue* fn) {
-  if (fn->kind == MS_VAL_FUNCTION) {
+  if (fn->kind == MS_VAL_FUNCTION || msIsCallableObj(fn)) {  // T018：函数值即对象（过渡 kind 为 raw proto 瞬态）
     iterErr(vm, "RuntimeError: script function values execute in T018");
     return false;
   }

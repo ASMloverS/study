@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "obj/obj_func.h"
 #include "obj/obj_list.h"
 #include "obj/obj_string.h"
 #include "vm/vm.h"
@@ -46,7 +47,7 @@ static bool checkFnArg(MsVM* vm, const MsValue* f, const char* mname) {
   if (f->kind == MS_VAL_NATIVE) {
     return true;
   }
-  if (f->kind == MS_VAL_FUNCTION) {
+  if (f->kind == MS_VAL_FUNCTION || msIsCallableObj(f)) {  // T018：函数值即对象（过渡 kind 为 raw proto 瞬态）
     methodError(vm, "RuntimeError: script function values execute in T018 (%s)", mname);
     return false;
   }

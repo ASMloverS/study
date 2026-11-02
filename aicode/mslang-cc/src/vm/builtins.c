@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "obj/obj_bigint.h"
+#include "obj/obj_func.h"
 #include "obj/obj_iter.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
@@ -709,7 +710,7 @@ static MsValue nativeSorted(MsVM* vm, int32_t argc, const MsValue* args) {
   }
   MsValue keyFn = msValueNil();
   if (argc >= 2) {
-    if (args[1].kind == MS_VAL_FUNCTION) {
+    if (args[1].kind == MS_VAL_FUNCTION || msIsCallableObj(&args[1])) {  // T018：函数值即对象
       bErr(vm, "RuntimeError: script function values execute in T018");
       return msValueNil();
     }
@@ -947,7 +948,7 @@ static MsValue nativeCallable(MsVM* vm, int32_t argc, const MsValue* args) {
     return msValueNil();
   }
   const MsValue* v = &args[0];
-  return msValueBool(v->kind == MS_VAL_NATIVE || v->kind == MS_VAL_FUNCTION ||
+  return msValueBool(v->kind == MS_VAL_NATIVE || v->kind == MS_VAL_FUNCTION || msIsCallableObj(v) ||
                     (v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_BOUND_METHOD));
 }
 

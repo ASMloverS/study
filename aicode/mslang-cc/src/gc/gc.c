@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "common/common.h"
+#include "obj/obj_func.h"
 #include "obj/obj_map.h"
 
 #define MS_GC_HEAP_MAX_DEFAULT (8u * 1024u * 1024u)  // 任务书 T012 §2：默认 8MB
@@ -87,6 +88,9 @@ static void markRoots(MsVM* vm) {
   }
   if (vm->globals != NULL) {  // 全局表 map 对象（T015 承载；children 由 markFn 展开键值；msVmRun 前未落堆）
     gcMarkValue(vm, msValueObj(&vm->globals->head));
+  }
+  for (MsObj* o = (MsObj*)vm->openUpvalues; o != NULL; o = (MsObj*)((MsObjUpvalue*)o)->next) {  // T018：开放链 root
+    gcMarkValue(vm, msValueObj(o));
   }
 }
 

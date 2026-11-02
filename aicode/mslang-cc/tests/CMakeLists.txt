@@ -10,6 +10,7 @@ ms_add_test(parser_complex ms_parser)
 ms_add_test(binder ms_binder)
 ms_add_test(compiler_basic ms_compiler ms_binder)
 ms_add_test(vm_basic ms_vm ms_compiler ms_binder)
+ms_add_test(func_call ms_vm ms_compiler ms_binder)  # T018：函数对象值层
 ms_add_test(gc_basic ms_obj ms_gc ms_vm ms_compiler ms_binder)
 ms_add_test(obj_string ms_obj ms_gc ms_vm ms_compiler ms_binder)
 ms_add_test(obj_list ms_obj ms_gc ms_vm ms_compiler ms_binder)

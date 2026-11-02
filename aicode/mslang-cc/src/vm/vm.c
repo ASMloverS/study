@@ -9,6 +9,7 @@
 
 #include "gc/gc.h"
 #include "obj/obj_bigint.h"
+#include "obj/obj_func.h"
 #include "obj/obj_iter.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
@@ -85,6 +86,10 @@ void msVmInit(MsVM* vm) {
   gcSetMarkFn(MS_OBJ_SET, msObjSetMarkChildren);  // T015：内层 map（无独立数据，freeFn 不需）
   gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
   gcSetMarkFn(MS_OBJ_ITERATOR, iterMark);  // D8/T014：迭代器持 str/list（kind 分派，T017 泛化）
+  gcSetMarkFn(MS_OBJ_FUNCTION, msObjFunctionMarkChildren);  // T018：默认参值
+  gcSetMarkFn(MS_OBJ_CLOSURE, msObjClosureMarkChildren);  // T018：fn + upvalue 数组
+  gcSetMarkFn(MS_OBJ_UPVALUE, msObjUpvalueMarkChildren);  // T018：开放栈槽/闭合值
+  vm->openUpvalues = NULL;  // 开放链空（捕获归 Task 4）
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);
   msInternInit(vm->intern);
@@ -480,7 +485,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       return;
     }
   }
-  MsFrame initFrame = {chunk, 0, 0};  // 本任务单模块帧（T018 起函数帧切换）
+  MsFrame initFrame = {chunk, 0, 0, NULL};  // 模块帧（T018：函数帧执行归 Task 2）
   MS_ARRAY_PUSH(vm->frames, vm->frameCount, vm->frameCap, initFrame);
   for (int32_t i = 0; i < chunk->localCount; i++) {  // 帧局部区（推导式临时槽/参数区）：入帧即 GC root
     if (!msVmPush(vm, msValueNil())) {
@@ -1167,10 +1172,14 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         NEXT();
       }
 
-      OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（默认参/rest 形态 T018）
-        (void)code[ip++];
-        MsValue proto = pop(vm);
-        msVmPush(vm, proto);  // T011：函数值即 chunk 引用，闭包捕获 T018
+      OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（低 7 位默认参个数 | bit7 rest；默认参值协议 Task 3 接入）
+        (void)code[ip++];  // flags：本任务恒 0（默认参形态归 Task 3）
+        MsValue proto = pop(vm);  // MS_VAL_FUNCTION 过渡 kind = raw proto 瞬态（LOAD_CONST CONST_PROTO 产物）
+        MsObjFunction* fn = msObjFunctionNew(vm, proto.as.func, 0, NULL);
+        if (fn == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        msVmPush(vm, msValueObj(&fn->head));
         NEXT();
       }
 
@@ -1203,7 +1212,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           msVmPush(vm, r);
           NEXT();
         }
-        if (callee.kind == MS_VAL_FUNCTION) {
+        if (callee.kind == MS_VAL_FUNCTION || msIsCallableObj(&callee)) {  // T018：脚本函数调用占位（Task 2 接入帧）
           RUNTIME_ERROR("RuntimeError: script function calls execute in T018");
         }
         RUNTIME_ERROR("TypeError: '%s' is not callable", msValueTypeName(&callee));

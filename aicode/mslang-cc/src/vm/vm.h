@@ -11,6 +11,8 @@
 
 typedef struct MsObj MsObj;           // 对象头（obj/obj.h，T012）
 typedef struct MsObjString MsObjString;  // 字符串对象（obj/obj_string.h；StrForm 返回型，按指针避免头环）
+typedef struct MsObjClosure MsObjClosure;  // 闭包对象（obj/obj_func.h，T018；帧持有按指针避免头环）
+typedef struct MsObjUpvalue MsObjUpvalue;  // upvalue 对象（obj/obj_func.h，T018；开放链按指针避免头环）
 
 // 值类别（22 §1 五 tag + T011 过渡 kind；过渡项归宿：STRING→T013 已完成、FUNCTION/NATIVE→T018）
 typedef enum MsValueKind {
@@ -51,11 +53,12 @@ static inline bool msIsI64(const MsValue* v) { return v->kind == MS_VAL_I64; }
 static inline bool msIsF64(const MsValue* v) { return v->kind == MS_VAL_F64; }
 static inline bool msIsObj(const MsValue* v) { return v->kind == MS_VAL_OBJ; }
 
-// 调用帧（本任务仅模块帧；T018 起函数帧切换）
+// 调用帧（T018 起函数帧接入；Task 1 仍仅模块帧，函数帧执行归 Task 2）
 typedef struct MsFrame {
   const Chunk* chunk;
   int32_t ip;
   int32_t base;  // 帧值栈基
+  MsObjClosure* closure;  // 执行中闭包（LOAD/STORE_UPVAL 与 CLOSURE 间接捕获宿主；普通函数帧 NULL）
 } MsFrame;
 
 struct GcHeap;  // gc/gc.h；msVmInit 创建、msVmFree 销毁
@@ -68,6 +71,7 @@ struct MsVM {
   MsFrame* frames;
   int32_t frameCount, frameCap;
   struct MsObjMap* globals;  // 全局表（T015 map 承载；键 = intern 名；msVmRun 首入分配，root 由 markRoots 标记）
+  MsObjUpvalue* openUpvalues;  // 开放 upvalue 链（按栈槽地址降序；GC root；帧返回/CLOSE_UPVAL 闭合）
   struct GcHeap* heap;
   MsInternTable* intern;  // intern 表（T013；obj/obj_string.h 完整类型，按指针避免头环）
   FILE* out;    // print 输出（默认 stdout；单测重定向 tmpfile）
