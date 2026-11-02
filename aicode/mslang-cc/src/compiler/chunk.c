@@ -206,6 +206,11 @@ void chunkInit(Chunk* c, const char* name, int32_t nameLen) {
   c->nUpvalues = 0;
   c->nIcSlots = 0;
   c->localCount = 0;
+  c->paramCount = 0;
+  c->defaultParamCount = 0;
+  c->hasRest = false;
+  c->params = NULL;
+  c->upvalDescs = NULL;
   c->name = name;
   c->nameLen = nameLen;
 }
@@ -228,9 +233,13 @@ void chunkFree(Chunk* c) {
   free(c->code);
   free(c->consts);
   free(c->lines);
+  free(c->params);
+  free(c->upvalDescs);
   c->code = NULL;
   c->consts = NULL;
   c->lines = NULL;
+  c->params = NULL;
+  c->upvalDescs = NULL;
   c->codeLen = c->codeCap = 0;
   c->constsLen = c->constsCap = 0;
   c->linesLen = c->linesCap = 0;

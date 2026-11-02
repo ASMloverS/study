@@ -469,10 +469,10 @@ TEST(runFloatReprForms) {
   free(r.out);
 }
 
-TEST(runCallUserFuncPlaceholder) {  // 函数声明可执行，调用为 T018 占位错误
+TEST(runCallUserFunc) {  // 函数声明 → MAKE_FUNCTION + CALL 帧执行（T018 Task 2）
   RunResult r = runSrc("func f() { return 1 }\nprint(f())");
-  EXPECT(ctx, r.hasError);
-  EXPECT(ctx, strstr(r.err, "T018") != NULL);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1\n", r.out);
   free(r.out);
 }
 
@@ -851,7 +851,7 @@ int main(int argc, char** argv) {
       runTernaryExpr,
       runPrintForms,
       runFloatReprForms,
-      runCallUserFuncPlaceholder,
+      runCallUserFunc,
       runRangeArgErrors,
       runTruthyZeroJumps,
       runIfElseChain,

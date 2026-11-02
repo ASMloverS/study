@@ -61,6 +61,18 @@ typedef struct SourceRun {
   int32_t line;
 } SourceRun;
 
+// 函数原型参数元数据（T018；模块 chunk 恒零）
+typedef struct MsParamName {
+  const char* name;  // 借用源文本（rest 参名不含 *）
+  int32_t len;
+} MsParamName;
+
+// upvalue 捕获描述（T018 CLOSURE 消费）：isLocal=直接捕获定义函数帧槽 index；否则取宿主闭包 upvalues[index]
+typedef struct MsUpvalDesc {
+  ms_u8 isLocal;
+  ms_u8 index;
+} MsUpvalDesc;
+
 struct Chunk {
   ms_u8* code;
   int32_t codeLen, codeCap;
@@ -71,6 +83,11 @@ struct Chunk {
   int32_t nUpvalues;  // 闭包捕获描述（T018 填充）
   uint16_t nIcSlots;  // 内联缓存槽（T022 分配）
   int32_t localCount;  // 帧局部槽位数（含参数与推导式临时槽；VM 入帧保留 nil 区，GC root）
+  int32_t paramCount;           // 参数总数（含 rest 参；T018 帧装配）
+  int32_t defaultParamCount;    // 默认参个数（尾部连续段；Task 3 消费）
+  bool hasRest;                 // 末参 rest 收集标记
+  MsParamName* params;          // 参数名表（Task 3 填充；借用源文本）
+  MsUpvalDesc* upvalDescs;      // upvalue 捕获描述（Task 4 填充；chunk 拥有）
   const char* name;   // 函数名 / "main"（借用源文本，不保证 NUL 终止）
   int32_t nameLen;
 };

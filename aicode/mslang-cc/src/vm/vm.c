@@ -17,6 +17,7 @@
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 #include "plat/plat_math.h"
+#include "vm/call.h"
 
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
@@ -485,7 +486,7 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       return;
     }
   }
-  MsFrame initFrame = {chunk, 0, 0, NULL};  // 模块帧（T018：函数帧执行归 Task 2）
+  MsFrame initFrame = {chunk, 0, 0, NULL};  // 模块帧
   MS_ARRAY_PUSH(vm->frames, vm->frameCount, vm->frameCap, initFrame);
   for (int32_t i = 0; i < chunk->localCount; i++) {  // 帧局部区（推导式临时槽/参数区）：入帧即 GC root
     if (!msVmPush(vm, msValueNil())) {
@@ -493,9 +494,17 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
       return;  // StackOverflow 槽已置；栈由 unwind 废弃（不恢复 stackTop）
     }
   }
+  msVmRunFrames(vm);
+}
+
+// 可重入 dispatch 核心（T018，21 §6）：执行至当前入口帧 RETURN 弹出；OP_CALL 帧切换经 msVmSetupCall
+void msVmRunFrames(MsVM* vm) {
+  const int32_t entry = vm->frameCount;  // 入口帧序：弹出即收口（嵌套执行 msVmCallValue 归 Task 5）
+  MsFrame* frame = &vm->frames[vm->frameCount - 1];
+  const Chunk* chunk = frame->chunk;
   const ms_u8* code = chunk->code;
   const ConstEntry* consts = chunk->consts;
-  int32_t ip = 0;
+  int32_t ip = frame->ip;
   int32_t extAcc = 0;    // EXTENDED_ARG 累积（21 §1）
   int32_t instrOff = 0;  // 当前指令起始偏移（trace / 行号）
   ms_u8 op = OP_NOP;
@@ -1212,8 +1221,21 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
           msVmPush(vm, r);
           NEXT();
         }
-        if (callee.kind == MS_VAL_FUNCTION || msIsCallableObj(&callee)) {  // T018：脚本函数调用占位（Task 2 接入帧）
-          RUNTIME_ERROR("RuntimeError: script function calls execute in T018");
+        if (callee.kind == MS_VAL_FUNCTION) {  // raw proto 瞬态被调 = 编译器 bug，防御陷阱
+          RUNTIME_ERROR("RuntimeError: raw function proto is not callable");
+        }
+        if (msIsCallableObj(&callee)) {  // 脚本函数（FUNCTION/CLOSURE）：帧切换（T018 Task 2）
+          frame->ip = ip;  // 调用方 ip 落帧（OP_RETURN 回收续点）
+          if (!msVmSetupCall(vm, argc)) {
+            vm->errLine = chunkLineAt(chunk, instrOff);
+            goto dispatchExit;
+          }
+          frame = &vm->frames[vm->frameCount - 1];
+          chunk = frame->chunk;
+          code = chunk->code;
+          consts = chunk->consts;
+          ip = frame->ip;
+          NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' is not callable", msValueTypeName(&callee));
       }
@@ -1237,11 +1259,28 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
                       (int)consts[k].as.text.len, consts[k].as.text.start);
       }
 
-      OPCODE(OP_RETURN)
-      (void)pop(vm);  // 返回值（模块帧丢弃；帧切换 T018）
-      vm->stackTop = vm->frames[vm->frameCount - 1].base;  // 归位：连局部区一并退栈
-      vm->frameCount--;
-      goto dispatchExit;
+      OPCODE(OP_RETURN) {
+        MsValue ret = pop(vm);
+        MsFrame* cur = &vm->frames[vm->frameCount - 1];
+        int32_t base = cur->base;
+        msVmCloseUpvalues(vm, &vm->stack[base]);  // 帧返回：闭合其全部仍开放 upvalue（T018 §6）
+        vm->frameCount--;
+        if (vm->frameCount == 0) {  // 模块帧：返回值弃置，栈归零
+          vm->stackTop = base;
+          goto dispatchExit;
+        }
+        vm->stack[base - 1] = ret;  // callee 槽改写返回值
+        vm->stackTop = base;
+        if (vm->frameCount < entry) {
+          goto dispatchExit;  // 嵌套 runFrames 收口（msVmCallValue 接入点，Task 5）
+        }
+        frame = &vm->frames[vm->frameCount - 1];
+        chunk = frame->chunk;
+        code = chunk->code;
+        consts = chunk->consts;
+        ip = frame->ip;
+        NEXT();
+      }
 
       OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string 方法物化 bound（类属性 T020）
         READ_OPERAND(k);
@@ -1501,18 +1540,27 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         int32_t before = code[ip++];
         int32_t after = code[ip++];
         MsValue v = vm->stack[vm->stackTop - 1];
-        if (v.kind != MS_VAL_OBJ || v.as.obj->type != MS_OBJ_LIST) {
+        const MsValue* items = NULL;  // list/tuple 统一只读视图（tuple 同 list 语义，22 §4；T018 多返回解构）
+        int32_t count = 0;
+        if (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_TUPLE) {
+          MsObjTuple* t = (MsObjTuple*)v.as.obj;
+          items = t->items;
+          count = t->count;
+        } else if (v.kind == MS_VAL_OBJ && v.as.obj->type == MS_OBJ_LIST) {
+          MsObjList* l = (MsObjList*)v.as.obj;
+          items = l->items;
+          count = l->count;
+        } else {
           RUNTIME_ERROR("TypeError: cannot unpack '%s' value", msValueTypeName(&v));
         }
-        MsObjList* list = (MsObjList*)v.as.obj;
-        if (list->count < before + after) {
-          RUNTIME_ERROR("ValueError: not enough values to unpack (expected at least %d, got %d)",
-                        before + after, list->count);
+        if (count < before + after) {
+          RUNTIME_ERROR("ValueError: not enough values to unpack (expected at least %d, got %d)", before + after,
+                        count);
         }
         // 源保留在栈直至 rest 物化（msObjListNew 为 GC 触发点：源/已压前段均 root）
         int32_t base = vm->stackTop - 1;  // 源槽
         for (int32_t i = 0; i < before; i++) {
-          msVmPush(vm, list->items[i]);
+          msVmPush(vm, items[i]);
           if (vm->hasError) {  // push 溢出：裸槽位运算前必须 unwind
             goto dispatchExit;
           }
@@ -1525,16 +1573,16 @@ void msVmRun(MsVM* vm, const Chunk* chunk) {
         if (vm->hasError) {
           goto dispatchExit;
         }
-        int32_t mid = list->count - before - after;
+        int32_t mid = count - before - after;
         if (mid > 0 && !msObjListReserve(vm, rest, mid)) {
           RUNTIME_ERROR("RuntimeError: out of memory");
         }
         for (int32_t k = 0; k < mid; k++) {
-          rest->items[k] = list->items[before + k];
+          rest->items[k] = items[before + k];
         }
         rest->count = mid;
         for (int32_t j = 0; j < after; j++) {
-          msVmPush(vm, list->items[before + mid + j]);
+          msVmPush(vm, items[before + mid + j]);
           if (vm->hasError) {
             goto dispatchExit;
           }

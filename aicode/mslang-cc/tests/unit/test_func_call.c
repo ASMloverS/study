@@ -87,6 +87,78 @@ TEST(funcIdentityEquality) {  // 同名值身份相等；与 native（print）�
   free(r.out);
 }
 
+// ---------- 调用层（Task 2） ----------
+
+TEST(callBasicAdd) {  // 两参调用 + 返回值（00-overview §3）
+  RunResult r = runSrc("func add(a, b) { return a + b }\nprint(add(1, 2))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "3\n", r.out);
+  free(r.out);
+}
+
+TEST(callRecursiveFib) {  // 递归经全局名回查（帧切换深度路径）
+  RunResult r =
+      runSrc("func fib(n) {\n    if n < 2 { return n }\n    return fib(n - 1) + fib(n - 2)\n}\nprint(fib(10))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "55\n", r.out);
+  free(r.out);
+}
+
+TEST(callArityTooFew) {  // 实参不足 → ArgumentError
+  RunResult r = runSrc("func f(a) { return a }\nf()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+
+TEST(callArityTooMany) {  // 实参过多（无 rest）→ ArgumentError
+  RunResult r = runSrc("func f(a) { return a }\nf(1, 2)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+
+TEST(callFrameLimit) {  // 无穷递归 → 帧深上限 StackOverflowError
+  RunResult r = runSrc("func f() { return f() }\nf()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "StackOverflowError") != NULL);
+  free(r.out);
+}
+
+TEST(anonFuncExpr) {  // 匿名函数表达式（05 §1 FUNC_EXPR）
+  RunResult r = runSrc("var double = func(x) { return x * 2 }\nprint(double(21))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "42\n", r.out);
+  free(r.out);
+}
+
+TEST(arrowExprBody) {  // -> 表达式体（05 §1）：隐式 return
+  RunResult r = runSrc("func double(x) -> x * 2\nprint(double(4))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "8\n", r.out);
+  free(r.out);
+}
+
+TEST(multiReturnAndDestructure) {  // return a, b 元组 + UNPACK_SEQ/UNPACK_STAR 消费（05 §5 赋值式解构接收）
+  RunResult r = runSrc("func swap(a, b) { return b, a }\nvar x = 0\nvar y = 0\nx, y = swap(1, 2)\nprint(x, y)\n"
+                       "func trio() { return 1, 2, 3 }\na, *mid, z = trio()\nprint(a, z, mid)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "2 1\n1 3 [2]\n", r.out);
+  free(r.out);
+}
+
+TEST(localFuncShadowAndRedeclare) {  // 同名重声明覆盖（declareSoft）+ 局部函数遮蔽外层局部
+  RunResult r = runSrc("func f() { return 1 }\nfunc f() { return 2 }\nprint(f())\n"
+                       "func outer() {\n    var v = 1\n    func inner() { var v = 2; return v }\n"
+                       "    return inner() + v\n}\nprint(outer())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "2\n3\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -94,6 +166,15 @@ int main(int argc, char** argv) {
   const TestFn tests[] = {
       funcValueTypeAndPrint,
       funcIdentityEquality,
+      callBasicAdd,
+      callRecursiveFib,
+      callArityTooFew,
+      callArityTooMany,
+      callFrameLimit,
+      anonFuncExpr,
+      arrowExprBody,
+      multiReturnAndDestructure,
+      localFuncShadowAndRedeclare,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

@@ -227,6 +227,8 @@ static int32_t nameConst(FuncState* fs, const char* name, int32_t len) {
 
 static void compileExpr(FuncState* fs, const AstNode* n);
 
+static void compileFunctionValue(FuncState* fs, const AstNode* n);
+
 // 推导式帧栈内解析槽位（T017 Task 4）：BIND_LOCAL → 内层伪帧 map；
 // BIND_UPVALUE(depth) → depth 层外伪帧 map，或 depth == comprDepth 时直通真实外层函数槽
 // 返回 -1 = 不可解析（槽位未声明 / 跨真实函数边界，upvalue 归 T018）
@@ -669,6 +671,9 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
     case AST_GEN_EXPR:
       compileCompr(fs, n);
       break;
+    case AST_FUNC_EXPR:  // 匿名函数表达式（05 §1）：物化函数值
+      compileFunctionValue(fs, n);
+      break;
     default:
       compErr(fs, n, 1, "expression form is not supported yet");
       emitOp(fs, OP_LOAD_NIL, n->line);
@@ -1033,46 +1038,76 @@ static void scanMaxLocalSlot(const AstNode* n, int32_t* maxSlot) {
   }
 }
 
-// 函数原型：体编译为独立 chunk（RETURN/局部槽位来自 Binder 标注），挂入常量池
-static void compileFuncProto(FuncState* fs, AstNode* n, Chunk** protoOut) {
+// 函数原型：体编译为独立 chunk（RETURN/局部槽位来自 Binder 标注），挂入常量池；
+// FUNC_DECL/FUNC_EXPR 载荷同名字段按 kind 取用（exprBody 为 -> 表达式体，05 §1）
+static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) {
+  bool isExpr = n->kind == AST_FUNC_EXPR;
+  const AstParam* params = isExpr ? n->as.funcExpr.params : n->as.funcDecl.params;
+  int32_t paramCount = isExpr ? n->as.funcExpr.paramCount : n->as.funcDecl.paramCount;
+  AstNode* body = isExpr ? n->as.funcExpr.body : n->as.funcDecl.body;
+  AstNode* exprBody = isExpr ? n->as.funcExpr.exprBody : n->as.funcDecl.exprBody;
   Chunk* proto = malloc(sizeof(Chunk));
   MS_ASSERT(proto != NULL);
-  chunkInit(proto, n->as.funcDecl.name, n->as.funcDecl.nameLen);
+  chunkInit(proto, isExpr ? NULL : n->as.funcDecl.name, isExpr ? 0 : n->as.funcDecl.nameLen);
+  proto->paramCount = paramCount;  // 参数元数据（T018 帧装配消费；params 名表归 Task 3）
+  for (int32_t i = 0; i < paramCount; i++) {
+    if (params[i].defaultExpr != NULL) {
+      proto->defaultParamCount++;
+    }
+    if (params[i].rest) {
+      proto->hasRest = true;
+    }
+  }
+  if (proto->defaultParamCount > 0 || proto->hasRest) {  // 默认参/rest 形态归 Task 3（过渡拒绝）
+    compErr(fs, n, 1, "default/rest parameters land in the next task");
+  }
   // 临时槽基线：高于全部真实局部槽（预扫描安全超估）且不低于参数槽数
-  AstNode* body = n->as.funcDecl.body;
   int32_t scan = -1;
   scanMaxLocalSlot(body, &scan);
-  int32_t base = n->as.funcDecl.paramCount;
+  scanMaxLocalSlot(exprBody, &scan);
+  int32_t base = paramCount;
   if (scan + 1 > base) {
     base = scan + 1;
   }
   FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0};
-  for (int32_t i = 0; i < body->as.list.count; i++) {
-    compileStmt(&inner, body->as.list.items[i]);
+  if (body != NULL) {
+    for (int32_t i = 0; i < body->as.list.count; i++) {
+      compileStmt(&inner, body->as.list.items[i]);
+    }
+  } else {  // 表达式体（05 §1）：值编译 + 隐式 RETURN
+    compileExpr(&inner, exprBody);
+    emitOp(&inner, OP_RETURN, n->line);
   }
   // epilogue：末指令已为 RETURN 则不补（21 §4 func add 形态）
   if (inner.chunk->codeLen == 0 || inner.chunk->code[inner.chunk->codeLen - 1] != OP_RETURN) {
-    int32_t line = body->as.list.count > 0 ? body->as.list.items[body->as.list.count - 1]->line : n->line;
+    int32_t line = body != NULL && body->as.list.count > 0
+                       ? body->as.list.items[body->as.list.count - 1]->line
+                       : n->line;
     emitOp(&inner, OP_LOAD_NIL, line);
     emitOp(&inner, OP_RETURN, line);
   }
   finishChunk(&inner);
   // localCount 含参数槽（未引用参数亦占位）与推导式临时槽：T018 帧入参区依赖
-  proto->localCount = inner.localCount > n->as.funcDecl.paramCount ? inner.localCount : n->as.funcDecl.paramCount;
+  proto->localCount = inner.localCount > paramCount ? inner.localCount : paramCount;
   free(inner.jumps);
   free(inner.loops);
   free(inner.comprStack);
   *protoOut = proto;
 }
 
-static void compileFuncDecl(FuncState* fs, AstNode* n) {
+// 函数值物化（声明/表达式共用，21 §3.3/§4）：proto 编译入池 → LOAD_CONST + MAKE_FUNCTION（默认参/CLOSURE 形态 Task 3/4）
+static void compileFunctionValue(FuncState* fs, const AstNode* n) {
   Chunk* proto = NULL;
   compileFuncProto(fs, n, &proto);
   int32_t k = chunkAddConstProto(fs->chunk, proto);
   emitConstOp(fs, OP_LOAD_CONST, k, n->line);
   emitOp(fs, OP_MAKE_FUNCTION, n->line);
-  emitByte(fs, 0);  // flags：默认参数/rest 形态 T018 填充
-  finishDeclStore(fs, n);
+  emitByte(fs, 0);  // flags：默认参个数/rest 位（Task 3）
+}
+
+static void compileFuncDecl(FuncState* fs, AstNode* n) {
+  compileFunctionValue(fs, n);
+  finishDeclStore(fs, n);  // 声明落盘（global：DEF+STORE；local：STORE_LOCAL）
 }
 
 // ---- 控制流（T011，04 §3-§5） ----
