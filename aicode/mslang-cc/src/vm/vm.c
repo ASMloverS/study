@@ -1181,19 +1181,28 @@ void msVmRunFrames(MsVM* vm) {
         NEXT();
       }
 
-      OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（低 7 位默认参个数 | bit7 rest；默认参值协议 Task 3 接入）
-        (void)code[ip++];  // flags：本任务恒 0（默认参形态归 Task 3）
-        MsValue proto = pop(vm);  // MS_VAL_FUNCTION 过渡 kind = raw proto 瞬态（LOAD_CONST CONST_PROTO 产物）
-        MsObjFunction* fn = msObjFunctionNew(vm, proto.as.func, 0, NULL);
+      OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（低 7 位默认参个数 | bit7 rest）；栈形 [proto, d1..dn]
+        ms_u8 flags = code[ip++];
+        int32_t nDef = flags & 0x7F;
+        MsValue proto = vm->stack[vm->stackTop - nDef - 1];  // raw proto 瞬态（LOAD_CONST CONST_PROTO 产物，借读不出栈）
+        MsObjFunction* fn = msObjFunctionNew(vm, proto.as.func, nDef, nDef > 0 ? &vm->stack[vm->stackTop - nDef] : NULL);
         if (fn == NULL) {
           RUNTIME_ERROR("RuntimeError: out of memory");
         }
-        msVmPush(vm, msValueObj(&fn->head));
+        vm->stack[vm->stackTop - nDef - 1] = msValueObj(&fn->head);  // fn 覆盖 proto 槽（即刻 root）
+        vm->stackTop -= nDef;  // 弹默认值源（fn 已拷贝）
         NEXT();
       }
 
-      OPCODE(OP_CALL) {
+      OPCODE(OP_CALL) {  // <u8 argc> <u8 flags>（bit0 = 末位 * 展开；高位保留）
         int32_t argc = code[ip++];
+        ms_u8 callFlags = code[ip++];
+        if ((callFlags & 1) != 0) {  // 先展平：args 指针/argc 随之改变，须先于 callee 读取
+          if (!msVmFlattenSpread(vm, &argc)) {
+            vm->errLine = chunkLineAt(chunk, instrOff);
+            goto dispatchExit;
+          }
+        }
         MsValue* args = &vm->stack[vm->stackTop - argc];
         MsValue callee = vm->stack[vm->stackTop - argc - 1];
         if (callee.kind == MS_VAL_OBJ && callee.as.obj->type == MS_OBJ_BOUND_METHOD) {
@@ -1240,10 +1249,17 @@ void msVmRunFrames(MsVM* vm) {
         RUNTIME_ERROR("TypeError: '%s' is not callable", msValueTypeName(&callee));
       }
 
-      OPCODE(OP_CALL_METHOD) {  // <const name> <u8 ic> <u8 argc>：零分配直调（args[0]=接收者）
+      OPCODE(OP_CALL_METHOD) {  // <const name> <u8 ic> <u8 argc> <u8 flags>：零分配直调（args[0]=接收者）
         READ_OPERAND(k);
         (void)code[ip++];  // icSlot（T022）
         int32_t argc = code[ip++];
+        ms_u8 callFlags = code[ip++];
+        if ((callFlags & 1) != 0) {  // 先展平：接收者之上的实参区改变，args 指针须重算
+          if (!msVmFlattenSpread(vm, &argc)) {
+            vm->errLine = chunkLineAt(chunk, instrOff);
+            goto dispatchExit;
+          }
+        }
         MsValue* args = &vm->stack[vm->stackTop - argc - 1];  // peek：接收者+实参均在栈
         MsMethodRef ref;
         if (methodRefLookup(&args[0], consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {

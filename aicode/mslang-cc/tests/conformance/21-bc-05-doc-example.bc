@@ -5,7 +5,7 @@ consts 5
   2 string "print"
   3 int 1
   4 int 2
-code 23
+code 25
 0000 LOAD_CONST       0 ; <func add>
 0002 MAKE_FUNCTION    0
 0004 DEF_GLOBAL       1 ; "add"
@@ -15,10 +15,10 @@ code 23
 0012 LOAD_CONST       3 ; 1
 0014 LOAD_CONST       4 ; 2
 0016 CALL             2
-0018 CALL             1
-0020 POP
-0021 LOAD_NIL
-0022 RETURN
+0019 CALL             1
+0022 POP
+0023 LOAD_NIL
+0024 RETURN
 upvalues 0
 icslots 0
 lines 2

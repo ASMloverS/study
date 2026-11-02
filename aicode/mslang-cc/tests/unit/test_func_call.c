@@ -190,6 +190,67 @@ TEST(arityErrorInsideExpression) {  // 调用者表达式临时值存活期的�
   free(r.out);
 }
 
+// ---------- 默认参/rest/展开（Task 3） ----------
+
+TEST(defaultParams) {  // 默认参缺省/覆盖（05 §1）
+  RunResult r = runSrc("func greet(name, prefix = \"Mr.\") { return \"${prefix} ${name}\" }\n"
+                       "print(greet(\"x\"))\nprint(greet(\"x\", \"Dr.\"))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "Mr. x\nDr. x\n", r.out);
+  free(r.out);
+}
+
+TEST(defaultEvaluatedAtDefSite) {  // 默认参定义处求值（Python 语义）：后续改 k 不影响已绑定值
+  RunResult r = runSrc("var k = 10\nfunc f(a, b = k) { return a + b }\nk = 100\nprint(f(1))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "11\n", r.out);
+  free(r.out);
+}
+
+TEST(restParam) {  // rest 参收集余量为 list
+  RunResult r = runSrc("func varargs(fmt, *args) { return [fmt, args] }\nprint(varargs(1, 2, 3))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[1, [2, 3]]\n", r.out);
+  free(r.out);
+}
+
+TEST(restParamEmpty) {  // rest 无余量 → 空 list
+  RunResult r = runSrc("func f(a, *r) { return r }\nprint(f(1))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[]\n", r.out);
+  free(r.out);
+}
+
+TEST(spreadCall) {  // 末位 * 展开实参（parser 限定 spread 恒末位）
+  RunResult r = runSrc("func f(a, b, c) { return a + b + c }\nvar xs = [2, 3]\nprint(f(1, *xs))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "6\n", r.out);
+  free(r.out);
+}
+
+TEST(spreadWithDefaults) {  // 展开与默认参组合
+  RunResult r =
+      runSrc("func f(a, b = 5, c = 6) { return [a, b, c] }\nprint(f(*[1]))\nprint(f(1, *[9]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[1, 5, 6]\n[1, 9, 6]\n", r.out);
+  free(r.out);
+}
+
+TEST(spreadNonList) {  // 展开目标非 list → TypeError
+  RunResult r = runSrc("func f(a) { return a }\nprint(f(*5))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(nativeSpread) {  // native 调用展开：print(*[1, 2, 3])
+  RunResult r = runSrc("print(*[1, 2, 3])");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1 2 3\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -210,6 +271,14 @@ int main(int argc, char** argv) {
       noReturnBodyNil,
       callArgEvalOrderPinned,
       arityErrorInsideExpression,
+      defaultParams,
+      defaultEvaluatedAtDefSite,
+      restParam,
+      restParamEmpty,
+      spreadCall,
+      spreadWithDefaults,
+      spreadNonList,
+      nativeSpread,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

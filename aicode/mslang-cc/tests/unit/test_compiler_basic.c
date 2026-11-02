@@ -74,7 +74,8 @@ TEST(opcodeTableComplete) {
   EXPECT_EQ(ctx, OPL_CONST, msOpLayouts[OP_LOAD_CONST]);
   EXPECT_EQ(ctx, OPL_JUMP, msOpLayouts[OP_JMP_IF_FALSE_OR_POP]);
   EXPECT_EQ(ctx, OPL_NONE, msOpLayouts[OP_BINARY_ADD]);
-  EXPECT_EQ(ctx, OPL_U8, msOpLayouts[OP_CALL]);
+  EXPECT_EQ(ctx, OPL_U8_U8, msOpLayouts[OP_CALL]);  // argc + spread flags（T018）
+  EXPECT_EQ(ctx, OPL_CONST_U8_U8_U8, msOpLayouts[OP_CALL_METHOD]);
   EXPECT_EQ(ctx, OPL_SPECIAL, msOpLayouts[OP_SWITCH_TABLE]);
 }
 
@@ -126,6 +127,9 @@ static int32_t decodeInstr(const Chunk* c, int32_t off, ms_u8* opOut, int32_t* o
       break;
     case OPL_CONST_U8_U8:
       nBytes = 3;
+      break;
+    case OPL_CONST_U8_U8_U8:
+      nBytes = 4;
       break;
   }
   *opOut = op;

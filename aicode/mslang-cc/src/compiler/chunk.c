@@ -146,9 +146,9 @@ const MsOpndLayout msOpLayouts[OP__COUNT] = {
     OPL_NONE,         // SET_INDEX
     OPL_U8,           // BUILD_SLICE
     OPL_U8,           // MAKE_FUNCTION
-    OPL_CONST,        // CLOSURE
-    OPL_U8,           // CALL
-    OPL_CONST_U8_U8,  // CALL_METHOD
+    OPL_CONST,           // CLOSURE
+    OPL_U8_U8,           // CALL（argc + spread flags，T018）
+    OPL_CONST_U8_U8_U8,  // CALL_METHOD（name + icSlot + argc + spread flags，T018）
     OPL_NONE,         // RETURN
     OPL_CONST_CONST,  // NEW_CLASS
     OPL_CONST_U8,     // DEFINE_METHOD
@@ -396,6 +396,8 @@ static int32_t operandBytesOf(MsOpndLayout layout) {
       return 2;
     case OPL_CONST_U8_U8:
       return 3;
+    case OPL_CONST_U8_U8_U8:
+      return 4;
   }
   return 0;
 }

@@ -55,10 +55,10 @@ typedef enum MsOpcode {
   OP_SET_INDEX,
   OP_BUILD_SLICE,  // <u8 argc=3>
   // 函数与调用（21 §3.3）：原型经 LOAD_CONST 压栈后由 MAKE_FUNCTION 消费（21 §4 示例形态）
-  OP_MAKE_FUNCTION,  // <u8 flags>（默认参数个数/rest 标志在 flags）
+  OP_MAKE_FUNCTION,  // <u8 flags>（低 7 位默认参个数 | bit7 rest；默认值先于本指令压栈）
   OP_CLOSURE,        // <const proto>（捕获描述表在 proto）
-  OP_CALL,           // <u8 argc>
-  OP_CALL_METHOD,    // <const name> <u8 icSlot> <u8 argc>
+  OP_CALL,           // <u8 argc> <u8 flags>（bit0 = 末位实参为 * 展开 list；高位保留）
+  OP_CALL_METHOD,    // <const name> <u8 icSlot> <u8 argc> <u8 flags>（bit0 同 CALL）
   OP_RETURN,
   // 类（21 §3.4）
   OP_NEW_CLASS,      // <const name> <const base>（base = 255 表示无基类）
@@ -125,6 +125,7 @@ typedef enum MsOpndLayout {
   OPL_CONST_CONST,
   OPL_JUMP_JUMP,
   OPL_CONST_U8_U8,
+  OPL_CONST_U8_U8_U8,
   OPL_SPECIAL,
 } MsOpndLayout;
 

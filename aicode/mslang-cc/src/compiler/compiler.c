@@ -371,6 +371,7 @@ static void compileComprBody(FuncState* fs, const AstNode* n, int32_t acc, int32
     emitConstOp(fs, OP_CALL_METHOD, k, n->line);
     emitByte(fs, 0);  // icSlot（T022 内联缓存）
     emitByte(fs, 1);  // argc = 1（接收者之外仅元素）
+    emitByte(fs, 0);  // flags：无展开（T018）
     emitOp(fs, OP_POP, n->line);  // append/add 返回 nil 弹净
     return;
   }
@@ -619,7 +620,17 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       patchJump(fs, jEnd);
       break;
     }
-    case AST_CALL: {  // 桩路径（T018 完整化）：callee + args 依序 + CALL argc
+    case AST_CALL: {  // callee + args 依序 + CALL argc（末位 * 展开经 flags 位，T018）
+      bool spreadLast = false;  // parser 限定 * 恒末位；编译器侧防御复核
+      for (int32_t i = 0; i < n->as.call.count; i++) {
+        if (n->as.call.spread[i]) {
+          if (i != n->as.call.count - 1) {
+            compErr(fs, n, 1, "spread argument must be the last argument");
+          } else {
+            spreadLast = true;
+          }
+        }
+      }
       if (n->as.call.callee->kind == AST_MEMBER) {  // s.m(args) → CALL_METHOD（21 §3.3）
         const AstNode* m = n->as.call.callee;
         compileExpr(fs, m->as.memberExpr.obj);
@@ -630,6 +641,7 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
         emitConstOp(fs, OP_CALL_METHOD, k, n->line);
         emitByte(fs, 0);  // icSlot（T022 内联缓存）
         emitByte(fs, (ms_u8)n->as.call.count);
+        emitByte(fs, (ms_u8)(spreadLast ? 1 : 0));  // flags：末位展开位
         break;
       }
       if (n->as.call.callee->kind != AST_IDENT) {
@@ -643,6 +655,7 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       }
       emitOp(fs, OP_CALL, n->line);
       emitByte(fs, (ms_u8)n->as.call.count);
+      emitByte(fs, (ms_u8)(spreadLast ? 1 : 0));  // flags：末位展开位
       break;
     }
     case AST_MEMBER: {  // 方法取值：GET_ATTR 物化 bound（类属性 T020）
@@ -1049,17 +1062,28 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   Chunk* proto = malloc(sizeof(Chunk));
   MS_ASSERT(proto != NULL);
   chunkInit(proto, isExpr ? NULL : n->as.funcDecl.name, isExpr ? 0 : n->as.funcDecl.nameLen);
-  proto->paramCount = paramCount;  // 参数元数据（T018 帧装配消费；params 名表归 Task 3）
-  for (int32_t i = 0; i < paramCount; i++) {
+  proto->paramCount = paramCount;  // 参数元数据（T018 帧装配 + 名字表消费）
+  if (paramCount > 0) {
+    proto->params = malloc(sizeof(MsParamName) * (size_t)paramCount);
+    MS_ASSERT(proto->params != NULL);
+  }
+  for (int32_t i = 0; i < paramCount; i++) {  // 形态防御（parser 已拦）+ 名字表（借用源文本，rest 名不含 *）
+    proto->params[i].name = params[i].name;
+    proto->params[i].len = params[i].nameLen;
+    if (params[i].rest && i != paramCount - 1) {
+      compErr(fs, n, 1, "rest parameter must be the last parameter");
+    }
     if (params[i].defaultExpr != NULL) {
       proto->defaultParamCount++;
+    } else if (proto->defaultParamCount > 0 && !params[i].rest) {
+      compErr(fs, n, 1, "parameter with default must be followed by parameters with defaults");
     }
     if (params[i].rest) {
       proto->hasRest = true;
     }
   }
-  if (proto->defaultParamCount > 0 || proto->hasRest) {  // 默认参/rest 形态归 Task 3（过渡拒绝）
-    compErr(fs, n, 1, "default/rest parameters land in the next task");
+  if (proto->defaultParamCount > 127) {  // flags 低 7 位容量（u8 与 rest 位共享，T018）
+    compErr(fs, n, 1, "too many default parameters");
   }
   // 临时槽基线：高于全部真实局部槽（预扫描安全超估）且不低于参数槽数
   int32_t scan = -1;
@@ -1096,14 +1120,28 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   *protoOut = proto;
 }
 
-// 函数值物化（声明/表达式共用，21 §3.3/§4）：proto 编译入池 → LOAD_CONST + MAKE_FUNCTION（默认参/CLOSURE 形态 Task 3/4）
+// 函数值物化（声明/表达式共用，21 §3.3/§4）：proto 编译入池 → LOAD_CONST + 默认参依序压栈 + MAKE_FUNCTION
+// 默认参定义处求值（05 §1：默认值绑定于定义作用域，Python 语义）；CLOSURE 形态归 Task 4
 static void compileFunctionValue(FuncState* fs, const AstNode* n) {
+  bool isExpr = n->kind == AST_FUNC_EXPR;
+  const AstParam* params = isExpr ? n->as.funcExpr.params : n->as.funcDecl.params;
+  int32_t paramCount = isExpr ? n->as.funcExpr.paramCount : n->as.funcDecl.paramCount;
   Chunk* proto = NULL;
   compileFuncProto(fs, n, &proto);
   int32_t k = chunkAddConstProto(fs->chunk, proto);
-  emitConstOp(fs, OP_LOAD_CONST, k, n->line);
-  emitOp(fs, OP_MAKE_FUNCTION, n->line);
-  emitByte(fs, 0);  // flags：默认参个数/rest 位（Task 3）
+  bool hasCaptures = false;  // Task 4：proto->nUpvalues > 0 时改走 CLOSURE
+  if (!hasCaptures) {
+    emitConstOp(fs, OP_LOAD_CONST, k, n->line);
+  }
+  for (int32_t i = 0; i < paramCount; i++) {  // 栈形 [proto, d1..dn]：默认值居顶，fn 于 proto 槽就地物化
+    if (params[i].defaultExpr != NULL) {
+      compileExpr(fs, params[i].defaultExpr);
+    }
+  }
+  if (!hasCaptures) {
+    emitOp(fs, OP_MAKE_FUNCTION, n->line);
+    emitByte(fs, (ms_u8)(proto->defaultParamCount | (proto->hasRest ? 0x80 : 0)));
+  }
 }
 
 static void compileFuncDecl(FuncState* fs, AstNode* n) {

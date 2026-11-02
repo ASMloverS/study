@@ -89,7 +89,7 @@ static void printConstKind(FILE* out, const ConstEntry* e) {
 }
 
 // EXT 链 + 布局操作数（u8/const/jump 及成对组合），返回指令总长；opOut 为真实 opcode
-static int32_t decodeAt(const Chunk* c, int32_t off, ms_u8* opOut, int32_t operands[3], int32_t* operandCount) {
+static int32_t decodeAt(const Chunk* c, int32_t off, ms_u8* opOut, int32_t operands[4], int32_t* operandCount) {
   int32_t acc = 0;
   int32_t p = off + 1;
   while (c->code[p - 1] == OP_EXTENDED_ARG) {
@@ -98,7 +98,7 @@ static int32_t decodeAt(const Chunk* c, int32_t off, ms_u8* opOut, int32_t opera
   }
   ms_u8 op = c->code[p - 1];
   int32_t n = 0;
-  int32_t bytes[3] = {0, 0, 0};
+  int32_t bytes[4] = {0, 0, 0, 0};
   switch (msOpLayouts[op]) {
     case OPL_NONE:
     case OPL_SPECIAL:
@@ -120,13 +120,19 @@ static int32_t decodeAt(const Chunk* c, int32_t off, ms_u8* opOut, int32_t opera
       bytes[1] = 1;
       bytes[2] = 1;
       break;
+    case OPL_CONST_U8_U8_U8:
+      bytes[0] = 1;
+      bytes[1] = 1;
+      bytes[2] = 1;
+      bytes[3] = 1;
+      break;
   }
-  for (int32_t i = 0; i < 3 && bytes[i] != 0; i++) {
+  for (int32_t i = 0; i < 4 && bytes[i] != 0; i++) {
     operands[n++] = (acc << 8) | c->code[p + i];
   }
   *operandCount = n;
   *opOut = op;
-  return (p - off) + (bytes[0] + bytes[1] + bytes[2]);
+  return (p - off) + (bytes[0] + bytes[1] + bytes[2] + bytes[3]);
 }
 
 static void disasmChunk(const Chunk* c, FILE* out, bool isModule) {
@@ -147,7 +153,7 @@ static void disasmChunk(const Chunk* c, FILE* out, bool isModule) {
   int32_t off = 0;
   while (off < c->codeLen) {
     ms_u8 op = 0;
-    int32_t operands[3] = {0, 0, 0};
+    int32_t operands[4] = {0, 0, 0, 0};
     int32_t operandCount = 0;
     int32_t size = decodeAt(c, off, &op, operands, &operandCount);
     if (operandCount == 0) {
@@ -156,12 +162,22 @@ static void disasmChunk(const Chunk* c, FILE* out, bool isModule) {
       continue;
     }
     fprintf(out, "%04d %-16s", off, msOpNames[op]);
-    for (int32_t i = 0; i < operandCount; i++) {
+    // CALL/CALL_METHOD 尾字节为 flags：非零（末位 * 展开）才呈现，0 时保持基线文本不变（T018）
+    int32_t nPrint = operandCount;
+    bool callFlags = op == OP_CALL || op == OP_CALL_METHOD;
+    if (callFlags) {
+      nPrint--;
+    }
+    for (int32_t i = 0; i < nPrint; i++) {
       fprintf(out, " %d", operands[i]);
+    }
+    if (callFlags && (operands[operandCount - 1] & 1) != 0) {
+      fprintf(out, " *");
     }
     // 操作数注释：常量 → 值；跳转（首操作数为 JUMP 类布局）→ 绝对目标
     MsOpndLayout layout = msOpLayouts[op];
-    if (layout == OPL_CONST || layout == OPL_CONST_U8 || layout == OPL_CONST_CONST || layout == OPL_CONST_U8_U8) {
+    if (layout == OPL_CONST || layout == OPL_CONST_U8 || layout == OPL_CONST_CONST || layout == OPL_CONST_U8_U8 ||
+        layout == OPL_CONST_U8_U8_U8) {
       fprintf(out, " ; ");
       printConstValue(out, &c->consts[operands[0]]);
     } else if (layout == OPL_JUMP || layout == OPL_JUMP_JUMP) {

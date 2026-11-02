@@ -76,6 +76,23 @@ bool msVmSetupCall(MsVM* vm, int32_t argc) {
   return true;
 }
 
+bool msVmFlattenSpread(MsVM* vm, int32_t* argc) {
+  MsValue sv = vm->stack[vm->stackTop - 1];
+  if (sv.kind != MS_VAL_OBJ || sv.as.obj->type != MS_OBJ_LIST) {
+    callErr(vm, "TypeError: spread argument must be a list");
+    return false;
+  }
+  const MsObjList* list = (const MsObjList*)sv.as.obj;
+  vm->stackTop--;  // 弹 list（C 局部持有；弹后至逐元素压栈间无分配窗口，无回收风险）
+  for (int32_t i = 0; i < list->count; i++) {
+    if (!msVmPush(vm, list->items[i])) {
+      return false;  // 栈溢出槽已置
+    }
+  }
+  *argc = *argc - 1 + list->count;
+  return true;
+}
+
 MsObjUpvalue* msVmCaptureUpvalue(MsVM* vm, MsValue* slot) {  // 开放链按地址降序插入/复用（Task 4 接入 CLOSURE）
   MsObjUpvalue* prev = NULL;
   MsObjUpvalue* u = vm->openUpvalues;

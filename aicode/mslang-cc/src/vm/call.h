@@ -9,6 +9,10 @@
 // 成功后新帧已压（ip=0），调用方重载 code/consts/ip；失败置错误槽（errLine 由调用方补）
 bool msVmSetupCall(MsVM* vm, int32_t argc);
 
+// CALL/CALL_METHOD 入口展平末位 * 展开实参（flags 位声明）：栈顶 list 元素逐一压栈（GC root）
+// 失败置错误槽（TypeError 非 list / 栈溢出）；成功改写 *argc = 原值 - 1 + 元素数
+bool msVmFlattenSpread(MsVM* vm, int32_t* argc);
+
 // upvalue 捕获/闭合（OP_CLOSURE/OP_RETURN/CLOSE_UPVAL 共用；实现于 call.c）
 MsObjUpvalue* msVmCaptureUpvalue(MsVM* vm, MsValue* slot);
 void msVmCloseUpvalues(MsVM* vm, MsValue* fromSlot);
