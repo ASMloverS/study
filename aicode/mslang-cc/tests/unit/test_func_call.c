@@ -251,6 +251,60 @@ TEST(nativeSpread) {  // native 调用展开：print(*[1, 2, 3])
   free(r.out);
 }
 
+TEST(spreadEmptyListDefaultsFill) {
+  RunResult r = runSrc("func f(a = 1, b = 2) { return [a, b] }\nprint(f(*[]))");
+  EXPECT_STREQ(ctx, "[1, 2]\n", r.out);
+  free(r.out);
+}
+TEST(spreadEmptyListTooFew) {
+  RunResult r = runSrc("func g(a) { return a }\ng(*[])");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+TEST(spreadIntoRestParam) {
+  RunResult r = runSrc(
+      "func varargs(fmt, *args) { return [fmt, args] }\n"
+      "print(varargs(1, *[9, 9, 9]))\n"
+      "print(varargs(*[1]))");
+  EXPECT_STREQ(ctx, "[1, [9, 9, 9]]\n[1, []]\n", r.out);
+  free(r.out);
+}
+TEST(spreadOnMethodCall) {  // CALL_METHOD 展开路径：接收者槽位不受影响
+  RunResult r = runSrc("var l = []\nl.append(*[[1, 2]])\nprint(l)");
+  EXPECT_STREQ(ctx, "[[1, 2]]\n", r.out);
+  free(r.out);
+}
+TEST(spreadOverflowArgc) {  // u8 argc 边界：>255 展开实参走 ArgumentError 而非截断
+  RunResult r = runSrc(
+      "func add3(a, b, c) { return a + b + c }\n"
+      "var xs = []\n"
+      "for i in range(300) { xs.append(i) }\n"
+      "add3(*xs)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+TEST(defaultCapturesEnclosingLocal) {  // 默认参定义处求值捕获外层局部（含工厂形态）
+  // 注：mk()(1) 调用表达式作 callee 尚未支持，经变量接回后再调用（语义不变）
+  RunResult r = runSrc(
+      "func mk() {\n"
+      "    var x = 7\n"
+      "    func f(a, b = x) { return a + b }\n"
+      "    return f\n"
+      "}\n"
+      "var g = mk()\n"
+      "print(g(1))");
+  EXPECT_STREQ(ctx, "8\n", r.out);
+  free(r.out);
+}
+TEST(defaultReferencingParamUndefined) {  // 默认参在定义作用域求值：引用参数名 → 定义期未定义名错误
+  RunResult r = runSrc("func f(a, b = a) { return b }\nf(1)");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "undefined name") != NULL);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -279,6 +333,13 @@ int main(int argc, char** argv) {
       spreadWithDefaults,
       spreadNonList,
       nativeSpread,
+      spreadEmptyListDefaultsFill,
+      spreadEmptyListTooFew,
+      spreadIntoRestParam,
+      spreadOnMethodCall,
+      spreadOverflowArgc,
+      defaultCapturesEnclosingLocal,
+      defaultReferencingParamUndefined,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

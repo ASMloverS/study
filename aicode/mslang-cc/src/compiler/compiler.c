@@ -631,6 +631,11 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
           }
         }
       }
+      if (n->as.call.count > 255) {  // CALL/CALL_METHOD argc 为 u8 操作数
+        compErr(fs, n, 1, "too many arguments in call");
+        emitOp(fs, OP_LOAD_NIL, n->line);  // 占位维持发射面
+        break;
+      }
       if (n->as.call.callee->kind == AST_MEMBER) {  // s.m(args) → CALL_METHOD（21 §3.3）
         const AstNode* m = n->as.call.callee;
         compileExpr(fs, m->as.memberExpr.obj);
