@@ -27,9 +27,9 @@ bool msVmSetupCall(MsVM* vm, int32_t argc) {
     return false;
   }
   int32_t nFixed = proto->paramCount - (proto->hasRest ? 1 : 0);
-  int32_t nReq = nFixed - proto->defaultParamCount;
+  int32_t nReq = nFixed - fn->defaultCount;  // 默认参个数以对象为准（defaults FAM 即 defaultCount 尺寸）
   const char* fname = proto->nameLen > 0 ? proto->name : "<anonymous>";
-  int32_t fnameLen = proto->nameLen > 0 ? proto->nameLen : 12;
+  int32_t fnameLen = proto->nameLen > 0 ? proto->nameLen : (int32_t)strlen(fname);
   if (argc < nReq) {
     callErr(vm, "ArgumentError: %.*s() expects at least %d argument(s), got %d", (int)fnameLen, fname, nReq, argc);
     return false;

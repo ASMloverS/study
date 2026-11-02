@@ -159,6 +159,37 @@ TEST(localFuncShadowAndRedeclare) {  // 同名重声明覆盖（declareSoft）+ 
   free(r.out);
 }
 
+TEST(implicitReturnFallthrough) {  // 条件 return 无 else：false 路径隐式 nil 返回（不得越界执行）
+  RunResult r = runSrc(
+      "func earlyIf(n) { if n > 0 { return n } }\n"
+      "print(earlyIf(-5))\n"
+      "print(earlyIf(5))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "nil\n5\n", r.out);
+  free(r.out);
+}
+
+TEST(noReturnBodyNil) {  // 无 return 体隐式 nil 返回
+  RunResult r = runSrc("func f(a) { var t = a * 2 }\nprint(f(1))");
+  EXPECT_STREQ(ctx, "nil\n", r.out);
+  free(r.out);
+}
+
+TEST(callArgEvalOrderPinned) {  // 左到右实参求值序跨调用边界
+  RunResult r = runSrc(
+      "func tag(x) { print(x); return x }\n"
+      "print(tag(1) + tag(2) * 10)");
+  EXPECT_STREQ(ctx, "1\n2\n21\n", r.out);
+  free(r.out);
+}
+
+TEST(arityErrorInsideExpression) {  // 调用者表达式临时值存活期的参数错误（unwind 不破坏栈平衡）
+  RunResult r = runSrc("func f(a) { return a }\nprint(1 + f())");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -175,6 +206,10 @@ int main(int argc, char** argv) {
       arrowExprBody,
       multiReturnAndDestructure,
       localFuncShadowAndRedeclare,
+      implicitReturnFallthrough,
+      noReturnBodyNil,
+      callArgEvalOrderPinned,
+      arityErrorInsideExpression,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

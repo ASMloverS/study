@@ -53,7 +53,7 @@ static inline bool msIsI64(const MsValue* v) { return v->kind == MS_VAL_I64; }
 static inline bool msIsF64(const MsValue* v) { return v->kind == MS_VAL_F64; }
 static inline bool msIsObj(const MsValue* v) { return v->kind == MS_VAL_OBJ; }
 
-// 调用帧（T018 起函数帧接入；Task 1 仍仅模块帧，函数帧执行归 Task 2）
+// 调用帧（T018 函数帧执行：call.c 帧装配/切换；closure 供 LOAD/STORE_UPVAL 寻宿主）
 typedef struct MsFrame {
   const Chunk* chunk;
   int32_t ip;

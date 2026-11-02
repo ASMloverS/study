@@ -19,7 +19,7 @@
 #include "plat/plat_math.h"
 #include "vm/call.h"
 
-#define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；栈深真实限制 T018 评估）
+#define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.c MS_VM_MAX_FRAMES（过渡），可增长栈归 T028）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
 // bound 方法 children 标记（T013，D5）：receiver + method（native 对象）

@@ -1078,11 +1078,12 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
     compileExpr(&inner, exprBody);
     emitOp(&inner, OP_RETURN, n->line);
   }
-  // epilogue：末指令已为 RETURN 则不补（21 §4 func add 形态）
-  if (inner.chunk->codeLen == 0 || inner.chunk->code[inner.chunk->codeLen - 1] != OP_RETURN) {
-    int32_t line = body != NULL && body->as.list.count > 0
-                       ? body->as.list.items[body->as.list.count - 1]->line
-                       : n->line;
+  // epilogue：仅当体末语句非 return 时补隐式 nil 返回（语句级判定——路径不敏感的字节级判定会在
+  // 条件 return 形态下漏补，false 路径落出 codeLen 越界执行；末尾 return 必退出故无落空路径）
+  int32_t last = body != NULL ? body->as.list.count - 1 : -1;
+  bool tailReturns = exprBody != NULL || (last >= 0 && body->as.list.items[last]->kind == AST_RETURN);
+  if (!tailReturns) {
+    int32_t line = last >= 0 ? body->as.list.items[last]->line : n->line;
     emitOp(&inner, OP_LOAD_NIL, line);
     emitOp(&inner, OP_RETURN, line);
   }
