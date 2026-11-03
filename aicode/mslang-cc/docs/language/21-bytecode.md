@@ -60,7 +60,7 @@ GET_INDEX SET_INDEX          BUILD_SLICE <argc=3>
 ### 3.3 函数与调用
 
 ```
-MAKE_FUNCTION <proto> <flags>   （默认参数个数、rest 标志在 flags）
+MAKE_FUNCTION <flags>          （proto 经 LOAD_CONST 压栈；低 7 位默认参个数、bit7 rest）
 CLOSURE <proto>                 （捕获 upvalue 描述表在 proto）
 CALL <argc> <spread?>    CALL_METHOD <nameIdx> <icSlot> <argc> <spread?>
 RETURN

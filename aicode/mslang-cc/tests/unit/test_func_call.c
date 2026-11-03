@@ -313,7 +313,6 @@ TEST(spreadOverflowArgc) {  // u8 argc 边界：>255 展开实参走 ArgumentErr
   free(r.out);
 }
 TEST(defaultCapturesEnclosingLocal) {  // 默认参定义处求值捕获外层局部（含工厂形态）
-  // 注：mk()(1) 调用表达式作 callee 尚未支持，经变量接回后再调用（语义不变）
   RunResult r = runSrc(
       "func mk() {\n"
       "    var x = 7\n"
@@ -445,8 +444,8 @@ TEST(closureSurvivesExplicitCollect) {  // 手动管线：闭包入全局 → �
   EXPECT(ctx, msObjMapGet(vm.globals, &kv, &v) == MS_MAP_OK);
   EXPECT(ctx, msIsCallableObj(&v));  // 行为调用归 Task 5 msVmCallValue
   fclose(f);
+  msVmFree(&vm);  // 先于 chunk 释放（闭包引用 chunk；与其余管线同序）
   chunkFree(&c);
-  msVmFree(&vm);
   astArenaDestroy(&arena);
 }
 
