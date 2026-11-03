@@ -9,6 +9,7 @@
 #include "obj/obj_list.h"
 
 #define MS_VM_MAX_FRAMES 2048  // 帧深上限（过渡；可增长栈归 T028）
+#define MS_VM_MAX_CALL_DEPTH 32  // C 层重入上限（实测 Debug MSVC ~18KB/层、1MB 原生栈约 56 层即溢出，32 留约四成余量；可增长栈归 T028 再评估）
 
 static void callErr(MsVM* vm, const char* fmt, ...) {
   va_list ap;
@@ -136,6 +137,10 @@ bool msVmCallValue(MsVM* vm, const MsValue* callee, const MsValue* argv, int32_t
     callErr(vm, "TypeError: '%s' is not callable", msValueTypeName(callee));
     return false;
   }
+  if (vm->callDepth >= MS_VM_MAX_CALL_DEPTH) {
+    callErr(vm, "StackOverflowError: call nesting limit exceeded (%d)", MS_VM_MAX_CALL_DEPTH);
+    return false;
+  }
   if (!msVmPush(vm, *callee)) {
     return false;  // 栈溢出槽已置
   }
@@ -147,7 +152,9 @@ bool msVmCallValue(MsVM* vm, const MsValue* callee, const MsValue* argv, int32_t
   if (!msVmSetupCall(vm, argc)) {
     return false;  // 错误槽已置
   }
+  vm->callDepth++;
   msVmRunFrames(vm);  // 嵌套执行：入口帧 RETURN 后收口（结果在栈顶，被调帧 upvalue 已按其基闭合）
+  vm->callDepth--;
   if (vm->hasError) {
     return false;
   }

@@ -562,6 +562,39 @@ TEST(mapCallbackDeepRecursionFramesGrowth) {  // 回调内深递归扩 frames �
   EXPECT_STREQ(ctx, "[20, 20, 20]\n", r.out);
   free(r.out);
 }
+TEST(nativeBoundaryNestingCapped) {  // map 回调递归：C 层重入上限触发运行时错误而非进程栈溢出
+  RunResult r = runSrc(
+      "func rec(n) {\n"
+      "    if n <= 0 { return 0 }\n"
+      "    var xs = [n]\n"
+      "    return xs.map(func(x) { return rec(n - 1) })[0]\n"
+      "}\n"
+      "print(rec(400))");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "StackOverflowError") != NULL);
+  free(r.out);
+}
+TEST(moderateNestingStillWorks) {  // 合理嵌套深度不受影响
+  RunResult r = runSrc(
+      "func rec(n) {\n"
+      "    if n <= 0 { return 0 }\n"
+      "    var xs = [n]\n"
+      "    return xs.map(func(x) { return rec(n - 1) })[0]\n"
+      "}\n"
+      "print(rec(20))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "0\n", r.out);
+  free(r.out);
+}
+TEST(scriptCallbackErrorPropagates) {  // 回调内运行时错误经嵌套 unwind 冒泡（评审 Minor #2 pin）
+  RunResult r = runSrc(
+      "var xs = [1]\n"
+      "xs.map(func(x) { return x.nope })\n"
+      "print(\"unreachable\")");
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.out, "unreachable") == NULL);
+  free(r.out);
+}
 
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
@@ -619,6 +652,9 @@ int main(int argc, char** argv) {
       closureCapturedByMap,
       eachScriptFnWritingCapturedVar,
       mapCallbackDeepRecursionFramesGrowth,
+      nativeBoundaryNestingCapped,
+      moderateNestingStillWorks,
+      scriptCallbackErrorPropagates,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

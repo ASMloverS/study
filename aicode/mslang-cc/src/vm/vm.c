@@ -75,6 +75,7 @@ void msVmInit(MsVM* vm) {
   vm->stackTop = vm->stackCap = 0;
   vm->frames = NULL;
   vm->frameCount = vm->frameCap = 0;
+  vm->callDepth = 0;
   vm->globals = NULL;  // 全局表 msVmRun 首入分配（T015 map 承载；保持 init 后零堆基线）
   vm->heap = malloc(sizeof(GcHeap));
   MS_ASSERT(vm->heap != NULL);

@@ -70,6 +70,7 @@ struct MsVM {
   int32_t stackTop, stackCap;
   MsFrame* frames;
   int32_t frameCount, frameCap;
+  int32_t callDepth;  // C 层重入深度（msVmCallValue 脚本路径；上限防原生栈溢出）
   struct MsObjMap* globals;  // 全局表（T015 map 承载；键 = intern 名；msVmRun 首入分配，root 由 markRoots 标记）
   MsObjUpvalue* openUpvalues;  // 开放 upvalue 链（按栈槽地址降序；GC root；帧返回/CLOSE_UPVAL 闭合）
   struct GcHeap* heap;
