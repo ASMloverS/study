@@ -571,7 +571,7 @@ TEST(nativeBoundaryNestingCapped) {  // map 回调递归：C 层重入上限触�
       "}\n"
       "print(rec(400))");
   EXPECT(ctx, r.hasError);
-  EXPECT(ctx, strstr(r.err, "StackOverflowError") != NULL);
+  EXPECT(ctx, strstr(r.err, "call nesting limit exceeded") != NULL);  // 区分于 2048 帧上限/值栈上限
   free(r.out);
 }
 TEST(moderateNestingStillWorks) {  // 合理嵌套深度不受影响
