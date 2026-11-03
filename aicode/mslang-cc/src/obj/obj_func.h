@@ -45,6 +45,11 @@ void msObjFunctionMarkChildren(MsVM* vm, MsObj* obj);
 void msObjClosureMarkChildren(MsVM* vm, MsObj* obj);
 void msObjUpvalueMarkChildren(MsVM* vm, MsObj* obj);
 
+// 内省属性读取（05 §6，T018 Task 5）：f 须 FUNCTION/CLOSURE；__name__ intern 永久串（匿名空串）、
+// __params__ 参数名 list（含默认参名、rest 名不含 *）；miss 返回 false 不置槽（调用方续查方法表），
+// OOM 置错误槽返回 false
+bool msFuncAttrGet(MsVM* vm, const MsValue* f, const char* name, int32_t nameLen, MsValue* out);
+
 static inline bool msIsCallableObj(const MsValue* v) {
   return v->kind == MS_VAL_OBJ && (v->as.obj->type == MS_OBJ_FUNCTION || v->as.obj->type == MS_OBJ_CLOSURE);
 }

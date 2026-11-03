@@ -1,6 +1,6 @@
 // MsObjIter 实现（T017，22 §4）：构造族 + 统一推进 + 值→迭代器/收集公共面
 // GC 纪律（D6）：本文件所有分配点的存活引用均经调用方 root（迭代器自身在栈/寄存器调用窗口）；
-// 推进途中产出的中间值先压 VM 栈再进后续分配（msVmCallNative/ENUMERATE/ZIP 同 seqForm 纪律）
+// 推进途中产出的中间值先压 VM 栈再进后续分配（msVmCallValue/ENUMERATE/ZIP 同 seqForm 纪律）
 #include "obj/obj_iter.h"
 
 #include <stdio.h>
@@ -12,6 +12,7 @@
 #include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
+#include "vm/call.h"
 
 // 统一零态分配：MsValue 字段先置 nil（markFn 纪律，同 msObjBoundNew）
 static MsObjIter* iterAlloc(MsVM* vm, ms_u8 kind) {
@@ -231,17 +232,13 @@ bool msIterFromValue(MsVM* vm, MsValue v, MsValue* out) {
   return false;
 }
 
-// fn 参数种类校验（MAPFN/FILTER 共用）：脚本函数归 T018；非函数 → TypeError；失败置错误槽
+// fn 参数种类校验（MAPFN/FILTER 共用）：非函数 → TypeError；失败置错误槽
 static bool checkIterFn(MsVM* vm, const MsValue* fn) {
-  if (fn->kind == MS_VAL_FUNCTION || msIsCallableObj(fn)) {  // T018：函数值即对象（过渡 kind 为 raw proto 瞬态）
-    iterErr(vm, "RuntimeError: script function values execute in T018");
-    return false;
+  if (fn->kind == MS_VAL_NATIVE || msIsCallableObj(fn)) {
+    return true;
   }
-  if (fn->kind != MS_VAL_NATIVE) {
-    iterErr(vm, "TypeError: expects a function argument");
-    return false;
-  }
-  return true;
+  iterErr(vm, "TypeError: expects a function argument");
+  return false;
 }
 
 // ENUMERATE 推进（msIterNext 分支体）：产出 (cur++, v) 二元组；v 先压栈 root 再进 tuple 分配
@@ -436,8 +433,9 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
       if (!msIterNext(vm, p->src, &v)) {
         return false;  // 内层耗尽/错误直通
       }
-      // v C 局部安全：msVmCallNative 首压即 root（压前无分配窗口）
-      return msVmCallNative(vm, &p->fn, &v, 1, out);
+      // v C 局部安全：msVmCallValue 首压即 root（压前无分配窗口）；嵌套 runFrames 期间
+      // 外层 dispatch 的 ip 在 C 局部（FOR_ITER 处理体内），返回后原位续行——帧/ip 不失协
+      return msVmCallValue(vm, &p->fn, &v, 1, out);
     }
     case MS_ITER_FILTER: {
       MsObjIter* p = (MsObjIter*)shell;
@@ -450,7 +448,7 @@ bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
           return false;  // 内层耗尽/错误直通
         }
         MsValue keep;
-        if (!msVmCallNative(vm, &p->fn, &v, 1, &keep)) {
+        if (!msVmCallValue(vm, &p->fn, &v, 1, &keep)) {
           return false;  // v C 局部安全：首压即 root
         }
         if (msValueIsTruthy(&keep)) {

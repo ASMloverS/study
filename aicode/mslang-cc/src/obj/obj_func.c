@@ -1,7 +1,13 @@
 // 函数对象族数据面（T018，22 §2）：FAM 单块分配；markChildren 遍历默认参/upvalue 引用
 #include "obj/obj_func.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #include "gc/gc.h"
+#include "obj/obj_list.h"
+#include "obj/obj_string.h"
+#include "vm/vm.h"
 
 MsObjFunction* msObjFunctionNew(MsVM* vm, const Chunk* chunk, int32_t defaultCount, const MsValue* defaults) {
   if (defaultCount < 0 || (size_t)defaultCount > (SIZE_MAX - sizeof(MsObjFunction)) / sizeof(MsValue)) {
@@ -59,4 +65,48 @@ void msObjUpvalueMarkChildren(MsVM* vm, MsObj* obj) {
   if (u->location != NULL) {  // 开放：所指栈槽值；闭合：&closed（同一表达式覆盖）
     gcMarkValue(vm, *u->location);
   }
+}
+
+// 内省失败置槽（OOM/栈溢出已由分配/压栈路径置位，此处仅 OOM 翻译）
+static void attrErr(MsVM* vm) {
+  snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: out of memory");
+  vm->hasError = true;
+}
+
+// f.__name__ / f.__params__（05 §6）：__name__ 返回 intern 永久串（匿名函数为空串）；
+// __params__ 返回参数名 list（含默认参名、rest 名不含 *）。miss 返回 false 不置槽（调用方续查
+// 方法表）；OOM 置错误槽后返回 false。f 须 FUNCTION/CLOSURE（调用方已验）
+bool msFuncAttrGet(MsVM* vm, const MsValue* f, const char* name, int32_t nameLen, MsValue* out) {
+  const Chunk* chunk = msCallableChunk(f);
+  if (nameLen == 8 && memcmp(name, "__name__", 8) == 0) {
+    MsObjString* s = msInternBytes(vm, chunk->nameLen > 0 ? chunk->name : "", chunk->nameLen);
+    if (s == NULL) {
+      attrErr(vm);
+      return false;
+    }
+    *out = msValueObj(&s->head);  // intern 产物属永久代：无回收窗口
+    return true;
+  }
+  if (nameLen == 10 && memcmp(name, "__params__", 10) == 0) {
+    MsObjList* list = msObjListNew(vm);
+    if (list == NULL) {
+      attrErr(vm);
+      return false;
+    }
+    if (!msVmPush(vm, msValueObj(&list->head))) {  // 构建期 root（D6 纪律）
+      return false;  // StackOverflow 槽已置
+    }
+    for (int32_t i = 0; i < chunk->paramCount; i++) {
+      MsObjString* s = msInternBytes(vm, chunk->params[i].name, chunk->params[i].len);
+      if (s == NULL || !msObjListPush(vm, list, msValueObj(&s->head))) {
+        vm->stackTop--;  // 弹 list（错误路径恢复栈）
+        attrErr(vm);
+        return false;
+      }
+    }
+    vm->stackTop--;
+    *out = msValueObj(&list->head);
+    return true;
+  }
+  return false;
 }

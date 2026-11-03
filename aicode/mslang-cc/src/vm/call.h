@@ -20,4 +20,8 @@ void msVmCloseUpvalues(MsVM* vm, MsValue* fromSlot);
 // vm.c：可重入 dispatch 核心（执行至当前入口帧 RETURN 弹出；msVmRun 与后续 msVmCallValue 共用）
 void msVmRunFrames(MsVM* vm);
 
+// 任意可调用值的 C 层调用（原生经 msVmCallNative；脚本函数入帧 + 嵌套 runFrames 至该帧 RETURN）
+// callee+argv 先压栈 root；失败（含被调运行时错误）置槽返回 false
+bool msVmCallValue(MsVM* vm, const MsValue* callee, const MsValue* argv, int32_t argc, MsValue* out);
+
 #endif  // INCLUDE_MS_VM_CALL_H_

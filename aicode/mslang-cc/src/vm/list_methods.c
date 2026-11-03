@@ -1,7 +1,7 @@
 // list 方法族（T014，10 §3）：args[0] 恒为接收者（D5 机制复用）
 // 错误约定：置 vm->hasError + errMsg 后返回 nil（OP_CALL_METHOD 检槽统一 unwind）
 // GC 纪律：接收者与实参由 CALL_METHOD peek 保栈 root；map/filter 结果逐个落栈后
-// msVmCollectStackToList 收集（D10）；msVmCallNative 调用窗口实参在栈
+// msVmCollectStackToList 收集（D10）；msVmCallValue 调用窗口实参在栈
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +10,7 @@
 #include "obj/obj_func.h"
 #include "obj/obj_list.h"
 #include "obj/obj_string.h"
+#include "vm/call.h"
 #include "vm/vm.h"
 
 static void methodError(MsVM* vm, const char* fmt, ...) {
@@ -42,14 +43,10 @@ static bool argList(MsVM* vm, int32_t i, const MsValue* args, const char* mname,
   return true;
 }
 
-// 函数实参形态（T014 仅原生函数；脚本函数值 T018、cmp 协议 T021）
+// 函数实参形态（T018 起脚本函数值可执行；cmp 协议 T021）
 static bool checkFnArg(MsVM* vm, const MsValue* f, const char* mname) {
-  if (f->kind == MS_VAL_NATIVE) {
+  if (f->kind == MS_VAL_NATIVE || msIsCallableObj(f)) {
     return true;
-  }
-  if (f->kind == MS_VAL_FUNCTION || msIsCallableObj(f)) {  // T018：函数值即对象（过渡 kind 为 raw proto 瞬态）
-    methodError(vm, "RuntimeError: script function values execute in T018 (%s)", mname);
-    return false;
   }
   methodError(vm, "TypeError: %s expects a function argument", mname);
   return false;
@@ -256,7 +253,7 @@ static MsValue lstRepeat(MsVM* vm, int32_t argc, const MsValue* args) {
   return msValueObj(&r->head);
 }
 
-// ---- 高阶族（本任务仅原生函数实参） ----
+// ---- 高阶族（原生/脚本函数实参，T018 起可执行） ----
 
 static MsValue lstMap(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
@@ -270,7 +267,7 @@ static MsValue lstMap(MsVM* vm, int32_t argc, const MsValue* args) {
   MsObjList* list = recvList(args);
   for (int32_t i = 0; i < list->count; i++) {
     MsValue r = msValueNil();
-    if (!msVmCallNative(vm, &f, &list->items[i], 1, &r)) {
+    if (!msVmCallValue(vm, &f, &list->items[i], 1, &r)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }
@@ -296,7 +293,7 @@ static MsValue lstFilter(MsVM* vm, int32_t argc, const MsValue* args) {
   int32_t kept = 0;
   for (int32_t i = 0; i < list->count; i++) {
     MsValue r = msValueNil();
-    if (!msVmCallNative(vm, &f, &list->items[i], 1, &r)) {
+    if (!msVmCallValue(vm, &f, &list->items[i], 1, &r)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }
@@ -336,7 +333,7 @@ static MsValue lstReduce(MsVM* vm, int32_t argc, const MsValue* args) {
   }
   for (; i < list->count; i++) {
     MsValue argv[2] = {acc, list->items[i]};
-    if (!msVmCallNative(vm, &f, argv, 2, &acc)) {
+    if (!msVmCallValue(vm, &f, argv, 2, &acc)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }
@@ -359,7 +356,7 @@ static MsValue lstEach(MsVM* vm, int32_t argc, const MsValue* args) {
   for (int32_t i = 0; i < list->count; i++) {
     MsValue argv[2] = {list->items[i], msValueInt(i)};  // 10 §3：f(v, i)
     MsValue r = msValueNil();
-    if (!msVmCallNative(vm, &f, argv, 2, &r)) {
+    if (!msVmCallValue(vm, &f, argv, 2, &r)) {
       if (!vm->hasError) {
         methodError(vm, "RuntimeError: out of memory");
       }

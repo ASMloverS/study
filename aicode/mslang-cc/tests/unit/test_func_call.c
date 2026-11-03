@@ -494,6 +494,75 @@ TEST(upvalueWriteThroughThreeLevels) {  // 三级链中间层写入
   free(r.out);
 }
 
+// ---------- 高阶内置回调 + 内省（Task 5） ----------
+
+TEST(introspectionNameParams) {
+  RunResult r = runSrc(
+      "func greet(name, prefix = \"Mr.\", *rest) {}\n"
+      "print(greet.__name__)\n"
+      "print(greet.__params__)");  // 05 §6：含默认参名、rest 名不含 *
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "greet\n[\"name\", \"prefix\", \"rest\"]\n", r.out);
+  free(r.out);
+}
+TEST(listMapWithClosure) {
+  RunResult r = runSrc(
+      "var xs = [1, 2, 3]\n"
+      "var doubled = xs.map(func(x) { return x * 2 })\n"
+      "print(doubled)\n"
+      "print(xs.filter(func(x) { return x % 2 == 1 }))\n"
+      "print(xs.reduce(func(a, b) { return a + b }))\n"
+      "var total = 0\n"
+      "xs.each(func(v, i) { total += v })\n"  // list.each 契约 f(v, i)（10 §3）
+      "print(total)");
+  EXPECT_STREQ(ctx, "[2, 4, 6]\n[1, 3]\n6\n6\n", r.out);
+  free(r.out);
+}
+TEST(sortedWithScriptKey) {
+  RunResult r = runSrc("print(sorted([3, 1, 2], func(x) { return -x }))");
+  EXPECT_STREQ(ctx, "[3, 2, 1]\n", r.out);
+  free(r.out);
+}
+TEST(iterLazyMapFilterScript) {
+  RunResult r = runSrc(
+      "var it = range(5).map(func(x) { return x * x }).filter(func(x) { return x % 2 == 0 })\n"
+      "print(it.toList())");
+  EXPECT_STREQ(ctx, "[0, 4, 16]\n", r.out);
+  free(r.out);
+}
+TEST(closureCapturedByMap) {
+  RunResult r = runSrc(
+      "func make() {\n    var base = 100\n    return [1, 2].map(func(x) { return base + x })\n}\n"
+      "print(make())");
+  EXPECT_STREQ(ctx, "[101, 102]\n", r.out);
+  free(r.out);
+}
+TEST(eachScriptFnWritingCapturedVar) {  // 高阶回调内写捕获变量（嵌套 runFrames 与 upvalue 共存）
+  // 注：块内语句不以 [ 起头（解析器将前句尾 ] 续读为索引链，既有行为），list 先入变量
+  RunResult r = runSrc(
+      "func run() {\n"
+      "    var acc = []\n"
+      "    var xs = [1, 2, 3]\n"
+      "    xs.each(func(v, i) { acc.append(v * v) })\n"
+      "    return acc\n"
+      "}\n"
+      "print(run())");
+  EXPECT_STREQ(ctx, "[1, 4, 9]\n", r.out);
+  free(r.out);
+}
+TEST(mapCallbackDeepRecursionFramesGrowth) {  // 回调内深递归扩 frames 数组：外层 dispatch 帧缓存须重取
+  RunResult r = runSrc(
+      "func rec(n) { if n <= 0 { return 0 } return rec(n - 1) + 1 }\n"
+      "func tail(a) { return a }\n"
+      "var xs = [1, 2, 3]\n"
+      "var r = xs.map(func(x) { return rec(20) })\n"  // 嵌套帧深 20+ → frames realloc 于嵌套执行中
+      "print(tail(r))");  // 后续脚本调用写 frame->ip：缓存失效应已重取
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[20, 20, 20]\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -543,6 +612,13 @@ int main(int argc, char** argv) {
       capturedTriLoopWithBreak,
       capturedRestParam,
       upvalueWriteThroughThreeLevels,
+      introspectionNameParams,
+      listMapWithClosure,
+      sortedWithScriptKey,
+      iterLazyMapFilterScript,
+      closureCapturedByMap,
+      eachScriptFnWritingCapturedVar,
+      mapCallbackDeepRecursionFramesGrowth,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

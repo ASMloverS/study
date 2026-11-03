@@ -18,6 +18,7 @@
 #include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
+#include "vm/call.h"
 
 static void bErr(MsVM* vm, const char* fmt, ...) {  // 同 list_methods.c methodError 形态
   va_list ap;
@@ -675,7 +676,7 @@ static bool sortedCollectKeys(MsVM* vm, const MsValue* keyFn, int32_t base, int3
   MsObjList* L = (MsObjList*)vm->stack[base].as.obj;
   for (int32_t i = 0; i < n; i++) {
     MsValue k;
-    if (!msVmCallNative(vm, keyFn, &L->items[i], 1, &k)) {  // 实参首压即 root（value.c 公共面）
+    if (!msVmCallValue(vm, keyFn, &L->items[i], 1, &k)) {  // 实参首压即 root（call.c 公共面）
       if (!vm->hasError) {
         bErr(vm, "RuntimeError: out of memory");
       }
@@ -710,11 +711,7 @@ static MsValue nativeSorted(MsVM* vm, int32_t argc, const MsValue* args) {
   }
   MsValue keyFn = msValueNil();
   if (argc >= 2) {
-    if (args[1].kind == MS_VAL_FUNCTION || msIsCallableObj(&args[1])) {  // T018：函数值即对象
-      bErr(vm, "RuntimeError: script function values execute in T018");
-      return msValueNil();
-    }
-    if (args[1].kind != MS_VAL_NIL && args[1].kind != MS_VAL_NATIVE) {
+    if (args[1].kind != MS_VAL_NIL && args[1].kind != MS_VAL_NATIVE && !msIsCallableObj(&args[1])) {
       bErr(vm, "TypeError: sorted key must be a function");
       return msValueNil();
     }
@@ -739,7 +736,7 @@ static MsValue nativeSorted(MsVM* vm, int32_t argc, const MsValue* args) {
   MsObjList* L = (MsObjList*)vm->stack[base].as.obj;
   int32_t n = L->count;
   const MsValue* keys = L->items;  // key 缺省：元素自身即键
-  if (keyFn.kind == MS_VAL_NATIVE && n > 0) {
+  if (keyFn.kind != MS_VAL_NIL && n > 0) {
     if (!sortedCollectKeys(vm, &keyFn, base, n)) {
       return msValueNil();
     }

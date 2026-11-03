@@ -127,3 +127,30 @@ void msVmCloseUpvalues(MsVM* vm, MsValue* fromSlot) {  // 闭合 location >= fro
     u->next = NULL;
   }
 }
+
+bool msVmCallValue(MsVM* vm, const MsValue* callee, const MsValue* argv, int32_t argc, MsValue* out) {
+  if (callee->kind == MS_VAL_NATIVE) {
+    return msVmCallNative(vm, callee, argv, argc, out);
+  }
+  if (!msIsCallableObj(callee)) {
+    callErr(vm, "TypeError: '%s' is not callable", msValueTypeName(callee));
+    return false;
+  }
+  if (!msVmPush(vm, *callee)) {
+    return false;  // 栈溢出槽已置
+  }
+  for (int32_t i = 0; i < argc; i++) {
+    if (!msVmPush(vm, argv[i])) {
+      return false;  // 栈溢出槽已置（错误路径不恢复 stackTop：整场 run 经 unwind 废弃）
+    }
+  }
+  if (!msVmSetupCall(vm, argc)) {
+    return false;  // 错误槽已置
+  }
+  msVmRunFrames(vm);  // 嵌套执行：入口帧 RETURN 后收口（结果在栈顶，被调帧 upvalue 已按其基闭合）
+  if (vm->hasError) {
+    return false;
+  }
+  *out = vm->stack[--vm->stackTop];
+  return true;
+}

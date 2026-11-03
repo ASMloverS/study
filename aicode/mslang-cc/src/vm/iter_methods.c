@@ -1,7 +1,7 @@
 // iterator 方法族（T017，10 §4）：args[0] 恒为接收者（MS_OBJ_ITERATOR 壳，D5 机制复用）
 // take/drop/map/filter 惰性链接（返回新适配器），终结于 next/toList/each/for；
 // 错误约定同 list_methods.c：置 vm->hasError + errMsg 后返回 nil
-// GC 纪律：接收者与实参由 CALL_METHOD peek 保栈 root；each 推进值经 msVmCallNative
+// GC 纪律：接收者与实参由 CALL_METHOD peek 保栈 root；each 推进值经 msVmCallValue
 // 首压即 root（压栈前无分配窗口，C 局部实参安全）
 #include <stdarg.h>
 #include <stdio.h>
@@ -9,6 +9,7 @@
 
 #include "obj/obj_func.h"
 #include "obj/obj_iter.h"
+#include "vm/call.h"
 #include "vm/vm.h"
 
 static void methodError(MsVM* vm, const char* fmt, ...) {
@@ -28,14 +29,10 @@ static bool iterRecv(MsVM* vm, const MsValue* args, const char* mname) {
   return true;
 }
 
-// 函数实参形态（同 list_methods.c：T017 仅原生函数；脚本函数值 T018、cmp 协议 T021）
+// 函数实参形态（同 list_methods.c：T018 起脚本函数值可执行；cmp 协议 T021）
 static bool checkFnArg(MsVM* vm, const MsValue* f, const char* mname) {
-  if (f->kind == MS_VAL_NATIVE) {
+  if (f->kind == MS_VAL_NATIVE || msIsCallableObj(f)) {
     return true;
-  }
-  if (f->kind == MS_VAL_FUNCTION || msIsCallableObj(f)) {  // T018：函数值即对象（过渡 kind 为 raw proto 瞬态）
-    methodError(vm, "RuntimeError: script function values execute in T018 (%s)", mname);
-    return false;
   }
   methodError(vm, "TypeError: %s expects a function argument", mname);
   return false;
@@ -107,7 +104,7 @@ static MsValue itDrop(MsVM* vm, int32_t argc, const MsValue* args) {
   return itTakeDrop(vm, argc, args, "drop", msObjIterDropNew);
 }
 
-// map(f)/filter(f) 共用骨架：f 须原生函数；返回适配器（惰性）
+// map(f)/filter(f) 共用骨架：f 须函数（原生/脚本）；返回适配器（惰性）
 static MsValue itMapFilter(MsVM* vm, int32_t argc, const MsValue* args, const char* mname,
                            MsObjIter* (*ctor)(MsVM*, MsValue, MsValue)) {
   if (argc != 2) {
@@ -159,7 +156,7 @@ static MsValue itEach(MsVM* vm, int32_t argc, const MsValue* args) {
       break;  // 耗尽
     }
     MsValue r;
-    if (!msVmCallNative(vm, &f, &v, 1, &r)) {
+    if (!msVmCallValue(vm, &f, &v, 1, &r)) {
       return msValueNil();  // 错误槽已置（fn 报错/栈溢出）
     }
   }

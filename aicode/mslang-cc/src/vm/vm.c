@@ -1305,6 +1305,7 @@ void msVmRunFrames(MsVM* vm) {
           }
           vm->stackTop -= argc + 1;
           msVmPush(vm, r);
+          frame = &vm->frames[vm->frameCount - 1];  // native 可经 msVmCallValue 嵌套扩 frames（T018）：重取缓存
           NEXT();
         }
         if (callee.kind == MS_VAL_NATIVE) {
@@ -1316,6 +1317,7 @@ void msVmRunFrames(MsVM* vm) {
           }
           vm->stackTop -= argc + 1;
           msVmPush(vm, r);
+          frame = &vm->frames[vm->frameCount - 1];  // 同上：嵌套执行可 realloc 搬移 frames
           NEXT();
         }
         if (callee.kind == MS_VAL_FUNCTION) {  // raw proto 瞬态被调 = 编译器 bug，防御陷阱
@@ -1357,6 +1359,7 @@ void msVmRunFrames(MsVM* vm) {
             goto dispatchExit;
           }
           msVmPush(vm, r);
+          frame = &vm->frames[vm->frameCount - 1];  // 高阶方法可嵌套扩 frames（T018）：重取缓存
           NEXT();
         }
         RUNTIME_ERROR("TypeError: '%s' has no method '%.*s'", msValueTypeName(&args[0]),
@@ -1390,6 +1393,16 @@ void msVmRunFrames(MsVM* vm) {
         READ_OPERAND(k);
         (void)code[ip++];  // icSlot（T022）
         MsValue recv = vm->stack[vm->stackTop - 1];  // peek：物化分配期间接收者在栈
+        if (msIsCallableObj(&recv)) {  // 函数内省属性（值语义非方法，05 §6；T018 Task 5）
+          MsValue attr;
+          if (msFuncAttrGet(vm, &recv, consts[k].as.text.start, consts[k].as.text.len, &attr)) {
+            vm->stack[vm->stackTop - 1] = attr;  // 内省产物覆盖接收者槽（分配期接收者在栈 root）
+            NEXT();
+          }
+          if (vm->hasError) {  // 内省 OOM 槽已置（miss 无槽，落下方方法查找）
+            goto dispatchExit;
+          }
+        }
         MsMethodRef ref;
         if (methodRefLookup(&recv, consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {
           MsObjNative* native = msObjNativeNew(vm, ref.fn, ref.name, ref.nameLen);
@@ -1497,9 +1510,11 @@ void msVmRunFrames(MsVM* vm) {
           }
           (void)pop(vm);  // 耗尽弹迭代器（再迭代须重新 GET_ITER）
           ip = t;
+          frame = &vm->frames[vm->frameCount - 1];  // MAPFN/FILTER 推进可嵌套扩 frames（T018）：重取缓存
           NEXT();
         }
         msVmPush(vm, item);
+        frame = &vm->frames[vm->frameCount - 1];  // 同上
         NEXT();
       }
 

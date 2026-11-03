@@ -603,11 +603,11 @@ TEST(takeDropErrors) {  // take 负数 ValueError / drop 非 int TypeError
   free(r.out);
 }
 
-TEST(mapScriptFnError) {  // 脚本函数值实参 → T018 占位（func 值为 MS_VAL_FUNCTION）
-  RunResult r = runSrc("func f(x) { return x }\nrange(3).map(f).toList()");
+TEST(mapScriptFnExecutes) {  // 脚本函数值实参（T018 起可执行：惰性 MAPFN 经 msVmCallValue 嵌套入帧）
+  RunResult r = runSrc("func f(x) { return x }\nprint(range(3).map(f).toList())\nprint(range(3).map(func(x) { return x + 1 }).toList())");
   EXPECT(ctx, r.compileOk);
-  EXPECT(ctx, r.hasError);
-  EXPECT(ctx, strstr(r.err, "script function values execute in T018") != NULL);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[0, 1, 2]\n[1, 2, 3]\n", r.out);
   free(r.out);
 }
 
@@ -683,7 +683,7 @@ int main(int argc, char** argv) {
       iterLazyNoOvershoot,
       nextMethodForm,
       takeDropErrors,
-      mapScriptFnError,
+      mapScriptFnExecutes,
       iterDeepChain,
       iterEmptySource,
   };
