@@ -173,7 +173,7 @@ static void recordCapture(Binder* b, const Resolved* r) {
       }
     }
     if (!dup) {
-      BinderCapture cap = {s->funcNode, r->sym->name, r->sym->len, r->sym->slot, depth, r->sym->fresh};
+      BinderCapture cap = {s->funcNode, r->sym->name, r->sym->len, r->sym->slot, depth};
       MS_ARRAY_PUSH(b->captures, b->captureCount, b->captureCap, cap);
     }
     index++;
@@ -1081,7 +1081,7 @@ bool binderBind(Binder* b, AstNode* module) {
         continue;
       }
       arr[idx++] = (AstUpvalRef){b->captures[j].name, b->captures[j].nameLen, b->captures[j].slot,
-                                 b->captures[j].depth, b->captures[j].fresh};
+                                 b->captures[j].depth};
     }
     if (fn->kind == AST_FUNC_DECL) {
       fn->as.funcDecl.upvals = arr;

@@ -33,6 +33,11 @@ typedef struct SlotSet {
   int32_t count, cap;
 } SlotSet;
 
+// tri 循环每轮新鲜槽重映射条目（T018 04 §4）：carry 槽 V → fresh 槽 W
+typedef struct SlotAlias {
+  int32_t from, to;
+} SlotAlias;
+
 typedef struct FuncState {
   Chunk* chunk;
   ChunkJump* jumps;
@@ -47,7 +52,8 @@ typedef struct FuncState {
   int32_t comprDepth, comprCap;
   UpvalEntry* upvals;      // 本函数 upvalue 表（T018：proto 编译起始自 binder 附着表构建）
   int32_t upvalCount, upvalCap;
-  int32_t aliasFrom, aliasTo;  // tri 循环 fresh 目标槽位重映射 V→W（-1 = 关闭；T018 04 §4）
+  SlotAlias* aliases;       // tri 循环 fresh 目标槽位重映射栈 V→W（嵌套捕获型循环分层，T018 04 §4）
+  int32_t aliasCount, aliasCap;
 } FuncState;
 
 static void compErr(FuncState* fs, const AstNode* n, int32_t len, const char* msg) {
@@ -96,12 +102,30 @@ static int32_t emitJump(FuncState* fs, ms_u8 op, int32_t line) {
 
 static void patchJump(FuncState* fs, int32_t jumpIdx) { fs->jumps[jumpIdx].target = fs->chunk->codeLen; }
 
+// ---- tri 循环 fresh 目标 alias 栈（T018 04 §4） ----
+
+// 自栈顶（最内层循环）向下首个 from 命中即重映射（内层遮蔽外层；未命中原样返回）
+static int32_t aliasRemap(const FuncState* fs, int32_t slot) {
+  for (int32_t i = fs->aliasCount - 1; i >= 0; i--) {
+    if (fs->aliases[i].from == slot) {
+      return fs->aliases[i].to;
+    }
+  }
+  return slot;
+}
+
+static void pushAlias(FuncState* fs, int32_t from, int32_t to) {
+  SlotAlias a = {from, to};
+  MS_ARRAY_PUSH(fs->aliases, fs->aliasCount, fs->aliasCap, a);
+}
+
+static void popAlias(FuncState* fs) { fs->aliasCount--; }
+
 // 局部槽访问统一入口：槽位域校验（u8 操作数）+ localCount 跟踪 + 发射
 // tri 循环 fresh 目标编译期重映射 V→W（cond/body/post 期间生效，T018 04 §4）
 static void localOp(FuncState* fs, ms_u8 op, int32_t slot, int32_t line) {
-  if (fs->aliasFrom >= 0 && slot == fs->aliasFrom) {
-    slot = fs->aliasTo;
-  }
+  // alias 仅作用于 LOAD/STORE 语义：CLOSE_UPVAL 目标恒为已解析的 W 槽（W 非任何 alias from，重映射无操作）
+  slot = aliasRemap(fs, slot);
   if (slot > 255) {
     compErrAt(fs, line, "too many local variables");
     slot = 0;  // 占位维持发射面（诊断已发，编译整体中止）
@@ -1380,7 +1404,7 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   if (scan + 1 > base) {
     base = scan + 1;
   }
-  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0, NULL, 0, 0, -1, -1};
+  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0};
   // T018：宿主捕获表（binder 附着清单 → 本函数 upvalue 表，先于体编译）：
   // isLocal = 直接捕获本帧槽（depth-1 ≤ 定义处推导式深度；伪帧槽经 comprResolveSlot 重映射，
   // tri fresh 目标经 alias 重映射到每轮新鲜槽 W）；间接条目按名取宿主表（binder 透传链保证存在）
@@ -1391,10 +1415,10 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
     bool isLocal = c->depth - 1 <= fs->comprDepth;
     int32_t index = 0;
     if (isLocal) {
+      // 重映射顺序：先 compr（推导式伪帧槽 → 定义帧真实槽）再 alias 栈（真实 carry 槽 V → 每轮新鲜槽 W）；
+      // alias 只作用于真实帧槽，颠倒顺序会拿伪帧槽号误比 alias from
       index = fs->comprDepth > 0 ? comprResolveSlot(fs, c->slot, c->depth - 1) : c->slot;
-      if (fs->aliasFrom >= 0 && index == fs->aliasFrom) {
-        index = fs->aliasTo;
-      }
+      index = aliasRemap(fs, index);
       if (index < 0) {
         compErr(fs, n, 1, "comprehension variable used before declaration");
         index = 0;
@@ -1445,6 +1469,7 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   free(inner.loops);
   free(inner.comprStack);
   free(inner.upvals);
+  free(inner.aliases);
   *protoOut = proto;
 }
 
@@ -1568,7 +1593,7 @@ static void compileFor(FuncState* fs, AstNode* n) {
     return;
   }
   // T018 tri fresh 捕获（04 §4）：隐藏 carry 槽 V 供循环机构，每轮新鲜槽 W 供闭包捕获；
-  // cond/body/post 内 V 引用经 FuncState.alias 重映射到 W（localOp），携带拷贝绕开重映射
+  // cond/body/post 内 V 引用经 alias 栈重映射到 W（localOp，嵌套循环按栈分层），携带拷贝绕开重映射
   AstNode* init = n->as.forStmt.init;
   bool freshCarry = n->as.forStmt.form == AST_FOR_TRI && init != NULL && init->kind == AST_VAR_DECL &&
                     init->bindKind == AST_BIND_LOCAL && (init->bindFlags & AST_BIND_FRESH) != 0 &&
@@ -1579,10 +1604,9 @@ static void compileFor(FuncState* fs, AstNode* n) {
   if (freshCarry) {
     carry = init->bindSlot;
     fresh = fs->nextTemp++;
-    fs->aliasFrom = carry;
-    fs->aliasTo = fresh;
+    pushAlias(fs, carry, fresh);
     compileStmt(fs, init);  // 初值声明经 alias 落 W
-    fs->aliasFrom = -1;
+    popAlias(fs);
     localOp(fs, OP_LOAD_LOCAL, fresh, n->line);
     localOp(fs, OP_STORE_LOCAL, carry, n->line);  // 播种：V = W
   } else if (init != NULL) {
@@ -1597,8 +1621,7 @@ static void compileFor(FuncState* fs, AstNode* n) {
     currentLoop(fs)->contTarget = lTop;  // COND/INF：continue 回条件/体首
   }
   if (freshCarry) {
-    fs->aliasFrom = carry;  // cond/body/post 编译期：V 引用统一到 W
-    fs->aliasTo = fresh;
+    pushAlias(fs, carry, fresh);  // cond/body/post 编译期：V 引用统一到 W（嵌套：内层压栈遮蔽不破坏外层）
   }
   int32_t jExit = -1;
   if (n->as.forStmt.cond != NULL) {
@@ -1616,7 +1639,7 @@ static void compileFor(FuncState* fs, AstNode* n) {
     compileStmt(fs, n->as.forStmt.post);
   }
   if (freshCarry) {
-    fs->aliasFrom = -1;  // carry 拷贝不经 alias（LOAD W → STORE V 原槽）
+    popAlias(fs);  // carry 拷贝不经 alias（LOAD W → STORE V 原槽）
     localOp(fs, OP_LOAD_LOCAL, fresh, n->line);
     localOp(fs, OP_STORE_LOCAL, carry, n->line);  // carry 更新：V = W
   }
@@ -1785,7 +1808,7 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   // 临时槽基线：模块层无自有 local，预扫描（含推导式目标/嵌套函数，安全超估）后从其上起步
   int32_t scan = -1;
   scanMaxLocalSlot(module, &scan);
-  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0, NULL, 0, 0, -1, -1};
+  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0};
   for (int32_t i = 0; i < module->as.list.count; i++) {
     compileStmt(&fs, module->as.list.items[i]);
   }
@@ -1797,6 +1820,7 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   free(fs.jumps);
   free(fs.loops);
   free(fs.comprStack);
+  free(fs.aliases);
   for (int32_t i = 0; i < diags->count; i++) {
     if (diags->items[i].level == MS_DIAG_ERROR) {
       return false;

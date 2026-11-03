@@ -450,6 +450,50 @@ TEST(closureSurvivesExplicitCollect) {  // 手动管线：闭包入全局 → �
   astArenaDestroy(&arena);
 }
 
+TEST(nestedCapturedTriLoops) {  // 嵌套捕获型 tri 循环：alias 栈正确分层（曾死循环/错捕获）
+  RunResult r = runSrc(
+      "var fns = []\n"
+      "for i := 0; i < 2; i++ {\n"
+      "    for j := 0; j < 2; j++ {\n"
+      "        fns.append(func() { return i * 10 + j })\n"
+      "    }\n"
+      "}\n"
+      "print(fns[0](), fns[1](), fns[2](), fns[3]())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "0 1 10 11\n", r.out);
+  free(r.out);
+}
+TEST(capturedTriLoopWithBreak) {  // break 前已闭合的快照不受影响
+  RunResult r = runSrc(
+      "var fns = []\n"
+      "for i := 0; i < 5; i++ {\n"
+      "    if i == 2 { break }\n"
+      "    fns.append(func() { return i })\n"
+      "}\n"
+      "print(fns[0](), fns[1]())");
+  EXPECT_STREQ(ctx, "0 1\n", r.out);
+  free(r.out);
+}
+TEST(capturedRestParam) {  // rest 参数捕获为 upvalue
+  RunResult r = runSrc(
+      "func mk(*xs) { return func() { return xs } }\n"
+      "var f = mk(1, 2)\nprint(f())");
+  EXPECT_STREQ(ctx, "[1, 2]\n", r.out);
+  free(r.out);
+}
+TEST(upvalueWriteThroughThreeLevels) {  // 三级链中间层写入
+  RunResult r = runSrc(
+      "func a() {\n"
+      "    var v = 1\n"
+      "    func b() { return func() { v += 10; return v } }\n"
+      "    return b\n"
+      "}\n"
+      "var bb = a()\nvar c1 = bb()\nvar c2 = bb()\n"
+      "print(c1(), c1(), c2())");
+  EXPECT_STREQ(ctx, "11 21 31\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -495,6 +539,10 @@ int main(int argc, char** argv) {
       upvalueRebaseOnStackGrowth,
       closureInComprehension,
       closureSurvivesExplicitCollect,
+      nestedCapturedTriLoops,
+      capturedTriLoopWithBreak,
+      capturedRestParam,
+      upvalueWriteThroughThreeLevels,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

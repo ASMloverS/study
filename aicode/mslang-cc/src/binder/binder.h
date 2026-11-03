@@ -26,7 +26,6 @@ typedef struct BinderCapture {
   int32_t nameLen;
   int32_t slot;   // 定义函数内的槽位
   int32_t depth;  // func 与定义函数间的函数边界数（1 = 直接内层）
-  bool fresh;     // 捕获目标为 fresh 循环绑定（T018 CLOSE_UPVAL 消费）
 } BinderCapture;
 
 // 栈上按值持有（作用域链等内部结构仅 .c 可见，遍历期 malloc/free）

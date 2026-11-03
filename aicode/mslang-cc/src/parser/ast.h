@@ -152,7 +152,6 @@ typedef struct AstUpvalRef {
   int32_t nameLen;
   int32_t slot;  // depth==1：定义函数帧槽位（推导式伪帧槽经编译器重映射）
   int32_t depth;  // 引用跨函数边界数（1 = 直接捕获外层局部）
-  bool fresh;     // 目标为循环 fresh 绑定（CLOSE_UPVAL 迭代闭合标记）
 } AstUpvalRef;
 
 // for 形态（forStmt.form，04 §4）
