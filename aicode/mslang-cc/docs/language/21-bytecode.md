@@ -62,10 +62,12 @@ GET_INDEX SET_INDEX          BUILD_SLICE <argc=3>
 ```
 MAKE_FUNCTION <proto> <flags>   （默认参数个数、rest 标志在 flags）
 CLOSURE <proto>                 （捕获 upvalue 描述表在 proto）
-CALL <argc>    CALL_METHOD <nameIdx> <icSlot> <argc>
+CALL <argc> <spread?>    CALL_METHOD <nameIdx> <icSlot> <argc> <spread?>
 RETURN
 CLOSE_UPVAL <slot>              （循环每轮新绑定：闭合 ≥ 帧基+slot 的开放 upvalue）
 ```
+
+- CALL/CALL_METHOD 末位 `<spread?>` 为调用标志字节：bit0 = 末位 `*` 展开对齐，高位保留。
 
 ### 3.4 类
 

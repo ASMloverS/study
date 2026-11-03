@@ -3,7 +3,7 @@
 - 阶段: P5 函数/类（roadmap 期 5）
 - 依赖: T017
 - 规模: L
-- 状态: 未开始
+- 状态: 已完成
 - 设计文档: `docs/language/05-functions.md` §1-§3 §5 §6、`21-bytecode.md` §3.3、`22-object-model.md` §2（FUNCTION/CLOSURE/UPVALUE）
 
 ## 1. 目标与范围
@@ -31,13 +31,13 @@
 
 ## 4. 验收标准（DoD）
 
-- [ ] 05 §1-§3 全部示例运行正确
-- [ ] `fib(10)` = 55 递归通过；00-overview §3 的 fib 函数可独立运行
-- [ ] 默认参/rest/展开组合（含默认参后展开对齐）全过
-- [ ] counter 闭包计数 1/2；循环变量每轮新绑定（两 for 形态）通过
-- [ ] 多返回值 + 解构接收通过；`f.__name__`/`f.__params__` 正确
-- [ ] 复跑 T014：list map/filter/reduce/each 补脚本函数/闭包用例（T014 §6 注记）
-- [ ] GC：闭包链可达性（活闭包保活外层局部）单测 + ASan 通过
+- [x] 05 §1-§3 全部示例运行正确
+- [x] `fib(10)` = 55 递归通过；00-overview §3 的 fib 函数可独立运行
+- [x] 默认参/rest/展开组合（含默认参后展开对齐）全过
+- [x] counter 闭包计数 1/2；循环变量每轮新绑定（两 for 形态）通过
+- [x] 多返回值 + 解构接收通过；`f.__name__`/`f.__params__` 正确
+- [x] 复跑 T014：list map/filter/reduce/each 补脚本函数/闭包用例（T014 §6 注记）
+- [x] GC：闭包链可达性（活闭包保活外层局部）单测 + ASan 通过
 
 ## 5. 测试计划
 
@@ -81,3 +81,4 @@ print(fns[0](), fns[1](), fns[2]())   // 0 1 2
 
 - upvalue 开放→闭合时机：外层帧 RETURN 时统一闭合该帧全部仍开放 upvalue —— 实现点集中在帧销毁路径，ASan 重点跑闭包逃逸用例。
 - T010 的 `.bc` 快照基线因 MAKE_FUNCTION 完整化更新一次（21 §4 示例对齐，属计划内基线迁移）。
+- 备注：CLOSE_UPVAL 新指令与 CALL/CALL_METHOD flags 操作数已按用户批准并入 21 §3.3；C 层重入深度上限 32（Debug 实测校准，T028 评估）。
