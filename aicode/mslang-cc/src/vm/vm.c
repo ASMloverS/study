@@ -19,7 +19,7 @@
 #include "plat/plat_math.h"
 #include "vm/call.h"
 
-#define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.c MS_VM_MAX_FRAMES（过渡），可增长栈归 T028）
+#define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.c MS_VM_MAX_FRAMES；可增长栈归 T028）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
 // bound 方法 children 标记（T013，D5）：receiver + method（native 对象）
@@ -1229,8 +1229,9 @@ void msVmRunFrames(MsVM* vm) {
       OPCODE(OP_MAKE_FUNCTION) {  // <u8 flags>（低 7 位默认参个数 | bit7 rest）；栈形 [proto, d1..dn]
         ms_u8 flags = code[ip++];
         int32_t nDef = flags & 0x7F;
-        MsValue proto = vm->stack[vm->stackTop - nDef - 1];  // raw proto 瞬态（LOAD_CONST CONST_PROTO 产物，借读不出栈）
-        MsObjFunction* fn = msObjFunctionNew(vm, proto.as.func, nDef, nDef > 0 ? &vm->stack[vm->stackTop - nDef] : NULL);
+        MsValue proto = vm->stack[vm->stackTop - nDef - 1];  // raw proto 瞬态（CONST_PROTO 产物，借读不出栈）
+        MsObjFunction* fn =
+            msObjFunctionNew(vm, proto.as.func, nDef, nDef > 0 ? &vm->stack[vm->stackTop - nDef] : NULL);
         if (fn == NULL) {
           RUNTIME_ERROR("RuntimeError: out of memory");
         }
