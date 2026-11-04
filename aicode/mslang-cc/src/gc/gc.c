@@ -82,6 +82,12 @@ void gcMarkValue(MsVM* vm, MsValue v) {
   MS_ARRAY_PUSH(heap->gray, heap->grayCount, heap->grayCap, v.as.obj);
 }
 
+void gcMarkValueRange(MsVM* vm, const MsValue* values, int32_t count) {
+  for (int32_t i = 0; i < count; i++) {
+    gcMarkValue(vm, values[i]);
+  }
+}
+
 static void markRoots(MsVM* vm) {
   for (int32_t i = 0; i < vm->stackTop; i++) {
     gcMarkValue(vm, vm->stack[i]);

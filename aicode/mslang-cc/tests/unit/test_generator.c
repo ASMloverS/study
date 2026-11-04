@@ -12,6 +12,7 @@
 #include "compiler/chunk.h"
 #include "compiler/compiler.h"
 #include "gc/gc.h"
+#include "obj/obj_coroutine.h"
 #include "parser/parser.h"
 #include "scanner/scanner.h"
 #include "test_harness.h"
@@ -109,6 +110,23 @@ TEST(implicitYieldFuncCompiles) {  // 体内直层 yield 隐式判定为生成�
   free(r.out);
 }
 
+// ---------- 协程对象（Task 2） ----------
+
+TEST(coroObjectBasics) {  // 分配 + 状态初值 + typeName/ToStr + 不可达回收不崩溃
+  MsVM vm;
+  msVmInit(&vm);
+  MsObjCoroutine* co = msObjCoroutineNew(&vm, NULL, NULL);
+  EXPECT(ctx, co != NULL);
+  EXPECT(ctx, co->state == MS_CORO_START);
+  MsValue v = msValueObj(&co->head);
+  EXPECT_STREQ(ctx, "generator", msValueTypeName(&v));
+  char buf[64];
+  msValueToStr(&v, buf, sizeof(buf));
+  EXPECT_STREQ(ctx, "<generator>", buf);
+  gcCollectAll(&vm);  // 协程不可达 → 连同 stack/links 数组一并清扫（freeData 路径）
+  msVmFree(&vm);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -116,6 +134,7 @@ int main(int argc, char** argv) {
   const TestFn tests[] = {
       genStarFuncCompiles,
       implicitYieldFuncCompiles,
+      coroObjectBasics,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

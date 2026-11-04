@@ -9,6 +9,7 @@
 
 #include "gc/gc.h"
 #include "obj/obj_bigint.h"
+#include "obj/obj_coroutine.h"
 #include "obj/obj_func.h"
 #include "obj/obj_iter.h"
 #include "obj/obj_list.h"
@@ -91,6 +92,8 @@ void msVmInit(MsVM* vm) {
   gcSetMarkFn(MS_OBJ_FUNCTION, msObjFunctionMarkChildren);  // T018：默认参值
   gcSetMarkFn(MS_OBJ_CLOSURE, msObjClosureMarkChildren);  // T018：fn + upvalue 数组
   gcSetMarkFn(MS_OBJ_UPVALUE, msObjUpvalueMarkChildren);  // T018：开放栈槽/闭合值
+  gcSetMarkFn(MS_OBJ_COROUTINE, msObjCoroutineMarkChildren);  // T019：闭包/挂起栈/重联表 upvalue
+  gcSetFreeFn(MS_OBJ_COROUTINE, msObjCoroutineFreeData);      // stack 与 links 数组随对象释放
   vm->openUpvalues = NULL;  // 开放链空（捕获归 Task 4）
   vm->intern = malloc(sizeof(MsInternTable));
   MS_ASSERT(vm->intern != NULL);

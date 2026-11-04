@@ -308,6 +308,8 @@ const char* msValueTypeName(const MsValue* v) {
           return "set";
         case MS_OBJ_ITERATOR:  // T017：泛化迭代器（str/list 壳同 tag）
           return "iterator";
+        case MS_OBJ_COROUTINE:  // T019：生成器（协程执行态）
+          return "generator";
         case MS_OBJ_FUNCTION:  // T018：函数对象（closure 同名）
         case MS_OBJ_CLOSURE:
           return "function";
@@ -387,6 +389,8 @@ void msValueToStr(const MsValue* v, char* buf, size_t cap) {
         snprintf(buf, cap, "<bound method>");
       } else if (v->as.obj->type == MS_OBJ_ITERATOR) {  // T017：泛化迭代器壳
         snprintf(buf, cap, "<iterator>");
+      } else if (v->as.obj->type == MS_OBJ_COROUTINE) {  // T019：生成器
+        snprintf(buf, cap, "<generator>");
       } else if (v->as.obj->type == MS_OBJ_FUNCTION || v->as.obj->type == MS_OBJ_CLOSURE) {  // T018：函数对象
         const Chunk* chunk = msCallableChunk(v);
         snprintf(buf, cap, "<func %.*s>", (int)chunk->nameLen, chunk->name);

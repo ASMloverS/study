@@ -1180,6 +1180,7 @@ static void compileAssign(FuncState* fs, AstNode* n) {
 
 // 直层 yield 扫描（T019，05 §4 隐式生成器判定）：体内任一直层 yield 即生成器；
 // 不进入嵌套函数体（其 yield 属该函数自身判定）；表达式位语法上不可含 yield（语句/表达式分离）
+// 维护不变量：compileStmt 新增可含 yield 的语句形态时须同步本遍历（漏扫 → 隐式生成器漏判）
 static bool bodyHasDirectYield(const AstNode* n) {
   if (n == NULL) {
     return false;

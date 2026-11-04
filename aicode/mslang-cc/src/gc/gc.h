@@ -29,6 +29,8 @@ void gcSetFreeFn(MsObjType type, FreeDataFn fn);
 // 标记入口：root 扫描与已注册 markFn 共用（仅追踪 MS_VAL_OBJ）；仅限收集周期内调用（收集期外置 MARK 不入队会漏扫 children）
 // mutator 纪律：C 局部/held MsValue 不是 root——分配新对象前须先把既有引用落栈/全局，防分配-填充窗口期被回收
 void gcMarkValue(MsVM* vm, MsValue v);
+// 值数组区段标记（T019 协程挂起栈；T028 G 栈扫描复用；仅收集周期内调用）
+void gcMarkValueRange(MsVM* vm, const MsValue* values, int32_t count);
 // 整堆 STW 标记清除（root = 栈 + 全局表）；保留为 runtime.gc() 全量路径（归 T036）
 void gcCollectAll(MsVM* vm);
 // 分配点 guard：bytes >= threshold → gcCollectAll（msObjAlloc 调用）
