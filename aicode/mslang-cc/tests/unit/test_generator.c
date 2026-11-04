@@ -127,6 +127,51 @@ TEST(coroObjectBasics) {  // 分配 + 状态初值 + typeName/ToStr + 不可达�
   msVmFree(&vm);
 }
 
+// ---------- 执行语义（Task 3） ----------
+
+TEST(genCallIsLazy) {  // 调用不执行体（副作用计数 0；DoD）
+  RunResult r = runSrc("func* g() {\n    print(\"ran\")\n}\nvar it = g()\nprint(\"created\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "created\n", r.out);
+  free(r.out);
+}
+
+TEST(genFibSixNexts) {  // 05 §4 fib 生成器：next ×6 → 0 1 1 2 3 5
+  RunResult r = runSrc(
+      "func* fib() {\n"
+      "    var a = 0\n"
+      "    var b = 1\n"
+      "    for {\n"
+      "        yield a\n"
+      "        var t = a + b\n"
+      "        a = b\n"
+      "        b = t\n"
+      "    }\n"
+      "}\n"
+      "var g = fib()\n"
+      "print(next(g), next(g), next(g), next(g), next(g), next(g))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "0 1 1 2 3 5\n", r.out);
+  free(r.out);
+}
+
+TEST(genExhaustedNilForever) {  // 有限生成器：先值后 nil nil（DoD）
+  RunResult r = runSrc(
+      "func* two() {\n    yield 1\n    yield 2\n}\nvar g = two()\nprint(next(g), next(g), next(g), next(g))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1 2 nil nil\n", r.out);
+  free(r.out);
+}
+
+TEST(genForInDirect) {  // for v in gen() 直迭代（GET_ITER 返回自身 + FOR_ITER 推进）
+  RunResult r = runSrc(
+      "func* three() {\n    yield 10\n    yield 20\n    yield 30\n}\n"
+      "var total = 0\nfor v in three() {\n    total = total + v\n}\nprint(total)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "60\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -135,6 +180,10 @@ int main(int argc, char** argv) {
       genStarFuncCompiles,
       implicitYieldFuncCompiles,
       coroObjectBasics,
+      genCallIsLazy,
+      genFibSixNexts,
+      genExhaustedNilForever,
+      genForInDirect,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

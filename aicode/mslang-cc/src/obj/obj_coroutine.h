@@ -38,6 +38,7 @@ typedef struct MsObjCoroutine {
   int32_t linkCount, linkCap;
 } MsObjCoroutine;
 
+// 契约：chunk/closure 须由调用方先行落栈 root（msObjAlloc 入口 guard 可触发全量回收）
 MsObjCoroutine* msObjCoroutineNew(MsVM* vm, const Chunk* chunk, struct MsObjClosure* closure);
 void msObjCoroutineMarkChildren(MsVM* vm, MsObj* obj);  // gcSetMarkFn 注册转发
 void msObjCoroutineFreeData(MsObj* obj);                // gcSetFreeFn 注册转发

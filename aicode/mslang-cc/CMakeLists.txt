@@ -101,6 +101,8 @@ target_sources(ms_obj PRIVATE src/obj/obj_coroutine.c)
 target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 # T018：帧切换调用装配 + upvalue 开放链（Task 2）
 target_sources(ms_vm PRIVATE src/vm/call.c)
+# T019：生成器挂起/恢复驱动（协程执行面）
+target_sources(ms_vm PRIVATE src/vm/generator.c)
 target_sources(ms_vm PRIVATE src/vm/list_methods.c)
 target_sources(ms_vm PRIVATE src/vm/iter_methods.c)  # T017：iterator 实例方法表（10 §4）
 # T015：map/set/tuple 实例方法表（10 §4）

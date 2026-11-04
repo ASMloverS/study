@@ -55,7 +55,8 @@ bool msIterCollectList(MsVM* vm, MsValue it, MsValue* out);
 void msObjIterMarkChildren(MsVM* vm, MsObj* obj);
 
 static inline bool msIsIterator(const MsValue* v) {
-  return v->kind == MS_VAL_OBJ && v->as.obj->type == MS_OBJ_ITERATOR;
+  return v->kind == MS_VAL_OBJ &&
+         (v->as.obj->type == MS_OBJ_ITERATOR || v->as.obj->type == MS_OBJ_COROUTINE);  // T019：生成器直通
 }
 
 #endif  // INCLUDE_MS_OBJ_OBJ_ITER_H_

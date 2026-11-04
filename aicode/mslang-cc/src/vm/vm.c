@@ -19,8 +19,9 @@
 #include "obj/obj_tuple.h"
 #include "plat/plat_math.h"
 #include "vm/call.h"
+#include "vm/generator.h"
 
-#define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.c MS_VM_MAX_FRAMES；可增长栈归 T028）
+#define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.h MS_VM_MAX_FRAMES；可增长栈归 T028）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
 // bound 方法 children 标记（T013，D5）：receiver + method（native 对象）
@@ -623,6 +624,8 @@ void msVmRunFrames(MsVM* vm) {
   SET_HANDLER(OP_CHECK_TYPE);
   SET_HANDLER(OP_GET_ITER);
   SET_HANDLER(OP_FOR_ITER);
+  SET_HANDLER(OP_YIELD);
+  SET_HANDLER(OP_RESUME);
   SET_HANDLER(OP_BUILD_LIST);
   SET_HANDLER(OP_BUILD_MAP);
   SET_HANDLER(OP_BUILD_TUPLE);
@@ -1334,6 +1337,19 @@ void msVmRunFrames(MsVM* vm) {
             vm->errLine = chunkLineAt(chunk, instrOff);
             goto dispatchExit;
           }
+          const Chunk* calleeProto = vm->frames[vm->frameCount - 1].chunk;
+          if ((calleeProto->flags & MS_CHUNK_GENERATOR) != 0) {  // T019：生成器调用 → 入口即挂起（体不执行）
+            msVmGeneratorSuspendEntry(vm);
+            if (vm->hasError) {
+              goto dispatchExit;  // OOM 槽已置
+            }
+            frame = &vm->frames[vm->frameCount - 1];  // 回调用方帧续执行
+            chunk = frame->chunk;
+            code = chunk->code;
+            consts = chunk->consts;
+            ip = frame->ip;
+            NEXT();
+          }
           frame = &vm->frames[vm->frameCount - 1];
           chunk = frame->chunk;
           code = chunk->code;
@@ -1520,6 +1536,63 @@ void msVmRunFrames(MsVM* vm) {
         }
         msVmPush(vm, item);
         frame = &vm->frames[vm->frameCount - 1];  // 同上
+        NEXT();
+      }
+
+      OPCODE(OP_YIELD) {  // 生成器挂起（05 §4）：帧转协程、值回被调槽、经 entry 机制退出嵌套执行
+        MsValue v = pop(vm);
+        MsFrame* cur = &vm->frames[vm->frameCount - 1];
+        MsValue* coroSlot = &vm->stack[cur->base - 1];
+        if (!msIsCoroutine(coroSlot)) {  // 防御：仅 resume 装配的帧可达（编译器仅在生成器 chunk 发射）
+          RUNTIME_ERROR("RuntimeError: yield outside generator resume frame");
+        }
+        MsObjCoroutine* co = (MsObjCoroutine*)coroSlot->as.obj;
+        int32_t count = vm->stackTop - cur->base;
+        if (count > co->stackCap) {  // 快照区扩容（重联设计下无 upvalue 指入：realloc 安全）
+          MsValue* grown = realloc(co->stack, sizeof(MsValue) * (size_t)count);
+          MS_ASSERT(grown != NULL);
+          co->stack = grown;
+          co->stackCap = count;
+        }
+        memcpy(co->stack, &vm->stack[cur->base], sizeof(MsValue) * (size_t)count);
+        co->stackTop = count;
+        co->ip = ip;  // 恢复点 = YIELD 之后的指令（OPL_NONE，ip 已越过 opcode）
+        co->linkCount = 0;  // 重联表重建：先收集 [base, top) 内开放 upvalue，再关闭（关闭自链摘除）
+        for (MsObjUpvalue* u = vm->openUpvalues; u != NULL; u = u->next) {
+          if (u->location >= &vm->stack[cur->base] && u->location < &vm->stack[vm->stackTop]) {
+            MsUpvalLink link = {(int32_t)(u->location - vm->stack) - cur->base, u};
+            MS_ARRAY_PUSH(co->links, co->linkCount, co->linkCap, link);
+          }
+        }
+        msVmCloseUpvalues(vm, &vm->stack[cur->base]);
+        vm->frameCount--;
+        *coroSlot = v;  // 值覆盖协程槽（协程经调用方变量/迭代槽保活；覆盖至退出间无分配点）
+        vm->stackTop = cur->base;
+        co->state = MS_CORO_SUSPENDED;
+        if (vm->frameCount < entry) {
+          goto dispatchExit;  // 嵌套 runFrames 收口（恢复驱动方接管）
+        }
+        frame = &vm->frames[vm->frameCount - 1];  // 理论不可达（YIELD 帧恒为 resume 装配的入口帧）
+        chunk = frame->chunk;
+        code = chunk->code;
+        consts = chunk->consts;
+        ip = frame->ip;
+        NEXT();
+      }
+
+      OPCODE(OP_RESUME) {  // T019：TOS 协程恢复（编译器不发射；与 C 驱动共用恢复面）
+        MsValue v = vm->stack[vm->stackTop - 1];
+        if (!msIsCoroutine(&v)) {
+          RUNTIME_ERROR("TypeError: resume expects a generator");
+        }
+        MsValue out;
+        if (!msVmResumeGenerator(vm, (MsObjCoroutine*)v.as.obj, &out)) {
+          if (vm->hasError) {
+            RUNTIME_ERROR("%s", vm->errMsg);
+          }
+          out = msValueNil();  // 耗尽 → nil
+        }
+        vm->stack[vm->stackTop - 1] = out;
         NEXT();
       }
 

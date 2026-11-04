@@ -8,9 +8,6 @@
 #include "obj/obj_func.h"
 #include "obj/obj_list.h"
 
-#define MS_VM_MAX_FRAMES 2048  // 帧深上限（过渡；可增长栈归 T028）
-#define MS_VM_MAX_CALL_DEPTH 32  // C 层重入上限（Debug MSVC 实测 ~18KB/层、1MB 原生栈约 56 层溢出，留余量；T028 评估）
-
 static void callErr(MsVM* vm, const char* fmt, ...) {
   va_list ap;
   va_start(ap, fmt);

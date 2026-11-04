@@ -4,6 +4,10 @@
 
 #include "vm/vm.h"
 
+// 帧深/C 层重入上限（T018；Debug MSVC 实测 ~18KB/层、1MB 原生栈约 56 层溢出，留余量；T028 评估）
+#define MS_VM_MAX_FRAMES 2048
+#define MS_VM_MAX_CALL_DEPTH 32
+
 // 帧装配（栈形 [callee, a1..argc]，callee 为 FUNCTION/CLOSURE 对象）：
 // 个数校验（ArgumentError）→ 默认参填充 → rest 收 list → nil 区 → 入帧；帧上限 2048
 // 成功后新帧已压（ip=0），调用方重载 code/consts/ip；失败置错误槽（errLine 由调用方补）

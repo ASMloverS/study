@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "gc/gc.h"
+#include "obj/obj_coroutine.h"
 #include "obj/obj_func.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
@@ -13,6 +14,7 @@
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
 #include "vm/call.h"
+#include "vm/generator.h"
 
 // 统一零态分配：MsValue 字段先置 nil（markFn 纪律，同 msObjBoundNew）
 static MsObjIter* iterAlloc(MsVM* vm, ms_u8 kind) {
@@ -184,6 +186,9 @@ bool msIterFromValue(MsVM* vm, MsValue v, MsValue* out) {
     case MS_OBJ_ITERATOR:
       *out = v;  // 迭代器直通
       return true;
+    case MS_OBJ_COROUTINE:  // T019：生成器即迭代器（GET_ITER 返回自身，05 §4）
+      *out = v;
+      return true;
     case MS_OBJ_STRING: {
       MsObjStrIter* it = msObjStrIterNew(vm, (MsObjString*)v.as.obj, false);  // rune 模式
       if (it == NULL) {
@@ -320,6 +325,9 @@ static bool advZip(MsVM* vm, MsObjIter* p, MsValue* out) {
 }
 
 bool msIterNext(MsVM* vm, MsValue it, MsValue* out) {
+  if (it.kind == MS_VAL_OBJ && it.as.obj->type == MS_OBJ_COROUTINE) {  // T019：生成器恢复推进
+    return msVmResumeGenerator(vm, (MsObjCoroutine*)it.as.obj, out);
+  }
   MsObjIterShell* shell = (MsObjIterShell*)it.as.obj;
   switch (shell->kind) {
     case MS_ITER_STR:
