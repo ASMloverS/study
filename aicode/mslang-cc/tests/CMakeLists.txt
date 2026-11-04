@@ -18,3 +18,4 @@ ms_add_test(obj_tuple ms_obj ms_gc ms_vm ms_compiler ms_binder)
 ms_add_test(obj_map ms_obj ms_gc ms_vm ms_compiler ms_binder)
 ms_add_test(obj_bigint ms_obj ms_gc ms_vm ms_compiler ms_binder)
 ms_add_test(builtins ms_vm ms_compiler ms_binder)
+ms_add_test(generator ms_vm ms_compiler ms_binder)  # T019：生成器

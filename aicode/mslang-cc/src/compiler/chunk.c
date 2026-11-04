@@ -211,6 +211,7 @@ void chunkInit(Chunk* c, const char* name, int32_t nameLen) {
   c->paramCount = 0;
   c->defaultParamCount = 0;
   c->hasRest = false;
+  c->flags = 0;
   c->params = NULL;
   c->upvalDescs = NULL;
   c->name = name;

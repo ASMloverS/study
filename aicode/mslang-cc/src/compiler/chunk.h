@@ -73,6 +73,10 @@ typedef struct MsUpvalDesc {
   ms_u8 index;
 } MsUpvalDesc;
 
+// chunk 状态位（T019，24 §3 状态机铺垫）：bit0 生成器；bit1 async 预留（T031 启用）
+#define MS_CHUNK_GENERATOR 1u
+#define MS_CHUNK_ASYNC 2u
+
 struct Chunk {
   ms_u8* code;
   int32_t codeLen, codeCap;
@@ -86,6 +90,7 @@ struct Chunk {
   int32_t paramCount;           // 参数总数（含 rest 参；T018 帧装配）
   int32_t defaultParamCount;    // 默认参个数（尾部连续段；Task 3 消费）
   bool hasRest;                 // 末参 rest 收集标记
+  ms_u8 flags;                  // MS_CHUNK_* 状态位（T019）
   MsParamName* params;          // 参数名表（Task 3 填充；借用源文本）
   MsUpvalDesc* upvalDescs;      // upvalue 捕获描述（Task 4 填充；chunk 拥有）
   const char* name;   // 函数名 / "main"（借用源文本，不保证 NUL 终止）

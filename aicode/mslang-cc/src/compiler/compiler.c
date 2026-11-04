@@ -1178,6 +1178,76 @@ static void compileAssign(FuncState* fs, AstNode* n) {
   storeIdent(fs, target);
 }
 
+// 直层 yield 扫描（T019，05 §4 隐式生成器判定）：体内任一直层 yield 即生成器；
+// 不进入嵌套函数体（其 yield 属该函数自身判定）；表达式位语法上不可含 yield（语句/表达式分离）
+static bool bodyHasDirectYield(const AstNode* n) {
+  if (n == NULL) {
+    return false;
+  }
+  switch (n->kind) {
+    case AST_YIELD:
+      return true;
+    case AST_MODULE:
+    case AST_BLOCK:
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        if (bodyHasDirectYield(n->as.list.items[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_FUNC_DECL:
+    case AST_FUNC_EXPR:
+      return false;
+    case AST_VAR_DECL:
+      return bodyHasDirectYield(n->as.varDecl.init);
+    case AST_ASSIGN:
+      return bodyHasDirectYield(n->as.assign.target) || bodyHasDirectYield(n->as.assign.value);
+    case AST_DESTRUCTURE:
+      if (bodyHasDirectYield(n->as.destructure.value)) {
+        return true;
+      }
+      for (int32_t i = 0; i < n->as.destructure.count; i++) {
+        if (bodyHasDirectYield(n->as.destructure.targets[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_EXPR_STMT:
+    case AST_RETURN:
+    case AST_THROW:
+    case AST_DEFER:
+      return bodyHasDirectYield(n->as.exprStmt.expr);
+    case AST_IF:
+      return bodyHasDirectYield(n->as.ifStmt.cond) || bodyHasDirectYield(n->as.ifStmt.thenBlock) ||
+             bodyHasDirectYield(n->as.ifStmt.elseNode);
+    case AST_FOR:
+      return bodyHasDirectYield(n->as.forStmt.init) || bodyHasDirectYield(n->as.forStmt.cond) ||
+             bodyHasDirectYield(n->as.forStmt.post) || bodyHasDirectYield(n->as.forStmt.target) ||
+             bodyHasDirectYield(n->as.forStmt.iter) || bodyHasDirectYield(n->as.forStmt.body);
+    case AST_WHILE:
+      return bodyHasDirectYield(n->as.whileStmt.cond) || bodyHasDirectYield(n->as.whileStmt.body);
+    case AST_SWITCH:
+      if (bodyHasDirectYield(n->as.switchStmt.subject)) {
+        return true;
+      }
+      for (int32_t i = 0; i < n->as.switchStmt.count; i++) {
+        if (bodyHasDirectYield(n->as.switchStmt.cases[i])) {
+          return true;
+        }
+      }
+      return false;
+    case AST_SWITCH_CASE:
+      for (int32_t i = 0; i < n->as.switchCase.valueCount; i++) {
+        if (bodyHasDirectYield(n->as.switchCase.values[i])) {
+          return true;
+        }
+      }
+      return bodyHasDirectYield(n->as.switchCase.body);
+    default:  // 表达式/叶子/其余语句形态（yield 为语句，表达式位不可达）
+      return false;
+  }
+}
+
 // 通用 AST 遍历：收集 BIND_LOCAL bindSlot 最大值（含推导式目标/嵌套函数——安全超估），
 // 供推导式临时槽基线（nextTemp 起点高于全部真实局部槽，杜绝冲突）
 // 维护不变量：后续新增含子节点的 AstKind 必须同步加入本遍历（静默低估 → 函数帧临时/局部槽冲突）
@@ -1395,6 +1465,10 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   }
   if (proto->defaultParamCount > 127) {  // flags 低 7 位容量（u8 与 rest 位共享，T018）
     compErr(fs, n, 1, "too many default parameters");
+  }
+  ms_u8 fnFlags = isExpr ? n->as.funcExpr.flags : n->as.funcDecl.flags;
+  if ((fnFlags & AST_FUNC_GENERATOR) != 0 || bodyHasDirectYield(body)) {  // T019：显式 func* 或隐式直层 yield
+    proto->flags |= MS_CHUNK_GENERATOR;
   }
   // 临时槽基线：高于全部真实局部槽（预扫描安全超估）且不低于参数槽数
   int32_t scan = -1;
@@ -1796,6 +1870,14 @@ static void compileStmt(FuncState* fs, AstNode* n) {
         emitOp(fs, OP_LOAD_NIL, n->line);
       }
       emitOp(fs, OP_RETURN, n->line);
+      break;
+    case AST_YIELD:  // 生成器挂起（05 §4）：值可省（缺省 nil）
+      if (n->as.exprStmt.expr != NULL) {
+        compileExpr(fs, n->as.exprStmt.expr);
+      } else {
+        emitOp(fs, OP_LOAD_NIL, n->line);
+      }
+      emitOp(fs, OP_YIELD, n->line);
       break;
     default:
       compErr(fs, n, 1, "statement form is not supported yet");
