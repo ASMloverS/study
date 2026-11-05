@@ -1405,6 +1405,9 @@ static bool parseParamList(Parser* p, AstParam** outParams, int32_t* outCount) {
       if (param.defaultExpr == NULL) {
         goto fail;
       }
+      if (rejectGenExpr(p, param.defaultExpr)) {
+        goto fail;  // 位置限制（03 §1）：默认参非唯一实参/赋值右值
+      }
       if (rest) {
         diagPos(p, nameLine, nameCol, nameLen, MSE_SYN_PARAM_ORDER, "rest parameter cannot have a default");
       } else {
@@ -2820,6 +2823,7 @@ static AstNode* desugarGenExpr(Parser* p, AstNode* n) {
 }
 
 // genexp 全树重写：递归语句/表达式子位，遇 GEN_EXPR 原位换 CALL（嵌套 genexp 语法上不可达，仍递归防御）
+// 维护不变量：后续新增含子节点的 AstKind 必须同步加入本遍历（漏走 → GEN_EXPR 残留，编译期 "not desugared" 错误）
 static AstNode* rewriteGenExprs(Parser* p, AstNode* n) {
   if (n == NULL) {
     return n;

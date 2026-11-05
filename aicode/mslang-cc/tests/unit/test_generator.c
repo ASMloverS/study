@@ -354,6 +354,26 @@ TEST(genexpMultiFor) {  // 多 for 子句 genexp：嵌套 for 体块包裹（bin
   free(r.out);
 }
 
+TEST(genexpCapturesOuterLocal) {  // genexp 于函数体内捕获外层局部（upvalue 回填路径）
+  RunResult r = runSrc(
+      "func make() {\n    var base = 10\n    var g = (x + base for x in [1, 2, 3])\n    return g\n}\n"
+      "var g = make()\nprint(g.toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[11, 12, 13]\n", r.out);
+  free(r.out);
+}
+
+TEST(genexpMultiForDependent) {  // 依赖型第二 iterable：fors[i≥1] 逐轮求值锁定
+  RunResult r = runSrc(
+      "var xss = [[1, 2], [3]]\n"
+      "var g = (y for x in xss for y in x)\n"
+      "var got = g.toList()\n"
+      "print(got)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "[1, 2, 3]\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -381,6 +401,8 @@ int main(int argc, char** argv) {
       genexpEquivalenceWithComprehension,
       genexpSoleCallArgStillWorks,
       genexpMultiFor,
+      genexpCapturesOuterLocal,
+      genexpMultiForDependent,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
