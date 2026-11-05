@@ -2733,8 +2733,253 @@ void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstAr
   p->noIn = false;
   p->loopHeader = false;
   p->funcDepth = 0;
+  p->genSymCount = 0;
   scannerNext(&p->scan, &p->cur);  // 首 token 直接拉取（不经 advance：避免读未初始化 prevLine）
   p->prevLine = 1;
+}
+
+// ---- genexp 脱糖（T019，05 §4）：AST_GEN_EXPR → 匿名生成器函数即时调用 ----
+// (e for x in xs if c) ≡ func*($gN){ for x in $gN { if c { yield e } } }(xs)
+// 首子句 iterable 提为实参（创建时急求值）；合成名 $gN 用户不可写（$ 不入标识符字符集）；
+// 全部条件收于最内层（与 T017 compileComprBody 内联语义一致）；位置限制已在解析期以原 kind 校验
+
+static AstNode* makeBlock1(Parser* p, AstNode* stmt, int32_t line, int32_t col) {
+  AstNode* block = astNewNode(p->arena, AST_BLOCK, line, col);
+  block->as.list.items = astNewNodeArray(p->arena, 1);
+  block->as.list.items[0] = stmt;
+  block->as.list.count = 1;
+  return block;
+}
+
+static AstNode* makeForIn(Parser* p, AstNode* target, AstNode* iter, AstNode* body, int32_t line,
+                          int32_t col) {
+  AstNode* node = astNewNode(p->arena, AST_FOR, line, col);
+  node->as.forStmt.form = AST_FOR_IN;
+  node->as.forStmt.init = NULL;
+  node->as.forStmt.cond = NULL;
+  node->as.forStmt.post = NULL;
+  node->as.forStmt.target = target;
+  node->as.forStmt.iter = iter;
+  node->as.forStmt.body = body;
+  return node;
+}
+
+static AstNode* makeIf(Parser* p, AstNode* cond, AstNode* body, int32_t line, int32_t col) {
+  AstNode* node = astNewNode(p->arena, AST_IF, line, col);
+  node->as.ifStmt.cond = cond;
+  node->as.ifStmt.thenBlock = body;
+  node->as.ifStmt.elseNode = NULL;
+  return node;
+}
+
+static AstNode* desugarGenExpr(Parser* p, AstNode* n) {
+  const AstComprFor* fors = n->as.compr.fors;
+  int32_t forCount = n->as.compr.forCount;
+  MS_ASSERT(forCount >= 1);  // parseComprTail 语法入口恒至少一 for 子句
+  char nameBuf[16];
+  int32_t nameLen = snprintf(nameBuf, sizeof(nameBuf), "$g%d", p->genSymCount++);
+  char* paramName = astArenaAlloc(p->arena, (size_t)nameLen + 1);  // NUL 终止（memcpy 同拷）
+  memcpy(paramName, nameBuf, (size_t)nameLen + 1);
+  AstNode* paramRef = astNewNode(p->arena, AST_IDENT, n->line, n->col);  // 首子句迭代源（形参引用）
+  paramRef->as.ident.name = paramName;
+  paramRef->as.ident.nameLen = nameLen;
+  AstParam* params = astArenaAlloc(p->arena, sizeof(AstParam));
+  params[0].name = paramName;
+  params[0].nameLen = nameLen;
+  params[0].defaultExpr = NULL;
+  params[0].rest = false;
+  AstNode* body = astNewNode(p->arena, AST_YIELD, n->line, n->col);  // 内层：条件链包 yield 元素
+  body->as.exprStmt.expr = n->as.compr.value;  // genexp 元素恒单值（key 恒 NULL）
+  body = makeBlock1(p, body, n->line, n->col);
+  for (int32_t i = n->as.compr.condCount - 1; i >= 0; i--) {
+    body = makeBlock1(p, makeIf(p, n->as.compr.conds[i], body, n->line, n->col), n->line, n->col);
+  }
+  for (int32_t i = forCount - 1; i >= 0; i--) {  // for 嵌套：首子句迭代形参名，其余子句逐轮求值
+    AstNode* iter = i == 0 ? paramRef : fors[i].iter;
+    body = makeForIn(p, fors[i].target, iter, body, n->line, n->col);
+  }
+  AstNode* fn = astNewNode(p->arena, AST_FUNC_EXPR, n->line, n->col);
+  fn->as.funcExpr.flags = AST_FUNC_GENERATOR;
+  fn->as.funcExpr.params = params;
+  fn->as.funcExpr.paramCount = 1;
+  fn->as.funcExpr.body = makeBlock1(p, body, n->line, n->col);
+  fn->as.funcExpr.exprBody = NULL;
+  fn->as.funcExpr.upvals = NULL;  // binder 绑定时按捕获需求回填
+  fn->as.funcExpr.upvalCount = 0;
+  AstNode* call = astNewNode(p->arena, AST_CALL, n->line, n->col);
+  call->as.call.callee = fn;
+  call->as.call.args = astNewNodeArray(p->arena, 1);
+  call->as.call.args[0] = fors[0].iter;  // 首子句 iterable：创建时急求值（05 §4）
+  call->as.call.spread = astArenaAlloc(p->arena, sizeof(bool));
+  call->as.call.spread[0] = false;
+  call->as.call.count = 1;
+  return call;
+}
+
+// genexp 全树重写：递归语句/表达式子位，遇 GEN_EXPR 原位换 CALL（嵌套 genexp 语法上不可达，仍递归防御）
+static AstNode* rewriteGenExprs(Parser* p, AstNode* n) {
+  if (n == NULL) {
+    return n;
+  }
+  switch (n->kind) {
+    case AST_GEN_EXPR:
+      return desugarGenExpr(p, n);
+    case AST_MODULE:
+    case AST_BLOCK:
+    case AST_LIST:
+    case AST_TUPLE:
+    case AST_SET:
+      for (int32_t i = 0; i < n->as.list.count; i++) {
+        n->as.list.items[i] = rewriteGenExprs(p, n->as.list.items[i]);
+      }
+      return n;
+    case AST_VAR_DECL:
+      n->as.varDecl.init = rewriteGenExprs(p, n->as.varDecl.init);
+      return n;
+    case AST_ASSIGN:
+      n->as.assign.target = rewriteGenExprs(p, n->as.assign.target);
+      n->as.assign.value = rewriteGenExprs(p, n->as.assign.value);
+      return n;
+    case AST_DESTRUCTURE:
+      for (int32_t i = 0; i < n->as.destructure.count; i++) {
+        n->as.destructure.targets[i] = rewriteGenExprs(p, n->as.destructure.targets[i]);
+      }
+      n->as.destructure.value = rewriteGenExprs(p, n->as.destructure.value);
+      return n;
+    case AST_EXPR_STMT:
+    case AST_RETURN:
+    case AST_THROW:
+    case AST_YIELD:
+    case AST_DEFER:
+      n->as.exprStmt.expr = rewriteGenExprs(p, n->as.exprStmt.expr);
+      return n;
+    case AST_IF:
+      n->as.ifStmt.cond = rewriteGenExprs(p, n->as.ifStmt.cond);
+      n->as.ifStmt.thenBlock = rewriteGenExprs(p, n->as.ifStmt.thenBlock);
+      n->as.ifStmt.elseNode = rewriteGenExprs(p, n->as.ifStmt.elseNode);
+      return n;
+    case AST_FOR:
+      n->as.forStmt.init = rewriteGenExprs(p, n->as.forStmt.init);
+      n->as.forStmt.cond = rewriteGenExprs(p, n->as.forStmt.cond);
+      n->as.forStmt.post = rewriteGenExprs(p, n->as.forStmt.post);
+      n->as.forStmt.target = rewriteGenExprs(p, n->as.forStmt.target);
+      n->as.forStmt.iter = rewriteGenExprs(p, n->as.forStmt.iter);
+      n->as.forStmt.body = rewriteGenExprs(p, n->as.forStmt.body);
+      return n;
+    case AST_WHILE:
+      n->as.whileStmt.cond = rewriteGenExprs(p, n->as.whileStmt.cond);
+      n->as.whileStmt.body = rewriteGenExprs(p, n->as.whileStmt.body);
+      return n;
+    case AST_SWITCH:
+      n->as.switchStmt.subject = rewriteGenExprs(p, n->as.switchStmt.subject);
+      for (int32_t i = 0; i < n->as.switchStmt.count; i++) {
+        n->as.switchStmt.cases[i] = rewriteGenExprs(p, n->as.switchStmt.cases[i]);
+      }
+      return n;
+    case AST_SWITCH_CASE:
+      for (int32_t i = 0; i < n->as.switchCase.valueCount; i++) {
+        n->as.switchCase.values[i] = rewriteGenExprs(p, n->as.switchCase.values[i]);
+      }
+      n->as.switchCase.body = rewriteGenExprs(p, n->as.switchCase.body);
+      return n;
+    case AST_TRY:
+      n->as.tryStmt.tryBlock = rewriteGenExprs(p, n->as.tryStmt.tryBlock);
+      for (int32_t i = 0; i < n->as.tryStmt.catchCount; i++) {
+        n->as.tryStmt.catches[i].block = rewriteGenExprs(p, n->as.tryStmt.catches[i].block);
+      }
+      n->as.tryStmt.finallyBlock = rewriteGenExprs(p, n->as.tryStmt.finallyBlock);
+      return n;
+    case AST_SELECT:
+      for (int32_t i = 0; i < n->as.selectStmt.count; i++) {
+        n->as.selectStmt.cases[i] = rewriteGenExprs(p, n->as.selectStmt.cases[i]);
+      }
+      return n;
+    case AST_SEND:
+      n->as.sendStmt.chan = rewriteGenExprs(p, n->as.sendStmt.chan);
+      n->as.sendStmt.value = rewriteGenExprs(p, n->as.sendStmt.value);
+      return n;
+    case AST_SELECT_CASE:
+      n->as.selectCase.target = rewriteGenExprs(p, n->as.selectCase.target);
+      n->as.selectCase.chan = rewriteGenExprs(p, n->as.selectCase.chan);
+      n->as.selectCase.value = rewriteGenExprs(p, n->as.selectCase.value);
+      n->as.selectCase.body = rewriteGenExprs(p, n->as.selectCase.body);
+      return n;
+    case AST_FUNC_DECL:
+    case AST_FUNC_EXPR: {  // 函数体内 genexp 同样重写（脱糖不越函数边界）
+      if (n->kind == AST_FUNC_EXPR) {
+        n->as.funcExpr.body = rewriteGenExprs(p, n->as.funcExpr.body);
+        n->as.funcExpr.exprBody = rewriteGenExprs(p, n->as.funcExpr.exprBody);
+      } else {
+        n->as.funcDecl.body = rewriteGenExprs(p, n->as.funcDecl.body);
+        n->as.funcDecl.exprBody = rewriteGenExprs(p, n->as.funcDecl.exprBody);
+      }
+      return n;
+    }
+    case AST_CLASS_DECL:
+      for (int32_t i = 0; i < n->as.classDecl.memberCount; i++) {
+        n->as.classDecl.members[i] = rewriteGenExprs(p, n->as.classDecl.members[i]);
+      }
+      return n;
+    case AST_UNARY:
+    case AST_RECV:
+    case AST_AWAIT:
+    case AST_GO:
+      n->as.unary.operand = rewriteGenExprs(p, n->as.unary.operand);
+      return n;
+    case AST_BINARY:
+    case AST_LOGIC:
+      n->as.binary.lhs = rewriteGenExprs(p, n->as.binary.lhs);
+      n->as.binary.rhs = rewriteGenExprs(p, n->as.binary.rhs);
+      return n;
+    case AST_TERNARY:
+      n->as.ternary.cond = rewriteGenExprs(p, n->as.ternary.cond);
+      n->as.ternary.thenExpr = rewriteGenExprs(p, n->as.ternary.thenExpr);
+      n->as.ternary.elseExpr = rewriteGenExprs(p, n->as.ternary.elseExpr);
+      return n;
+    case AST_CALL:
+      n->as.call.callee = rewriteGenExprs(p, n->as.call.callee);
+      for (int32_t i = 0; i < n->as.call.count; i++) {
+        n->as.call.args[i] = rewriteGenExprs(p, n->as.call.args[i]);
+      }
+      return n;
+    case AST_INDEX:
+      n->as.indexExpr.obj = rewriteGenExprs(p, n->as.indexExpr.obj);
+      n->as.indexExpr.index = rewriteGenExprs(p, n->as.indexExpr.index);
+      return n;
+    case AST_MEMBER:
+      n->as.memberExpr.obj = rewriteGenExprs(p, n->as.memberExpr.obj);
+      return n;
+    case AST_SLICE:
+      n->as.slice.obj = rewriteGenExprs(p, n->as.slice.obj);
+      n->as.slice.start = rewriteGenExprs(p, n->as.slice.start);
+      n->as.slice.end = rewriteGenExprs(p, n->as.slice.end);
+      n->as.slice.step = rewriteGenExprs(p, n->as.slice.step);
+      return n;
+    case AST_MAP:
+      for (int32_t i = 0; i < n->as.mapLit.count; i++) {
+        n->as.mapLit.keys[i] = rewriteGenExprs(p, n->as.mapLit.keys[i]);
+        n->as.mapLit.values[i] = rewriteGenExprs(p, n->as.mapLit.values[i]);
+      }
+      return n;
+    case AST_COMPREHENSION:
+      n->as.compr.key = rewriteGenExprs(p, n->as.compr.key);
+      n->as.compr.value = rewriteGenExprs(p, n->as.compr.value);
+      for (int32_t i = 0; i < n->as.compr.forCount; i++) {
+        n->as.compr.fors[i].target = rewriteGenExprs(p, n->as.compr.fors[i].target);
+        n->as.compr.fors[i].iter = rewriteGenExprs(p, n->as.compr.fors[i].iter);
+      }
+      for (int32_t i = 0; i < n->as.compr.condCount; i++) {
+        n->as.compr.conds[i] = rewriteGenExprs(p, n->as.compr.conds[i]);
+      }
+      return n;
+    case AST_STRING:
+      for (int32_t i = 0; i < n->as.strLit.count; i++) {
+        n->as.strLit.segs[i].expr = rewriteGenExprs(p, n->as.strLit.segs[i].expr);
+      }
+      return n;
+    default:  // 字面量/IDENT/THIS/IMPORT/BREAK/CONTINUE 等叶子或无载荷
+      return n;
+  }
 }
 
 AstNode* parserParseModule(Parser* p) {
@@ -2746,5 +2991,8 @@ AstNode* parserParseModule(Parser* p) {
   AstNode* node = astNewNode(p->arena, AST_MODULE, line, col);
   node->as.list.items = items;
   node->as.list.count = count;
+  for (int32_t i = 0; i < count; i++) {  // T019：genexp 脱糖后置单趟（位置限制已在解析期校验）
+    items[i] = rewriteGenExprs(p, items[i]);
+  }
   return node;
 }

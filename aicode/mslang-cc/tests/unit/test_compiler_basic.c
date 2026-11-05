@@ -655,7 +655,7 @@ TEST(listCompCompiles) {
   chunkFree(&c);
 }
 
-TEST(genExprCompiles) {  // genexp = 物化 list + GET_ITER：末次 GET_ITER 在循环之后
+TEST(genExprCompiles) {  // T019 惰性：genexp → 匿名生成器即时调用，循环体入嵌套 proto（顶层无 FOR_ITER）
   MsDiagSink diags = {0};
   Chunk c;
   EXPECT(ctx, compileSrc("var it = (x for x in xs)", &c, &diags));
@@ -663,17 +663,15 @@ TEST(genExprCompiles) {  // genexp = 物化 list + GET_ITER：末次 GET_ITER �
   ms_u8 ops[64];
   int32_t operands[64];
   int32_t n = decodeAll(&c, ops, operands, 64);
-  int32_t lastGetIter = -1, lastForIter = -1;
+  bool hasMakeFunc = false, hasCall = false, hasForIter = false;
   for (int32_t i = 0; i < n; i++) {
-    if (ops[i] == OP_GET_ITER) {
-      lastGetIter = i;
-    }
-    if (ops[i] == OP_FOR_ITER) {
-      lastForIter = i;
-    }
+    hasMakeFunc = hasMakeFunc || ops[i] == OP_MAKE_FUNCTION;
+    hasCall = hasCall || ops[i] == OP_CALL;
+    hasForIter = hasForIter || ops[i] == OP_FOR_ITER;
   }
-  EXPECT(ctx, lastForIter >= 0);
-  EXPECT(ctx, lastGetIter > lastForIter);
+  EXPECT(ctx, hasMakeFunc);  // 匿名生成器物化（无捕获：LOAD_CONST + MAKE_FUNCTION）
+  EXPECT(ctx, hasCall);      // 即时调用（首子句 iterable 为实参）
+  EXPECT(ctx, !hasForIter);  // 迭代循环不在顶层（内联物化已废除）
   EXPECT_EQ(ctx, OP_RETURN, ops[n - 1]);
   chunkFree(&c);
 }

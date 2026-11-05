@@ -697,7 +697,7 @@ static void compileComprBody(FuncState* fs, const AstNode* n, int32_t acc, int32
   fs->jumps[jExit].target = fs->chunk->codeLen;
 }
 
-// AST_COMPREHENSION / AST_GEN_EXPR 共用（03 §1-§2）：genexp = 物化 list + GET_ITER（T019 替换为惰性管道）
+// AST_COMPREHENSION 内联脱糖（03 §1-§2；genexp 已于 parser 期脱糖为生成器调用，T019）
 // 累加器与目标全部落帧临时槽（VM 入帧保留 nil 区即 GC root，不与表达式栈冲突）
 static void compileCompr(FuncState* fs, const AstNode* n) {
   comprPush(fs);
@@ -711,9 +711,6 @@ static void compileCompr(FuncState* fs, const AstNode* n) {
   compileComprBody(fs, n, acc, 0, 0);
   comprPop(fs);
   localOp(fs, OP_LOAD_LOCAL, acc, n->line);
-  if (n->kind == AST_GEN_EXPR) {
-    emitOp(fs, OP_GET_ITER, n->line);
-  }
 }
 
 static ms_u8 binaryOpCode(AstBinOp op) {
@@ -992,8 +989,11 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       break;
     }
     case AST_COMPREHENSION:
-    case AST_GEN_EXPR:
       compileCompr(fs, n);
+      break;
+    case AST_GEN_EXPR:  // T019：parser 重写后不可达（防御）
+      compErr(fs, n, 1, "generator expression was not desugared");
+      emitOp(fs, OP_LOAD_NIL, n->line);
       break;
     case AST_FUNC_EXPR:  // 匿名函数表达式（05 §1）：物化函数值
       compileFunctionValue(fs, n);

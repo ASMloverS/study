@@ -43,6 +43,7 @@ typedef struct Parser {
   bool noIn;           // for 头部解析中：in 不作二元运算符（for-in 判别，04 §4）
   bool loopHeader;  // for 头部解析中：:= 不在封闭作用域查重（循环变量每轮新鲜绑定，04 §4；作用域归 T009）
   int32_t funcDepth;  // 函数体嵌套深度（defer 合法性，04 §7）
+  int32_t genSymCount;  // genexp 脱糖合成名计数（T019：$gN 唯一化）
 } Parser;
 
 void parserInit(Parser* p, const char* src, int32_t len, const char* file, AstArena* arena, MsDiagSink* diags);

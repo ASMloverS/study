@@ -1,12 +1,26 @@
 (module
   (var g [global]
-    (gen-expr
-      (binary * (ident x [local:0]) (ident x [local:0]))
-      (for x [local:0 fresh] (ident xs [global]))
-      (if (binary > (ident x [local:0]) (int 0)))))
+    (call
+      (func-expr generator
+        (params (param $g0))
+        (block
+          (for-in x [local:1 fresh]
+            (block
+              (if
+                (binary > (ident x [local:1]) (int 0))
+                (block
+                  (yield
+                    (binary * (ident x [local:1]) (ident x [local:1])))))))))
+            (ident xs [global])))
   (var total [global]
     (call
       (ident sum [global])
-            (gen-expr
-        (binary * (ident x [local:0]) (ident x [local:0]))
-        (for x [local:0 fresh] (ident xs [global]))))))
+            (call
+        (func-expr generator
+          (params (param $g1))
+          (block
+            (for-in x [local:1 fresh]
+              (block
+                (yield
+                  (binary * (ident x [local:1]) (ident x [local:1])))))))
+                (ident xs [global])))))

@@ -296,6 +296,52 @@ TEST(genReentrantResumeRejected) {  // next 自身重入 → 精确 RuntimeError
   free(r.out);
 }
 
+// ---------- genexp 惰性（Task 5） ----------
+
+TEST(genexpLazyTakeOnlyThree) {  // DoD：大源 take(3) 仅计算 3 次（计数器断言）
+  RunResult r = runSrc(
+      "var n = 0\n"
+      "func bump(x) {\n    n = n + 1\n    return x\n}\n"
+      "var it = (bump(x) for x in range(1000000))\n"
+      "print(n)\n"
+      "var picked = it.take(3)\n"
+      "print(picked.toList())\n"
+      "print(n)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "0\n[0, 1, 2]\n3\n", r.out);
+  free(r.out);
+}
+
+TEST(genexpFirstIterableEager) {  // 首子句 iterable 创建时急求值（05 §4 脱糖形参语义）
+  RunResult r = runSrc(
+      "func mk() {\n    print(\"mk\")\n    return [1, 2, 3]\n}\n"
+      "var it = (x for x in mk())\n"
+      "print(\"created\")\n"
+      "print(it.toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "mk\ncreated\n[1, 2, 3]\n", r.out);
+  free(r.out);
+}
+
+TEST(genexpEquivalenceWithComprehension) {  // DoD：genexp 与推导式同输出对照（生成器单用，取两实例排干）
+  RunResult r = runSrc(
+      "var xs = range(10).toList()\n"
+      "var a = [x * x for x in xs if x % 2 == 1]\n"
+      "var b = (x * x for x in xs if x % 2 == 1)\n"
+      "var c = (x * x for x in xs if x % 2 == 1)\n"
+      "print(a == b.toList(), c.toList())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "true [1, 9, 25, 49, 81]\n", r.out);
+  free(r.out);
+}
+
+TEST(genexpSoleCallArgStillWorks) {  // 唯一调用实参形态：sum 排干（既有 genexp_pre 语义）
+  RunResult r = runSrc("print(sum(x * x for x in range(5)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "30\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -318,6 +364,10 @@ int main(int argc, char** argv) {
       genDefaultAndRestParams,
       genMethodNextForm,
       genReentrantResumeRejected,
+      genexpLazyTakeOnlyThree,
+      genexpFirstIterableEager,
+      genexpEquivalenceWithComprehension,
+      genexpSoleCallArgStillWorks,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

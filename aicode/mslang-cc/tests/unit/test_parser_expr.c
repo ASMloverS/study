@@ -584,7 +584,7 @@ TEST(errComprBadTarget) {
 }
 
 TEST(genexprSoleCallArg) {
-  // sum(x*x for x in xs) → CALL 单实参 GEN_EXPR（裸形态，无需再括号）
+  // sum(x*x for x in xs) → 裸形态脱糖（T019）：实参为匿名生成器 func*($gN) 即时调用
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
@@ -593,25 +593,43 @@ TEST(genexprSoleCallArg) {
   EXPECT_EQ(ctx, AST_CALL, call->kind);
   EXPECT_EQ(ctx, 1, call->as.call.count);
   AstNode* gen = call->as.call.args[0];
-  EXPECT_EQ(ctx, AST_GEN_EXPR, gen->kind);
-  EXPECT_EQ(ctx, 1, gen->as.compr.forCount);
-  EXPECT_EQ(ctx, 0, gen->as.compr.condCount);
-  EXPECT(ctx, gen->as.compr.key == NULL);
-  EXPECT_EQ(ctx, AST_OP_MUL, gen->as.compr.value->as.binary.op);
+  EXPECT_EQ(ctx, AST_CALL, gen->kind);
+  AstNode* fn = gen->as.call.callee;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  EXPECT(ctx, (fn->as.funcExpr.flags & AST_FUNC_GENERATOR) != 0);
+  EXPECT_EQ(ctx, 1, fn->as.funcExpr.paramCount);
+  EXPECT_EQ(ctx, '$', fn->as.funcExpr.params[0].name[0]);  // 合成名 $gN：$ 不入用户标识符字符集
+  EXPECT_EQ(ctx, 'g', fn->as.funcExpr.params[0].name[1]);
+  AstNode* fb = fn->as.funcExpr.body->as.list.items[0];  // block → for-in x in $gN
+  EXPECT_EQ(ctx, AST_FOR, fb->kind);
+  EXPECT_EQ(ctx, AST_IDENT, fb->as.forStmt.target->kind);
+  EXPECT_EQ(ctx, 0, memcmp(fn->as.funcExpr.params[0].name, fb->as.forStmt.iter->as.ident.name,
+                           (size_t)fn->as.funcExpr.params[0].nameLen));
+  AstNode* y = fb->as.forStmt.body->as.list.items[0];  // block → yield x*x
+  EXPECT_EQ(ctx, AST_YIELD, y->kind);
+  EXPECT_EQ(ctx, AST_OP_MUL, y->as.exprStmt.expr->as.binary.op);
+  EXPECT_EQ(ctx, AST_IDENT, gen->as.call.args[0]->kind);  // 首子句 iterable 提为实参（急求值）
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
 
 TEST(genexprAssignRhs) {
-  // var g = (x for x in xs if x > 0) → 赋值右值（带括号）+ if 条件
+  // var g = (x for x in xs if x > 0) → 赋值右值脱糖：条件收于最内层 if 包 yield（T019）
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("var g = (x for x in xs if x > 0)", &arena, &diags);
   AstNode* decl = mod->as.list.items[0];
   EXPECT_EQ(ctx, AST_VAR_DECL, decl->kind);
-  EXPECT_EQ(ctx, AST_GEN_EXPR, decl->as.varDecl.init->kind);
-  EXPECT_EQ(ctx, 1, decl->as.varDecl.init->as.compr.condCount);
+  AstNode* init = decl->as.varDecl.init;
+  EXPECT_EQ(ctx, AST_CALL, init->kind);
+  AstNode* fn = init->as.call.callee;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  EXPECT(ctx, (fn->as.funcExpr.flags & AST_FUNC_GENERATOR) != 0);
+  AstNode* ifn = fn->as.funcExpr.body->as.list.items[0]->as.forStmt.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_IF, ifn->kind);  // for 体 → if x > 0 → yield
+  EXPECT_EQ(ctx, AST_BINARY, ifn->as.ifStmt.cond->kind);
+  EXPECT_EQ(ctx, AST_YIELD, ifn->as.ifStmt.thenBlock->as.list.items[0]->kind);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
@@ -796,7 +814,7 @@ TEST(errParenGenexprNonSoleLast) {
 }
 
 TEST(bareGenexprWithCond) {
-  // f(x for x in xs if x > 0) → 裸形态 + if 条件合法
+  // f(x for x in xs if x > 0) → 裸形态 + if 条件合法（条件入脱糖生成器体内，T019）
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
@@ -804,21 +822,27 @@ TEST(bareGenexprWithCond) {
   AstNode* call = expr0(mod);
   EXPECT_EQ(ctx, AST_CALL, call->kind);
   EXPECT_EQ(ctx, 1, call->as.call.count);
-  EXPECT_EQ(ctx, AST_GEN_EXPR, call->as.call.args[0]->kind);
-  EXPECT_EQ(ctx, 1, call->as.call.args[0]->as.compr.condCount);
+  AstNode* init = call->as.call.args[0];
+  EXPECT_EQ(ctx, AST_CALL, init->kind);
+  AstNode* fn = init->as.call.callee;
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, fn->kind);
+  AstNode* ifn = fn->as.funcExpr.body->as.list.items[0]->as.forStmt.body->as.list.items[0];
+  EXPECT_EQ(ctx, AST_IF, ifn->kind);
+  EXPECT_EQ(ctx, AST_YIELD, ifn->as.ifStmt.thenBlock->as.list.items[0]->kind);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
 
 TEST(parenGenexprDoubleParen) {
-  // ((x for x in xs)) → 双层括号还原为 GEN_EXPR
+  // ((x for x in xs)) → 双层括号同样脱糖为匿名生成器即时调用（T019）
   MsDiagSink diags = {0};
   AstArena arena;
   astArenaInit(&arena);
   AstNode* mod = parseSrc("var g = ((x for x in xs))", &arena, &diags);
   AstNode* decl = mod->as.list.items[0];
   EXPECT_EQ(ctx, AST_VAR_DECL, decl->kind);
-  EXPECT_EQ(ctx, AST_GEN_EXPR, decl->as.varDecl.init->kind);
+  EXPECT_EQ(ctx, AST_CALL, decl->as.varDecl.init->kind);
+  EXPECT_EQ(ctx, AST_FUNC_EXPR, decl->as.varDecl.init->as.call.callee->kind);
   EXPECT_EQ(ctx, 0, diags.count);
   astArenaDestroy(&arena);
 }
