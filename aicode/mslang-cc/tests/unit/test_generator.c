@@ -183,6 +183,119 @@ TEST(genCallbackPathLazy) {  // C 回调路径（map）传入生成器：入口�
   free(r.out);
 }
 
+// ---------- 行为锁定（Task 4） ----------
+
+TEST(genClosureAliasingAcrossYield) {  // 别名语义：挂起期间闭包写 closed → 恢复回拷帧槽（relink）
+  RunResult r = runSrc(
+      "func* g() {\n"
+      "    var i = 0\n"
+      "    var set = func(v) { i = v }\n"
+      "    yield set\n"
+      "    yield i\n"
+      "}\n"
+      "var it = g()\n"
+      "var setter = next(it)\n"
+      "setter(42)\n"
+      "print(next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "42\n", r.out);
+  free(r.out);
+}
+
+TEST(genTwoInstancesIndependent) {  // 双生成器交错 next：各自序列（快照互不干扰）
+  RunResult r = runSrc(
+      "func* seq(start) {\n    yield start\n    yield start + 1\n}\n"
+      "var a = seq(1)\nvar b = seq(100)\n"
+      "print(next(a), next(b), next(a), next(b), next(a), next(b))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1 100 2 101 nil nil\n", r.out);
+  free(r.out);
+}
+
+TEST(genYieldInNestedFuncBelongsToNested) {  // 闭包内 yield 属闭包自身判定：外层非生成器、内层是
+  RunResult r = runSrc(
+      "func outer() {\n    var inner = func*() {\n        yield 7\n    }\n    return inner()\n}\n"
+      "var it = outer()\nprint(next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "7\n", r.out);
+  free(r.out);
+}
+
+TEST(genImplicitYieldRuntime) {  // 无 func* 的隐式生成器运行时等价（05 §4 二选一）
+  RunResult r = runSrc("func f() {\n    yield 5\n}\nvar it = f()\nprint(next(it), next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "5 nil\n", r.out);
+  free(r.out);
+}
+
+TEST(genStatePreservedAcrossResume) {  // 状态跨恢复保持（yield 表达式 + 多次恢复）
+  RunResult r = runSrc(
+      "func* counter() {\n"
+      "    var n = 0\n"
+      "    for i in range(3) {\n"
+      "        n = n + i\n"
+      "        yield n\n"
+      "    }\n"
+      "}\n"
+      "var it = counter()\nprint(next(it), next(it), next(it), next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "0 1 3 nil\n", r.out);
+  free(r.out);
+}
+
+TEST(genForInWithBreak) {  // for-in + break：55 截断（05 §4 样例形态）
+  RunResult r = runSrc(
+      "func* fib() {\n"
+      "    var a = 0\n"
+      "    var b = 1\n"
+      "    for {\n"
+      "        yield a\n"
+      "        var t = a + b\n"
+      "        a = b\n"
+      "        b = t\n"
+      "    }\n"
+      "}\n"
+      "var last = 0\nfor v in fib() {\n    if v > 50 {\n        break\n    }\n    last = v\n}\nprint(last)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "34\n", r.out);
+  free(r.out);
+}
+
+TEST(genDefaultAndRestParams) {  // 默认参/rest 生成器：setupCall 装配路径入快照（spec §4 边界）
+  RunResult r = runSrc(
+      "func* g(a, b = 10, *rest) {\n    yield a + b\n    yield rest\n}\n"
+      "var it = g(1)\n"
+      "var jt = g(1, 2, 3, 4)\n"
+      "print(it.next(), jt.next())\n"
+      "print(it.next(), jt.next())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "11 3\n[] [3, 4]\n", r.out);
+  free(r.out);
+}
+
+TEST(genMethodNextForm) {  // g.next() 方法形态（iter 方法表经 msIsIterator 泛化到生成器）
+  RunResult r = runSrc(
+      "func* two() {\n    yield 1\n    yield 2\n}\n"
+      "var g = two()\nprint(g.next(), g.next(), g.next())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1 2 nil\n", r.out);
+  free(r.out);
+}
+
+TEST(genReentrantResumeRejected) {  // next 自身重入 → 精确 RuntimeError（CPython "already executing" 对齐）
+  RunResult r = runSrc(
+      "var it = nil\n"
+      "func* g() {\n    yield 1\n    yield next(it)\n}\n"
+      "it = g()\n"
+      "print(next(it))\n"
+      "print(next(it))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "generator already executing") != NULL);
+  EXPECT_STREQ(ctx, "1\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -196,6 +309,15 @@ int main(int argc, char** argv) {
       genExhaustedNilForever,
       genForInDirect,
       genCallbackPathLazy,
+      genClosureAliasingAcrossYield,
+      genTwoInstancesIndependent,
+      genYieldInNestedFuncBelongsToNested,
+      genImplicitYieldRuntime,
+      genStatePreservedAcrossResume,
+      genForInWithBreak,
+      genDefaultAndRestParams,
+      genMethodNextForm,
+      genReentrantResumeRejected,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

@@ -59,6 +59,12 @@ bool msVmResumeGenerator(MsVM* vm, MsObjCoroutine* co, MsValue* out) {
   if (co->state == MS_CORO_DONE) {
     return false;
   }
+  if (co->state == MS_CORO_RUNNING) {  // 重入恢复（next 自身）：精确报错替代深度递归后的 StackOverflow
+    snprintf(vm->errMsg, sizeof(vm->errMsg), "RuntimeError: generator already executing");
+    vm->errLine = -1;
+    vm->hasError = true;
+    return false;
+  }
   if (vm->callDepth >= MS_VM_MAX_CALL_DEPTH) {  // 复用 T018 C 层重入守卫
     snprintf(vm->errMsg, sizeof(vm->errMsg), "StackOverflowError: call nesting limit exceeded (%d)",
              MS_VM_MAX_CALL_DEPTH);
