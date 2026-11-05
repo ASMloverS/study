@@ -1592,6 +1592,7 @@ void msVmRunFrames(MsVM* vm) {
           }
           out = msValueNil();  // 耗尽 → nil
         }
+        frame = &vm->frames[vm->frameCount - 1];  // resume 可嵌套扩 frames（T018 同纪律）：重取缓存
         vm->stack[vm->stackTop - 1] = out;
         NEXT();
       }

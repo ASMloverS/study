@@ -172,6 +172,17 @@ TEST(genForInDirect) {  // for v in gen() 直迭代（GET_ITER 返回自身 + FO
   free(r.out);
 }
 
+TEST(genCallbackPathLazy) {  // C 回调路径（map）传入生成器：入口即挂起（体不执行），结果为协程
+  RunResult r = runSrc(
+      "func* g(x) {\n    print(\"body\")\n    yield x\n}\n"
+      "var r = [1, 2].map(g)\n"
+      "print(\"mapped\")\n"
+      "print(next(r[0]), next(r[1]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "mapped\nbody\nbody\n1 2\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -184,6 +195,7 @@ int main(int argc, char** argv) {
       genFibSixNexts,
       genExhaustedNilForever,
       genForInDirect,
+      genCallbackPathLazy,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

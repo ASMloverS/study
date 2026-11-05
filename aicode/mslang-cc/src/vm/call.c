@@ -7,6 +7,7 @@
 
 #include "obj/obj_func.h"
 #include "obj/obj_list.h"
+#include "vm/generator.h"
 
 static void callErr(MsVM* vm, const char* fmt, ...) {
   va_list ap;
@@ -148,6 +149,14 @@ bool msVmCallValue(MsVM* vm, const MsValue* callee, const MsValue* argv, int32_t
   }
   if (!msVmSetupCall(vm, argc)) {
     return false;  // 错误槽已置
+  }
+  if ((vm->frames[vm->frameCount - 1].chunk->flags & MS_CHUNK_GENERATOR) != 0) {  // T019：C 回调路径生成器 → 入口即挂起（体不执行）
+    msVmGeneratorSuspendEntry(vm);
+    if (vm->hasError) {
+      return false;  // OOM 槽已置
+    }
+    *out = vm->stack[--vm->stackTop];  // 协程即调用结果（栈形与 OP_CALL 分支一致）
+    return true;
   }
   vm->callDepth++;
   msVmRunFrames(vm);  // 嵌套执行：入口帧 RETURN 后收口（结果在栈顶，被调帧 upvalue 已按其基闭合）
