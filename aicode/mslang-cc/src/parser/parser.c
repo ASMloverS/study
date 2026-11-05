@@ -2796,6 +2796,9 @@ static AstNode* desugarGenExpr(Parser* p, AstNode* n) {
   }
   for (int32_t i = forCount - 1; i >= 0; i--) {  // for 嵌套：首子句迭代形参名，其余子句逐轮求值
     AstNode* iter = i == 0 ? paramRef : fors[i].iter;
+    if (body->kind != AST_BLOCK) {
+      body = makeBlock1(p, body, n->line, n->col);  // for 体恒为块（binder bindBlock 不变量）
+    }
     body = makeForIn(p, fors[i].target, iter, body, n->line, n->col);
   }
   AstNode* fn = astNewNode(p->arena, AST_FUNC_EXPR, n->line, n->col);

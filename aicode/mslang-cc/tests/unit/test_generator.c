@@ -342,6 +342,18 @@ TEST(genexpSoleCallArgStillWorks) {  // 唯一调用实参形态：sum 排干（
   free(r.out);
 }
 
+TEST(genexpMultiFor) {  // 多 for 子句 genexp：嵌套 for 体块包裹（bindBlock 不变量）+ 推导式对照
+  RunResult r = runSrc(
+      "var xs = [1, 2]\nvar ys = [10, 20]\n"
+      "var a = (x + y for x in xs for y in ys)\n"
+      "var b = [x + y for x in xs for y in ys]\n"
+      "var got = a.toList()\n"
+      "print(got == b, got)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "true [11, 21, 12, 22]\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -368,6 +380,7 @@ int main(int argc, char** argv) {
       genexpFirstIterableEager,
       genexpEquivalenceWithComprehension,
       genexpSoleCallArgStillWorks,
+      genexpMultiFor,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
