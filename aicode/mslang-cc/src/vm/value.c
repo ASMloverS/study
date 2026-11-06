@@ -310,6 +310,10 @@ const char* msValueTypeName(const MsValue* v) {
           return "iterator";
         case MS_OBJ_COROUTINE:  // T019：生成器（协程执行态）
           return "generator";
+        case MS_OBJ_CLASS:  // T020
+          return "class";
+        case MS_OBJ_INSTANCE:
+          return "instance";
         case MS_OBJ_FUNCTION:  // T018：函数对象（closure 同名）
         case MS_OBJ_CLOSURE:
           return "function";

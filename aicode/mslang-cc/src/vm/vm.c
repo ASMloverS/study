@@ -9,6 +9,7 @@
 
 #include "gc/gc.h"
 #include "obj/obj_bigint.h"
+#include "obj/obj_class.h"
 #include "obj/obj_coroutine.h"
 #include "obj/obj_func.h"
 #include "obj/obj_iter.h"
@@ -89,6 +90,8 @@ void msVmInit(MsVM* vm) {
   gcSetFreeFn(MS_OBJ_MAP, msObjMapFreeData);  // slots 数组随对象释放
   gcSetMarkFn(MS_OBJ_SET, msObjSetMarkChildren);  // T015：内层 map（无独立数据，freeFn 不需）
   gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
+  gcSetMarkFn(MS_OBJ_CLASS, msObjClassMarkChildren);  // T020：类 name/bases/mro/方法与静态表/字段默认
+  gcSetMarkFn(MS_OBJ_INSTANCE, msObjInstanceMarkChildren);  // T020：实例 klass + 字段表
   gcSetMarkFn(MS_OBJ_ITERATOR, iterMark);  // D8/T014：迭代器持 str/list（kind 分派，T017 泛化）
   gcSetMarkFn(MS_OBJ_FUNCTION, msObjFunctionMarkChildren);  // T018：默认参值
   gcSetMarkFn(MS_OBJ_CLOSURE, msObjClosureMarkChildren);  // T018：fn + upvalue 数组

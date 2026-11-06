@@ -97,6 +97,8 @@ target_sources(ms_obj PRIVATE src/obj/obj_bigint.c)  # T016：bigint 对象（FA
 target_sources(ms_obj PRIVATE src/obj/obj_func.c)
 # T019：协程对象（生成器挂起帧：栈快照 + upvalue 重联表）
 target_sources(ms_obj PRIVATE src/obj/obj_coroutine.c)
+# T020：类对象族 + 实例字段表（Shape 基础版）
+target_sources(ms_obj PRIVATE src/obj/obj_class.c src/obj/shape.c)
 # T013：string 实例方法表（Task 8；charLen/compareTo 首批，机制 D5 供容器复用）
 target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 # T018：帧切换调用装配 + upvalue 开放链（Task 2）
