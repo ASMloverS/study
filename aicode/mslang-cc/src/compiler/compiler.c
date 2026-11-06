@@ -1009,8 +1009,7 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
           break;
         }
         upvalOp(fs, OP_LOAD_UPVAL, idx, n->line);
-      } else {  // binder 已诊断（防御占位）
-        compErr(fs, n, 4, "'this' is only allowed inside a method");
+      } else {  // binder 已诊断（MSE_BIND_THIS_OUTSIDE）：仅保持栈平衡占位
         emitOp(fs, OP_LOAD_NIL, n->line);
       }
       break;
