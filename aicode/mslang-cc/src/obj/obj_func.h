@@ -16,7 +16,8 @@ typedef struct MsObjFunction {
   MsObj head;
   const Chunk* chunk;  // 原型（参数元数据/upvalue 描述符在 chunk，后续任务填充）
   int32_t defaultCount;
-  MsValue defaults[];  // FAM：默认参值（定义处求值拷贝；Task 3 消费）
+  struct MsObjClass* owner;  // T020：定义类（普通方法非 NULL；super 经帧闭包回溯）
+  MsValue defaults[];        // FAM：默认参值（定义处求值拷贝；Task 3 消费）
 } MsObjFunction;
 
 typedef struct MsObjUpvalue {

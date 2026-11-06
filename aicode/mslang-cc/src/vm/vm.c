@@ -25,11 +25,11 @@
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.h MS_VM_MAX_FRAMES；可增长栈归 T028）
 #define MS_SAFEPOINT_BUDGET 1000  // CHECK_SAFEPOINT 回边预算（NOP 递减；抢占 T029）
 
-// bound 方法 children 标记（T013，D5）：receiver + method（native 对象）
+// bound 方法 children 标记（T013 D5 / T020 泛化）：receiver + 方法值（native 对象或函数/闭包）
 static void boundMark(MsVM* vm, MsObj* obj) {
-  MsObjBoundMethod* bm = (MsObjBoundMethod*)obj;
-  gcMarkValue(vm, bm->receiver);
-  gcMarkValue(vm, msValueObj(&bm->method->head));
+  MsObjBoundMethod* b = (MsObjBoundMethod*)obj;
+  gcMarkValue(vm, b->receiver);
+  gcMarkValue(vm, b->method);  // T020：方法值（native 对象或函数/闭包）
 }
 
 // 迭代器 children 标记（T013 D8 / T014 / T017 泛化）：共享 MS_OBJ_ITERATOR tag，按首载荷 kind 分派；
@@ -89,7 +89,7 @@ void msVmInit(MsVM* vm) {
   gcSetMarkFn(MS_OBJ_MAP, msObjMapMarkChildren);  // T015：entry 键值（seq 链遍历）
   gcSetFreeFn(MS_OBJ_MAP, msObjMapFreeData);  // slots 数组随对象释放
   gcSetMarkFn(MS_OBJ_SET, msObjSetMarkChildren);  // T015：内层 map（无独立数据，freeFn 不需）
-  gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + native 方法对象
+  gcSetMarkFn(MS_OBJ_BOUND_METHOD, boundMark);  // D5：bound 持 receiver + 方法值（T020 泛化）
   gcSetMarkFn(MS_OBJ_CLASS, msObjClassMarkChildren);  // T020：类 name/bases/mro/方法与静态表/字段默认
   gcSetMarkFn(MS_OBJ_INSTANCE, msObjInstanceMarkChildren);  // T020：实例 klass + 字段表
   gcSetMarkFn(MS_OBJ_ITERATOR, iterMark);  // D8/T014：迭代器持 str/list（kind 分派，T017 泛化）
@@ -1307,17 +1307,42 @@ void msVmRunFrames(MsVM* vm) {
         if (callee.kind == MS_VAL_OBJ && callee.as.obj->type == MS_OBJ_BOUND_METHOD) {
           // bound 分派在弹栈前：接收者+实参原位留栈（调用期间为 GC root）
           MsObjBoundMethod* bm = (MsObjBoundMethod*)callee.as.obj;
-          MsValue recv = bm->receiver;
-          MsNativeFn fn = bm->method->fn;  // 先读出：调用期间 bm/native 可能被回收（fn/recv 已在寄存器）
-          vm->stack[vm->stackTop - argc - 1] = recv;  // callee 槽改写为接收者，args 原位
-          MsValue r = fn(vm, argc + 1, &vm->stack[vm->stackTop - argc - 1]);
-          if (vm->hasError) {
-            goto dispatchExit;
+          MsValue recv = bm->receiver;  // 先读出：调用期间 bm 可能被回收
+          if (bm->method.kind == MS_VAL_OBJ && bm->method.as.obj->type == MS_OBJ_NATIVE) {
+            // native 方法值（物化 MsObjNative 对象）：fn 先读出（调用期间 bm/native 可能被回收，fn/recv 已在寄存器）
+            MsNativeFn fn = ((MsObjNative*)bm->method.as.obj)->fn;
+            vm->stack[vm->stackTop - argc - 1] = recv;  // callee 槽改写为接收者，args 原位
+            MsValue r = fn(vm, argc + 1, &vm->stack[vm->stackTop - argc - 1]);
+            if (vm->hasError) {
+              goto dispatchExit;
+            }
+            vm->stackTop -= argc + 1;
+            msVmPush(vm, r);
+            frame = &vm->frames[vm->frameCount - 1];  // native 可经 msVmCallValue 嵌套扩 frames（T018）：重取缓存
+            NEXT();
           }
-          vm->stackTop -= argc + 1;
-          msVmPush(vm, r);
-          frame = &vm->frames[vm->frameCount - 1];  // native 可经 msVmCallValue 嵌套扩 frames（T018）：重取缓存
-          NEXT();
+          if (msIsCallableObj(&bm->method)) {
+            // T020：脚本方法 bound——栈形 [callee, a1..an] → [fn, recv, a1..an]（recv 作帧 slot 0）
+            if (!msVmPush(vm, msValueNil())) {  // 上移占位（扩容安全；溢出槽已置）
+              goto dispatchExit;
+            }
+            MsValue* slot0 = &vm->stack[vm->stackTop - argc - 2];
+            memmove(slot0 + 1, slot0, sizeof(MsValue) * (size_t)(argc + 1));
+            *slot0 = bm->method;
+            slot0[1] = recv;
+            frame->ip = ip;
+            if (!msVmSetupCall(vm, argc + 1)) {
+              vm->errLine = chunkLineAt(chunk, instrOff);
+              goto dispatchExit;
+            }
+            frame = &vm->frames[vm->frameCount - 1];
+            chunk = frame->chunk;
+            code = chunk->code;
+            consts = chunk->consts;
+            ip = frame->ip;
+            NEXT();
+          }
+          RUNTIME_ERROR("TypeError: bound method is not callable");
         }
         if (callee.kind == MS_VAL_NATIVE) {
           // native 分派在弹栈前：callee+实参原位留栈（调用期间为 GC root，与 bound 路径同纪律）；
@@ -1437,7 +1462,7 @@ void msVmRunFrames(MsVM* vm) {
           if (vm->hasError) {  // push 溢出：后续裸栈操作（-2 槽）会越界，须立即 unwind（Task 8 review）
             goto dispatchExit;
           }
-          MsObjBoundMethod* bound = msObjBoundNew(vm, recv, native);
+          MsObjBoundMethod* bound = msObjBoundNew(vm, recv, msValueObj(&native->head));
           if (bound == NULL) {
             RUNTIME_ERROR("RuntimeError: out of memory");
           }

@@ -20,6 +20,7 @@ MsObjFunction* msObjFunctionNew(MsVM* vm, const Chunk* chunk, int32_t defaultCou
   }
   fn->chunk = chunk;
   fn->defaultCount = defaultCount;
+  fn->owner = NULL;  // T020：DEFINE_METHOD 置位（非方法函数保持 NULL）
   for (int32_t i = 0; i < defaultCount; i++) {
     fn->defaults[i] = defaults[i];  // 分配点后逐槽拷贝（源值由调用方 root；Task 3 实参协议）
   }

@@ -52,15 +52,16 @@ typedef struct MsObjNative {
   int32_t nameLen;
 } MsObjNative;
 
-// 绑定方法（T013，D5）：接收者 + 原生方法；OP_CALL bound 分派调用
+// 绑定方法（T013 D5 / T020 泛化）：接收者 + 方法值（native 对象或函数/闭包）；
+// OP_CALL bound 分派按 method 值类型选择 native 直调 / 脚本函数帧切换
 typedef struct MsObjBoundMethod {
   MsObj head;
   MsValue receiver;
-  MsObjNative* method;
+  MsValue method;  // MS_OBJ_NATIVE 或 FUNCTION/CLOSURE 对象值
 } MsObjBoundMethod;
 
 MsObjNative* msObjNativeNew(MsVM* vm, MsNativeFn fn, const char* name, int32_t nameLen);
-MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsObjNative* method);
+MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsValue method);
 
 // 迭代器壳种类（T014/T017，22 §4）：共享 MS_OBJ_ITERATOR tag，首载荷 kind 判别；
 // str/list 沿用各自壳结构，其余种类统一 MsObjIter（obj_iter.h）

@@ -33,13 +33,14 @@ MsObjNative* msObjNativeNew(MsVM* vm, MsNativeFn fn, const char* name, int32_t n
   return n;
 }
 
-MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsObjNative* method) {
+MsObjBoundMethod* msObjBoundNew(MsVM* vm, MsValue receiver, MsValue method) {
   MsObjBoundMethod* b = (MsObjBoundMethod*)msObjAlloc(vm, MS_OBJ_BOUND_METHOD, sizeof(MsObjBoundMethod));
   if (b == NULL) {
     return NULL;
   }
   b->receiver = msValueNil();  // MsValue 字段先置 nil（markFn 纪律，同 test_gc_basic allocNode）
-  b->method = method;
+  b->method = msValueNil();
   b->receiver = receiver;
+  b->method = method;
   return b;
 }
