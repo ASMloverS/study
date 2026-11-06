@@ -7,10 +7,10 @@
       (block
         (assign =
           (member (this) name)
-          (ident name [local:0]))
+          (ident name [local:1]))
         (assign =
           (member (this) age)
-          (ident age [local:1]))))
+          (ident age [local:2]))))
     (func-decl speak
       (params)
       (string

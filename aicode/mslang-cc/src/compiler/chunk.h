@@ -76,6 +76,7 @@ typedef struct MsUpvalDesc {
 // chunk 状态位（T019，24 §3 状态机铺垫）：bit0 生成器；bit1 async 预留（T031 启用）
 #define MS_CHUNK_GENERATOR 1u
 #define MS_CHUNK_ASYNC 2u
+#define MS_CHUNK_METHOD 4u  // T020：方法帧（slot 0 = this；paramCount 含 this）
 
 struct Chunk {
   ms_u8* code;

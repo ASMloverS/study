@@ -260,8 +260,9 @@ static void declareIterTargets(Binder* b, AstNode* target) {
 }
 
 // 函数声明/表达式公共绑定：默认值在外层域解析，参数按序占槽（i → slot i）
+// T020：hasThis 时方法帧先隐藏声明 "this"（占 slot 0，参数顺延 1..n）
 static void bindFuncCommon(Binder* b, AstNode* n, ms_u8 flags, AstParam* params, int32_t paramCount, AstNode* body,
-                           AstNode* exprBody) {
+                           AstNode* exprBody, bool hasThis) {
   for (int32_t i = 0; i < paramCount; i++) {
     if (params[i].defaultExpr != NULL) {
       bindExpr(b, params[i].defaultExpr);  // 默认值求值于定义处作用域（05 §1）
@@ -270,6 +271,9 @@ static void bindFuncCommon(Binder* b, AstNode* n, ms_u8 flags, AstParam* params,
   Scope* fn = pushScope(b, SCOPE_FUNC);
   fn->funcNode = n;
   fn->isAsync = (flags & AST_FUNC_ASYNC) != 0;
+  if (hasThis) {  // T020：方法帧 this 占 slot 0（隐藏声明；AST_THIS 按名解析到此）
+    declareStrict(b, "this", 4, false, n);
+  }
   for (int32_t i = 0; i < paramCount; i++) {
     declareStrict(b, params[i].name, params[i].nameLen, false, n);
   }
@@ -485,7 +489,7 @@ static void bindStmt(Binder* b, AstNode* n) {
         annotateDeclNode(n, b->top, sym, false);
       }
       bindFuncCommon(b, n, n->as.funcDecl.flags, n->as.funcDecl.params, n->as.funcDecl.paramCount, n->as.funcDecl.body,
-                     n->as.funcDecl.exprBody);
+                     n->as.funcDecl.exprBody, false);
       break;
     }
     case AST_CLASS_DECL: {
@@ -503,7 +507,8 @@ static void bindStmt(Binder* b, AstNode* n) {
           bindExpr(b, m->as.varDecl.init);  // 字段初始化：仅解析初值，不登记成员名
         } else {
           bindFuncCommon(b, m, m->as.funcDecl.flags, m->as.funcDecl.params, m->as.funcDecl.paramCount,
-                         m->as.funcDecl.body, m->as.funcDecl.exprBody);
+                         m->as.funcDecl.body, m->as.funcDecl.exprBody,
+                         (m->as.funcDecl.flags & AST_FUNC_STATIC) == 0);  // static 方法无 this（06 §4）
         }
       }
       popScope(b);
@@ -1032,9 +1037,25 @@ static void bindExpr(Binder* b, AstNode* n) {
       break;
     case AST_FUNC_EXPR:
       bindFuncCommon(b, n, n->as.funcExpr.flags, n->as.funcExpr.params, n->as.funcExpr.paramCount, n->as.funcExpr.body,
-                     n->as.funcExpr.exprBody);
+                     n->as.funcExpr.exprBody, false);
       break;
-    case AST_THIS:
+    case AST_THIS: {  // T020：按隐藏 "this" 声明解析（方法直层 LOCAL/嵌套 UPVALUE 捕获自动成立）
+      Resolved r = resolveName(b, "this", 4);
+      if (!r.found || (r.def->owner->kind == SCOPE_MODULE && r.sym->slot < 0)) {
+        bindErr(b, n, 4, MSE_BIND_THIS_OUTSIDE, "'this' is only allowed inside a method");
+        break;
+      }
+      if (r.hops == 0) {
+        n->bindKind = AST_BIND_LOCAL;
+        n->bindSlot = r.sym->slot;
+        break;
+      }
+      n->bindKind = AST_BIND_UPVALUE;
+      n->bindSlot = r.sym->slot;
+      n->bindUpvalDepth = r.hops;
+      recordCapture(b, &r);
+      break;
+    }
     case AST_NIL:
     case AST_BOOL:
     case AST_INT:

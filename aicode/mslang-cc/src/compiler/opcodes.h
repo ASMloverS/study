@@ -62,11 +62,12 @@ typedef enum MsOpcode {
   OP_CALL_METHOD,    // <const name> <u8 icSlot> <u8 argc> <u8 flags>（bit0 同 CALL）
   OP_RETURN,
   // 类（21 §3.4）
-  OP_NEW_CLASS,      // <const name> <const base>（base = 255 表示无基类）
-  OP_DEFINE_METHOD,  // <const name> <u8 flags(method/static/dunder)>
-  OP_INHERIT_INIT,   // 构建 MRO/方法表
-  OP_GET_ATTR,       // <const name> <u8 icSlot>
-  OP_SET_ATTR,       // <const name>
+  OP_NEW_CLASS,      // <const name> <u8 baseCount>：bases 值依序压栈后消费
+  OP_DEFINE_METHOD,  // <const name> <u8 flags(MS_DEFM_*)>：栈 [class, value] → [class]
+  OP_INHERIT_INIT,   // 栈 [class] → [class]：构建 MRO（冲突报 SyntaxError 等价）
+  OP_GET_ATTR,       // <const name> <u8 icSlot>（T022）：栈 [obj] → [值]
+  OP_SET_ATTR,       // <const name>：弹序 value/obj（同 SET_INDEX；赋值语句栈中性）
+  OP_GET_SUPER,      // <const name> <u8 icSlot>：栈 [this] → [bound/值]（定义类 MRO 下一类起查）
   // 控制流（21 §3.5）：目标为 chunk 内绝对偏移
   OP_JMP,
   OP_JMP_IF_FALSE,         // 条件出栈
@@ -129,5 +130,11 @@ typedef enum MsOpndLayout {
   OPL_CONST_U8_U8_U8,
   OPL_SPECIAL,
 } MsOpndLayout;
+
+// T020 类成员登记 flags（OP_DEFINE_METHOD 第二操作数）
+#define MS_DEFM_STATIC 1u     // 值入 statics（static var/const、类体 const、static func）
+#define MS_DEFM_DUNDER 2u     // dunder 方法名标记（T021 消费）
+#define MS_DEFM_FIELD 4u      // 登记 fieldNames（非 static var 声明）
+#define MS_DEFM_FIELD_DEF 8u  // 值入 fieldDefaults（带初始化器字段）
 
 #endif  // INCLUDE_MS_COMPILER_OPCODES_H_

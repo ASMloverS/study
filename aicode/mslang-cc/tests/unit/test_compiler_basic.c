@@ -310,12 +310,23 @@ TEST(emptyFuncBodyGetsEpilogue) {
   chunkFree(&c);
 }
 
-TEST(unsupportedStmtReportsDiag) {  // T011 起 if 等控制流已支持；class 编译归 T020
+TEST(emptyClassDeclCompiles) {  // T020：class 占位报错移除；空类 → NEW_CLASS/INHERIT_INIT/全局落盘
   MsDiagSink diags = {0};
   Chunk c;
-  EXPECT(ctx, !compileSrc("class A {}", &c, &diags));
-  EXPECT_EQ(ctx, 1, diags.count);
-  EXPECT_EQ(ctx, MSE_COMPILE_UNSUPPORTED, (int)diags.items[0].code);
+  EXPECT(ctx, compileSrc("class A {}", &c, &diags));
+  EXPECT_EQ(ctx, 0, diags.count);
+  EXPECT_EQ(ctx, 1, c.constsLen);  // {"A"}
+  EXPECT_EQ(ctx, CONST_STRING, c.consts[0].kind);
+  ms_u8 ops[8];
+  int32_t operands[8];
+  EXPECT_EQ(ctx, 6, decodeAll(&c, ops, operands, 8));
+  EXPECT_EQ(ctx, OP_NEW_CLASS, ops[0]);  // <const name> <u8 baseCount=0>
+  EXPECT_EQ(ctx, 0, operands[0]);
+  EXPECT_EQ(ctx, OP_INHERIT_INIT, ops[1]);
+  EXPECT_EQ(ctx, OP_DEF_GLOBAL, ops[2]);
+  EXPECT_EQ(ctx, OP_STORE_GLOBAL, ops[3]);
+  EXPECT_EQ(ctx, OP_LOAD_NIL, ops[4]);
+  EXPECT_EQ(ctx, OP_RETURN, ops[5]);
   chunkFree(&c);
 }
 
@@ -833,7 +844,7 @@ int main(int argc, char** argv) {
       localReadWriteInFunc,
       funcProtoWithReturnHasNoEpilogue,
       emptyFuncBodyGetsEpilogue,
-      unsupportedStmtReportsDiag,
+      emptyClassDeclCompiles,
       interpStringCompilesToFormatString,
       shortCircuitAnd,
       shortCircuitOr,

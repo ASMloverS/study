@@ -5,15 +5,15 @@
       (block
         (assign =
           (member (this) x)
-          (ident x [local:0]))
+          (ident x [local:1]))
         (assign =
           (member (this) y)
-          (ident y [local:1]))))
+          (ident y [local:2]))))
     (func-decl __eq__
       (params (param o))
       (block
         (return
-          (and (binary == (member (this) x) (member (ident o [local:0]) x)) (binary == (member (this) y) (member (ident o [local:0]) y))))))
+          (and (binary == (member (this) x) (member (ident o [local:1]) x)) (binary == (member (this) y) (member (ident o [local:1]) y))))))
     (func-decl __hash__
       (params)
       (block

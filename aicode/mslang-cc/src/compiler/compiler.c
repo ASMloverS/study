@@ -272,7 +272,7 @@ static int32_t nameConst(FuncState* fs, const char* name, int32_t len) {
 
 static void compileExpr(FuncState* fs, const AstNode* n);
 
-static void compileFunctionValue(FuncState* fs, const AstNode* n);
+static void compileFunctionValue(FuncState* fs, const AstNode* n, bool isMethod);
 
 // 推导式帧栈内解析槽位（T017 Task 4）：BIND_LOCAL → 内层伪帧 map；
 // BIND_UPVALUE(depth) → depth 层外伪帧 map，或 depth == comprDepth 时直通真实外层函数槽
@@ -996,8 +996,25 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       emitOp(fs, OP_LOAD_NIL, n->line);
       break;
     case AST_FUNC_EXPR:  // 匿名函数表达式（05 §1）：物化函数值
-      compileFunctionValue(fs, n);
+      compileFunctionValue(fs, n, false);
       break;
+    case AST_THIS: {  // T020：binder 已按隐藏声明标注（LOCAL=方法直层 / UPVALUE=嵌套捕获）
+      if (n->bindKind == AST_BIND_LOCAL) {
+        localOp(fs, OP_LOAD_LOCAL, n->bindSlot, n->line);
+      } else if (n->bindKind == AST_BIND_UPVALUE) {
+        int32_t idx = findUpvalByName(fs, "this", 4);
+        if (idx < 0) {  // 防御（binder 捕获记录已保证存在）
+          compErr(fs, n, 4, "upvalue capture is not registered");
+          emitOp(fs, OP_LOAD_NIL, n->line);
+          break;
+        }
+        upvalOp(fs, OP_LOAD_UPVAL, idx, n->line);
+      } else {  // binder 已诊断（防御占位）
+        compErr(fs, n, 4, "'this' is only allowed inside a method");
+        emitOp(fs, OP_LOAD_NIL, n->line);
+      }
+      break;
+    }
     default:
       compErr(fs, n, 1, "expression form is not supported yet");
       emitOp(fs, OP_LOAD_NIL, n->line);
@@ -1066,7 +1083,7 @@ static void storeDeclIdent(FuncState* fs, const AstNode* t) {
 }
 
 // 解构落盘：值在栈顶（逆序消费）——IDENT 按声明/引用语义直存；INDEX 先 obj/idx 再 ROT 对齐
-// SET_INDEX 弹序（v obj idx → obj idx v）；MEMBER 目标与单目标赋值同样归 T020
+// SET_INDEX 弹序（v obj idx → obj idx v）；MEMBER 先 obj 再 SWAP 对齐 SET_ATTR 弹尽（v obj → obj v，T020）
 static void storeUnpackTarget(FuncState* fs, AstNode* t, bool declare) {
   if (t->kind == AST_IDENT) {
     if (declare) {
@@ -1081,6 +1098,13 @@ static void storeUnpackTarget(FuncState* fs, AstNode* t, bool declare) {
     compileExpr(fs, t->as.indexExpr.index);
     emitOp(fs, OP_ROT, t->line);
     emitOp(fs, OP_SET_INDEX, t->line);
+    return;
+  }
+  if (t->kind == AST_MEMBER) {  // T020：解构目标 obj.name（值在栈顶：SWAP 对齐后 SET_ATTR 弹尽）
+    compileExpr(fs, t->as.memberExpr.obj);
+    emitOp(fs, OP_SWAP, t->line);
+    int32_t k = nameConst(fs, t->as.memberExpr.name, t->as.memberExpr.nameLen);
+    emitConstOp(fs, OP_SET_ATTR, k, t->line);
     return;
   }
   compErr(fs, t, 1, "assignment target form is not supported yet");
@@ -1160,6 +1184,21 @@ static void compileAssign(FuncState* fs, AstNode* n) {
   }
   if (target->kind == AST_TUPLE && n->as.assign.op == AST_OP_NONE) {  // 元组目标解构（04 §2）
     compileTupleAssign(fs, n, target);
+    return;
+  }
+  if (target->kind == AST_MEMBER) {  // T020：obj.name = v（复合同 DUP→GET→OP→SET）
+    int32_t k = nameConst(fs, target->as.memberExpr.name, target->as.memberExpr.nameLen);
+    compileExpr(fs, target->as.memberExpr.obj);
+    if (n->as.assign.op != AST_OP_NONE) {
+      emitOp(fs, OP_DUP, n->line);  // obj 双占：GET_ATTR 消费副本，SET_ATTR 消费原件
+      emitConstOp(fs, OP_GET_ATTR, k, n->line);
+      emitByte(fs, 0);  // icSlot（T022）
+      compileExpr(fs, n->as.assign.value);
+      emitOp(fs, binaryOpCode(n->as.assign.op), n->line);
+    } else {
+      compileExpr(fs, n->as.assign.value);
+    }
+    emitConstOp(fs, OP_SET_ATTR, k, n->line);
     return;
   }
   if (target->kind != AST_IDENT) {
@@ -1435,7 +1474,7 @@ static void scanMaxLocalSlot(const AstNode* n, int32_t* maxSlot) {
 
 // 函数原型：体编译为独立 chunk（RETURN/局部槽位来自 Binder 标注），挂入常量池；
 // FUNC_DECL/FUNC_EXPR 载荷同名字段按 kind 取用（exprBody 为 -> 表达式体，05 §1）
-static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) {
+static void compileFuncProto(FuncState* fs, const AstNode* n, bool isMethod, Chunk** protoOut) {
   bool isExpr = n->kind == AST_FUNC_EXPR;
   const AstParam* params = isExpr ? n->as.funcExpr.params : n->as.funcDecl.params;
   int32_t paramCount = isExpr ? n->as.funcExpr.paramCount : n->as.funcDecl.paramCount;
@@ -1444,14 +1483,18 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   Chunk* proto = malloc(sizeof(Chunk));
   MS_ASSERT(proto != NULL);
   chunkInit(proto, isExpr ? NULL : n->as.funcDecl.name, isExpr ? 0 : n->as.funcDecl.nameLen);
-  proto->paramCount = paramCount;  // 参数元数据（T018 帧装配 + 名字表消费）
-  if (paramCount > 0) {
-    proto->params = malloc(sizeof(MsParamName) * (size_t)paramCount);
+  proto->paramCount = paramCount + (isMethod ? 1 : 0);  // T020：方法 slot 0 = this（参数顺延 1..n）
+  if (proto->paramCount > 0) {
+    proto->params = malloc(sizeof(MsParamName) * (size_t)proto->paramCount);
     MS_ASSERT(proto->params != NULL);
   }
+  if (isMethod) {
+    proto->params[0].name = "this";  // 隐藏接收者（binder 已占 slot 0；T020）
+    proto->params[0].len = 4;
+  }
   for (int32_t i = 0; i < paramCount; i++) {  // 形态防御（parser 已拦）+ 名字表（借用源文本，rest 名不含 *）
-    proto->params[i].name = params[i].name;
-    proto->params[i].len = params[i].nameLen;
+    proto->params[i + (isMethod ? 1 : 0)].name = params[i].name;
+    proto->params[i + (isMethod ? 1 : 0)].len = params[i].nameLen;
     if (params[i].rest && i != paramCount - 1) {
       compErr(fs, n, 1, "rest parameter must be the last parameter");
     }
@@ -1471,11 +1514,14 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
   if ((fnFlags & AST_FUNC_GENERATOR) != 0 || bodyHasDirectYield(body)) {  // T019：显式 func* 或隐式直层 yield
     proto->flags |= MS_CHUNK_GENERATOR;
   }
+  if (isMethod) {  // T020：方法帧（VM 依此走 this 装配/GET_SUPER 语境）
+    proto->flags |= MS_CHUNK_METHOD;
+  }
   // 临时槽基线：高于全部真实局部槽（预扫描安全超估）且不低于参数槽数
   int32_t scan = -1;
   scanMaxLocalSlot(body, &scan);
   scanMaxLocalSlot(exprBody, &scan);
-  int32_t base = paramCount;
+  int32_t base = proto->paramCount;
   if (scan + 1 > base) {
     base = scan + 1;
   }
@@ -1538,8 +1584,8 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
     emitOp(&inner, OP_RETURN, line);
   }
   finishChunk(&inner);
-  // localCount 含参数槽（未引用参数亦占位）与推导式临时槽：T018 帧入参区依赖
-  proto->localCount = inner.localCount > paramCount ? inner.localCount : paramCount;
+  // localCount 含参数槽（未引用参数亦占位；方法含 this）与推导式临时槽：T018 帧入参区依赖
+  proto->localCount = inner.localCount > proto->paramCount ? inner.localCount : proto->paramCount;
   free(inner.jumps);
   free(inner.loops);
   free(inner.comprStack);
@@ -1550,16 +1596,17 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, Chunk** protoOut) 
 
 // 函数值物化（声明/表达式共用，21 §3.3/§4）：proto 编译入池 → 默认参依序压栈 → MAKE_FUNCTION/CLOSURE
 // 默认参定义处求值（05 §1：默认值绑定于定义作用域，Python 语义）；
-// 捕获函数（proto->nUpvalues > 0）走 CLOSURE（无 LOAD_CONST/MAKE_FUNCTION，T018）
-static void compileFunctionValue(FuncState* fs, const AstNode* n) {
+// 捕获函数（proto->nUpvalues > 0）与类方法（T020）走 CLOSURE（无 LOAD_CONST/MAKE_FUNCTION，T018）
+static void compileFunctionValue(FuncState* fs, const AstNode* n, bool isMethod) {
   bool isExpr = n->kind == AST_FUNC_EXPR;
   const AstParam* params = isExpr ? n->as.funcExpr.params : n->as.funcDecl.params;
   int32_t paramCount = isExpr ? n->as.funcExpr.paramCount : n->as.funcDecl.paramCount;
   Chunk* proto = NULL;
-  compileFuncProto(fs, n, &proto);
+  compileFuncProto(fs, n, isMethod, &proto);
   int32_t k = chunkAddConstProto(fs->chunk, proto);
   bool hasCaptures = proto->nUpvalues > 0;
-  if (!hasCaptures) {
+  bool plain = !hasCaptures && !isMethod;
+  if (plain) {
     emitConstOp(fs, OP_LOAD_CONST, k, n->line);
   }
   for (int32_t i = 0; i < paramCount; i++) {  // 栈形 [proto, d1..dn]：默认值居顶，fn 于 proto 槽就地物化
@@ -1567,17 +1614,63 @@ static void compileFunctionValue(FuncState* fs, const AstNode* n) {
       compileExpr(fs, params[i].defaultExpr);
     }
   }
-  if (!hasCaptures) {
+  if (plain) {
     emitOp(fs, OP_MAKE_FUNCTION, n->line);
     emitByte(fs, (ms_u8)(proto->defaultParamCount | (proto->hasRest ? 0x80 : 0)));
   } else {  // 栈形 [d1..dn, CLOSURE]：fn 依 proto 元数据就地物化后闭包覆盖栈顶（T018）
+    // 捕获函数与类方法（T020：帧 closure 恒持——GET_SUPER 经 fn->owner）
     emitConstOp(fs, OP_CLOSURE, k, n->line);
   }
 }
 
 static void compileFuncDecl(FuncState* fs, AstNode* n) {
-  compileFunctionValue(fs, n);
+  compileFunctionValue(fs, n, false);
   finishDeclStore(fs, n);  // 声明落盘（global：DEF+STORE；local：STORE_LOCAL）
+}
+
+// 类声明编译（T020，21 §3.4/06 §1-§4）：bases 压栈 → NEW_CLASS → 逐成员 DEFINE_METHOD →
+// INHERIT_INIT（MRO）→ 类名落盘。成员求值序 = 声明序（字段默认/static 初值类创建期求值一次）
+static void compileClassDecl(FuncState* fs, AstNode* n) {
+  if (n->as.classDecl.baseCount > 255) {  // NEW_CLASS baseCount 为 u8 操作数
+    compErr(fs, n, n->as.classDecl.nameLen, "too many base classes");
+    return;
+  }
+  for (int32_t i = 0; i < n->as.classDecl.baseCount; i++) {
+    compileExpr(fs, n->as.classDecl.bases[i]);
+  }
+  int32_t k = nameConst(fs, n->as.classDecl.name, n->as.classDecl.nameLen);
+  emitConstOp(fs, OP_NEW_CLASS, k, n->line);
+  emitByte(fs, (ms_u8)n->as.classDecl.baseCount);
+  for (int32_t i = 0; i < n->as.classDecl.memberCount; i++) {
+    AstNode* m = n->as.classDecl.members[i];
+    if (m->kind == AST_FUNC_DECL) {
+      bool isStatic = (m->as.funcDecl.flags & AST_FUNC_STATIC) != 0;
+      compileFunctionValue(fs, m, !isStatic);
+      int32_t mk = nameConst(fs, m->as.funcDecl.name, m->as.funcDecl.nameLen);
+      ms_u8 flags = isStatic ? MS_DEFM_STATIC : 0u;
+      int32_t nl = m->as.funcDecl.nameLen;
+      if (nl > 4 && m->as.funcDecl.name[0] == '_' && m->as.funcDecl.name[1] == '_' &&
+          m->as.funcDecl.name[nl - 2] == '_' && m->as.funcDecl.name[nl - 1] == '_') {
+        flags |= MS_DEFM_DUNDER;  // __x__ 形态标记（T021 消费）
+      }
+      emitConstOp(fs, OP_DEFINE_METHOD, mk, m->line);
+      emitByte(fs, flags);
+    } else {  // AST_VAR_DECL 字段/类属性
+      bool isStatic = (m->as.varDecl.flags & (AST_VAR_STATIC | AST_VAR_CONST)) != 0;
+      if (m->as.varDecl.init != NULL) {
+        compileExpr(fs, m->as.varDecl.init);
+      } else {
+        emitOp(fs, OP_LOAD_NIL, m->line);
+      }
+      int32_t mk = nameConst(fs, m->as.varDecl.name, m->as.varDecl.nameLen);
+      ms_u8 flags = isStatic ? MS_DEFM_STATIC
+                             : (ms_u8)(MS_DEFM_FIELD | (m->as.varDecl.init != NULL ? MS_DEFM_FIELD_DEF : 0));
+      emitConstOp(fs, OP_DEFINE_METHOD, mk, m->line);
+      emitByte(fs, flags);
+    }
+  }
+  emitOp(fs, OP_INHERIT_INIT, n->line);
+  finishDeclStore(fs, n);
 }
 
 // ---- 控制流（T011，04 §3-§5） ----
@@ -1845,6 +1938,9 @@ static void compileStmt(FuncState* fs, AstNode* n) {
       break;
     case AST_FUNC_DECL:
       compileFuncDecl(fs, n);
+      break;
+    case AST_CLASS_DECL:  // T020：类声明（bases/成员/方法体编译）
+      compileClassDecl(fs, n);
       break;
     case AST_IF:
       compileIf(fs, n);

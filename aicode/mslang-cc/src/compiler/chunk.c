@@ -60,6 +60,7 @@ const char* const msOpNames[OP__COUNT] = {
     "INHERIT_INIT",
     "GET_ATTR",
     "SET_ATTR",
+    "GET_SUPER",
     "JMP",
     "JMP_IF_FALSE",
     "JMP_IF_TRUE",
@@ -152,11 +153,12 @@ const MsOpndLayout msOpLayouts[OP__COUNT] = {
     OPL_U8_U8,           // CALL（argc + spread flags，T018）
     OPL_CONST_U8_U8_U8,  // CALL_METHOD（name + icSlot + argc + spread flags，T018）
     OPL_NONE,         // RETURN
-    OPL_CONST_CONST,  // NEW_CLASS
-    OPL_CONST_U8,     // DEFINE_METHOD
+    OPL_CONST_U8,     // NEW_CLASS（name + baseCount，T020）
+    OPL_CONST_U8,     // DEFINE_METHOD（name + flags）
     OPL_NONE,         // INHERIT_INIT
     OPL_CONST_U8,     // GET_ATTR
     OPL_CONST,        // SET_ATTR
+    OPL_CONST_U8,     // GET_SUPER
     OPL_JUMP,         // JMP
     OPL_JUMP,         // JMP_IF_FALSE
     OPL_JUMP,         // JMP_IF_TRUE

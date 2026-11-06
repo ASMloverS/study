@@ -17,6 +17,7 @@ typedef enum MseBindCode {
   MSE_BIND_AWAIT_POS = 1019,        // await 仅 async 函数体/模块顶层
   MSE_BIND_DUP_DECL = 1020,         // 同作用域重复声明（参数/导入/解构等 parser 未覆盖处）
   MSE_BIND_YIELD_MISPLACED = 1021,  // async 函数内 yield / 模块顶层 yield
+  MSE_BIND_THIS_OUTSIDE = 1022,     // this 仅方法体内（T020）
 } MseBindCode;
 
 // upvalue 捕获需求记录（T009 仅记录；open/closed 链 T018 消费）
