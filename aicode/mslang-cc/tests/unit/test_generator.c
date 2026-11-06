@@ -292,6 +292,7 @@ TEST(genReentrantResumeRejected) {  // next 自身重入 → 精确 RuntimeError
   EXPECT(ctx, r.compileOk);
   EXPECT(ctx, r.hasError);
   EXPECT(ctx, strstr(r.err, "generator already executing") != NULL);
+  EXPECT_EQ(ctx, -1, r.errLine);
   EXPECT_STREQ(ctx, "1\n", r.out);
   free(r.out);
 }
@@ -374,6 +375,31 @@ TEST(genexpMultiForDependent) {  // 依赖型第二 iterable：fors[i≥1] 逐�
   free(r.out);
 }
 
+// ---------- GC 压力（Task 7） ----------
+
+TEST(gcSuspendedReachableSurvives) {  // DoD：挂起生成器可达 → 快照/闭包跨多轮回收存活
+  RunResult r = runSrcHeapCap(
+      "func* nums() {\n    yield 1\n    yield 2\n    yield 3\n}\n"
+      "var g = nums()\nprint(next(g))\n"
+      "for i in range(100) {\n    var junk = range(50).toList()\n}\n"
+      "print(next(g), next(g), next(g))",
+      "65536");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "1\n2 3 nil\n", r.out);
+  free(r.out);
+}
+
+TEST(gcUnreachableCoroutinesSwept) {  // DoD：不可达挂起协程连同快照清扫（freeData 路径）
+  RunResult r = runSrcHeapCap(
+      "func* nums() {\n    var big = range(20).toList()\n    yield len(big)\n    yield 99\n}\n"
+      "var total = 0\nfor i in range(200) {\n    var junk = nums()\n    next(junk)\n    total = total + 1\n}\n"
+      "print(total)",
+      "65536");
+  EXPECT(ctx, r.compileOk);
+  EXPECT_STREQ(ctx, "200\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -403,6 +429,8 @@ int main(int argc, char** argv) {
       genexpMultiFor,
       genexpCapturesOuterLocal,
       genexpMultiForDependent,
+      gcSuspendedReachableSurvives,
+      gcUnreachableCoroutinesSwept,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
