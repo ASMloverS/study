@@ -145,8 +145,21 @@ TEST(shapeFieldTable) {  // 字段表 API：置/取/改/未命中
 }
 
 TEST(classGcMarkChildren) {  // 注册 mark 后整堆回收不崩（子表全可达标记）
+  // 极低堆压（阈值 1B：每次分配前整堆回收）——构造期子表分配即触发 GC：
+  // D6 临时 root（构造器内 msVmPush）+ markFn 容忍 NULL children（载荷先置 NULL）
+  // 堆存量钉 9：串 1 + 类 1 + 子表 5 + 实例 1 + 字段表 1（构造期回收后仍全活 → root 纪律回归闸）
   MsVM vm;
-  msVmInit(&vm);
+#if defined(_MSC_VER)
+  _putenv("MS_GC_HEAP_MAX=1");
+#else
+  setenv("MS_GC_HEAP_MAX", "1", 1);
+#endif
+  msVmInit(&vm);  // gcHeapInit 在此读取 MS_GC_HEAP_MAX（逐 VM 生效）
+#if defined(_MSC_VER)
+  _putenv("MS_GC_HEAP_MAX=");
+#else
+  unsetenv("MS_GC_HEAP_MAX");
+#endif
   MsObjString* name = msInternBytes(&vm, "C", 1);
   MsObjClass* klass = msObjClassNew(&vm, name);
   EXPECT(ctx, klass != NULL);
@@ -159,7 +172,9 @@ TEST(classGcMarkChildren) {  // 注册 mark 后整堆回收不崩（子表全可
     EXPECT(ctx, false);
   }
   gcCollectAll(&vm);
+  gcCollectAll(&vm);
   EXPECT(ctx, !vm.hasError);
+  EXPECT_EQ(ctx, 9, gcHeapObjCount(&vm));
   msVmFree(&vm);
 }
 
