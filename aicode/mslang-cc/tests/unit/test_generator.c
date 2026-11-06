@@ -383,7 +383,7 @@ TEST(gcSuspendedReachableSurvives) {  // DoD：挂起生成器可达 → 快照/
       "var g = nums()\nprint(next(g))\n"
       "for i in range(100) {\n    var junk = range(50).toList()\n}\n"
       "print(next(g), next(g), next(g))",
-      "65536");
+      "1024");
   EXPECT(ctx, r.compileOk);
   EXPECT_STREQ(ctx, "1\n2 3 nil\n", r.out);
   free(r.out);
@@ -394,7 +394,7 @@ TEST(gcUnreachableCoroutinesSwept) {  // DoD：不可达挂起协程连同快照
       "func* nums() {\n    var big = range(20).toList()\n    yield len(big)\n    yield 99\n}\n"
       "var total = 0\nfor i in range(200) {\n    var junk = nums()\n    next(junk)\n    total = total + 1\n}\n"
       "print(total)",
-      "65536");
+      "1024");
   EXPECT(ctx, r.compileOk);
   EXPECT_STREQ(ctx, "200\n", r.out);
   free(r.out);
