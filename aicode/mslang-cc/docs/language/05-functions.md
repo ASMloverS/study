@@ -48,7 +48,8 @@ c()  // 2
 
 ```ms
 func fib() {
-    var a, b = 0, 1
+    var a = 0
+    var b = 1
     for { yield a; a, b = b, a + b }
 }
 var g = fib()
