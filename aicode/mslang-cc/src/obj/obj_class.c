@@ -4,7 +4,6 @@
 #include "obj/obj_class.h"
 
 #include "gc/gc.h"
-#include "obj/shape.h"
 
 MsObjClass* msObjClassNew(MsVM* vm, MsObjString* name) {
   MsObjClass* c = (MsObjClass*)msObjAlloc(vm, MS_OBJ_CLASS, sizeof(MsObjClass));

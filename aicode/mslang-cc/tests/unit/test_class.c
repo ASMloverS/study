@@ -1,105 +1,18 @@
 // T020：类对象层单测（Task 1）——MsObjClass/MsObjInstance 构造 + 字段表 + typeName + GC 标记
+// 纯 C-API 用例（执行驱动随 Task 3 首个脚本级用例一并引入）
 #if !defined(_MSC_VER)
 #define _POSIX_C_SOURCE 200809L  // setenv/unsetenv（MS_GC_HEAP_MAX 注入；严格 c11 下需显式暴露）
 #endif
-#include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "binder/binder.h"
-#include "compiler/chunk.h"
-#include "compiler/compiler.h"
 #include "gc/gc.h"
 #include "obj/obj_class.h"
-#include "obj/obj_func.h"
-#include "obj/obj_list.h"
-#include "obj/obj_map.h"
 #include "obj/obj_string.h"
 #include "obj/shape.h"
-#include "parser/parser.h"
-#include "scanner/scanner.h"
 #include "test_harness.h"
 #include "vm/vm.h"
-
-// ---------- 执行驱动：scan → parse → bind → compile → run（stdout 捕获 tmpfile） ----------
-
-typedef struct RunResult {
-  char* out;  // stdout 捕获（malloc）
-  bool compileOk;
-  bool hasError;
-  char err[240];
-  int32_t errLine;
-} RunResult;
-
-static char* slurpTmp(FILE* f) {
-  fflush(f);
-  long len = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  char* buf = malloc((size_t)len + 1);
-  size_t got = fread(buf, 1, (size_t)len, f);
-  buf[got] = '\0';
-  fclose(f);
-  return buf;
-}
-
-static RunResult runSrcCommon(const char* src, const char* heapCap) {
-  RunResult r = {NULL, false, false, "", -1};
-  MsDiagSink diags = {0};
-  AstArena arena;
-  astArenaInit(&arena);
-  Parser p;
-  parserInit(&p, src, (int32_t)strlen(src), "t.ms", &arena, &diags);
-  AstNode* mod = parserParseModule(&p);
-  if (mod != NULL) {
-    Binder b;
-    binderInit(&b, &arena, "t.ms", &diags);
-    binderBind(&b, mod);
-    binderDestroy(&b);
-    Chunk c;
-    if (compilerCompile(mod, &c, "t.ms", &diags)) {
-      r.compileOk = true;
-      if (heapCap != NULL) {
-        char env[64];
-        snprintf(env, sizeof(env), "MS_GC_HEAP_MAX=%s", heapCap);
-#if defined(_MSC_VER)
-        _putenv(env);
-#else
-        setenv("MS_GC_HEAP_MAX", heapCap, 1);
-#endif
-      }
-      MsVM vm;
-      msVmInit(&vm);  // gcHeapInit 在此读取 MS_GC_HEAP_MAX（逐 VM 生效）
-      if (heapCap != NULL) {
-#if defined(_MSC_VER)
-        _putenv("MS_GC_HEAP_MAX=");
-#else
-        unsetenv("MS_GC_HEAP_MAX");
-#endif
-      }
-      FILE* f = tmpfile();
-      vm.out = f;
-      msVmRun(&vm, &c);
-      r.hasError = vm.hasError;
-      snprintf(r.err, sizeof(r.err), "%s", vm.errMsg);
-      r.errLine = vm.errLine;
-      r.out = slurpTmp(f);
-      msVmFree(&vm);
-      chunkFree(&c);
-    }
-  }
-  astArenaDestroy(&arena);
-  if (r.out == NULL) {
-    r.out = calloc(1, 1);
-  }
-  return r;
-}
-
-static RunResult runSrc(const char* src) { return runSrcCommon(src, NULL); }
-
-// 分配压力触发多轮 GC：MS_GC_HEAP_MAX 于 msVmInit 前置入环境，init 后即还原（不泄入后续用例）
-static RunResult runSrcHeapCap(const char* src, const char* cap) { return runSrcCommon(src, cap); }
 
 // ---------- 对象层（Task 1）：构造/字段表/typeName/GC ----------
 
