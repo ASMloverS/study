@@ -248,6 +248,53 @@ TEST(mroBuildSurvivesGcStress) {  // 极低堆压（阈值 1B：每次分配前�
   free(r.out);
 }
 
+TEST(setAttrStaticsWriteAndRead) {  // 类属性写 + 读回（SET_ATTR/GET_ATTR CLASS 路径）
+  RunResult r = runSrc("class C {\n}\nC.x = 1\nprint(C.x)\nC.x += 2\nprint(C.x)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1\n3\n", r.out);
+  free(r.out);
+}
+
+TEST(setAttrNonObjectTypeError) {  // 值类型属性赋值 → TypeError
+  RunResult r = runSrc("var s = \"a\"\ns.x = 1");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(duplicateBaseSyntaxError) {  // bases 清单内部重复 → SyntaxError 等价
+  RunResult r = runSrc("class A {\n}\nclass C : A, A {\n}");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "SyntaxError") != NULL);
+  free(r.out);
+}
+
+TEST(mroConflictSyntaxError) {  // C3 冲突：X/Y 顺序矛盾 → SyntaxError
+  RunResult r = runSrc(
+      "class X {\n}\nclass Y {\n}\nclass A : X, Y {\n}\nclass B : Y, X {\n}\nclass C : A, B {\n}");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "SyntaxError") != NULL);
+  free(r.out);
+}
+
+TEST(longClassNameTruncatedSafe) {  // 超长类名形态截断（C1 回归钉）：无崩溃、前缀完整、A 串无垃圾字节
+  char name[161];  // 160×'A' + NUL（> 87：必触发 buf[96] 截断路径）
+  memset(name, 'A', 160);
+  name[160] = '\0';
+  char src[512];
+  snprintf(src, sizeof(src), "class %s {\n}\nprint(%s)", name, name);
+  RunResult r = runSrc(src);
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT(ctx, strncmp(r.out, "<class AAAA", 11) == 0);  // n=11：恰比较 11 字符前缀（12 会比对字面 NUL）
+  EXPECT(ctx, strspn(r.out + 7, "A") >= 87);  // 截断形态 = "<class " + 纯 A 串（95 字符上限，无 '>' 尾）
+  free(r.out);
+}
+
 TEST(staticFuncParamsNoThisShift) {  // static 带参方法无 this 槽移位（compileOk 钉；槽布局另由金集覆盖）
   RunResult r = runSrc("class S {\n    static func add(a, b) -> a + b\n}\n");
   EXPECT(ctx, r.compileOk);
@@ -312,6 +359,11 @@ int main(int argc, char** argv) {
       fieldDefaultEvaluatedOnce,
       baseNotClassTypeError,
       mroBuildSurvivesGcStress,
+      setAttrStaticsWriteAndRead,
+      setAttrNonObjectTypeError,
+      duplicateBaseSyntaxError,
+      mroConflictSyntaxError,
+      longClassNameTruncatedSafe,
       staticFuncParamsNoThisShift,
       methodChunkContract,
   };

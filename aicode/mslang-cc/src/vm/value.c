@@ -483,6 +483,18 @@ static MsObjString* fallbackForm(MsVM* vm, const MsValue* v) {
   return msObjStringNew(vm, buf, (int32_t)strlen(buf));
 }
 
+// 类/实例形态（T020；__str__/__repr__ 归 T021）：截断安全——snprintf 返回期望长度须钳制，
+// 否则超长类名（扫描器无标识符长度上限）下按返回值拷贝越界读栈缓冲（C1）
+static MsObjString* classForm(MsVM* vm, const MsObjClass* c, bool isInstance) {
+  char buf[96];
+  int len = isInstance ? snprintf(buf, sizeof(buf), "<%.*s instance>", (int)c->name->byteLen, c->name->bytes)
+                       : snprintf(buf, sizeof(buf), "<class %.*s>", (int)c->name->byteLen, c->name->bytes);
+  if (len < 0 || len >= (int)sizeof(buf)) {
+    len = (int)sizeof(buf) - 1;  // 截断：拷贝长度以缓冲实际内容为准
+  }
+  return msObjStringNew(vm, buf, len);
+}
+
 // 深度限幅（T014 review）：SET_INDEX 落地后自引用/深嵌套可构造，超限层级渲染 `[...]`/`(...)`/`{...}`
 // （同 Python 循环 repr 形态；list/tuple/map 容器共用）
 #define MS_FORM_MAX_DEPTH 100
@@ -631,18 +643,13 @@ static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     if (v->as.obj->type == MS_OBJ_CLASS) {  // T020：类形态 <class Name>
       const MsObjClass* c = (const MsObjClass*)v->as.obj;
       if (c->name != NULL) {  // C 直构可无名：回落兜底形态
-        char buf[96];
-        int len = snprintf(buf, sizeof(buf), "<class %.*s>", (int)c->name->byteLen, c->name->bytes);
-        return msObjStringNew(vm, buf, len);
+        return classForm(vm, c, false);
       }
     }
     if (v->as.obj->type == MS_OBJ_INSTANCE) {  // T020：实例形态（__str__ 归 T021）
       const MsObjInstance* i = (const MsObjInstance*)v->as.obj;
       if (i->klass != NULL && i->klass->name != NULL) {
-        char buf[96];
-        int len = snprintf(buf, sizeof(buf), "<%.*s instance>", (int)i->klass->name->byteLen,
-                           i->klass->name->bytes);
-        return msObjStringNew(vm, buf, len);
+        return classForm(vm, i->klass, true);
       }
     }
   }
@@ -682,18 +689,13 @@ static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     if (v->as.obj->type == MS_OBJ_CLASS) {  // T020：类形态 <class Name>
       const MsObjClass* c = (const MsObjClass*)v->as.obj;
       if (c->name != NULL) {  // C 直构可无名：回落兜底形态
-        char buf[96];
-        int len = snprintf(buf, sizeof(buf), "<class %.*s>", (int)c->name->byteLen, c->name->bytes);
-        return msObjStringNew(vm, buf, len);
+        return classForm(vm, c, false);
       }
     }
     if (v->as.obj->type == MS_OBJ_INSTANCE) {  // T020：实例形态（__repr__ 归 T021）
       const MsObjInstance* i = (const MsObjInstance*)v->as.obj;
       if (i->klass != NULL && i->klass->name != NULL) {
-        char buf[96];
-        int len = snprintf(buf, sizeof(buf), "<%.*s instance>", (int)i->klass->name->byteLen,
-                           i->klass->name->bytes);
-        return msObjStringNew(vm, buf, len);
+        return classForm(vm, i->klass, true);
       }
     }
   }

@@ -1546,7 +1546,7 @@ void msVmRunFrames(MsVM* vm) {
         RUNTIME_ERROR("TypeError: '%s' does not support attribute assignment", msValueTypeName(&obj));
       }
 
-      OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string 方法物化 bound（类属性 T020）
+      OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string 方法物化 bound / 类属性读（T020）
         READ_OPERAND(k);
         (void)code[ip++];  // icSlot（T022）
         MsValue recv = vm->stack[vm->stackTop - 1];  // peek：物化分配期间接收者在栈
@@ -1559,6 +1559,22 @@ void msVmRunFrames(MsVM* vm) {
           if (vm->hasError) {  // 内省 OOM 槽已置（miss 无槽，落下方方法查找）
             goto dispatchExit;
           }
+        }
+        if (recv.kind == MS_VAL_OBJ && recv.as.obj->type == MS_OBJ_CLASS) {  // T020：类属性读
+          // MRO 查（各级 methods → statics，06 §4）；方法值按 06 §3 显式形式原样返回
+          // （Class.method(this, args)），实例属性读与 bound 物化归 Task 5
+          MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+          if (name == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          MsValue attr;
+          bool isMethod;  // 已按 06 §3 原样返回：bound 化决策归 Task 5
+          if (msClassFindAttr((MsObjClass*)recv.as.obj, name, &attr, &isMethod)) {
+            vm->stack[vm->stackTop - 1] = attr;  // 接收者槽改写（intern 窗口 recv 在栈 root）
+            NEXT();
+          }
+          RUNTIME_ERROR("TypeError: 'class' has no attribute '%.*s'", (int)consts[k].as.text.len,
+                        consts[k].as.text.start);
         }
         MsMethodRef ref;
         if (methodRefLookup(&recv, consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {
