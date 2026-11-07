@@ -420,7 +420,7 @@ TEST(initReturnValueIgnored) {  // __init__ 返回值忽略：实例为调用结
       "var c = C()\nprint(c.hit, type(c))");
   EXPECT(ctx, r.compileOk);
   EXPECT(ctx, !r.hasError);
-  EXPECT_STREQ(ctx, "1 instance\n", r.out);
+  EXPECT_STREQ(ctx, "1 C\n", r.out);
   free(r.out);
 }
 
@@ -716,7 +716,7 @@ TEST(generatorInitDefensivePath) {  // func* __init__：实例照常返回（协
       "print(type(g))");
   EXPECT(ctx, r.compileOk);
   EXPECT(ctx, !r.hasError);
-  EXPECT_STREQ(ctx, "instance\n", r.out);
+  EXPECT_STREQ(ctx, "G\n", r.out);
   free(r.out);
 }
 
@@ -732,6 +732,178 @@ TEST(spreadIntoCtor) {  // C(*args) 展开进 __init__
   EXPECT(ctx, r.compileOk);
   EXPECT(ctx, !r.hasError);
   EXPECT_STREQ(ctx, "1 2\n", r.out);
+  free(r.out);
+}
+
+// ---------- static/绑定方法/instanceof（Task 7，06 §3 §4）----------
+
+TEST(staticCounterShared) {  // 06 §4 原例：static var 跨实例共享 + 类外读写 + const 类常量
+  RunResult r = runSrc(
+      "class Counter {\n"
+      "    static var total = 0\n"
+      "    static func describe() -> \"counters, total=${Counter.total}\"\n"
+      "    const VERSION = \"1.0\"\n"
+      "}\n"
+      "Counter.total += 1\n"
+      "Counter.total += 1\n"
+      "print(Counter.describe())\n"
+      "print(Counter.VERSION)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "counters, total=2\n1.0\n", r.out);
+  free(r.out);
+}
+
+TEST(staticSharedAcrossInstancesAndSubclass) {  // static 经实例与子类均见共享值
+  RunResult r = runSrc(
+      "class B {\n"
+      "    static var n = 0\n"
+      "    func bump() { B.n += 1 }\n"
+      "}\n"
+      "class S : B {\n"
+      "}\n"
+      "var a = B()\n"
+      "var b = S()\n"
+      "a.bump()\n"
+      "b.bump()\n"
+      "print(B.n, S.n, a.n)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "2 2 2\n", r.out);
+  free(r.out);
+}
+
+TEST(staticFuncNoThisButSubclassVisible) {  // static 方法无 this 直调 + 子类可见可遮蔽
+  RunResult r = runSrc(
+      "class B {\n"
+      "    static func tag() -> \"b\"\n"
+      "}\n"
+      "class S : B {\n"
+      "    static func tag() -> \"s\"\n"
+      "}\n"
+      "print(B.tag())\n"
+      "print(S.tag())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "b\ns\n", r.out);
+  free(r.out);
+}
+
+TEST(boundMethodExtraction) {  // var m = obj.method; m() 保持 this（06 §3）
+  RunResult r = runSrc(
+      "class Greeter {\n"
+      "    var name\n"
+      "    func __init__(name) { this.name = name }\n"
+      "    func greet() -> \"hi ${this.name}\"\n"
+      "}\n"
+      "var g = Greeter(\"ms\")\n"
+      "var m = g.greet\n"
+      "print(m())\n"
+      "print(callable(m))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "hi ms\ntrue\n", r.out);
+  free(r.out);
+}
+
+TEST(explicitReceiverPassing) {  // Base.method(this, args) 显式传递等价（06 §3）
+  RunResult r = runSrc(
+      "class Base {\n"
+      "    func twice(x) -> x * 2\n"
+      "}\n"
+      "class Sub : Base {\n"
+      "    func twice(x) -> Base.twice(this, x) + 1\n"
+      "}\n"
+      "var s = Sub()\n"
+      "print(s.twice(5))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "11\n", r.out);
+  free(r.out);
+}
+
+TEST(instanceofAlongMro) {  // instanceof 沿 MRO：子类/基类/mixin 真、无关类假（06 §2）
+  RunResult r = runSrc(
+      "class Base {\n"
+      "}\n"
+      "trait Mix {\n"
+      "}\n"
+      "class Sub : Base, Mix {\n"
+      "}\n"
+      "class Other {\n"
+      "}\n"
+      "var s = Sub()\n"
+      "print(instanceof(s, Sub), instanceof(s, Base), instanceof(s, Mix), instanceof(s, Other))\n"
+      "print(instanceof(5, Sub), instanceof(\"x\", Base))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true true true false\nfalse false\n", r.out);
+  free(r.out);
+}
+
+TEST(instanceofNonClassArg) {  // instanceof 第二参非类 → TypeError
+  RunResult r = runSrc("class C {\n}\nvar c = C()\ninstanceof(c, \"C\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(isinstanceWithClassObject) {  // isinstance 类对象分支 + 字符串路径兼容（10 §1）
+  RunResult r = runSrc(
+      "class Sub {\n"
+      "}\n"
+      "var s = Sub()\n"
+      "print(isinstance(s, Sub), isinstance(s, \"instance\"), isinstance(5, \"int\"))\n"
+      "print(isinstance(5, [\"int\", \"float\"]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true true true\ntrue\n", r.out);
+  free(r.out);
+}
+
+TEST(typeReturnsClassName) {  // type(instance) 返回类名（06 DoD）
+  RunResult r = runSrc(
+      "class Animal {\n"
+      "}\n"
+      "var a = Animal()\n"
+      "print(type(a))\n"
+      "print(str(a))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "Animal\n<Animal instance>\n", r.out);
+  free(r.out);
+}
+
+TEST(mixinSuperAttrErrorPinned) {  // T6 review 钉：mixin 内 super（无后继）→ AttributeError
+  RunResult r = runSrc(
+      "trait M {\n"
+      "    func tag() -> super.tag()\n"
+      "}\n"
+      "class C {\n"
+      "    func tag() -> \"c\"\n"
+      "}\n"
+      "class D : C, M {\n"
+      "}\n"
+      "D().tag()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "AttributeError") != NULL);
+  free(r.out);
+}
+
+TEST(superFieldAccessErrorPinned) {  // T6 review 钉：super.实例字段 → AttributeError（06 §2 仅方法形态）
+  RunResult r = runSrc(
+      "class A {\n"
+      "    var x = 10\n"
+      "}\n"
+      "class B : A {\n"
+      "    func get() -> super.x\n"
+      "}\n"
+      "B().get()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "AttributeError") != NULL);
   free(r.out);
 }
 
@@ -786,6 +958,17 @@ int main(int argc, char** argv) {
       derivedFieldShadowsBaseDefault,
       generatorInitDefensivePath,
       spreadIntoCtor,
+      staticCounterShared,
+      staticSharedAcrossInstancesAndSubclass,
+      staticFuncNoThisButSubclassVisible,
+      boundMethodExtraction,
+      explicitReceiverPassing,
+      instanceofAlongMro,
+      instanceofNonClassArg,
+      isinstanceWithClassObject,
+      typeReturnsClassName,
+      mixinSuperAttrErrorPinned,
+      superFieldAccessErrorPinned,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

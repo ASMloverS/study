@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "obj/obj_bigint.h"
+#include "obj/obj_class.h"
 #include "obj/obj_func.h"
 #include "obj/obj_iter.h"
 #include "obj/obj_list.h"
@@ -160,13 +161,17 @@ static MsValue nativeSet(MsVM* vm, int32_t argc, const MsValue* args) {
   return r;
 }
 
-// type(x)：类型名字符串（10 §1）
+// type(x)：类型名字符串；instance 返回类名（10 §1；06 DoD）
 static MsValue nativeType(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
     bErr(vm, "ArgumentError: type expects 1 argument");
     return msValueNil();
   }
   MsValue a = args[0];  // 值拷贝：msObjStringNew 分配窗口实参在 OP_CALL 栈 root，指针不跨调用复用
+  if (msIsInstance(&a)) {  // T020：type(instance) 返回类名（06 DoD）
+    const MsObjInstance* i = (const MsObjInstance*)a.as.obj;
+    return msValueObj((MsObj*)i->klass->name);  // intern 永久串
+  }
   const char* n = msValueTypeName(&a);
   MsObjString* s = msObjStringNew(vm, n, (int32_t)strlen(n));
   if (s == NULL) {
@@ -901,20 +906,27 @@ static MsValue nativeNext(MsVM* vm, int32_t argc, const MsValue* args) {
   return msValueNil();  // 耗尽 → nil；错误路径槽已置
 }
 
-// 类型名匹配（isinstance 专设；class/MRO 归 T020）
+// 类型名匹配（isinstance 类型名串路径专设）
 static bool typeNameMatch(const MsValue* x, const MsValue* t) {
   const MsObjString* s = (const MsObjString*)t->as.obj;
   const char* n = msValueTypeName(x);
   return (ms_i64)s->byteLen == (ms_i64)strlen(n) && memcmp(s->bytes, n, s->byteLen) == 0;
 }
 
-// isinstance(x, T)：T 为类型名字符串或 list/tuple 类型名集合（10 §1）
+// isinstance(x, T)：T 为类对象（沿 MRO）或类型名字符串/list/tuple 类型名集合（10 §1）
 static MsValue nativeIsinstance(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 2) {
     bErr(vm, "ArgumentError: isinstance expects 2 arguments");
     return msValueNil();
   }
   const MsValue* t = &args[1];
+  if (msIsClass(t)) {  // T020：类对象沿 MRO（10 §1 与类型名路径并存）
+    if (!msIsInstance(&args[0])) {
+      return msValueBool(false);
+    }
+    const MsObjClass* k = ((const MsObjInstance*)args[0].as.obj)->klass;
+    return msValueBool(msClassMroContains(k, (const MsObjClass*)t->as.obj));
+  }
   if (msIsString(t)) {
     return msValueBool(typeNameMatch(&args[0], t));
   }
@@ -936,6 +948,23 @@ static MsValue nativeIsinstance(MsVM* vm, int32_t argc, const MsValue* args) {
     }
   }
   return msValueBool(false);
+}
+
+// instanceof(x, T)：T 为类对象沿 MRO 判定（06 §2）；x 非实例 false；T 非类 TypeError
+static MsValue nativeInstanceof(MsVM* vm, int32_t argc, const MsValue* args) {
+  if (argc != 2) {
+    bErr(vm, "ArgumentError: instanceof expects 2 arguments");
+    return msValueNil();
+  }
+  if (!msIsClass(&args[1])) {
+    bErr(vm, "TypeError: instanceof expects a class");
+    return msValueNil();
+  }
+  if (!msIsInstance(&args[0])) {
+    return msValueBool(false);
+  }
+  const MsObjClass* k = ((const MsObjInstance*)args[0].as.obj)->klass;
+  return msValueBool(msClassMroContains(k, (const MsObjClass*)args[1].as.obj));
 }
 
 // callable(x)：原生/脚本函数值或 bound 方法对象（10 §1；__call__ 实例归 T021）
@@ -1085,10 +1114,10 @@ static const BuiltinEntry kBuiltins[] = {
     {"abs", nativeAbs},         {"min", nativeMin},           {"max", nativeMax},
     {"sum", nativeSum},         {"sorted", nativeSorted},     {"reversed", nativeReversed},
     {"enumerate", nativeEnumerate}, {"zip", nativeZip},       {"iter", nativeIter},
-    {"next", nativeNext},       {"isinstance", nativeIsinstance}, {"callable", nativeCallable},
-    {"make", nativeMake},       {"id", nativeId},             {"input", nativeInput},
-    {"assert", nativeAssert},   {"all", nativeAll},           {"race", nativeRace},
-    {"WeakRef", nativeWeakref}, {"set", nativeSet},
+    {"next", nativeNext},       {"isinstance", nativeIsinstance}, {"instanceof", nativeInstanceof},
+    {"callable", nativeCallable}, {"make", nativeMake},         {"id", nativeId},
+    {"input", nativeInput},     {"assert", nativeAssert},     {"all", nativeAll},
+    {"race", nativeRace},       {"WeakRef", nativeWeakref},   {"set", nativeSet},
 };
 
 bool msBuiltinLookup(MsVM* vm, const char* name, int32_t len, MsValue* out) {

@@ -1327,9 +1327,6 @@ void msVmRunFrames(MsVM* vm) {
           int32_t mroCount = klass->mro != NULL ? klass->mro->count : 0;  // 防御：脚本类恒经 INHERIT_INIT
           for (int32_t mi = 0; mi < mroCount; mi++) {
             MsObjClass* mc = (MsObjClass*)klass->mro->items[mi].as.obj;
-            if (mc->mro == NULL) {  // 防御（mro 首位恒为自身，正常不可达）
-              continue;
-            }
             for (int32_t i = 0; i < mc->fieldNames->count; i++) {
               MsObjString* fname = (MsObjString*)mc->fieldNames->items[i].as.obj;
               MsValue dflt;
@@ -1602,6 +1599,64 @@ void msVmRunFrames(MsVM* vm) {
                           (int)consts[k].as.text.len, consts[k].as.text.start);
           }
           RUNTIME_ERROR("AttributeError: '%.*s' has no attribute '%.*s'", iklen, ikname,
+                        (int)consts[k].as.text.len, consts[k].as.text.start);
+        }
+        if (args[0].kind == MS_VAL_OBJ && args[0].as.obj->type == MS_OBJ_CLASS) {  // T020：类方法/静态直调
+          MsObjClass* klass = (MsObjClass*)args[0].as.obj;
+          int klen = 1;  // 类名（错误措辞；C 直构防御 '?'）
+          const char* kname = "?";
+          if (klass->name != NULL) {
+            klen = (int)klass->name->byteLen;
+            kname = klass->name->bytes;
+          }
+          MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+          if (name == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          MsValue mval;
+          bool isMethod;  // 均按 06 §3 形态调用：static 无 this、普通方法显式传接收者
+          if (msClassFindAttr(klass, name, &mval, &isMethod)) {
+            if (msIsCallableObj(&mval)) {  // 脚本函数值：recv 槽 ← fn，实参原位（无 this 注入）
+              vm->stack[vm->stackTop - argc - 1] = mval;
+              frame->ip = ip;
+              if (!msVmSetupCall(vm, argc)) {
+                vm->errLine = chunkLineAt(chunk, instrOff);
+                goto dispatchExit;
+              }
+              if ((vm->frames[vm->frameCount - 1].chunk->flags & MS_CHUNK_GENERATOR) != 0) {
+                msVmGeneratorSuspendEntry(vm);  // T019：生成器 → 入口即挂起（协程即调用结果）
+                if (vm->hasError) {
+                  goto dispatchExit;
+                }
+                frame = &vm->frames[vm->frameCount - 1];  // 回调用方帧续执行
+                chunk = frame->chunk;
+                code = chunk->code;
+                consts = chunk->consts;
+                ip = frame->ip;
+                NEXT();
+              }
+              frame = &vm->frames[vm->frameCount - 1];
+              chunk = frame->chunk;
+              code = chunk->code;
+              consts = chunk->consts;
+              ip = frame->ip;
+              NEXT();
+            }
+            if (mval.kind == MS_VAL_NATIVE) {  // 类属性持有 native 值：直调（实参原位 root）
+              vm->stack[vm->stackTop - argc - 1] = mval;  // recv 槽 ← native 值
+              MsValue r = mval.as.native(vm, argc, &vm->stack[vm->stackTop - argc]);
+              if (vm->hasError) {
+                goto dispatchExit;
+              }
+              vm->stackTop -= argc + 1;
+              msVmPush(vm, r);
+              frame = &vm->frames[vm->frameCount - 1];  // native 可嵌套扩 frames（T018）：重取缓存
+              NEXT();
+            }
+            RUNTIME_ERROR("TypeError: class '%.*s' attribute '%.*s' is not callable", klen, kname,
+                          (int)consts[k].as.text.len, consts[k].as.text.start);
+          }
+          RUNTIME_ERROR("AttributeError: class '%.*s' has no attribute '%.*s'", klen, kname,
                         (int)consts[k].as.text.len, consts[k].as.text.start);
         }
         MsMethodRef ref;
