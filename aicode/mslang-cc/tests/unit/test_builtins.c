@@ -448,7 +448,7 @@ TEST(isinstanceForms) {  // isinstance 字符串与 list 集合两种形态；�
   r = runSrc("isinstance(1, 2)");
   EXPECT(ctx, r.compileOk);
   EXPECT(ctx, r.hasError);
-  EXPECT(ctx, strstr(r.err, "expects a type name") != NULL);
+  EXPECT(ctx, strstr(r.err, "expects a class, a type name") != NULL);
   free(r.out);
 }
 

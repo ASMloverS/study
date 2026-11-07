@@ -939,10 +939,17 @@ static MsValue nativeIsinstance(MsVM* vm, int32_t argc, const MsValue* args) {
     items = ((const MsObjTuple*)t->as.obj)->items;
     count = ((const MsObjTuple*)t->as.obj)->count;
   } else {
-    bErr(vm, "TypeError: isinstance() expects a type name or a list/tuple of type names");
+    bErr(vm, "TypeError: isinstance() expects a class, a type name, or a list/tuple of type names");
     return msValueNil();
   }
   for (int32_t i = 0; i < count; i++) {  // 纯比较无分配窗口
+    if (msIsClass(&items[i])) {  // T020：类对象项沿 MRO（10 §1 class 集合）
+      if (msIsInstance(&args[0]) &&
+          msClassMroContains(((const MsObjInstance*)args[0].as.obj)->klass, (const MsObjClass*)items[i].as.obj)) {
+        return msValueBool(true);
+      }
+      continue;
+    }
     if (msIsString(&items[i]) && typeNameMatch(&args[0], &items[i])) {
       return msValueBool(true);
     }
@@ -968,6 +975,7 @@ static MsValue nativeInstanceof(MsVM* vm, int32_t argc, const MsValue* args) {
 }
 
 // callable(x)：原生/脚本函数值或 bound 方法对象（10 §1；__call__ 实例归 T021）
+// 类可调用性归 T021（10 §1 function/class/__call__）
 static MsValue nativeCallable(MsVM* vm, int32_t argc, const MsValue* args) {
   if (argc != 1) {
     bErr(vm, "ArgumentError: callable expects 1 argument");

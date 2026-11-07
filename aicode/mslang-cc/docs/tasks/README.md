@@ -38,7 +38,7 @@
 | T017 | Tier0 内置与迭代 | [T017](T017-tier0-builtins-iteration.md) | P4 | T013-T016 | L | ✅ |
 | T018 | 函数与闭包 | [T018](T018-functions-closures.md) | P5 | T017 | L | ✅ |
 | T019 | 生成器 | [T019](T019-generators.md) | P5 | T018 | M | ✅ |
-| T020 | class 与继承 mixin | [T020](T020-classes-inheritance.md) | P5 | T018 | L | ⬜ |
+| T020 | class 与继承 mixin | [T020](T020-classes-inheritance.md) | P5 | T018 | L | ✅ |
 | T021 | dunder 全协议 | [T021](T021-dunder-protocol.md) | P5 | T020 | L | ⬜ |
 | T022 | Shape 与内联缓存 | [T022](T022-shape-inline-cache.md) | P5 | T021 | M | ⬜ |
 | T023 | 异常系统与 defer | [T023](T023-exceptions-defer.md) | P6 | T020 | L | ⬜ |

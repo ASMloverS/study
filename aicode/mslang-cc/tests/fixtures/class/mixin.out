@@ -1,0 +1,3 @@
+impl
+Base.call + Impl.call
+[log] mixin attached

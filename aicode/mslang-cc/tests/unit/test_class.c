@@ -907,6 +907,72 @@ TEST(superFieldAccessErrorPinned) {  // T6 review 钉：super.实例字段 → A
   free(r.out);
 }
 
+// ---------- GC 与收尾（Task 8）----------
+
+TEST(classGcUnderPressure) {  // 低阈值下大量实例/类/绑定方法创建：可达者存活
+  RunResult r = runSrcHeapCap(
+      "class P {\n"
+      "    var x, y\n"
+      "    func __init__(a) { this.x = a; this.y = a * 2 }\n"
+      "    func sum() -> this.x + this.y\n"
+      "}\n"
+      "var keep = P(1)\n"
+      "var km = keep.sum\n"
+      "var junk = nil\n"
+      "for i in range(3000) { junk = P(i) }\n"
+      "print(km(), keep.x, junk.sum())",
+      "262144");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "3 1 8997\n", r.out);
+  free(r.out);
+}
+
+TEST(classReceiverGeneratorType) {  // 类接收者调用生成器方法 → generator（T7 review 钉）
+  RunResult r = runSrc(
+      "class G {\n"
+      "    func* nums() {\n"
+      "        yield 7\n"
+      "    }\n"
+      "}\n"
+      "var g = G()\n"
+      "print(type(G.nums(g)))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "generator\n", r.out);
+  free(r.out);
+}
+
+TEST(classReceiverErrorWording) {  // 类接收者 AttributeError 措辞钉（T7 review）
+  RunResult r = runSrc("class C {\n}\nC.missing()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "AttributeError: class 'C' has no attribute 'missing'") != NULL);
+  free(r.out);
+}
+
+TEST(classAttrNotCallableWording) {  // 非可调用类属性调用 TypeError 钉（T7 review）
+  RunResult r = runSrc("class C {\n    const V = 1\n}\nC.V()");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "is not callable") != NULL);
+  free(r.out);
+}
+
+TEST(isinstanceClassList) {  // isinstance 类对象集合（T7 review I-1 修复钉）
+  RunResult r = runSrc(
+      "class A {\n"
+      "}\n"
+      "class B {\n"
+      "}\n"
+      "var a = A()\n"
+      "print(isinstance(a, [B, A]), isinstance(a, [B]), isinstance(a, [\"instance\", B]))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "true false true\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -969,6 +1035,11 @@ int main(int argc, char** argv) {
       typeReturnsClassName,
       mixinSuperAttrErrorPinned,
       superFieldAccessErrorPinned,
+      classGcUnderPressure,
+      classReceiverGeneratorType,
+      classReceiverErrorWording,
+      classAttrNotCallableWording,
+      isinstanceClassList,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

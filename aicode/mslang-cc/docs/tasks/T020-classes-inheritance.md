@@ -3,7 +3,7 @@
 - 阶段: P5 函数/类（roadmap 期 5）
 - 依赖: T018
 - 规模: L
-- 状态: 未开始
+- 状态: ✅ 已完成（2026-11-08）
 - 设计文档: `docs/language/06-classes.md` §1-§4、`22-object-model.md` §2 §6（CLASS/INSTANCE 结构）、`21-bytecode.md` §3.4
 
 ## 1. 目标与范围
@@ -31,12 +31,12 @@
 
 ## 4. 验收标准（DoD）
 
-- [ ] 06 §1-§4 全部示例运行正确（Animal/Impl/Base/Counter）
-- [ ] 菱形 C3 冲突报 SyntaxError（编译期等价路径）
-- [ ] 实例查找顺序：实例字段遮蔽方法/类属性正确；`Counter.total` 跨实例共享
-- [ ] super 沿 MRO 调用（mixin 逆序链）；`Base.method(this, args)` 显式形式可用
-- [ ] instanceof 沿 MRO；`type(instance)` 返回类名
-- [ ] GC：实例/类/绑定方法可达性 ASan 通过
+- [x] 06 §1-§4 全部示例运行正确（Animal/Impl/Base/Counter）
+- [x] 菱形 C3 冲突报 SyntaxError（编译期等价路径）
+- [x] 实例查找顺序：实例字段遮蔽方法/类属性正确；`Counter.total` 跨实例共享
+- [x] super 沿 MRO 调用（mixin 逆序链）；`Base.method(this, args)` 显式形式可用
+- [x] instanceof 沿 MRO；`type(instance)` 返回类名
+- [x] GC：实例/类/绑定方法可达性 ASan 通过
 
 ## 5. 测试计划
 
