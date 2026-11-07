@@ -54,6 +54,7 @@ typedef struct FuncState {
   int32_t upvalCount, upvalCap;
   SlotAlias* aliases;       // tri 循环 fresh 目标槽位重映射栈 V→W（嵌套捕获型循环分层，T018 04 §4）
   int32_t aliasCount, aliasCap;
+  bool isMethod;  // T020：本帧是否方法直层体（super 限定；嵌套函数/静态方法为 false）
 } FuncState;
 
 static void compErr(FuncState* fs, const AstNode* n, int32_t len, const char* msg) {
@@ -774,6 +775,13 @@ static bool tryStringConst(FuncState* fs, const AstNode* n, int32_t* idxOut) {
   return false;
 }
 
+// super 引用判定（T020，06 §2）：IDENT 名 "super" 且未解析为局部/上值（BIND_GLOBAL）。
+// super 非保留字：局部遮蔽（BIND_LOCAL/UPVALUE）走普通名解析，不作 super 语义
+static bool isSuperRef(const AstNode* obj) {
+  return obj->kind == AST_IDENT && obj->bindKind == AST_BIND_GLOBAL && obj->as.ident.nameLen == 5 &&
+         memcmp(obj->as.ident.name, "super", 5) == 0;
+}
+
 static void compileExpr(FuncState* fs, const AstNode* n) {
   switch (n->kind) {
     case AST_NIL:
@@ -889,6 +897,11 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       break;
     }
     case AST_IDENT:
+      if (isSuperRef(n)) {  // 裸 super（非 MEMBER obj）：编译期拒绝（含嵌套函数/静态方法语境）
+        compErr(fs, n, 5, "'super' is only allowed inside a method");
+        emitOp(fs, OP_LOAD_NIL, n->line);
+        break;
+      }
       loadIdent(fs, n);
       break;
     case AST_UNARY:
@@ -944,7 +957,9 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
         emitOp(fs, OP_LOAD_NIL, n->line);  // 占位维持发射面
         break;
       }
-      if (n->as.call.callee->kind == AST_MEMBER) {  // s.m(args) → CALL_METHOD（21 §3.3）
+      if (n->as.call.callee->kind == AST_MEMBER &&
+          !isSuperRef(n->as.call.callee->as.memberExpr.obj)) {  // s.m(args) → CALL_METHOD（21 §3.3；
+        // super.m(args) 走 MEMBER→GET_SUPER 物化 bound + 泛化 OP_CALL，06 §2）
         const AstNode* m = n->as.call.callee;
         compileExpr(fs, m->as.memberExpr.obj);
         for (int32_t i = 0; i < n->as.call.count; i++) {
@@ -967,7 +982,20 @@ static void compileExpr(FuncState* fs, const AstNode* n) {
       break;
     }
     case AST_MEMBER: {  // 方法取值：GET_ATTR 物化 bound（类属性 T020）
-      compileExpr(fs, n->as.memberExpr.obj);
+      const AstNode* obj = n->as.memberExpr.obj;
+      if (isSuperRef(obj)) {  // T020：super.name → this + GET_SUPER（物化 bound/原值；06 §2）
+        if (!fs->isMethod) {  // 方法直层限定（嵌套函数/静态方法/模块层）
+          compErr(fs, n, 5, "'super' is only allowed inside a method");
+          emitOp(fs, OP_LOAD_NIL, n->line);
+          break;
+        }
+        localOp(fs, OP_LOAD_LOCAL, 0, n->line);  // this（方法帧 slot 0）
+        int32_t k = nameConst(fs, n->as.memberExpr.name, n->as.memberExpr.nameLen);
+        emitConstOp(fs, OP_GET_SUPER, k, n->line);
+        emitByte(fs, 0);  // icSlot（T022）
+        break;
+      }
+      compileExpr(fs, obj);
       int32_t k = nameConst(fs, n->as.memberExpr.name, n->as.memberExpr.nameLen);
       emitConstOp(fs, OP_GET_ATTR, k, n->line);
       emitByte(fs, 0);  // icSlot（T022）
@@ -1524,7 +1552,8 @@ static void compileFuncProto(FuncState* fs, const AstNode* n, bool isMethod, Chu
   if (scan + 1 > base) {
     base = scan + 1;
   }
-  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0};
+  FuncState inner = {proto, NULL, 0, 0, NULL, 0, 0, fs->diags, fs->file, 0, base, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0,
+                     isMethod};
   // T018：宿主捕获表（binder 附着清单 → 本函数 upvalue 表，先于体编译）：
   // isLocal = 直接捕获本帧槽（depth-1 ≤ 定义处推导式深度；伪帧槽经 comprResolveSlot 重映射，
   // tri fresh 目标经 alias 重映射到每轮新鲜槽 W）；间接条目按名取宿主表（binder 透传链保证存在）
@@ -1986,7 +2015,7 @@ bool compilerCompile(AstNode* module, Chunk* out, const char* file, MsDiagSink* 
   // 临时槽基线：模块层无自有 local，预扫描（含推导式目标/嵌套函数，安全超估）后从其上起步
   int32_t scan = -1;
   scanMaxLocalSlot(module, &scan);
-  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0};
+  FuncState fs = {out, NULL, 0, 0, NULL, 0, 0, diags, file, 0, scan + 1, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0, false};
   for (int32_t i = 0; i < module->as.list.count; i++) {
     compileStmt(&fs, module->as.list.items[i]);
   }

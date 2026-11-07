@@ -624,6 +624,7 @@ void msVmRunFrames(MsVM* vm) {
   SET_HANDLER(OP_INHERIT_INIT);
   SET_HANDLER(OP_SET_ATTR);
   SET_HANDLER(OP_GET_ATTR);
+  SET_HANDLER(OP_GET_SUPER);    // T020：super 属性分派（定义类 MRO 下一类起）
   SET_HANDLER(OP_JMP);
   SET_HANDLER(OP_JMP_IF_FALSE);
   SET_HANDLER(OP_JMP_IF_TRUE);
@@ -1320,13 +1321,27 @@ void msVmRunFrames(MsVM* vm) {
             goto dispatchExit;  // StackOverflow 槽已置（构造器内部 push）
           }
           vm->stack[vm->stackTop - argc - 1] = msValueObj(&inst->head);  // callee 槽 ← 实例（args 仍 root）
-          for (int32_t i = 0; i < klass->fieldNames->count; i++) {  // 声明字段置默认（未声明即 nil）
-            MsObjString* fname = (MsObjString*)klass->fieldNames->items[i].as.obj;
-            MsValue key = msValueObj(&fname->head);
-            MsValue dflt = msValueNil();
-            (void)msObjMapGet(klass->fieldDefaults, &key, &dflt);  // 未命中保持 nil
-            if (!msShapeFieldSet(vm, inst, fname, &dflt)) {
-              RUNTIME_ERROR("RuntimeError: out of memory");
+          // 声明字段默认沿 MRO 并集预置（T5 review I-1）：近→远，近者先置、远者跳过已置 →
+          // 子类同名字段默认遮蔽基类；未声明默认即 nil。
+          // GC：inst 在栈 root，fname 经 mc ← klass->mro ← inst->klass 可达（分配窗口安全）
+          int32_t mroCount = klass->mro != NULL ? klass->mro->count : 0;  // 防御：脚本类恒经 INHERIT_INIT
+          for (int32_t mi = 0; mi < mroCount; mi++) {
+            MsObjClass* mc = (MsObjClass*)klass->mro->items[mi].as.obj;
+            if (mc->mro == NULL) {  // 防御（mro 首位恒为自身，正常不可达）
+              continue;
+            }
+            for (int32_t i = 0; i < mc->fieldNames->count; i++) {
+              MsObjString* fname = (MsObjString*)mc->fieldNames->items[i].as.obj;
+              MsValue dflt;
+              if (msShapeFieldGet(inst, fname, &dflt)) {
+                continue;  // 近类已预置：遮蔽（不覆盖）
+              }
+              dflt = msValueNil();
+              MsValue key = msValueObj(&fname->head);
+              (void)msObjMapGet(mc->fieldDefaults, &key, &dflt);  // 未命中保持 nil
+              if (!msShapeFieldSet(vm, inst, fname, &dflt)) {
+                RUNTIME_ERROR("RuntimeError: out of memory");
+              }
             }
           }
           MsObjString* initName = msInternBytes(vm, "__init__", 8);
@@ -1378,9 +1393,14 @@ void msVmRunFrames(MsVM* vm) {
             ip = frame->ip;
             NEXT();
           }
-          if (argc != 0) {  // 无 __init__ 但传参
-            RUNTIME_ERROR("ArgumentError: %.*s() expects no arguments, got %d", (int)klass->name->byteLen,
-                          klass->name->bytes, argc);
+          if (argc != 0) {  // 无 __init__ 但传参（类名 C 直构防御 '?'，同 1498 口径）
+            int klen = 1;
+            const char* kname = "?";
+            if (klass->name != NULL) {
+              klen = (int)klass->name->byteLen;
+              kname = klass->name->bytes;
+            }
+            RUNTIME_ERROR("ArgumentError: %.*s() expects no arguments, got %d", klen, kname, argc);
           }
           vm->stackTop -= argc;  // 弹 args（instance 即结果）
           NEXT();
@@ -1780,7 +1800,7 @@ void msVmRunFrames(MsVM* vm) {
             RUNTIME_ERROR("RuntimeError: out of memory");
           }
           MsValue attr;
-          bool isMethod;  // 已按 06 §3 原样返回：bound 化决策归 Task 5
+          bool isMethod;  // 已按 06 §3 原样返回
           if (msClassFindAttr((MsObjClass*)recv.as.obj, name, &attr, &isMethod)) {
             vm->stack[vm->stackTop - 1] = attr;  // 接收者槽改写（intern 窗口 recv 在栈 root）
             NEXT();
@@ -1815,6 +1835,42 @@ void msVmRunFrames(MsVM* vm) {
         }
         RUNTIME_ERROR("TypeError: '%s' has no attribute '%.*s'", msValueTypeName(&recv),
                       (int)consts[k].as.text.len, consts[k].as.text.start);
+      }
+
+      OPCODE(OP_GET_SUPER) {  // <const name> <u8 ic>：栈 [this] → [bound/值]（定义类 MRO 下一类起查，06 §2）
+        READ_OPERAND(k);
+        (void)code[ip++];  // icSlot（T022）
+        MsValue recv = vm->stack[vm->stackTop - 1];  // this（编译器限定方法直层，slot 0）
+        MsObjClosure* cl = frame->closure;           // 方法帧恒闭包（编译器保证：方法必 CLOSURE 物化）
+        if (cl == NULL || cl->fn->owner == NULL) {
+          RUNTIME_ERROR("RuntimeError: 'super' outside method");
+        }
+        MsObjClass* owner = cl->fn->owner;
+        MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+        if (name == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        MsValue found;
+        bool isMethod;
+        if (msClassFindAttrAfter(owner, name, &found, &isMethod)) {
+          if (!isMethod) {  // 类属性/静态：原值返回（this 让位）
+            vm->stack[vm->stackTop - 1] = found;
+            NEXT();
+          }
+          msVmPush(vm, found);  // 方法值先落栈 root（物化窗口）
+          if (vm->hasError) {   // push 溢出：后续 -2 槽操作会越界，须立即 unwind（同 OP_GET_ATTR）
+            goto dispatchExit;
+          }
+          MsObjBoundMethod* bound = msObjBoundNew(vm, recv, found);
+          if (bound == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stack[vm->stackTop - 2] = msValueObj(&bound->head);  // bound 覆盖 this 槽（recv 原绑定）
+          vm->stackTop--;                                          // 弹方法值
+          NEXT();
+        }
+        RUNTIME_ERROR("AttributeError: 'super' has no attribute '%.*s'", (int)consts[k].as.text.len,
+                      consts[k].as.text.start);
       }
 
       OPCODE(OP_JMP) {

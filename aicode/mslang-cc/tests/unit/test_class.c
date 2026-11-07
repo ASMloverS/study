@@ -529,6 +529,212 @@ TEST(boundGeneratorMethod) {  // var f = g.nums 后 f()：bound 物化 + OP_CALL
   free(r.out);
 }
 
+// ---------- 继承与 super（Task 6，06 §2）----------
+
+TEST(inheritanceSuperCall) {  // 06 §2 Impl.call：super.call() 沿 MRO
+  RunResult r = runSrc(
+      "class Base {\n"
+      "    func who() -> \"base\"\n"
+      "    func call() -> \"Base.call\"\n"
+      "}\n"
+      "trait Logger {\n"
+      "    func log(msg) { print(\"[log] ${msg}\") }\n"
+      "}\n"
+      "class Impl : Base, Logger {\n"
+      "    func who() -> \"impl\"\n"
+      "    func call() -> \"${super.call()} + Impl.call\"\n"
+      "}\n"
+      "var i = Impl()\n"
+      "print(i.who())\n"
+      "print(i.call())\n"
+      "i.log(\"hi\")");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "impl\nBase.call + Impl.call\n[log] hi\n", r.out);
+  free(r.out);
+}
+
+TEST(mixinReverseOrder) {  // 双 mixin 同名方法：后声明者近（MRO mixin 逆序）
+  RunResult r = runSrc(
+      "class Base2 {\n"
+      "}\n"
+      "trait M1 {\n"
+      "    func tag() -> \"m1\"\n"
+      "}\n"
+      "trait M2 {\n"
+      "    func tag() -> \"m2\"\n"
+      "}\n"
+      "class C : Base2, M1, M2 {\n"
+      "}\n"
+      "var c = C()\n"
+      "print(c.tag())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "m2\n", r.out);
+  free(r.out);
+}
+
+TEST(methodInheritedFromBase) {  // 基类方法直接可用（this 绑定子类实例）
+  RunResult r = runSrc(
+      "class Base {\n"
+      "    func hello() -> \"base-hello\"\n"
+      "}\n"
+      "class Sub : Base {\n"
+      "}\n"
+      "var s = Sub()\n"
+      "print(s.hello())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "base-hello\n", r.out);
+  free(r.out);
+}
+
+TEST(superInitChain) {  // super.__init__(...) 显式基类构造（惯例首行）
+  RunResult r = runSrc(
+      "class Base {\n"
+      "    var kind\n"
+      "    func __init__() { this.kind = \"base\" }\n"
+      "}\n"
+      "class Sub : Base {\n"
+      "    func __init__() {\n"
+      "        super.__init__()\n"
+      "        this.kind = \"${this.kind}+sub\"\n"
+      "    }\n"
+      "}\n"
+      "var s = Sub()\n"
+      "print(s.kind)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "base+sub\n", r.out);
+  free(r.out);
+}
+
+TEST(superSkipOwnLevel) {  // super 跳过本类同名：子类遮蔽后 super 取基类实现
+  RunResult r = runSrc(
+      "class A {\n"
+      "    func v() -> \"a\"\n"
+      "}\n"
+      "class B : A {\n"
+      "    func v() -> \"${super.v()}-b\"\n"
+      "}\n"
+      "class C : B {\n"
+      "    func v() -> \"${super.v()}-c\"\n"
+      "}\n"
+      "print(C().v())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "a-b-c\n", r.out);
+  free(r.out);
+}
+
+TEST(superOutsideMethodRejected) {  // 模块层 super.method → 编译期诊断
+  RunResult r = runSrc("print(super.who())");
+  EXPECT(ctx, !r.compileOk);
+  free(r.out);
+}
+
+TEST(superInNestedFuncRejected) {  // 方法内嵌套函数里 super → 编译期诊断
+  RunResult r = runSrc(
+      "class A {\n"
+      "    func v() -> \"a\"\n"
+      "}\n"
+      "class B : A {\n"
+      "    func m() -> func() { return super.v() }\n"
+      "}\n");
+  EXPECT(ctx, !r.compileOk);
+  free(r.out);
+}
+
+TEST(superInStaticRejected) {  // static 方法内 super → 编译期诊断（无 this）
+  RunResult r = runSrc(
+      "class A {\n"
+      "    static func v() -> \"a\"\n"
+      "}\n"
+      "class B : A {\n"
+      "    static func m() -> super.v()\n"
+      "}\n");
+  EXPECT(ctx, !r.compileOk);
+  free(r.out);
+}
+
+TEST(superNameShadowedByLocal) {  // 局部变量名 super 遮蔽：按普通名解析（super 非保留字）
+  RunResult r = runSrc(
+      "class Holder {\n"
+      "    func get() -> \"held\"\n"
+      "}\n"
+      "func main() {\n"
+      "    var super = Holder()\n"
+      "    return super.get()\n"
+      "}\n"
+      "print(main())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "held\n", r.out);
+  free(r.out);
+}
+
+TEST(inheritedFieldDefaultsPreset) {  // 沿 MRO 预置声明字段默认（T5 review I-1 修复）
+  RunResult r = runSrc(
+      "class B {\n"
+      "    var x = 5\n"
+      "    var y\n"
+      "}\n"
+      "class D : B {\n"
+      "    var z = 7\n"
+      "}\n"
+      "var d = D()\n"
+      "print(d.x, d.y, d.z)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "5 nil 7\n", r.out);
+  free(r.out);
+}
+
+TEST(derivedFieldShadowsBaseDefault) {  // 子类同名字段默认遮蔽基类
+  RunResult r = runSrc(
+      "class B {\n"
+      "    var x = 5\n"
+      "}\n"
+      "class D : B {\n"
+      "    var x = 9\n"
+      "}\n"
+      "var d = D()\n"
+      "print(d.x)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "9\n", r.out);
+  free(r.out);
+}
+
+TEST(generatorInitDefensivePath) {  // func* __init__：实例照常返回（协程弃置）
+  RunResult r = runSrc(
+      "class G {\n"
+      "    var v\n"
+      "    func* __init__() { this.v = 1; yield 2 }\n"
+      "}\n"
+      "var g = G()\n"
+      "print(type(g))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "instance\n", r.out);
+  free(r.out);
+}
+
+TEST(spreadIntoCtor) {  // C(*args) 展开进 __init__
+  RunResult r = runSrc(
+      "class P {\n"
+      "    var a, b\n"
+      "    func __init__(a, b) { this.a = a; this.b = b }\n"
+      "}\n"
+      "var args = [1, 2]\n"
+      "var p = P(*args)\n"
+      "print(p.a, p.b)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1 2\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -567,6 +773,19 @@ int main(int argc, char** argv) {
       methodWithDefaultsAndRest,
       generatorMethodEntrySuspends,
       boundGeneratorMethod,
+      inheritanceSuperCall,
+      mixinReverseOrder,
+      methodInheritedFromBase,
+      superInitChain,
+      superSkipOwnLevel,
+      superOutsideMethodRejected,
+      superInNestedFuncRejected,
+      superInStaticRejected,
+      superNameShadowedByLocal,
+      inheritedFieldDefaultsPreset,
+      derivedFieldShadowsBaseDefault,
+      generatorInitDefensivePath,
+      spreadIntoCtor,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

@@ -176,7 +176,8 @@ static int runScript(const char* path, bool trace) {
       msVmRun(&vm, &chunk);
       if (vm.hasError) {
         fprintf(stderr, "%s:%d: %s\n", path, vm.errLine > 0 ? vm.errLine : 0, vm.errMsg);
-        exitCode = 1;
+        // T020：模块体执行期的编译期等价错误（MRO 冲突等）按编译错退出码路由（27 §10）
+        exitCode = strncmp(vm.errMsg, "SyntaxError:", 12) == 0 ? 3 : 1;
       }
       msVmFree(&vm);
     } else {
