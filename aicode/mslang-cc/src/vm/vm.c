@@ -1310,6 +1310,81 @@ void msVmRunFrames(MsVM* vm) {
         }
         MsValue* args = &vm->stack[vm->stackTop - argc];
         MsValue callee = vm->stack[vm->stackTop - argc - 1];
+        if (callee.kind == MS_VAL_OBJ && callee.as.obj->type == MS_OBJ_CLASS) {  // T020：实例化（06 §1）
+          MsObjClass* klass = (MsObjClass*)callee.as.obj;
+          MsObjInstance* inst = msObjInstanceNew(vm, klass);
+          if (inst == NULL) {
+            if (!vm->hasError) {
+              RUNTIME_ERROR("RuntimeError: out of memory");
+            }
+            goto dispatchExit;  // StackOverflow 槽已置（构造器内部 push）
+          }
+          vm->stack[vm->stackTop - argc - 1] = msValueObj(&inst->head);  // callee 槽 ← 实例（args 仍 root）
+          for (int32_t i = 0; i < klass->fieldNames->count; i++) {  // 声明字段置默认（未声明即 nil）
+            MsObjString* fname = (MsObjString*)klass->fieldNames->items[i].as.obj;
+            MsValue key = msValueObj(&fname->head);
+            MsValue dflt = msValueNil();
+            (void)msObjMapGet(klass->fieldDefaults, &key, &dflt);  // 未命中保持 nil
+            if (!msShapeFieldSet(vm, inst, fname, &dflt)) {
+              RUNTIME_ERROR("RuntimeError: out of memory");
+            }
+          }
+          MsObjString* initName = msInternBytes(vm, "__init__", 8);
+          if (initName == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          MsValue initFn;
+          bool isMethod;
+          if (msClassFindAttr(klass, initName, &initFn, &isMethod) && isMethod &&
+              msIsCallableObj(&initFn)) {  // __init__ 同步执行（返回值忽略，06 §1）
+            if (vm->callDepth >= MS_VM_MAX_CALL_DEPTH) {  // C 层嵌套守卫（msVmCallValue 同款）
+              RUNTIME_ERROR("StackOverflowError: call nesting limit exceeded (%d)", MS_VM_MAX_CALL_DEPTH);
+            }
+            // 栈形 [instance, a1..an] → [fn, instance, a1..an]（instance 作帧 slot 0 = this）
+            if (!msVmPush(vm, msValueNil())) {  // 上移占位（扩容安全；溢出槽已置）
+              goto dispatchExit;
+            }
+            MsValue* slot0 = &vm->stack[vm->stackTop - argc - 2];
+            memmove(slot0 + 1, slot0, sizeof(MsValue) * (size_t)(argc + 1));
+            *slot0 = initFn;
+            frame->ip = ip;
+            vm->callDepth++;
+            if (!msVmSetupCall(vm, argc + 1)) {
+              vm->callDepth--;
+              vm->errLine = chunkLineAt(chunk, instrOff);
+              goto dispatchExit;
+            }
+            if ((vm->frames[vm->frameCount - 1].chunk->flags & MS_CHUNK_GENERATOR) != 0) {
+              // 防御：生成器 __init__ 入口即挂起（体不执行）；协程弃置，实例仍为实例化结果
+              msVmGeneratorSuspendEntry(vm);
+              vm->callDepth--;
+              if (vm->hasError) {
+                goto dispatchExit;  // OOM 槽已置
+              }
+              vm->stack[vm->stackTop - 1] = msValueObj(&inst->head);
+            } else {
+              msVmRunFrames(vm);  // 嵌套执行至 __init__ RETURN（entry 收口；返回值在栈顶）
+              vm->callDepth--;
+              if (vm->hasError) {
+                goto dispatchExit;
+              }
+              // RETURN 将整窗折叠为返回值（实例槽已死）：实例回写结果槽（窗口内无分配，指针安全）
+              vm->stack[vm->stackTop - 1] = msValueObj(&inst->head);
+            }
+            frame = &vm->frames[vm->frameCount - 1];
+            chunk = frame->chunk;
+            code = chunk->code;
+            consts = chunk->consts;
+            ip = frame->ip;
+            NEXT();
+          }
+          if (argc != 0) {  // 无 __init__ 但传参
+            RUNTIME_ERROR("ArgumentError: %.*s() expects no arguments, got %d", (int)klass->name->byteLen,
+                          klass->name->bytes, argc);
+          }
+          vm->stackTop -= argc;  // 弹 args（instance 即结果）
+          NEXT();
+        }
         if (callee.kind == MS_VAL_OBJ && callee.as.obj->type == MS_OBJ_BOUND_METHOD) {
           // bound 分派在弹栈前：接收者+实参原位留栈（调用期间为 GC root）
           MsObjBoundMethod* bm = (MsObjBoundMethod*)callee.as.obj;
@@ -1340,6 +1415,18 @@ void msVmRunFrames(MsVM* vm) {
             if (!msVmSetupCall(vm, argc + 1)) {
               vm->errLine = chunkLineAt(chunk, instrOff);
               goto dispatchExit;
+            }
+            if ((vm->frames[vm->frameCount - 1].chunk->flags & MS_CHUNK_GENERATOR) != 0) {
+              msVmGeneratorSuspendEntry(vm);  // T019：生成器 bound 方法 → 入口即挂起（体不执行）
+              if (vm->hasError) {
+                goto dispatchExit;  // OOM 槽已置
+              }
+              frame = &vm->frames[vm->frameCount - 1];  // 回调用方帧续执行
+              chunk = frame->chunk;
+              code = chunk->code;
+              consts = chunk->consts;
+              ip = frame->ip;
+              NEXT();
             }
             frame = &vm->frames[vm->frameCount - 1];
             chunk = frame->chunk;
@@ -1406,6 +1493,97 @@ void msVmRunFrames(MsVM* vm) {
           }
         }
         MsValue* args = &vm->stack[vm->stackTop - argc - 1];  // peek：接收者+实参均在栈
+        if (args[0].kind == MS_VAL_OBJ && args[0].as.obj->type == MS_OBJ_INSTANCE) {  // T020：实例方法直调
+          MsObjInstance* inst = (MsObjInstance*)args[0].as.obj;
+          int iklen = 1;  // 类名（AttributeError/TypeError 措辞；C 直构防御 '?'）
+          const char* ikname = "?";
+          if (inst->klass != NULL && inst->klass->name != NULL) {
+            iklen = (int)inst->klass->name->byteLen;
+            ikname = inst->klass->name->bytes;
+          }
+          MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+          if (name == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          MsValue mval;
+          bool isMethod;
+          if (msInstanceFindAttr(inst, name, &mval, &isMethod)) {
+            if (isMethod && msIsCallableObj(&mval)) {
+              // 脚本方法：栈形 [recv, a1..an] → [fn, recv, a1..an]（recv 作帧 slot 0 = this）
+              if (!msVmPush(vm, msValueNil())) {  // 上移占位（扩容安全；溢出槽已置）
+                goto dispatchExit;
+              }
+              MsValue* slot0 = &vm->stack[vm->stackTop - argc - 2];
+              memmove(slot0 + 1, slot0, sizeof(MsValue) * (size_t)(argc + 1));
+              *slot0 = mval;
+              frame->ip = ip;
+              if (!msVmSetupCall(vm, argc + 1)) {
+                vm->errLine = chunkLineAt(chunk, instrOff);
+                goto dispatchExit;
+              }
+              if ((vm->frames[vm->frameCount - 1].chunk->flags & MS_CHUNK_GENERATOR) != 0) {
+                msVmGeneratorSuspendEntry(vm);  // T019：生成器方法 → 入口即挂起（协程即调用结果）
+                if (vm->hasError) {
+                  goto dispatchExit;  // OOM 槽已置
+                }
+                frame = &vm->frames[vm->frameCount - 1];  // 回调用方帧续执行
+                chunk = frame->chunk;
+                code = chunk->code;
+                consts = chunk->consts;
+                ip = frame->ip;
+                NEXT();
+              }
+              frame = &vm->frames[vm->frameCount - 1];
+              chunk = frame->chunk;
+              code = chunk->code;
+              consts = chunk->consts;
+              ip = frame->ip;
+              NEXT();
+            }
+            // 字段/静态值命中：普通调用语义（无 this 注入；OP_CALL 同款三分支）
+            if (mval.kind == MS_VAL_NATIVE) {
+              vm->stack[vm->stackTop - argc - 1] = mval;  // recv 槽 ← native 值（实参原位 root）
+              MsValue r = mval.as.native(vm, argc, &vm->stack[vm->stackTop - argc]);
+              if (vm->hasError) {
+                goto dispatchExit;
+              }
+              vm->stackTop -= argc + 1;
+              msVmPush(vm, r);
+              frame = &vm->frames[vm->frameCount - 1];  // native 可嵌套扩 frames（T018）：重取缓存
+              NEXT();
+            }
+            if (msIsCallableObj(&mval)) {
+              vm->stack[vm->stackTop - argc - 1] = mval;  // recv 槽 ← 函数值
+              frame->ip = ip;
+              if (!msVmSetupCall(vm, argc)) {
+                vm->errLine = chunkLineAt(chunk, instrOff);
+                goto dispatchExit;
+              }
+              if ((vm->frames[vm->frameCount - 1].chunk->flags & MS_CHUNK_GENERATOR) != 0) {
+                msVmGeneratorSuspendEntry(vm);  // T019：生成器值调用 → 入口即挂起（体不执行）
+                if (vm->hasError) {
+                  goto dispatchExit;  // OOM 槽已置
+                }
+                frame = &vm->frames[vm->frameCount - 1];  // 回调用方帧续执行
+                chunk = frame->chunk;
+                code = chunk->code;
+                consts = chunk->consts;
+                ip = frame->ip;
+                NEXT();
+              }
+              frame = &vm->frames[vm->frameCount - 1];
+              chunk = frame->chunk;
+              code = chunk->code;
+              consts = chunk->consts;
+              ip = frame->ip;
+              NEXT();
+            }
+            RUNTIME_ERROR("TypeError: '%.*s' attribute '%.*s' is not callable", iklen, ikname,
+                          (int)consts[k].as.text.len, consts[k].as.text.start);
+          }
+          RUNTIME_ERROR("AttributeError: '%.*s' has no attribute '%.*s'", iklen, ikname,
+                        (int)consts[k].as.text.len, consts[k].as.text.start);
+        }
         MsMethodRef ref;
         if (methodRefLookup(&args[0], consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {
           MsValue r = ref.fn(vm, argc + 1, args);
@@ -1546,7 +1724,7 @@ void msVmRunFrames(MsVM* vm) {
         RUNTIME_ERROR("TypeError: '%s' does not support attribute assignment", msValueTypeName(&obj));
       }
 
-      OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string 方法物化 bound / 类属性读（T020）
+      OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string/实例方法物化 bound / 实例·类属性读（T020）
         READ_OPERAND(k);
         (void)code[ip++];  // icSlot（T022）
         MsValue recv = vm->stack[vm->stackTop - 1];  // peek：物化分配期间接收者在栈
@@ -1560,9 +1738,43 @@ void msVmRunFrames(MsVM* vm) {
             goto dispatchExit;
           }
         }
+        if (recv.kind == MS_VAL_OBJ && recv.as.obj->type == MS_OBJ_INSTANCE) {  // T020：实例属性读（06 §4）
+          MsObjInstance* inst = (MsObjInstance*)recv.as.obj;
+          MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+          if (name == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          MsValue attr;
+          bool isMethod;
+          if (msInstanceFindAttr(inst, name, &attr, &isMethod)) {  // 字段 → MRO methods → MRO statics
+            if (isMethod && msIsCallableObj(&attr)) {  // 方法物化 bound（06 §3：绑定原实例）
+              msVmPush(vm, attr);  // 方法值先落栈 root（接收者槽未动）
+              if (vm->hasError) {  // push 溢出：后续 -2 槽操作会越界，须立即 unwind
+                goto dispatchExit;
+              }
+              MsObjBoundMethod* bound = msObjBoundNew(vm, recv, attr);
+              if (bound == NULL) {
+                RUNTIME_ERROR("RuntimeError: out of memory");
+              }
+              vm->stack[vm->stackTop - 2] = msValueObj(&bound->head);  // bound 覆盖接收者槽
+              vm->stackTop--;  // 弹方法值
+              NEXT();
+            }
+            vm->stack[vm->stackTop - 1] = attr;  // 字段/静态值覆盖接收者槽（intern 窗口 recv 在栈 root）
+            NEXT();
+          }
+          int iklen = 1;  // 类名（AttributeError 措辞；C 直构防御 '?'）
+          const char* ikname = "?";
+          if (inst->klass != NULL && inst->klass->name != NULL) {
+            iklen = (int)inst->klass->name->byteLen;
+            ikname = inst->klass->name->bytes;
+          }
+          RUNTIME_ERROR("AttributeError: '%.*s' has no attribute '%.*s'", iklen, ikname,
+                        (int)consts[k].as.text.len, consts[k].as.text.start);
+        }
         if (recv.kind == MS_VAL_OBJ && recv.as.obj->type == MS_OBJ_CLASS) {  // T020：类属性读
           // MRO 查（各级 methods → statics，06 §4）；方法值按 06 §3 显式形式原样返回
-          // （Class.method(this, args)），实例属性读与 bound 物化归 Task 5
+          // （Class.method(this, args)）
           MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
           if (name == NULL) {
             RUNTIME_ERROR("RuntimeError: out of memory");
@@ -1573,8 +1785,15 @@ void msVmRunFrames(MsVM* vm) {
             vm->stack[vm->stackTop - 1] = attr;  // 接收者槽改写（intern 窗口 recv 在栈 root）
             NEXT();
           }
-          RUNTIME_ERROR("TypeError: 'class' has no attribute '%.*s'", (int)consts[k].as.text.len,
-                        consts[k].as.text.start);
+          MsObjClass* klass = (MsObjClass*)recv.as.obj;  // 类名（C 直构防御 '?'）
+          int klen = 1;
+          const char* kname = "?";
+          if (klass->name != NULL) {
+            klen = (int)klass->name->byteLen;
+            kname = klass->name->bytes;
+          }
+          RUNTIME_ERROR("AttributeError: class '%.*s' has no attribute '%.*s'", klen, kname,
+                        (int)consts[k].as.text.len, consts[k].as.text.start);
         }
         MsMethodRef ref;
         if (methodRefLookup(&recv, consts[k].as.text.start, consts[k].as.text.len, &ref) == 0) {

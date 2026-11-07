@@ -292,6 +292,7 @@ TEST(longClassNameTruncatedSafe) {  // 超长类名形态截断（C1 回归钉�
   EXPECT(ctx, !r.hasError);
   EXPECT(ctx, strncmp(r.out, "<class AAAA", 11) == 0);  // n=11：恰比较 11 字符前缀（12 会比对字面 NUL）
   EXPECT(ctx, strspn(r.out + 7, "A") >= 87);  // 截断形态 = "<class " + 纯 A 串（95 字符上限，无 '>' 尾）
+  EXPECT_EQ(ctx, 96, (int)strlen(r.out));  // "<class " 7 + 88×'A' + '\n' = 96：精确钉无尾随垃圾
   free(r.out);
 }
 
@@ -342,6 +343,192 @@ TEST(methodChunkContract) {  // 方法 chunk 元数据契约：METHOD flag + par
   astArenaDestroy(&arena);
 }
 
+// ---------- 实例化与属性（Task 5，06 §1 §4）----------
+
+TEST(animalInstantiate) {  // 06 §1 原例：__init__/this 写字段/describe 插值
+  RunResult r = runSrc(
+      "class Animal {\n"
+      "    var name, age\n"
+      "    func __init__(name, age = 1) {\n"
+      "        this.name = name\n"
+      "        this.age = age\n"
+      "    }\n"
+      "    func speak() -> \"...\"\n"
+      "    func describe() -> \"${this.name} (${this.age})\"\n"
+      "}\n"
+      "var a = Animal(\"Cat\", 3)\n"
+      "print(a.describe())\n"
+      "print(a.speak())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "Cat (3)\n...\n", r.out);
+  free(r.out);
+}
+
+TEST(defaultCtorParam) {  // 默认参构造：Animal("Dog") → age=1
+  RunResult r = runSrc(
+      "class Animal {\n"
+      "    var name, age\n"
+      "    func __init__(name, age = 1) {\n"
+      "        this.name = name\n"
+      "        this.age = age\n"
+      "    }\n"
+      "}\n"
+      "var d = Animal(\"Dog\")\n"
+      "print(d.age)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1\n", r.out);
+  free(r.out);
+}
+
+TEST(fieldDefaultsCopied) {  // 声明字段默认：无 init 置 nil、有 init 拷贝；__init__ 覆盖
+  RunResult r = runSrc(
+      "class C {\n"
+      "    var a\n"
+      "    var b = 5\n"
+      "}\n"
+      "var c = C()\n"
+      "print(c.a, c.b)\n"
+      "c.b = 6\n"
+      "print(c.b)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "nil 5\n6\n", r.out);
+  free(r.out);
+}
+
+TEST(noInitCtorArity) {  // 无 __init__ 传参 → ArgumentError
+  RunResult r = runSrc("class C {\n}\nC(1)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+
+TEST(initArityError) {  // __init__ 存在时实参不足 → ArgumentError（经方法帧装配）
+  RunResult r = runSrc("class C {\n    func __init__(a, b) { }\n}\nC(1)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "ArgumentError") != NULL);
+  free(r.out);
+}
+
+TEST(initReturnValueIgnored) {  // __init__ 返回值忽略：实例为调用结果
+  RunResult r = runSrc(
+      "class C {\n    var hit\n    func __init__() { this.hit = 1; return 99 }\n}\n"
+      "var c = C()\nprint(c.hit, type(c))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "1 instance\n", r.out);
+  free(r.out);
+}
+
+TEST(dynamicField) {  // 未声明字段首赋创建可读（06 §1）
+  RunResult r = runSrc("class C {\n}\nvar c = C()\nc.tag = \"x\"\nprint(c.tag)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "x\n", r.out);
+  free(r.out);
+}
+
+TEST(fieldShadowsMethod) {  // 实例字段遮蔽方法（06 §4 查找序）
+  RunResult r = runSrc(
+      "class C {\n"
+      "    func v() -> \"method\"\n"
+      "}\n"
+      "var c = C()\n"
+      "c.v = \"field\"\n"
+      "print(c.v)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "field\n", r.out);
+  free(r.out);
+}
+
+TEST(attrMissingAttributeError) {  // 实例未命中 AttributeError
+  RunResult r = runSrc("class C {\n}\nvar c = C()\nprint(c.nope)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "AttributeError") != NULL);
+  free(r.out);
+}
+
+TEST(classAttrMissingAttributeError) {  // 类未命中 AttributeError（措辞更新回归钉）
+  RunResult r = runSrc("class C {\n}\nprint(C.nope)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "AttributeError") != NULL);
+  free(r.out);
+}
+
+TEST(thisCapturedInClosure) {  // 方法内闭包捕获 this（upvalue 路径端到端）
+  RunResult r = runSrc(
+      "class A {\n"
+      "    var v\n"
+      "    func __init__() { this.v = 10 }\n"
+      "    func mk() -> func() { return this.v }\n"
+      "}\n"
+      "var a = A()\n"
+      "var f = a.mk()\n"
+      "print(f())");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "10\n", r.out);
+  free(r.out);
+}
+
+TEST(methodWithDefaultsAndRest) {  // 方法默认参 + rest（方法帧装配完整路径）
+  RunResult r = runSrc(
+      "class C {\n"
+      "    func m(a, b = 2, *rest) -> a + b + len(rest)\n"
+      "}\n"
+      "var c = C()\n"
+      "print(c.m(1))\n"
+      "print(c.m(1, 5))\n"
+      "print(c.m(1, 5, 7, 9))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "3\n6\n8\n", r.out);  // m(1,5,7,9)：a+b+len(rest)=1+5+2
+  free(r.out);
+}
+
+TEST(generatorMethodEntrySuspends) {  // func* 方法：调用返回生成器（入口挂起，体不执行）
+  RunResult r = runSrc(
+      "class G {\n"
+      "    func* nums() {\n"
+      "        yield 1\n"
+      "        yield 2\n"
+      "    }\n"
+      "}\n"
+      "var g = G()\n"
+      "var it = g.nums()\n"
+      "print(type(it))\n"
+      "for v in it { print(v) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "generator\n1\n2\n", r.out);
+  free(r.out);
+}
+
+TEST(boundGeneratorMethod) {  // var f = g.nums 后 f()：bound 物化 + OP_CALL bound 路径入口挂起
+  RunResult r = runSrc(
+      "class G {\n"
+      "    func* nums() {\n"
+      "        yield 5\n"
+      "    }\n"
+      "}\n"
+      "var g = G()\n"
+      "var f = g.nums\n"
+      "var it = f()\n"
+      "print(type(it))\n"
+      "for v in it { print(v) }");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "generator\n5\n", r.out);
+  free(r.out);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -366,6 +553,20 @@ int main(int argc, char** argv) {
       longClassNameTruncatedSafe,
       staticFuncParamsNoThisShift,
       methodChunkContract,
+      animalInstantiate,
+      defaultCtorParam,
+      fieldDefaultsCopied,
+      noInitCtorArity,
+      initArityError,
+      initReturnValueIgnored,
+      dynamicField,
+      fieldShadowsMethod,
+      attrMissingAttributeError,
+      classAttrMissingAttributeError,
+      thisCapturedInClosure,
+      methodWithDefaultsAndRest,
+      generatorMethodEntrySuspends,
+      boundGeneratorMethod,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {
