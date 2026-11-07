@@ -18,8 +18,10 @@
 #include "obj/obj_set.h"
 #include "obj/obj_string.h"
 #include "obj/obj_tuple.h"
+#include "obj/shape.h"
 #include "plat/plat_math.h"
 #include "vm/call.h"
+#include "vm/class_ops.h"
 #include "vm/generator.h"
 
 #define MS_STACK_MAX (64 * 1024)  // 值栈条目上限（溢出报错；帧深上限见 call.h MS_VM_MAX_FRAMES；可增长栈归 T028）
@@ -617,6 +619,10 @@ void msVmRunFrames(MsVM* vm) {
   SET_HANDLER(OP_CALL);
   SET_HANDLER(OP_CALL_METHOD);
   SET_HANDLER(OP_RETURN);
+  SET_HANDLER(OP_NEW_CLASS);      // T020：类创建/成员登记/MRO
+  SET_HANDLER(OP_DEFINE_METHOD);
+  SET_HANDLER(OP_INHERIT_INIT);
+  SET_HANDLER(OP_SET_ATTR);
   SET_HANDLER(OP_GET_ATTR);
   SET_HANDLER(OP_JMP);
   SET_HANDLER(OP_JMP_IF_FALSE);
@@ -1436,6 +1442,108 @@ void msVmRunFrames(MsVM* vm) {
         consts = chunk->consts;
         ip = frame->ip;
         NEXT();
+      }
+
+      OPCODE(OP_NEW_CLASS) {  // <const name> <u8 baseCount>：栈 [b1..bn] → [class]
+        READ_OPERAND(k);
+        int32_t n = code[ip++];
+        MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+        if (name == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        MsObjClass* klass = msObjClassNew(vm, name);
+        if (klass == NULL) {
+          if (!vm->hasError) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          goto dispatchExit;  // StackOverflow 槽已置（构造器内部 push）
+        }
+        if (n == 0) {
+          if (!msVmPush(vm, msValueObj(&klass->head))) {  // 无 bases：类即压栈 root
+            goto dispatchExit;  // StackOverflow 槽已置
+          }
+          NEXT();
+        }
+        for (int32_t i = 0; i < n; i++) {  // bases 先拷贝（listPush 为 malloc 路径无 GC 点；源槽未动）
+          if (!msObjListPush(vm, klass->bases, vm->stack[vm->stackTop - n + i])) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+        }
+        vm->stack[vm->stackTop - n] = msValueObj(&klass->head);  // 类占 b1 槽（即刻 root）
+        vm->stackTop -= n - 1;  // [b1..bn] → [class]：净弹 n-1（类留栈顶）
+        NEXT();
+      }
+
+      OPCODE(OP_DEFINE_METHOD) {  // <const name> <u8 flags>：栈 [class, value] → [class]
+        READ_OPERAND(k);
+        ms_u8 flags = code[ip++];
+        MsObjClass* klass = (MsObjClass*)vm->stack[vm->stackTop - 2].as.obj;
+        MsValue value = vm->stack[vm->stackTop - 1];  // klass/value 均在栈 root（下方 put 无 GC 点）
+        MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+        if (name == NULL) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        MsValue key = msValueObj(&name->head);
+        bool ok = true;
+        if ((flags & MS_DEFM_STATIC) != 0) {
+          ok = msObjMapPut(vm, klass->statics, &key, &value) == MS_MAP_OK;
+        } else if ((flags & MS_DEFM_FIELD) != 0) {
+          ok = msObjListPush(vm, klass->fieldNames, key);
+          if (ok && (flags & MS_DEFM_FIELD_DEF) != 0) {
+            ok = msObjMapPut(vm, klass->fieldDefaults, &key, &value) == MS_MAP_OK;
+          }
+        } else {
+          ok = msObjMapPut(vm, klass->methods, &key, &value) == MS_MAP_OK;
+          if (ok && msIsCallableObj(&value)) {  // 普通方法回填 owner（super 用）
+            msCallableFn(&value)->owner = klass;
+          }
+        }
+        if (!ok) {
+          RUNTIME_ERROR("RuntimeError: out of memory");
+        }
+        vm->stackTop--;  // 弹 value（class 留栈顶）
+        NEXT();
+      }
+
+      OPCODE(OP_INHERIT_INIT) {  // 栈 [class] → [class]：MRO（冲突 = SyntaxError 等价）
+        MsObjClass* klass = (MsObjClass*)vm->stack[vm->stackTop - 1].as.obj;
+        if (!msClassBuildMro(vm, klass)) {
+          vm->errLine = chunkLineAt(chunk, instrOff);
+          goto dispatchExit;  // 错误槽已置（SyntaxError/TypeError/OOM/StackOverflow）
+        }
+        NEXT();
+      }
+
+      OPCODE(OP_SET_ATTR) {  // <const name>：弹 [obj, value]（无压栈，SET_INDEX 同款）
+        READ_OPERAND(k);
+        MsValue obj = vm->stack[vm->stackTop - 2];  // obj/value 均在栈 root（intern/put 窗口安全）
+        MsValue value = vm->stack[vm->stackTop - 1];
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_INSTANCE) {  // 实例字段写（首赋创建）
+          MsObjInstance* inst = (MsObjInstance*)obj.as.obj;
+          MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+          if (name == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          if (!msShapeFieldSet(vm, inst, name, &value)) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          NEXT();
+        }
+        if (obj.kind == MS_VAL_OBJ && obj.as.obj->type == MS_OBJ_CLASS) {  // 类属性写（可新建）
+          MsObjClass* klass = (MsObjClass*)obj.as.obj;
+          MsObjString* name = msInternBytes(vm, consts[k].as.text.start, consts[k].as.text.len);
+          if (name == NULL) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          MsValue key = msValueObj(&name->head);
+          if (msObjMapPut(vm, klass->statics, &key, &value) != MS_MAP_OK) {
+            RUNTIME_ERROR("RuntimeError: out of memory");
+          }
+          vm->stackTop -= 2;
+          NEXT();
+        }
+        RUNTIME_ERROR("TypeError: '%s' does not support attribute assignment", msValueTypeName(&obj));
       }
 
       OPCODE(OP_GET_ATTR) {  // <const name> <u8 ic>：string 方法物化 bound（类属性 T020）

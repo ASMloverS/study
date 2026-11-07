@@ -204,6 +204,97 @@ TEST(thisInPlainFunctionRejected) {  // 普通函数内 this → 诊断
   free(r.out);
 }
 
+// ---------- VM 类创建（Task 4）----------
+
+TEST(classCreationRuns) {  // 类建立：type(A) == "class"（未继承路径，方法已登记）
+  RunResult r = runSrc("class A {\n    func f() -> 1\n}\nprint(type(A))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "class\n", r.out);
+  free(r.out);
+}
+
+TEST(traitCreationRuns) {  // trait 声明同路径
+  RunResult r = runSrc("trait T {\n    func m() -> 2\n}\nprint(type(T))");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "class\n", r.out);
+  free(r.out);
+}
+
+TEST(fieldDefaultEvaluatedOnce) {  // 类字段默认：类创建期求值一次（var x = mk() 只算一次）
+  RunResult r = runSrc(
+      "var n = 0\nfunc mk() { n += 1; return n }\nclass C {\n    var x = mk()\n}\nprint(C, n)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "<class C> 1\n", r.out);
+  free(r.out);
+}
+
+TEST(baseNotClassTypeError) {  // 基类非类值 → TypeError（运行时，模块体执行期）
+  RunResult r = runSrc("var notClass = 5\nclass C : notClass {\n}");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "TypeError") != NULL);
+  free(r.out);
+}
+
+TEST(mroBuildSurvivesGcStress) {  // 极低堆压（阈值 1B：每次分配前整堆回收）类创建 + MRO 线性化
+  RunResult r = runSrcHeapCap(
+      "class A {\n    func f() -> 1\n}\nclass C : A {\n    func g() -> 2\n}\nprint(type(C))", "1");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "class\n", r.out);
+  free(r.out);
+}
+
+TEST(staticFuncParamsNoThisShift) {  // static 带参方法无 this 槽移位（compileOk 钉；槽布局另由金集覆盖）
+  RunResult r = runSrc("class S {\n    static func add(a, b) -> a + b\n}\n");
+  EXPECT(ctx, r.compileOk);
+  free(r.out);
+}
+
+TEST(methodChunkContract) {  // 方法 chunk 元数据契约：METHOD flag + paramCount 含 this + params[0]
+  const char* src = "class M {\n    func m(a) { return a }\n}";
+  MsDiagSink diags = {0};
+  AstArena arena;
+  astArenaInit(&arena);
+  Parser p;
+  parserInit(&p, src, (int32_t)strlen(src), "t.ms", &arena, &diags);
+  AstNode* mod = parserParseModule(&p);
+  EXPECT(ctx, mod != NULL);
+  if (mod == NULL) {
+    astArenaDestroy(&arena);
+    return;
+  }
+  Binder b;
+  binderInit(&b, &arena, "t.ms", &diags);
+  binderBind(&b, mod);
+  binderDestroy(&b);
+  Chunk c;
+  bool ok = compilerCompile(mod, &c, "t.ms", &diags);
+  EXPECT(ctx, ok);
+  bool found = false;
+  if (ok) {  // 失败路径 chunk 亦已 chunkInit：下方 chunkFree 安全
+    for (int32_t i = 0; i < c.constsLen && !found; i++) {
+      if (c.consts[i].kind != CONST_PROTO) {
+        continue;
+      }
+      const Chunk* proto = c.consts[i].as.proto;
+      if (proto->nameLen == 1 && proto->name[0] == 'm') {
+        found = true;
+        EXPECT(ctx, (proto->flags & MS_CHUNK_METHOD) != 0);
+        EXPECT_EQ(ctx, 2, proto->paramCount);  // this + a
+        EXPECT_EQ(ctx, 4, proto->params[0].len);
+        EXPECT(ctx, memcmp(proto->params[0].name, "this", 4) == 0);
+      }
+    }
+    EXPECT(ctx, found);
+  }
+  chunkFree(&c);
+  astArenaDestroy(&arena);
+}
+
 int main(int argc, char** argv) {
   TestCtx ctx = {0};
   int only = argc > 1 ? atoi(argv[1]) : -1;
@@ -216,6 +307,13 @@ int main(int argc, char** argv) {
       thisOutsideMethodRejected,
       thisCapturedInClosureCompiles,
       thisInPlainFunctionRejected,
+      classCreationRuns,
+      traitCreationRuns,
+      fieldDefaultEvaluatedOnce,
+      baseNotClassTypeError,
+      mroBuildSurvivesGcStress,
+      staticFuncParamsNoThisShift,
+      methodChunkContract,
   };
   int total = (int)(sizeof(tests) / sizeof(tests[0]));
   for (int i = 0; i < total; i++) {

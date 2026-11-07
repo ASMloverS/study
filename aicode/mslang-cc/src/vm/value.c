@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "obj/obj_bigint.h"
+#include "obj/obj_class.h"
 #include "obj/obj_func.h"
 #include "obj/obj_list.h"
 #include "obj/obj_map.h"
@@ -627,6 +628,23 @@ static MsObjString* strFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     if (v->as.obj->type == MS_OBJ_SET) {
       return setForm(vm, v, depth);
     }
+    if (v->as.obj->type == MS_OBJ_CLASS) {  // T020：类形态 <class Name>
+      const MsObjClass* c = (const MsObjClass*)v->as.obj;
+      if (c->name != NULL) {  // C 直构可无名：回落兜底形态
+        char buf[96];
+        int len = snprintf(buf, sizeof(buf), "<class %.*s>", (int)c->name->byteLen, c->name->bytes);
+        return msObjStringNew(vm, buf, len);
+      }
+    }
+    if (v->as.obj->type == MS_OBJ_INSTANCE) {  // T020：实例形态（__str__ 归 T021）
+      const MsObjInstance* i = (const MsObjInstance*)v->as.obj;
+      if (i->klass != NULL && i->klass->name != NULL) {
+        char buf[96];
+        int len = snprintf(buf, sizeof(buf), "<%.*s instance>", (int)i->klass->name->byteLen,
+                           i->klass->name->bytes);
+        return msObjStringNew(vm, buf, len);
+      }
+    }
   }
   return fallbackForm(vm, v);
 }
@@ -660,6 +678,23 @@ static MsObjString* reprFormDepth(MsVM* vm, const MsValue* v, int32_t depth) {
     }
     if (v->as.obj->type == MS_OBJ_SET) {
       return setForm(vm, v, depth);
+    }
+    if (v->as.obj->type == MS_OBJ_CLASS) {  // T020：类形态 <class Name>
+      const MsObjClass* c = (const MsObjClass*)v->as.obj;
+      if (c->name != NULL) {  // C 直构可无名：回落兜底形态
+        char buf[96];
+        int len = snprintf(buf, sizeof(buf), "<class %.*s>", (int)c->name->byteLen, c->name->bytes);
+        return msObjStringNew(vm, buf, len);
+      }
+    }
+    if (v->as.obj->type == MS_OBJ_INSTANCE) {  // T020：实例形态（__repr__ 归 T021）
+      const MsObjInstance* i = (const MsObjInstance*)v->as.obj;
+      if (i->klass != NULL && i->klass->name != NULL) {
+        char buf[96];
+        int len = snprintf(buf, sizeof(buf), "<%.*s instance>", (int)i->klass->name->byteLen,
+                           i->klass->name->bytes);
+        return msObjStringNew(vm, buf, len);
+      }
     }
   }
   return fallbackForm(vm, v);

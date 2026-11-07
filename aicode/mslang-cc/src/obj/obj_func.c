@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "gc/gc.h"
+#include "obj/obj_class.h"
 #include "obj/obj_list.h"
 #include "obj/obj_string.h"
 #include "vm/vm.h"
@@ -48,6 +49,9 @@ void msObjFunctionMarkChildren(MsVM* vm, MsObj* obj) {
   MsObjFunction* fn = (MsObjFunction*)obj;
   for (int32_t i = 0; i < fn->defaultCount; i++) {
     gcMarkValue(vm, fn->defaults[i]);
+  }
+  if (fn->owner != NULL) {  // T020：定义类（DEFINE_METHOD 回填；普通函数保持 NULL）
+    gcMarkValue(vm, msValueObj(&fn->owner->head));
   }
 }
 

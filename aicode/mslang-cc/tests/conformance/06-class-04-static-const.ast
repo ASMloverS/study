@@ -8,6 +8,9 @@
         (lit "counters, total=")
         (interp
           (member (ident Counter [global]) total))))
+    (func-decl add static
+      (params (param a) (param b))
+      (binary + (ident a [local:0]) (ident b [local:1])))
     (const VERSION
       (string
         (lit "1.0"))))

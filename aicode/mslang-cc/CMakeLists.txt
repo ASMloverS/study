@@ -105,6 +105,8 @@ target_sources(ms_vm PRIVATE src/vm/str_methods.c)
 target_sources(ms_vm PRIVATE src/vm/call.c)
 # T019：生成器挂起/恢复驱动（协程执行面）
 target_sources(ms_vm PRIVATE src/vm/generator.c)
+# T020：类运行时操作（MRO 线性化/属性查找/实例化公共面）
+target_sources(ms_vm PRIVATE src/vm/class_ops.c)
 target_sources(ms_vm PRIVATE src/vm/list_methods.c)
 target_sources(ms_vm PRIVATE src/vm/iter_methods.c)  # T017：iterator 实例方法表（10 §4）
 # T015：map/set/tuple 实例方法表（10 §4）
