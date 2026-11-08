@@ -29,12 +29,16 @@ bool msVmSetupCall(MsVM* vm, int32_t argc) {
   int32_t nReq = nFixed - fn->defaultCount;  // 默认参个数以对象为准（defaults FAM 即 defaultCount 尺寸）
   const char* fname = proto->nameLen > 0 ? proto->name : "<anonymous>";
   int32_t fnameLen = proto->nameLen > 0 ? proto->nameLen : (int32_t)strlen(fname);
+  int32_t isMethod = (proto->flags & MS_CHUNK_METHOD) != 0 ? 1 : 0;
+  int32_t showFixed = nFixed - isMethod;  // 方法报数不含隐藏 this（仅错误文案；判定仍用原值）
+  int32_t showReq = nReq - isMethod;
+  int32_t showArgc = argc - isMethod;
   if (argc < nReq) {
-    callErr(vm, "ArgumentError: %.*s() expects at least %d argument(s), got %d", (int)fnameLen, fname, nReq, argc);
+    callErr(vm, "ArgumentError: %.*s() expects at least %d argument(s), got %d", (int)fnameLen, fname, showReq, showArgc);
     return false;
   }
   if (argc > nFixed && !proto->hasRest) {
-    callErr(vm, "ArgumentError: %.*s() expects at most %d argument(s), got %d", (int)fnameLen, fname, nFixed, argc);
+    callErr(vm, "ArgumentError: %.*s() expects at most %d argument(s), got %d", (int)fnameLen, fname, showFixed, showArgc);
     return false;
   }
   int32_t base = vm->stackTop - argc;

@@ -13,3 +13,4 @@ var g = Greeter("ms")
 var m = g.greet
 print(m())
 print(g.viaBound())
+print(Greeter.greet(g))

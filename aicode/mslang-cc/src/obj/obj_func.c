@@ -79,7 +79,7 @@ static void attrErr(MsVM* vm) {
 }
 
 // f.__name__ / f.__params__（05 §6）：__name__ 返回 intern 永久串（匿名函数为空串）；
-// __params__ 返回参数名 list（含默认参名、rest 名不含 *）。miss 返回 false 不置槽（调用方续查
+// __params__ 返回参数名 list（含默认参名、rest 名不含 *；方法不含隐式 this）。miss 返回 false 不置槽（调用方续查
 // 方法表）；OOM 置错误槽后返回 false。f 须 FUNCTION/CLOSURE（调用方已验）
 bool msFuncAttrGet(MsVM* vm, const MsValue* f, const char* name, int32_t nameLen, MsValue* out) {
   const Chunk* chunk = msCallableChunk(f);
@@ -101,7 +101,8 @@ bool msFuncAttrGet(MsVM* vm, const MsValue* f, const char* name, int32_t nameLen
     if (!msVmPush(vm, msValueObj(&list->head))) {  // 构建期 root（D6 纪律）
       return false;  // StackOverflow 槽已置
     }
-    for (int32_t i = 0; i < chunk->paramCount; i++) {
+    int32_t start = (chunk->flags & MS_CHUNK_METHOD) != 0 ? 1 : 0;  // 方法首参 this 为隐式接收者，不入表
+    for (int32_t i = start; i < chunk->paramCount; i++) {
       MsObjString* s = msInternBytes(vm, chunk->params[i].name, chunk->params[i].len);
       if (s == NULL || !msObjListPush(vm, list, msValueObj(&s->head))) {
         vm->stackTop--;  // 弹 list（错误路径恢复栈）

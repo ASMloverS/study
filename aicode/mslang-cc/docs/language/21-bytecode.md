@@ -72,11 +72,14 @@ CLOSE_UPVAL <slot>              （循环每轮新绑定：闭合 ≥ 帧基+slo
 ### 3.4 类
 
 ```
-NEW_CLASS <nameIdx> <baseIdx?>
-DEFINE_METHOD <nameIdx> <flags(method/static/dunder)>
-INHERIT_INIT   （构建 MRO/方法表）
+NEW_CLASS <nameIdx> <u8 baseCount>：bases 值依序压栈后消费
+DEFINE_METHOD <nameIdx> <u8 flags(MS_DEFM_*)>：栈 [class, value] → [class]
+INHERIT_INIT   （构建 MRO/方法表；冲突经错误槽报 SyntaxError 等价）
 GET_ATTR <nameIdx> <icSlot>   SET_ATTR <nameIdx>
+GET_SUPER <nameIdx> <icSlot>  （super：定义类 MRO 下一类起查，栈 [this] → bound/值）
 ```
+
+- DEFINE_METHOD flags：bit0 static（入类属性）、bit1 dunder 标记、bit2 field（登记声明字段名）、bit3 field 默认值。
 
 ### 3.5 控制流
 

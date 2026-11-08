@@ -414,6 +414,44 @@ TEST(initArityError) {  // __init__ 存在时实参不足 → ArgumentError（�
   free(r.out);
 }
 
+TEST(methodArityErrorMessage) {  // 方法元数错误报数不含 this（终审 Minor 修复钉）
+  RunResult r = runSrc(
+      "class C {\n"
+      "    func speak() -> \"...\"\n"
+      "}\n"
+      "var c = C()\n"
+      "c.speak(1)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "speak() expects at most 0 argument(s), got 1") != NULL);
+  free(r.out);
+}
+
+TEST(methodArityTooFewErrorMessage) {
+  RunResult r = runSrc(
+      "class C {\n"
+      "    func m(a, b) { }\n"
+      "}\n"
+      "var c = C()\n"
+      "c.m(1)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, r.hasError);
+  EXPECT(ctx, strstr(r.err, "m() expects at least 2 argument(s), got 1") != NULL);
+  free(r.out);
+}
+
+TEST(methodParamsIntrospection) {  // 方法 __params__ 不含隐藏 this（终审 Minor 修复钉）
+  RunResult r = runSrc(
+      "class Animal {\n"
+      "    func __init__(name, age = 1) { }\n"
+      "}\n"
+      "print(Animal.__init__.__params__)");
+  EXPECT(ctx, r.compileOk);
+  EXPECT(ctx, !r.hasError);
+  EXPECT_STREQ(ctx, "[\"name\", \"age\"]\n", r.out);
+  free(r.out);
+}
+
 TEST(initReturnValueIgnored) {  // __init__ 返回值忽略：实例为调用结果
   RunResult r = runSrc(
       "class C {\n    var hit\n    func __init__() { this.hit = 1; return 99 }\n}\n"
@@ -1002,6 +1040,9 @@ int main(int argc, char** argv) {
       fieldDefaultsCopied,
       noInitCtorArity,
       initArityError,
+      methodArityErrorMessage,
+      methodArityTooFewErrorMessage,
+      methodParamsIntrospection,
       initReturnValueIgnored,
       dynamicField,
       fieldShadowsMethod,

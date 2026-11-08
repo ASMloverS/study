@@ -38,6 +38,8 @@
 - [x] instanceof 沿 MRO；`type(instance)` 返回类名
 - [x] GC：实例/类/绑定方法可达性 ASan 通过
 
+- 注：ASan 门禁由 CI（GCC/Clang preset）承担；Windows 本机以低阈值 GC 压力单测（classGcMarkChildren/classGcUnderPressure/mroBuildSurvivesGcStress）守护
+
 ## 5. 测试计划
 
 ### 5.1 C 单测 `tests/unit/test_class.c`

@@ -22,6 +22,7 @@ print(a.describe())
 ```
 
 - 实例化流程：分配实例 → 字段置默认 → 调 `__init__`（若有）；`__init__` 返回值忽略。
+- 字段默认值实例化时按值拷贝（引用共享：可变默认如 list 跨实例共享同一对象，同 Python）。
 - 字段声明 `var name, age` 仅作文档与初始化顺序提示，不强制；未声明字段首次赋值即创建。
 
 ## 2. 继承与 mixin
@@ -44,7 +45,7 @@ class Impl : Base, Logger {             // 第一个为基类，其余为 mixin
 
 - **单继承链**：`:` 后第一个是基类；后续为 mixin（按声明序混入）。
 - **线性化（MRO）**：`[本类] + [mixin 逆序] + [基类 MRO]`；C3 冲突（菱形重复且顺序矛盾）编译期报 SyntaxError。
-- `super` 指代 MRO 中本类的下一个类：仅支持 `super.method(args)` 形式（显式转发用 `Base.method(this, args)`）。
+- `super` 指代 MRO 中本类的下一个类：仅支持 `super.method(args)` 形式（显式转发用 `Base.method(this, args)`）；沿方法定义类自身的 MRO 查找（mixin 方法内无后继类，super 取值报 AttributeError）。
 - 基类构造不自动调用；惯例在 `__init__` 首行显式 `super.__init__(...)`。
 - `instanceof(x, T)` 沿 MRO 判定。
 

@@ -168,7 +168,7 @@ static MsValue nativeType(MsVM* vm, int32_t argc, const MsValue* args) {
     return msValueNil();
   }
   MsValue a = args[0];  // 值拷贝：msObjStringNew 分配窗口实参在 OP_CALL 栈 root，指针不跨调用复用
-  if (msIsInstance(&a)) {  // T020：type(instance) 返回类名（06 DoD）
+  if (msIsInstance(&a) && ((const MsObjInstance*)a.as.obj)->klass != NULL) {  // T020：type(instance) 返回类名（06 DoD）
     const MsObjInstance* i = (const MsObjInstance*)a.as.obj;
     return msValueObj((MsObj*)i->klass->name);  // intern 永久串
   }
